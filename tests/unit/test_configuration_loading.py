@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from asf.configuration.yamlio import deep_merge, load_yaml_mapping
 
 
 class ConfigurationLoadingTests(unittest.TestCase):
+
     def test_defaults_only_valid(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Empty directory with no platform.yaml
@@ -97,9 +99,15 @@ notifications:
 
             # 5. Missing default ./config directory -> returns defaults only
             empty_environ = {"ASF_CONFIG_DIR": ""}
-            # Provide non-existent default by running in tmp_dir
-            defaults_cfg = load_platform_config(environ=empty_environ)
-            self.assertEqual(defaults_cfg.log_level, "INFO")
+            # Provide non-existent default by running in tmp_dir (which has no ./config)
+            cwd_before = Path.cwd()
+            try:
+                os.chdir(tmp_dir)
+                defaults_cfg = load_platform_config(environ=empty_environ)
+                self.assertEqual(defaults_cfg.log_level, "INFO")
+            finally:
+                os.chdir(cwd_before)
+
 
     def test_duplicate_keys_rejected(self):
         yaml_content = """
@@ -131,6 +139,51 @@ logLevel: DEBUG
         self.assertEqual(merged["b"]["d"], [3])
         self.assertEqual(merged["e"], 4)
 
+    def test_deep_merge_purity_and_no_shared_nested_objects(self):
+        base = {
+            "scalar": 1,
+            "nested": {"key": "base_val", "items": [1, 2]},
+            "untouched": {"key": "original"},
+        }
+        override = {
+            "scalar": 2,
+            "nested": {"key": "override_val", "new_items": [3, 4]},
+            "added": {"key": "new_val"},
+        }
+        base_copy = {
+            "scalar": 1,
+            "nested": {"key": "base_val", "items": [1, 2]},
+            "untouched": {"key": "original"},
+        }
+        override_copy = {
+            "scalar": 2,
+            "nested": {"key": "override_val", "new_items": [3, 4]},
+            "added": {"key": "new_val"},
+        }
+
+        merged = deep_merge(base, override)
+
+        # 1. Inputs are not mutated during deep_merge
+        self.assertEqual(base, base_copy)
+        self.assertEqual(override, override_copy)
+
+        # 2. Mutating merged must not affect base or override (no shared nested objects)
+        merged["nested"]["key"] = "mutated"
+        merged["nested"]["items"].append(999)
+        merged["nested"]["new_items"].append(999)
+        merged["untouched"]["key"] = "mutated"
+        merged["added"]["key"] = "mutated"
+
+        self.assertEqual(base, base_copy)
+        self.assertEqual(override, override_copy)
+
+        # 3. Mutating base or override afterwards must not affect merged
+        base["untouched"]["key"] = "mutated_base"
+        override["added"]["key"] = "mutated_override"
+        self.assertEqual(merged["untouched"]["key"], "mutated")
+        self.assertEqual(merged["added"]["key"], "mutated")
+
 
 if __name__ == "__main__":
     unittest.main()
+

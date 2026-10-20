@@ -158,6 +158,79 @@ unexpectedField: "not allowed"
                 load_project(file_path)
             self.assertTrue(any("unexpectedField" in iss.path for iss in ctx.exception.issues))
 
+    def test_literal_secret_under_repository_token_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "app.yaml"
+            file_path.write_text(
+                """
+name: App
+repository:
+  provider: git
+  token: "ghp_literal_secret_token_123"
+technology:
+  backend: [python]
+workflow: software-development
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ConfigError) as ctx:
+                load_project(file_path)
+            self.assertTrue(
+                any(iss.path == "repository.token" for iss in ctx.exception.issues)
+            )
+            self.assertIn("must be null or {env: ENV_VAR}", str(ctx.exception))
+
+    def test_literal_secret_under_configuration_api_key_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "app.yaml"
+            file_path.write_text(
+                """
+name: App
+repository:
+  provider: git
+technology:
+  backend: [python]
+workflow: software-development
+configuration:
+  apiKey: "secret_api_key_literal_value"
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ConfigError) as ctx:
+                load_project(file_path)
+            self.assertTrue(
+                any(iss.path == "configuration.apiKey" for iss in ctx.exception.issues)
+            )
+            self.assertIn("must be null or {env: ENV_VAR}", str(ctx.exception))
+
+    def test_secret_scan_accepts_env_ref_and_null_in_repository_and_configuration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "app.yaml"
+            file_path.write_text(
+                """
+name: App
+repository:
+  provider: git
+  token:
+    env: GITHUB_TOKEN
+technology:
+  backend: [python]
+workflow: software-development
+configuration:
+  apiKey:
+    env: APP_API_KEY
+  optionalSecret: null
+""",
+                encoding="utf-8",
+            )
+            profile = load_project(file_path)
+            self.assertEqual(profile.repository["token"], {"env": "GITHUB_TOKEN"})
+            self.assertEqual(profile.configuration["apiKey"], {"env": "APP_API_KEY"})
+            self.assertIsNone(profile.configuration["optionalSecret"])
+            contract_dict = profile.to_contract()
+            project_validator().validate(contract_dict)
+
 
 if __name__ == "__main__":
     unittest.main()
+

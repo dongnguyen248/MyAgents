@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import re
 from pathlib import Path
 from typing import Any, TextIO
@@ -101,16 +102,17 @@ def load_yaml_mapping(
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    merged: dict[str, Any] = dict(base)
+    merged: dict[str, Any] = copy.deepcopy(base)
     for key, value in override.items():
         if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
             merged[key] = deep_merge(merged[key], value)
         else:
-            merged[key] = value
+            merged[key] = copy.deepcopy(value)
     return merged
 
 
 def scan_secrets(data: Any, path: str = "") -> list[ConfigIssue]:
+
     issues: list[ConfigIssue] = []
     if isinstance(data, dict):
         for k, v in data.items():
