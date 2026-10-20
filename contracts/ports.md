@@ -13,7 +13,14 @@ These are language-neutral port descriptions, not implementations. Implementatio
 | `EventPublisher` | `publish(event: ActivityEvent)` |
 | `MetricsService` | `record(agentId, result: AgentResult)`; `getAgentMetrics(agentId) -> AgentMetrics` |
 | `ProjectRepository` | `get(projectId) -> Project`; `list() -> Project[]` |
+| `ModelGateway` | `complete(request: ModelRequest) -> ModelResponse` |
+| `SourceControl` | `createBranch(projectId, branch, baseRef)`; `commit(projectId, branch, message, files: map<path, content>)`; `openChangeRequest(projectId, sourceBranch, targetBranch, title, description) -> CodeChangeRequest`; `getChangeRequest(projectId, changeRequestId) -> CodeChangeRequest` |
+| `CiProvider` | `trigger(projectId, ref) -> PipelineRun`; `getRun(projectId, runId) -> PipelineRun` |
 
 `ValidationResult` is defined in the schema as `{ valid: boolean, errors: PlatformError[] }`. A validation failure is an ordinary result, not an execution; `execute` returns `AgentResult` and does not dispatch another agent.
+
+### Errors
+
+A missing single resource returns a `PlatformError` with code `NOT_FOUND`; all ports report failures with `PlatformError` using codes from [`errors.md`](errors.md).
 
 The platform must not depend on a concrete persistence, transport, notification, source-control, or model provider through these ports. For example, an `ApprovalService` adapter may later use Teams, Slack, or a web UI, while an `EventPublisher` adapter may feed an in-memory observer, WebSocket/SSE, or a message queue.

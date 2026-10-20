@@ -6,16 +6,16 @@ The **orchestrator** is the single coordinator. For a work item it asks the **wo
 ```text
 Orchestrator -> Agent -> Artifact -> Approval -> Orchestrator -> next Agent
 ```
-Shared data schemas and ports live in `contracts/`. They use JSON Schema Draft 2020-12 for serializable, language-neutral data and describe service ports without implementing storage, transport, or provider behavior. `src/asf/configuration/` merges global -> project -> workflow -> agent settings. `src/asf/evaluation/` records runtime metrics.
+Shared data schemas and ports live in `contracts/`. They use JSON Schema Draft 2020-12 for serializable, language-neutral data and describe service ports without implementing storage, transport, or provider behavior. Work items are tracked via `Task` (including fine-grained `Task.stage` transitions). `src/asf/configuration/` merges global -> project -> workflow -> agent settings. `src/asf/evaluation/` records runtime metrics, aggregating per-run `RunMetrics` into `AgentMetrics`.
 
 ## 2. Contract and communication model
-An agent receives a standardized `AgentRequest`, validates it, and returns an `AgentResult`. Artifacts can contain inline content or an opaque external-storage reference. The orchestrator passes workflow-relevant artifacts between steps and remains responsible for sequencing and approval gates.
+An agent receives a standardized `AgentRequest`, validates it, and returns an `AgentResult` containing execution status, output, produced artifacts, activity events, and per-run `RunMetrics` (duration, revisions, attempts). Aggregate performance across tasks is computed separately as `AgentMetrics` by `MetricsService`. Artifacts can contain inline content or an opaque external-storage reference. The orchestrator passes workflow-relevant artifacts between steps and remains responsible for sequencing and approval gates.
 
 Agents do not directly call each other. A direct chain would couple agent implementations and make it difficult to change, retry, audit, or approve individual steps. With the orchestrator mediating through artifacts and contracts, each agent can remain independently replaceable.
 
 `ActivityEvent` is the platform's transport-neutral activity record. Events correlate to project/task/workflow/agent identifiers and can later be published to dashboards, logging, evaluation, or audit through an `EventPublisher` adapter. The contract does not implement WebSocket/SSE or a dashboard backend.
 
-Approval is a platform service: an `ApprovalRequest` identifies the artifact and workflow context, and an `ApprovalDecision` records the reviewer, decision, and comment. A rejection or `REQUEST_CHANGES` decision returns feedback to the orchestrator; the orchestrator may include it in a subsequent agent request. Agents do not own approval or notification integrations.
+Approval is a platform service: an `ApprovalRequest` identifies the artifact and workflow context, and an `ApprovalDecision` records the reviewer, decision (`APPROVED`, `REJECTED`, `REQUEST_CHANGES`), and comment. When `REQUEST_CHANGES` is decided, the request transitions to `CHANGES_REQUESTED`; when `REJECTED`, it transitions to `REJECTED`. Both return feedback to the orchestrator; the orchestrator may include it in a subsequent agent request. Agents do not own approval or notification integrations.
 
 ## 3. Agent architecture
 Seven agents (spec, plan, task, implement, review, test, fix) in `src/asf/agents/`, each with `prompts/`, `instructions/`, `tools/`, `skills/`, `tests/`. Agents are stateless w.r.t. the workflow, never call each other, never own approval, and contain nothing project- or vendor-specific.
@@ -24,7 +24,7 @@ Seven agents (spec, plan, task, implement, review, test, fix) in `src/asf/agents
 Skills are knowledge packages (java, spring, react, python, git, testing, security, ...). Projects enable/disable them; the orchestrator resolves enabled skills per agent run.
 
 ## 5. Integration architecture
-Ports & adapters: core/agents depend on interfaces in `contracts/`; `src/asf/integrations/` holds external service adapters (GitLab, Teams, notifications, CI) and `src/asf/models/providers/` holds LLM provider adapters. Swapping Teams for Slack, GitLab for GitHub, or one LLM vendor for another touches only an adapter and a project/global config value.
+Ports & adapters: core/agents depend on interfaces in `contracts/` (such as `ModelGateway`, `SourceControl`, and `CiProvider`); `src/asf/integrations/` holds external service adapters (GitLab, Teams, notifications, CI) and `src/asf/models/providers/` holds LLM provider adapters. Swapping Teams for Slack, GitLab for GitHub, or one LLM vendor for another touches only an adapter and a project/global config value.
 
 ## 6. Project configuration
 `projects/<id>.yaml` selects repository provider, technology, workflow, approval channel and enabled skills. Configuration only; no secrets, no code.

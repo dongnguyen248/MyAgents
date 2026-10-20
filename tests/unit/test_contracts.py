@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -28,6 +29,14 @@ def metrics():
         "rejectionRate": 0,
         "testPassRate": 0,
         "ciPassRate": 0,
+    }
+
+
+def run_metrics():
+    return {
+        "durationSeconds": 1.5,
+        "revisionCount": 0,
+        "attempt": 1,
     }
 
 
@@ -108,7 +117,7 @@ VALID_INSTANCES = {
         "output": {"summary": "Example"},
         "artifacts": [artifact()],
         "events": [activity_event()],
-        "metrics": metrics(),
+        "metrics": run_metrics(),
         "errors": [],
     },
     "Artifact": artifact(),
@@ -121,6 +130,7 @@ VALID_INSTANCES = {
         "status": "NEW",
         "priority": "NORMAL",
         "assignedAgent": None,
+        "stage": None,
         "artifacts": [artifact()],
         "createdAt": TIMESTAMP,
         "updatedAt": TIMESTAMP,
@@ -157,6 +167,7 @@ VALID_INSTANCES = {
         "createdAt": TIMESTAMP,
     },
     "ActivityEvent": activity_event(),
+    "RunMetrics": run_metrics(),
     "AgentMetrics": metrics(),
     "Project": {
         "id": "sample",
@@ -180,6 +191,40 @@ VALID_INSTANCES = {
     },
     "RetryPolicy": retry_policy(),
     "WorkflowStep": workflow_step(),
+    "ModelRequest": {
+        "messages": [{"role": "user", "content": "Hello"}],
+        "parameters": {"temperature": 0.7},
+        "model": "dummy-model",
+        "metadata": {},
+    },
+    "ModelResponse": {
+        "content": "Hello world",
+        "model": "dummy-model",
+        "usage": {"promptTokens": 10, "completionTokens": 5},
+        "finishReason": "stop",
+        "metadata": {},
+    },
+    "CodeChangeRequest": {
+        "id": "cr-1",
+        "projectId": "sample",
+        "sourceBranch": "feature-1",
+        "targetBranch": "main",
+        "title": "Feature 1",
+        "description": "Add feature",
+        "status": "OPEN",
+        "url": "https://git.example/cr-1",
+        "metadata": {},
+    },
+    "PipelineRun": {
+        "id": "run-1",
+        "projectId": "sample",
+        "ref": "main",
+        "status": "RUNNING",
+        "url": "https://ci.example/run-1",
+        "startedAt": TIMESTAMP,
+        "finishedAt": None,
+        "metadata": {},
+    },
 }
 
 
@@ -269,7 +314,6 @@ class ContractSchemaTests(unittest.TestCase):
         workflow_instance = dict(VALID_INSTANCES["Workflow"], steps=[custom_step])
         self.assertTrue(validator_for("Workflow").is_valid(workflow_instance))
 
-    # Commit 1: Strengthened tests against the current schema
     def test_schema_coverage_guard(self):
         expected_defs = set(SCHEMA["$defs"].keys()) - {"Metadata", "AgentStatus", "MetricRate"}
         self.assertEqual(set(VALID_INSTANCES.keys()), expected_defs)
@@ -360,16 +404,9 @@ class ContractSchemaTests(unittest.TestCase):
                 lambda val: dict(VALID_INSTANCES["Workflow"], status=val),
             ),
             (
-                "ApprovalRequest.type",
-                validator_for("ApprovalRequest"),
-                ["SPEC", "PLAN", "TASK", "CODE_REVIEW", "DEPLOYMENT"],
-                "INVALID_TYPE",
-                lambda val: dict(VALID_INSTANCES["ApprovalRequest"], type=val),
-            ),
-            (
                 "ApprovalRequest.status",
                 validator_for("ApprovalRequest"),
-                ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXPIRED"],
+                ["PENDING", "APPROVED", "REJECTED", "CHANGES_REQUESTED", "CANCELLED", "EXPIRED"],
                 "INVALID_STATUS",
                 lambda val: dict(VALID_INSTANCES["ApprovalRequest"], status=val),
             ),
@@ -475,6 +512,161 @@ class ContractSchemaTests(unittest.TestCase):
 
         step_instance = dict(VALID_INSTANCES["WorkflowStep"], configuration=nested_meta)
         self.assertTrue(validator_for("WorkflowStep").is_valid(step_instance))
+
+    # Commit 2: Tests for schema additions and modifications
+    def test_task_stage_property(self):
+        missing_stage = dict(VALID_INSTANCES["Task"])
+        missing_stage.pop("stage")
+        self.assertFalse(validator_for("Task").is_valid(missing_stage))
+
+        string_stage = dict(VALID_INSTANCES["Task"], stage="DEVELOPMENT")
+        self.assertTrue(validator_for("Task").is_valid(string_stage))
+
+        null_stage = dict(VALID_INSTANCES["Task"], stage=None)
+        self.assertTrue(validator_for("Task").is_valid(null_stage))
+
+    def test_agent_result_run_metrics_validation(self):
+        # Rejects aggregate AgentMetrics object (no durationSeconds, revisionCount, attempt)
+        aggregate_metrics_instance = dict(VALID_INSTANCES["AgentResult"], metrics=metrics())
+        self.assertFalse(validator_for("AgentResult").is_valid(aggregate_metrics_instance))
+
+        # Rejects negative durationSeconds
+        negative_duration = dict(
+            VALID_INSTANCES["AgentResult"],
+            metrics=dict(run_metrics(), durationSeconds=-1.0),
+        )
+        self.assertFalse(validator_for("AgentResult").is_valid(negative_duration))
+
+        # Rejects attempt 0 (minimum is 1)
+        zero_attempt = dict(
+            VALID_INSTANCES["AgentResult"],
+            metrics=dict(run_metrics(), attempt=0),
+        )
+        self.assertFalse(validator_for("AgentResult").is_valid(zero_attempt))
+
+        # Rejects negative revisionCount
+        negative_revision = dict(
+            VALID_INSTANCES["AgentResult"],
+            metrics=dict(run_metrics(), revisionCount=-1),
+        )
+        self.assertFalse(validator_for("AgentResult").is_valid(negative_revision))
+
+    def test_approval_request_status_split(self):
+        valid_request = dict(VALID_INSTANCES["ApprovalRequest"], status="CHANGES_REQUESTED")
+        self.assertTrue(validator_for("ApprovalRequest").is_valid(valid_request))
+
+        # REQUEST_CHANGES is a decision, not an ApprovalRequest status
+        invalid_request = dict(VALID_INSTANCES["ApprovalRequest"], status="REQUEST_CHANGES")
+        self.assertFalse(validator_for("ApprovalRequest").is_valid(invalid_request))
+
+    def test_approval_request_type_open(self):
+        custom_type_request = dict(VALID_INSTANCES["ApprovalRequest"], type="CUSTOM_REVIEW")
+        self.assertTrue(validator_for("ApprovalRequest").is_valid(custom_type_request))
+
+        empty_type_request = dict(VALID_INSTANCES["ApprovalRequest"], type="")
+        self.assertFalse(validator_for("ApprovalRequest").is_valid(empty_type_request))
+
+    def test_model_request_validation(self):
+        empty_messages = dict(VALID_INSTANCES["ModelRequest"], messages=[])
+        self.assertFalse(validator_for("ModelRequest").is_valid(empty_messages))
+
+        unknown_role = dict(
+            VALID_INSTANCES["ModelRequest"],
+            messages=[{"role": "unknown", "content": "hi"}],
+        )
+        self.assertFalse(validator_for("ModelRequest").is_valid(unknown_role))
+
+        valid_request = dict(
+            VALID_INSTANCES["ModelRequest"],
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        self.assertTrue(validator_for("ModelRequest").is_valid(valid_request))
+
+    def test_model_response_validation(self):
+        negative_prompt_tokens = dict(
+            VALID_INSTANCES["ModelResponse"],
+            usage={"promptTokens": -1, "completionTokens": 5},
+        )
+        self.assertFalse(validator_for("ModelResponse").is_valid(negative_prompt_tokens))
+
+        negative_completion_tokens = dict(
+            VALID_INSTANCES["ModelResponse"],
+            usage={"promptTokens": 10, "completionTokens": -1},
+        )
+        self.assertFalse(validator_for("ModelResponse").is_valid(negative_completion_tokens))
+
+    def test_code_change_request_and_pipeline_run_validation(self):
+        invalid_cr_status = dict(VALID_INSTANCES["CodeChangeRequest"], status="UNKNOWN")
+        self.assertFalse(validator_for("CodeChangeRequest").is_valid(invalid_cr_status))
+
+        null_cr_url = dict(VALID_INSTANCES["CodeChangeRequest"], url=None)
+        self.assertTrue(validator_for("CodeChangeRequest").is_valid(null_cr_url))
+
+        invalid_run_status = dict(VALID_INSTANCES["PipelineRun"], status="UNKNOWN")
+        self.assertFalse(validator_for("PipelineRun").is_valid(invalid_run_status))
+
+        null_run_url = dict(VALID_INSTANCES["PipelineRun"], url=None)
+        self.assertTrue(validator_for("PipelineRun").is_valid(null_run_url))
+
+    def test_pipeline_run_finished_at(self):
+        invalid_finished_at = dict(VALID_INSTANCES["PipelineRun"], finishedAt="not-a-date")
+        self.assertFalse(validator_for("PipelineRun").is_valid(invalid_finished_at))
+
+        null_finished_at = dict(VALID_INSTANCES["PipelineRun"], finishedAt=None)
+        self.assertTrue(validator_for("PipelineRun").is_valid(null_finished_at))
+
+        valid_finished_at = dict(VALID_INSTANCES["PipelineRun"], finishedAt=TIMESTAMP)
+        self.assertTrue(validator_for("PipelineRun").is_valid(valid_finished_at))
+
+    def test_ports_contract_references(self):
+        ports_path = Path(__file__).resolve().parents[2] / "contracts" / "ports.md"
+        with ports_path.open(encoding="utf-8") as f:
+            ports_content = f.read()
+
+        port_names = {
+            "Agent",
+            "AgentRegistry",
+            "ArtifactRepository",
+            "TaskRepository",
+            "WorkflowRepository",
+            "ApprovalService",
+            "EventPublisher",
+            "MetricsService",
+            "ProjectRepository",
+            "ModelGateway",
+            "SourceControl",
+            "CiProvider",
+        }
+
+        # Signature types (parameter types and return types)
+        sig_types = set(re.findall(r"(?::\s*|->\s*)([A-Z][a-zA-Z0-9]+)", ports_content))
+        contract_sig_types = sig_types - port_names
+
+        # Every contract name used in signatures must exist in $defs
+        for type_name in contract_sig_types:
+            with self.subTest(signature_type=type_name):
+                self.assertIn(type_name, SCHEMA["$defs"])
+
+        # All expected contract types are present in port signatures
+        expected_contracts = {
+            "AgentMetadata",
+            "AgentRequest",
+            "ValidationResult",
+            "AgentResult",
+            "Artifact",
+            "Task",
+            "Workflow",
+            "ApprovalRequest",
+            "ApprovalDecision",
+            "ActivityEvent",
+            "AgentMetrics",
+            "Project",
+            "ModelRequest",
+            "ModelResponse",
+            "CodeChangeRequest",
+            "PipelineRun",
+        }
+        self.assertTrue(expected_contracts.issubset(contract_sig_types))
 
 
 if __name__ == "__main__":

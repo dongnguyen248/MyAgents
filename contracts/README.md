@@ -2,19 +2,26 @@
 
 Core contracts are the technology-independent data formats and ports shared by the orchestrator, workflows, agents, approvals, integrations, and evaluation. The canonical data definitions are in [`schemas/contracts.schema.json`](schemas/contracts.schema.json), using JSON Schema Draft 2020-12. They are serializable JSON and can be validated before being passed over REST, WebSocket/SSE, message queues, event buses, or persisted by an adapter. The schemas do not choose an implementation language, storage system, transport, or provider.
 
+> **Note:** Contracts are pre-1.0; breaking changes are allowed until the orchestrator (Phase 6) consumes them.
+
 ## Contracts
 
 The schema defines:
 
 - `AgentMetadata` and `AgentStatus` for an agent's identity, version, capabilities, configuration, and lifecycle status.
-- `AgentRequest` and `AgentResult` for standardized invocation and response, including output, artifacts, activity events, metrics, and errors.
+- `AgentRequest` and `AgentResult` for standardized invocation and response, including output, artifacts, activity events, per-run `RunMetrics`, and errors.
+- `RunMetrics` for single-run execution metrics (`durationSeconds`, `revisionCount`, `attempt`) returned in `AgentResult`.
+- `AgentMetrics` for aggregate agent performance statistics (`totalTasks`, success/approval rates, average execution time) aggregated and returned by `MetricsService.getAgentMetrics`.
 - `Artifact` for versioned content or an opaque external storage reference. Common artifact types include `SPEC`, `PLAN`, `TASK`, `CODE`, `CODE_REVIEW`, and `TEST_REPORT`; custom types are accepted.
-- `Task` and `Workflow` / `WorkflowStep` for project-independent work and declarative workflow definitions.
-- `ApprovalRequest` and `ApprovalDecision` for human review, including `REQUEST_CHANGES` and reviewer comments.
+- `Task` (including fine-grained workflow `Task.stage` owned by the state machine) and `Workflow` / `WorkflowStep` for project-independent work and declarative workflow definitions.
+- `ApprovalRequest` and `ApprovalDecision` for human review, with extensible request types (`SPEC`, `PLAN`, `TASK`, `CODE_REVIEW`, `DEPLOYMENT`, or custom) and request status tracking (`PENDING`, `APPROVED`, `REJECTED`, `CHANGES_REQUESTED`, `CANCELLED`, `EXPIRED`).
 - `ActivityEvent` for observable platform activity, including the standard task, agent, artifact, approval, test, CI, and workflow events. Custom event types are accepted.
-- `AgentMetrics`, `Project`, and `PlatformError` for shared metrics, project configuration, and error reporting.
+- `ModelRequest` and `ModelResponse` for language-model gateway interactions independent of specific LLM providers.
+- `CodeChangeRequest` for tracking branches and change requests across source control systems.
+- `PipelineRun` for tracking continuous integration builds and test pipelines.
+- `Project` and `PlatformError` for shared project configuration and standardized error reporting (with codes documented in [`errors.md`](errors.md)).
 
-Rates are fractions from 0 through 1; `averageExecutionTime` is measured in seconds. Metadata/configuration fields are JSON objects intended for producer-owned extensions. The contract enums deliberately distinguish closed lifecycle values from extensible type/event names.
+Rates are fractions from 0 through 1; `averageExecutionTime` and `durationSeconds` are measured in seconds. Metadata/configuration fields are JSON objects intended for producer-owned extensions. The contract enums deliberately distinguish closed lifecycle values from extensible type/event names.
 
 ## Agent communication
 
@@ -24,7 +31,9 @@ The orchestrator controls workflow progression. An agent returns output and arti
 
 ## Approval and feedback
 
-When a workflow step requires human review, the platform creates an `ApprovalRequest` associated with its project, task, workflow, and artifact. An `ApprovalDecision` records the reviewer, decision, timestamp, and feedback comment. `REQUEST_CHANGES` or `REJECTED` returns control to the orchestrator, which can include the feedback in a later `AgentRequest`; the approval service itself does not revise artifacts or call agents.
+When a workflow step requires human review, the platform creates an `ApprovalRequest` associated with its project, task, workflow, and artifact. An `ApprovalDecision` records the reviewer, decision (`APPROVED`, `REJECTED`, `REQUEST_CHANGES`), timestamp, and feedback comment.
+
+When an `ApprovalDecision` of `REQUEST_CHANGES` is made, the `ApprovalRequest` status transitions to `CHANGES_REQUESTED`. When a decision of `REJECTED` is made, the status transitions to `REJECTED`. Both `REQUEST_CHANGES -> CHANGES_REQUESTED` and `REJECTED -> REJECTED` return control to the orchestrator, which can include the reviewer's feedback in a subsequent `AgentRequest`; the approval service itself does not revise artifacts or call agents.
 
 ## Events and dashboard
 
@@ -34,8 +43,8 @@ An agent or platform component can emit `ActivityEvent` records through the `Eve
 
 `Project` captures repository and technology information, enabled agents/skills, workflow selection, configuration, and status without hard-coding any specific project. Existing YAML profiles are configuration sources; a future configuration layer can map them to this normalized contract.
 
-Agents receive context and artifacts through the same request contract regardless of which LLM, repository, CI system, or approval channel is configured. Provider-specific behavior belongs behind ports and adapters in `src/asf/integrations/`, so switching providers does not change the agent or workflow data contracts.
+Agents receive context and artifacts through the same request contract regardless of which LLM, repository, CI system, or approval channel is configured. Provider-specific behavior belongs behind ports and adapters in `src/asf/integrations/` and `src/asf/models/providers/`, so switching providers does not change the agent or workflow data contracts.
 
 ## Validation
 
-The unit tests in `tests/unit/test_contracts.py` validate representative accepted and rejected instances for each data contract against the schema. Test tooling is declared in the repository-root `requirements-dev.txt`; it is not a runtime dependency of the platform.
+The unit tests in `tests/unit/test_contracts.py` validate representative accepted and rejected instances for each data contract against the schema. Test tooling is declared in the repository-root `pyproject.toml` (and `-e .[dev]` in `requirements-dev.txt`); it is not a runtime dependency of the platform.

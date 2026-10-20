@@ -73,8 +73,30 @@
       }
     },
     "MetricRate": {"type": "number", "minimum": 0, "maximum": 1},
+    "RunMetrics": {
+      "type": "object",
+      "description": "Execution metrics of a single agent run.",
+      "additionalProperties": false,
+      "required": ["durationSeconds", "revisionCount", "attempt"],
+      "properties": {
+        "durationSeconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "duration of this run in seconds"
+        },
+        "revisionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "AgentMetrics": {
       "type": "object",
+      "description": "Aggregate agent execution metrics returned by MetricsService.",
       "additionalProperties": false,
       "required": [
         "totalTasks", "completedTasks", "failedTasks", "runningTasks", "cancelledTasks",
@@ -143,7 +165,7 @@
         "output": {"description": "JSON result data; use null when there is no output."},
         "artifacts": {"type": "array", "items": {"$ref": "#/$defs/Artifact"}},
         "events": {"type": "array", "items": {"$ref": "#/$defs/ActivityEvent"}},
-        "metrics": {"$ref": "#/$defs/AgentMetrics"},
+        "metrics": {"$ref": "#/$defs/RunMetrics"},
         "errors": {"type": "array", "items": {"$ref": "#/$defs/PlatformError"}}
       }
     },
@@ -152,7 +174,7 @@
       "additionalProperties": false,
       "required": [
         "id", "projectId", "workflowId", "title", "description", "status", "priority",
-        "assignedAgent", "artifacts", "createdAt", "updatedAt", "metadata"
+        "assignedAgent", "stage", "artifacts", "createdAt", "updatedAt", "metadata"
       ],
       "properties": {
         "id": {"type": "string", "minLength": 1},
@@ -163,6 +185,10 @@
         "status": {"type": "string", "enum": ["NEW", "IN_PROGRESS", "WAITING", "COMPLETED", "FAILED", "CANCELLED"]},
         "priority": {"type": "string", "enum": ["LOW", "NORMAL", "HIGH", "CRITICAL"]},
         "assignedAgent": {"type": ["string", "null"]},
+        "stage": {
+          "type": ["string", "null"],
+          "description": "Fine-grained workflow stage owned by the state machine. Open string; null when the workflow does not use stages."
+        },
         "artifacts": {"type": "array", "items": {"$ref": "#/$defs/Artifact"}},
         "createdAt": {"type": "string", "format": "date-time"},
         "updatedAt": {"type": "string", "format": "date-time"},
@@ -228,8 +254,15 @@
         "workflowId": {"type": "string", "minLength": 1},
         "projectId": {"type": "string", "minLength": 1},
         "artifactId": {"type": "string", "minLength": 1},
-        "type": {"type": "string", "enum": ["SPEC", "PLAN", "TASK", "CODE_REVIEW", "DEPLOYMENT"]},
-        "status": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXPIRED"]},
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Standard values are SPEC, PLAN, TASK, CODE_REVIEW, and DEPLOYMENT. Custom types are allowed."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "APPROVED", "REJECTED", "CHANGES_REQUESTED", "CANCELLED", "EXPIRED"]
+        },
         "requestedBy": {"type": "string", "minLength": 1},
         "requestedAt": {"type": "string", "format": "date-time"},
         "expiresAt": {"type": ["string", "null"], "format": "date-time"},
@@ -266,6 +299,103 @@
         "workflow": {"type": "string", "minLength": 1},
         "configuration": {"$ref": "#/$defs/Metadata"},
         "status": {"type": "string", "enum": ["ACTIVE", "INACTIVE", "ARCHIVED"]}
+      }
+    },
+    "ModelRequest": {
+      "type": "object",
+      "description": "Request payload for invoking a language model via ModelGateway.",
+      "additionalProperties": false,
+      "required": ["messages", "parameters", "metadata"],
+      "properties": {
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "content"],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": ["system", "user", "assistant"]
+              },
+              "content": {"type": "string"}
+            }
+          }
+        },
+        "parameters": {
+          "$ref": "#/$defs/Metadata",
+          "description": "Provider-specific parameters such as model name, temperature, etc."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "ModelResponse": {
+      "type": "object",
+      "description": "Response payload returned by ModelGateway.",
+      "additionalProperties": false,
+      "required": ["content", "model", "usage", "finishReason", "metadata"],
+      "properties": {
+        "content": {"type": "string"},
+        "model": {"type": "string", "minLength": 1},
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["promptTokens", "completionTokens"],
+          "properties": {
+            "promptTokens": {"type": "integer", "minimum": 0},
+            "completionTokens": {"type": "integer", "minimum": 0}
+          }
+        },
+        "finishReason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Open string indicating reason model stopped generating."
+        },
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "CodeChangeRequest": {
+      "type": "object",
+      "description": "A pull request or merge request tracked by SourceControl.",
+      "additionalProperties": false,
+      "required": [
+        "id", "projectId", "sourceBranch", "targetBranch",
+        "title", "description", "status", "url", "metadata"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "sourceBranch": {"type": "string", "minLength": 1},
+        "targetBranch": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "status": {"type": "string", "enum": ["OPEN", "MERGED", "CLOSED"]},
+        "url": {"type": ["string", "null"]},
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "PipelineRun": {
+      "type": "object",
+      "description": "A continuous integration or build run tracked by CiProvider.",
+      "additionalProperties": false,
+      "required": [
+        "id", "projectId", "ref", "status",
+        "url", "startedAt", "finishedAt", "metadata"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "ref": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "enum": ["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]},
+        "url": {"type": ["string", "null"]},
+        "startedAt": {"type": ["string", "null"], "format": "date-time"},
+        "finishedAt": {"type": ["string", "null"], "format": "date-time"},
+        "metadata": {"$ref": "#/$defs/Metadata"}
       }
     }
   }
