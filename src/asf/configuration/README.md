@@ -1,4 +1,4 @@
-# core/configuration/
+# src/asf/configuration/
 **Responsibility:** configuration models and loaders.
 
 Layers (later overrides earlier): global -> project (`projects/*.yaml`) -> workflow -> agent.

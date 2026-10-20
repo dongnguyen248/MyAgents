@@ -1,4 +1,4 @@
-# core/state-machine/
+# src/asf/state_machine/
 **Responsibility:** workflow states and allowed transitions.
 
 ```text

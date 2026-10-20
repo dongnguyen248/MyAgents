@@ -4,8 +4,9 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "core" / "contracts" / "schemas" / "contracts.schema.json"
+SCHEMA_PATH = (
+    Path(__file__).resolve().parents[2] / "contracts" / "schemas" / "contracts.schema.json"
+)
 with SCHEMA_PATH.open(encoding="utf-8") as schema_file:
     SCHEMA = json.load(schema_file)
 
@@ -252,9 +253,8 @@ class ContractSchemaTests(unittest.TestCase):
         custom_step = dict(VALID_INSTANCES["Workflow"]["steps"][0], type="CUSTOM_STEP")
         self.assertTrue(validator_for("Artifact").is_valid(custom_artifact))
         self.assertTrue(validator_for("ActivityEvent").is_valid(custom_event))
-        self.assertTrue(
-            validator_for("Workflow").is_valid(dict(VALID_INSTANCES["Workflow"], steps=[custom_step]))
-        )
+        workflow_instance = dict(VALID_INSTANCES["Workflow"], steps=[custom_step])
+        self.assertTrue(validator_for("Workflow").is_valid(workflow_instance))
 
 
 if __name__ == "__main__":

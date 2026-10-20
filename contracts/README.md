@@ -32,9 +32,9 @@ An agent or platform component can emit `ActivityEvent` records through the `Eve
 
 ## Projects and providers
 
-`Project` captures repository and technology information, enabled agents/skills, workflow selection, configuration, and status without hard-coding VHPC, VNPC, or another project. Existing YAML profiles are configuration sources; a future configuration layer can map them to this normalized contract.
+`Project` captures repository and technology information, enabled agents/skills, workflow selection, configuration, and status without hard-coding any specific project. Existing YAML profiles are configuration sources; a future configuration layer can map them to this normalized contract.
 
-Agents receive context and artifacts through the same request contract regardless of which LLM, repository, CI system, or approval channel is configured. Provider-specific behavior belongs behind ports and adapters in `integrations/`, so switching providers does not change the agent or workflow data contracts.
+Agents receive context and artifacts through the same request contract regardless of which LLM, repository, CI system, or approval channel is configured. Provider-specific behavior belongs behind ports and adapters in `src/asf/integrations/`, so switching providers does not change the agent or workflow data contracts.
 
 ## Validation
 

@@ -1,4 +1,4 @@
-# core/workflow/
+# src/asf/workflow/
 **Responsibility:** reusable workflow definitions (data, not code).
 
 Planned: `software-development`, `bug-fix`, `feature-development`, `refactoring`.
