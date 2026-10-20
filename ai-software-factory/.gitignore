@@ -1,9 +1,0 @@
-.env
-.env.*
-*.secret
-*.pem
-secrets/
-__pycache__/
-node_modules/
-.idea/
-.vscode/
