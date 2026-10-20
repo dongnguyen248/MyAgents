@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-software-factory:contracts:1",
+  "title": "AI Software Factory Core Contracts",
+  "$defs": {
+    "Metadata": {
+      "type": "object",
+      "description": "Extension data owned by the producer of a contract.",
+      "additionalProperties": true
+    },
+    "AgentStatus": {
+      "type": "string",
+      "enum": ["IDLE", "RUNNING", "WAITING", "ERROR", "DISABLED", "OFFLINE"]
+    },
+    "ValidationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["valid", "errors"],
+      "properties": {
+        "valid": {"type": "boolean"},
+        "errors": {"type": "array", "items": {"$ref": "#/$defs/PlatformError"}}
+      }
+    },
+    "AgentMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type", "version", "status", "capabilities", "configuration"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "status": {"$ref": "#/$defs/AgentStatus"},
+        "capabilities": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "configuration": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "name", "version", "createdBy", "createdAt", "metadata"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Common types include SPEC, PLAN, TASK, CODE, CODE_REVIEW, and TEST_REPORT. Custom types are allowed."
+        },
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "content": {"description": "Inline JSON content. Use content or reference, or both."},
+        "reference": {"type": "string", "minLength": 1, "description": "Opaque storage locator interpreted by an ArtifactRepository adapter."},
+        "createdBy": {"type": "string", "minLength": 1},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      },
+      "anyOf": [{"required": ["content"]}, {"required": ["reference"]}]
+    },
+    "AgentRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "taskId", "projectId", "workflowId", "agentId", "input", "context", "artifacts", "metadata"],
+      "properties": {
+        "requestId": {"type": "string", "minLength": 1},
+        "taskId": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "workflowId": {"type": "string", "minLength": 1},
+        "agentId": {"type": "string", "minLength": 1},
+        "input": {"type": "object"},
+        "context": {"type": "object"},
+        "artifacts": {"type": "array", "items": {"$ref": "#/$defs/Artifact"}},
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "MetricRate": {"type": "number", "minimum": 0, "maximum": 1},
+    "AgentMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalTasks", "completedTasks", "failedTasks", "runningTasks", "cancelledTasks",
+        "successRate", "averageExecutionTime", "averageRevisionCount",
+        "approvalRate", "rejectionRate", "testPassRate", "ciPassRate"
+      ],
+      "properties": {
+        "totalTasks": {"type": "integer", "minimum": 0},
+        "completedTasks": {"type": "integer", "minimum": 0},
+        "failedTasks": {"type": "integer", "minimum": 0},
+        "runningTasks": {"type": "integer", "minimum": 0},
+        "cancelledTasks": {"type": "integer", "minimum": 0},
+        "successRate": {"$ref": "#/$defs/MetricRate"},
+        "averageExecutionTime": {"type": "number", "minimum": 0, "description": "Average duration in seconds."},
+        "averageRevisionCount": {"type": "number", "minimum": 0},
+        "approvalRate": {"$ref": "#/$defs/MetricRate"},
+        "rejectionRate": {"$ref": "#/$defs/MetricRate"},
+        "testPassRate": {"$ref": "#/$defs/MetricRate"},
+        "ciPassRate": {"$ref": "#/$defs/MetricRate"}
+      }
+    },
+    "PlatformError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "category", "details", "retryable", "timestamp"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+        "category": {
+          "type": "string",
+          "enum": ["VALIDATION", "AGENT", "WORKFLOW", "APPROVAL", "INTEGRATION", "LLM", "GIT", "CI", "SYSTEM"]
+        },
+        "details": {"$ref": "#/$defs/Metadata"},
+        "retryable": {"type": "boolean"},
+        "timestamp": {"type": "string", "format": "date-time"}
+      }
+    },
+    "ActivityEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "timestamp", "projectId", "taskId", "workflowId", "agentId", "eventType", "message", "metadata"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "projectId": {"type": "string", "minLength": 1},
+        "taskId": {"type": ["string", "null"]},
+        "workflowId": {"type": ["string", "null"]},
+        "agentId": {"type": ["string", "null"]},
+        "eventType": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Standard values are TASK_CREATED, TASK_STARTED, AGENT_STARTED, AGENT_PROGRESS, AGENT_COMPLETED, AGENT_FAILED, ARTIFACT_CREATED, ARTIFACT_UPDATED, APPROVAL_REQUESTED, APPROVAL_APPROVED, APPROVAL_REJECTED, TEST_STARTED, TEST_COMPLETED, CI_STARTED, CI_COMPLETED, WORKFLOW_STARTED, WORKFLOW_COMPLETED, and WORKFLOW_FAILED. Custom event types are allowed."
+        },
+        "message": {"type": "string"},
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "AgentResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "agentId", "status", "output", "artifacts", "events", "metrics", "errors"],
+      "properties": {
+        "requestId": {"type": "string", "minLength": 1},
+        "agentId": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "enum": ["SUCCESS", "FAILED", "REJECTED", "WAITING", "CANCELLED"]},
+        "output": {"description": "JSON result data; use null when there is no output."},
+        "artifacts": {"type": "array", "items": {"$ref": "#/$defs/Artifact"}},
+        "events": {"type": "array", "items": {"$ref": "#/$defs/ActivityEvent"}},
+        "metrics": {"$ref": "#/$defs/AgentMetrics"},
+        "errors": {"type": "array", "items": {"$ref": "#/$defs/PlatformError"}}
+      }
+    },
+    "Task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "projectId", "workflowId", "title", "description", "status", "priority",
+        "assignedAgent", "artifacts", "createdAt", "updatedAt", "metadata"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "workflowId": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "status": {"type": "string", "enum": ["NEW", "IN_PROGRESS", "WAITING", "COMPLETED", "FAILED", "CANCELLED"]},
+        "priority": {"type": "string", "enum": ["LOW", "NORMAL", "HIGH", "CRITICAL"]},
+        "assignedAgent": {"type": ["string", "null"]},
+        "artifacts": {"type": "array", "items": {"$ref": "#/$defs/Artifact"}},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "RetryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxAttempts"],
+      "properties": {
+        "maxAttempts": {"type": "integer", "minimum": 1},
+        "backoffSeconds": {"type": "number", "minimum": 0},
+        "retryOn": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
+    "WorkflowStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type", "requiresApproval", "configuration"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Standard values are AGENT, APPROVAL, SYSTEM, and INTEGRATION. Custom step types are allowed."
+        },
+        "agentType": {"type": "string", "minLength": 1},
+        "action": {"type": "string", "minLength": 1},
+        "requiresApproval": {"type": "boolean"},
+        "timeout": {"type": "integer", "minimum": 1, "description": "Timeout in seconds."},
+        "retryPolicy": {"$ref": "#/$defs/RetryPolicy"},
+        "configuration": {"$ref": "#/$defs/Metadata"}
+      },
+      "anyOf": [{"required": ["agentType"]}, {"required": ["action"]}]
+    },
+    "Workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "projectId", "steps", "status", "currentStep", "metadata"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "steps": {"type": "array", "items": {"$ref": "#/$defs/WorkflowStep"}},
+        "status": {"type": "string", "enum": ["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"]},
+        "currentStep": {"type": ["string", "null"]},
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "ApprovalRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "taskId", "workflowId", "projectId", "artifactId", "type",
+        "status", "requestedBy", "requestedAt", "expiresAt", "metadata"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "taskId": {"type": "string", "minLength": 1},
+        "workflowId": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "artifactId": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "enum": ["SPEC", "PLAN", "TASK", "CODE_REVIEW", "DEPLOYMENT"]},
+        "status": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXPIRED"]},
+        "requestedBy": {"type": "string", "minLength": 1},
+        "requestedAt": {"type": "string", "format": "date-time"},
+        "expiresAt": {"type": ["string", "null"], "format": "date-time"},
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+    "ApprovalDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "decision", "reviewer", "comment", "createdAt"],
+      "properties": {
+        "approvalId": {"type": "string", "minLength": 1},
+        "decision": {"type": "string", "enum": ["APPROVED", "REJECTED", "REQUEST_CHANGES"]},
+        "reviewer": {"type": "string", "minLength": 1},
+        "comment": {"type": "string"},
+        "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "Project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "name", "description", "repository", "technology", "enabledAgents",
+        "enabledSkills", "workflow", "configuration", "status"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "repository": {"type": "object"},
+        "technology": {"type": "object"},
+        "enabledAgents": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "enabledSkills": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "workflow": {"type": "string", "minLength": 1},
+        "configuration": {"$ref": "#/$defs/Metadata"},
+        "status": {"type": "string", "enum": ["ACTIVE", "INACTIVE", "ARCHIVED"]}
+      }
+    }
+  }
+}

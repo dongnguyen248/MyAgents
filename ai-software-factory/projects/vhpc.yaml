@@ -1,0 +1,19 @@
+project:
+  id: vhpc
+  name: VHPC
+
+repository:
+  provider: gitlab
+  # url / credentials are NOT stored here; use secret references
+
+technology:
+  backend: [java, spring]
+  frontend: [react]
+
+workflow: software-development
+
+approval:
+  channel: teams
+
+skills:
+  enabled: [java, spring, react, git, testing, security]
