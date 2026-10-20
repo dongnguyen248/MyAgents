@@ -1,18 +1,17 @@
-project:
-  id: vnpc
-  name: VNPC
+id: vnpc
+name: VNPC
 
 repository:
   provider: gitlab
 
 technology:
-  backend: []     # to be defined
-  frontend: []    # to be defined
+  backend: [] # to be defined
+  frontend: [] # to be defined
 
 workflow: software-development
 
-approval:
-  channel: teams
+enabledSkills: [git, testing, security]
 
-skills:
-  enabled: [git, testing, security]
+configuration:
+  approval:
+    channel: teams

@@ -1,0 +1,65 @@
+# Example platform configuration for AI Software Factory
+# Copy this file to platform.yaml (or platform.local.yaml for local overrides).
+
+version: 1
+logLevel: INFO
+
+# Filesystem paths
+paths:
+  artifactsDir: artifacts
+
+# Language model gateway configuration
+models:
+  default: fast
+  profiles:
+    fast:
+      provider: example-provider
+      model: example-fast-v1
+      endpoint: https://api.example.com/v1
+      credentials:
+        env: EXAMPLE_MODEL_API_KEY
+      timeoutSeconds: 45
+      parameters:
+        temperature: 0.7
+
+# External source control adapter configuration
+sourceControl:
+  provider: example-provider
+  endpoint: https://git.example.com
+  credentials:
+    env: EXAMPLE_SCM_TOKEN
+  settings:
+    defaultBranch: main
+
+# Continuous integration service configuration
+ci:
+  provider: example-provider
+  endpoint: https://ci.example.com
+  credentials:
+    env: EXAMPLE_CI_TOKEN
+  settings:
+    timeoutMinutes: 30
+
+# Notification channels for alerts and human approval requests
+notifications:
+  - name: engineering-team
+    type: example-provider
+    endpoint: https://chat.example.com/webhook
+    credentials:
+      env: EXAMPLE_CHAT_WEBHOOK_KEY
+    settings:
+      channelName: dev-approvals
+
+# Per-agent settings and model profile overrides
+agents:
+  spec:
+    modelProfile: fast
+    timeoutSeconds: 300
+    retryPolicy:
+      maxAttempts: 2
+      backoffSeconds: 1.5
+      retryOn:
+        - TIMEOUT
+        - RATE_LIMITED
+    settings:
+      strictMode: true

@@ -1,6 +1,5 @@
-project:
-  id: vhpc
-  name: VHPC
+id: vhpc
+name: VHPC
 
 repository:
   provider: gitlab
@@ -12,8 +11,8 @@ technology:
 
 workflow: software-development
 
-approval:
-  channel: teams
+enabledSkills: [java, spring, react, git, testing, security]
 
-skills:
-  enabled: [java, spring, react, git, testing, security]
+configuration:
+  approval:
+    channel: teams
