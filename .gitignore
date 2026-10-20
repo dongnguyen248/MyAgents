@@ -4,6 +4,7 @@
 *.secret
 *.pem
 secrets/
+config/*.local.yaml
 
 # Python artifacts
 __pycache__/

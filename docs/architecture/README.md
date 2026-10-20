@@ -26,10 +26,10 @@ Skills are knowledge packages (java, spring, react, python, git, testing, securi
 ## 5. Integration architecture
 Ports & adapters: core/agents depend on interfaces in `contracts/` (such as `ModelGateway`, `SourceControl`, and `CiProvider`); `src/asf/integrations/` holds external service adapters (GitLab, Teams, notifications, CI) and `src/asf/models/providers/` holds LLM provider adapters. Swapping Teams for Slack, GitLab for GitHub, or one LLM vendor for another touches only an adapter and a project/global config value.
 
-## 6. Project configuration
-`projects/<id>.yaml` selects repository provider, technology, workflow, approval channel and enabled skills. Configuration only; no secrets, no code.
+## 6. Configuration architecture
+Platform configuration (`PlatformConfig`) is resolved hierarchically across layers: built-in model defaults < `<config_dir>/platform.yaml` < `<config_dir>/platform.local.yaml`. Mappings merge recursively, while lists and scalars are replaced by higher-priority layers. The configuration directory resolves via explicit argument > `ASF_CONFIG_DIR` > `./config`.
 
-The normalized `Project` contract has no project-specific fields and represents repository and technology as data, so the same platform contracts apply to all projects.
+Project profiles (`ProjectProfile`) in `projects/<id>.yaml` map 1:1 to the `Project` data contract (`contracts/schemas/contracts.schema.json`), capturing repository provider, technology, workflow, enabled skills, and project-specific configuration. Credentials and sensitive values are never stored directly in configuration files; only environment variable references (`{env: NAME}`) are stored, and resolved by adapters upon execution. Per-project overrides of global platform settings are out of scope.
 
 ## 7. Provider independence
 Agent requests and results do not expose a specific LLM provider. Model selection and provider-specific request/response translation belong behind future integration ports and adapters. Likewise, repository, CI, and approval providers are not embedded in core contracts; new providers implement the relevant port without requiring project-specific agents or workflows.
@@ -41,6 +41,7 @@ Agent requests and results do not expose a specific LLM provider. Model selectio
 4. External services live in `src/asf/integrations/` and `src/asf/models/providers/` behind interfaces.
 5. No LLM provider is hard-coded.
 6. Agents never perform side effects (shell, git, network including LLM calls, filesystem, database) directly. They act only through ports defined in contracts/ports.md; implementations live in src/asf/tools, src/asf/execution, src/asf/models, src/asf/storage and src/asf/integrations, and are wired in by the orchestrator.
+7. Configuration never contains secret values. Credentials are referenced by environment-variable name and resolved only by adapters at the moment of use.
 
 ## 9. Future Harness² integration
 `harness/` is isolated from runtime. `evaluation/` scores agents, `optimization/` tests prompt/skill/tool/config changes, `harness2/` is reserved for the Harness² adapter. Runtime metrics from `src/asf/evaluation/` feed it.
