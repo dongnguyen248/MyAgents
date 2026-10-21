@@ -31,22 +31,29 @@ Platform configuration (`PlatformConfig`) is resolved hierarchically across laye
 
 Project profiles (`ProjectProfile`) in `projects/<id>.yaml` map 1:1 to the `Project` data contract (`contracts/schemas/contracts.schema.json`), capturing repository provider, technology, workflow, enabled skills, and project-specific configuration. Credentials and sensitive values are never stored directly in configuration files; only environment variable references (`{env: NAME}`) are stored, and resolved by adapters upon execution. Per-project overrides of global platform settings are out of scope.
 
-## 7. Provider independence
+## 7. Workflow and state machine architecture
+- **Workflow definition vs. run (W1):** `Workflow` is a declarative, reusable, project-independent definition describing steps, artifact dependencies, and approval gates. `WorkflowRun` represents a single execution instance of a definition.
+- **Identity (W2):** Across contracts (`Task`, `AgentRequest`, `ApprovalRequest`, `ActivityEvent`), `workflowId` denotes the workflow definition identifier. A task corresponds to at most one `WorkflowRun` (`WorkflowRun.taskId`).
+- **Generated stages (W3):** Stage lists are generated dynamically from workflow definitions and are never hard-coded in platform code. Global stages are `NEW`, `COMPLETED`, `FAILED`, and `CANCELLED`. For each step with base stage `S`, steps requiring approval generate `S_DRAFT`, `S_REVIEW`, `S_REJECTED`, `S_APPROVED`, and `S_ESCALATED`; plain steps generate exactly `S`.
+- **Coarse status mapping (W7):** Fine-grained stages map deterministically by `StageKind` to coarse statuses: `Task.status` (`NEW`, `IN_PROGRESS`, `WAITING`, `COMPLETED`, `FAILED`, `CANCELLED`) and `WorkflowRun.status` (`PENDING`, `RUNNING`, `WAITING`, `COMPLETED`, `FAILED`, `CANCELLED`).
+
+## 8. Provider independence
 Agent requests and results do not expose a specific LLM provider. Model selection and provider-specific request/response translation belong behind future integration ports and adapters. Likewise, repository, CI, and approval providers are not embedded in core contracts; new providers implement the relevant port without requiring project-specific agents or workflows.
 
-## 8. Platform design rules
-1. `src/asf/`, `contracts/`, `skills/` never reference a specific project.
+## 9. Platform design rules
+1. `src/asf/`, `contracts/`, `skills/` and `workflows/` never reference a specific project.
 2. Agents never call each other; the orchestrator mediates via artifacts + approvals.
 3. Human approval is a platform capability, not part of any agent.
 4. External services live in `src/asf/integrations/` and `src/asf/models/providers/` behind interfaces.
 5. No LLM provider is hard-coded.
 6. Agents never perform side effects (shell, git, network including LLM calls, filesystem, database) directly. They act only through ports defined in contracts/ports.md; implementations live in src/asf/tools, src/asf/execution, src/asf/models, src/asf/storage and src/asf/integrations, and are wired in by the orchestrator.
 7. Configuration never contains secret values. Credentials are referenced by environment-variable name and resolved only by adapters at the moment of use.
+8. The state machine is pure (no I/O, no clock); stage lists are generated from workflow definitions and never hard-coded.
 
-## 9. Future Harness² integration
+## 10. Future Harness² integration
 `harness/` is isolated from runtime. `evaluation/` scores agents, `optimization/` tests prompt/skill/tool/config changes, `harness2/` is reserved for the Harness² adapter. Runtime metrics from `src/asf/evaluation/` feed it.
 
-## 10. Repository layout
+## 11. Repository layout
 
 ```text
 ai-software-factory/
@@ -72,6 +79,7 @@ ai-software-factory/
 │   └── README.md
 ├── apps/dashboard/             # Control Tower frontend (React + TypeScript + Vite)
 ├── skills/                     # Reusable knowledge packages
+├── workflows/                  # Declarative workflow definitions (YAML)
 ├── templates/                  # Artifact templates (SPEC, PLAN, TASK, etc.)
 ├── projects/                   # Project profiles (YAML)
 ├── config/                     # Configuration definitions
