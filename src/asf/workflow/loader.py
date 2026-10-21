@@ -5,11 +5,9 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from asf.configuration.errors import ConfigError, ConfigIssue
-from asf.configuration.yamlio import load_yaml_mapping
-from asf.workflow.definition import (
-    WorkflowDefinition,
-    validation_error_to_config_error,
-)
+from asf.configuration.loader import validation_error_to_config_error
+from asf.configuration.yamlio import load_yaml_mapping, scan_secrets
+from asf.workflow.definition import WorkflowDefinition
 
 
 def load_workflow(path: str | Path) -> WorkflowDefinition:
@@ -32,6 +30,13 @@ def load_workflow(path: str | Path) -> WorkflowDefinition:
             f"Workflow ID '{declared_id}' in '{file_path}' "
             f"does not match file stem '{expected_id}'",
             issues=[ConfigIssue(path="id", message=msg)],
+            source=str(file_path),
+        )
+
+    secret_issues = scan_secrets(data)
+    if secret_issues:
+        raise ConfigError(
+            issues=secret_issues,
             source=str(file_path),
         )
 

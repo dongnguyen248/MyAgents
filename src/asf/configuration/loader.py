@@ -27,7 +27,7 @@ def _loc_to_dotted_path(loc: tuple[int | str, ...]) -> str:
     return ".".join(parts)
 
 
-def _validation_error_to_config_error(
+def validation_error_to_config_error(
     exc: ValidationError,
     source: str | None = None,
 ) -> ConfigError:
@@ -40,6 +40,9 @@ def _validation_error_to_config_error(
             msg = msg[len("Value error, ") :]
         issues.append(ConfigIssue(path=path, message=msg))
     return ConfigError(issues=issues, source=source)
+
+
+_validation_error_to_config_error = validation_error_to_config_error
 
 
 def resolve_config_dir(

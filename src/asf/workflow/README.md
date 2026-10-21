@@ -17,7 +17,7 @@ Workflow definition files (`workflows/*.yaml` or `*.yml`) use field names identi
 Each step definition includes:
 - `id` (string, unique within workflow)
 - `name` (string)
-- `type` (`AGENT`, `GATEWAY`, `INTEGRATION`, `SYSTEM`, `HUMAN`)
+- `type` (string minLength 1; standard values are `AGENT`, `APPROVAL`, `SYSTEM`, and `INTEGRATION`; custom step types are allowed)
 - `stage` (base stage name matching `^[A-Z][A-Z0-9_]*$`)
 - `requiresApproval` (boolean)
 - `agentType` or `action` (at least one required)

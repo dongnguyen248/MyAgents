@@ -1,3 +1,4 @@
+import copy
 import json
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from asf.configuration.loader import load_projects
 from asf.workflow.definition import (
     DEFAULT_MAX_REVISIONS,
     WorkflowDefinition,
+    WorkflowStepDef,
 )
 from asf.workflow.loader import load_workflow, load_workflows
 
@@ -422,3 +424,149 @@ steps:
             with self.assertRaises(ConfigError) as ctx:
                 load_workflow(wf_file)
             self.assertIn("duplicate key", str(ctx.exception).lower())
+
+    def test_custom_step_type_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            wf_file = Path(tmp_dir) / "test-wf.yaml"
+            wf_file.write_text(
+                """
+id: test-wf
+name: Test
+version: "1"
+steps:
+  - id: step1
+    name: Custom Step
+    type: CUSTOM_STEP
+    stage: STEP_ONE
+    action: do-custom
+    requiresApproval: false
+""",
+                encoding="utf-8",
+            )
+            wf = load_workflow(wf_file)
+            self.assertEqual(wf.steps[0].type, "CUSTOM_STEP")
+            contract_dict = wf.to_contract()
+            self.workflow_validator.validate(contract_dict)
+            self.assertEqual(contract_dict["steps"][0]["type"], "CUSTOM_STEP")
+
+    def test_empty_step_type_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            wf_file = Path(tmp_dir) / "test-wf.yaml"
+            wf_file.write_text(
+                """
+id: test-wf
+name: Test
+version: "1"
+steps:
+  - id: step1
+    name: Step 1
+    type: ""
+    stage: STEP_ONE
+    action: do-step
+    requiresApproval: false
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ConfigError) as ctx:
+                load_workflow(wf_file)
+            self.assertTrue(any("steps[0].type" in iss.path for iss in ctx.exception.issues))
+
+    def test_secret_scan_in_workflow_configuration_api_key(self):
+        sentinel = "SENTINEL_WORKFLOW_SECRET_123"
+
+        # 1. Literal secret rejected with path and sentinel masked
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            wf_file = Path(tmp_dir) / "test-wf.yaml"
+            wf_file.write_text(
+                f"""
+id: test-wf
+name: Test
+version: "1"
+steps:
+  - id: step1
+    name: Step 1
+    type: AGENT
+    stage: STEP_ONE
+    agentType: test
+    requiresApproval: false
+    configuration:
+      apiKey: {sentinel}
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ConfigError) as ctx:
+                load_workflow(wf_file)
+
+            err = ctx.exception
+            self.assertTrue(
+                any("steps[0].configuration.apiKey" in iss.path for iss in err.issues)
+            )
+            self.assertNotIn(sentinel, str(err))
+            for iss in err.issues:
+                self.assertNotIn(sentinel, iss.message)
+            self.assertNotIn(sentinel, json.dumps(err.to_platform_errors()))
+
+        # 2. {env: NAME} accepted
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            wf_file = Path(tmp_dir) / "test-wf.yaml"
+            wf_file.write_text(
+                """
+id: test-wf
+name: Test
+version: "1"
+steps:
+  - id: step1
+    name: Step 1
+    type: AGENT
+    stage: STEP_ONE
+    agentType: test
+    requiresApproval: false
+    configuration:
+      apiKey:
+        env: MY_API_KEY
+""",
+                encoding="utf-8",
+            )
+            wf = load_workflow(wf_file)
+            self.assertEqual(
+                wf.steps[0].configuration["apiKey"], {"env": "MY_API_KEY"}
+            )
+
+        # 3. null accepted
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            wf_file = Path(tmp_dir) / "test-wf.yaml"
+            wf_file.write_text(
+                """
+id: test-wf
+name: Test
+version: "1"
+steps:
+  - id: step1
+    name: Step 1
+    type: AGENT
+    stage: STEP_ONE
+    agentType: test
+    requiresApproval: false
+    configuration:
+      apiKey: null
+""",
+                encoding="utf-8",
+            )
+            wf = load_workflow(wf_file)
+            self.assertIsNone(wf.steps[0].configuration["apiKey"])
+
+    def test_model_validate_leaves_input_dict_unchanged_and_resolves_max_revisions(self):
+        raw_step = {
+            "id": "spec",
+            "name": "Spec",
+            "type": "AGENT",
+            "stage": "SPEC",
+            "requires_approval": True,
+            "agent_type": "spec",
+        }
+        copy_raw = copy.deepcopy(raw_step)
+        step = WorkflowStepDef.model_validate(raw_step)
+
+        self.assertEqual(raw_step, copy_raw)
+        self.assertNotIn("max_revisions", raw_step)
+        self.assertEqual(step.max_revisions, DEFAULT_MAX_REVISIONS)

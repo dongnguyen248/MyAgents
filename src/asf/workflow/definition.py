@@ -1,49 +1,29 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Self
+from typing import Any, Self
 
 from pydantic import Field, model_validator
-from pydantic.alias_generators import to_camel
 from pydantic_core import InitErrorDetails, ValidationError
 
-from asf.configuration.errors import ConfigError, ConfigIssue
+from asf.configuration.loader import validation_error_to_config_error
 from asf.configuration.platform import ConfigModel, RetryPolicySettings
 
 DEFAULT_MAX_REVISIONS: int = 3
 RESERVED_STAGES = frozenset({"NEW", "COMPLETED", "FAILED", "CANCELLED"})
 
-
-def _loc_to_dotted_path(loc: tuple[int | str, ...]) -> str:
-    parts: list[str] = []
-    for item in loc:
-        if isinstance(item, int):
-            if parts:
-                parts[-1] = f"{parts[-1]}[{item}]"
-            else:
-                parts.append(f"[{item}]")
-        else:
-            parts.append(to_camel(str(item)))
-    return ".".join(parts)
-
-
-def validation_error_to_config_error(
-    exc: ValidationError,
-    source: str | None = None,
-) -> ConfigError:
-    issues: list[ConfigIssue] = []
-    for err in exc.errors():
-        path = _loc_to_dotted_path(err.get("loc", ()))
-        msg = err.get("msg", "Validation error")
-        if msg.startswith("Value error, "):
-            msg = msg[len("Value error, ") :]
-        issues.append(ConfigIssue(path=path, message=msg))
-    return ConfigError(issues=issues, source=source)
+__all__ = [
+    "DEFAULT_MAX_REVISIONS",
+    "RESERVED_STAGES",
+    "WorkflowDefinition",
+    "WorkflowStepDef",
+    "validation_error_to_config_error",
+]
 
 
 class WorkflowStepDef(ConfigModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
-    type: Literal["AGENT", "GATEWAY", "INTEGRATION", "SYSTEM", "HUMAN"]
+    type: str = Field(min_length=1)
     stage: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
     requires_approval: bool
     agent_type: str | None = None
@@ -66,8 +46,9 @@ class WorkflowStepDef(ConfigModel):
             if max_rev is None and "maxRevisions" in data:
                 max_rev = data.get("maxRevisions")
             if req and max_rev is None:
-                data = dict(data)
-                data["max_revisions"] = DEFAULT_MAX_REVISIONS
+                copied = dict(data)
+                copied["max_revisions"] = DEFAULT_MAX_REVISIONS
+                return copied
         return data
 
     @model_validator(mode="after")

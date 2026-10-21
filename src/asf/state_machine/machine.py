@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 from asf.state_machine.graph import StageGraph
 from asf.state_machine.triggers import Trigger
 from asf.workflow.definition import DEFAULT_MAX_REVISIONS
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class InvalidTransition(Exception):
@@ -24,12 +27,10 @@ class InvalidTransition(Exception):
             f"Allowed triggers: {list(allowed)}"
         )
 
-    def to_platform_error(self, now: str | None = None) -> dict[str, Any]:
-        if now is None:
-            from datetime import datetime, timezone
+    def to_platform_error(self, now: datetime | None = None) -> dict[str, Any]:
+        from datetime import datetime, timezone
 
-            now = datetime.now(timezone.utc).isoformat()
-
+        ts = (now or datetime.now(timezone.utc)).isoformat()
         return {
             "code": "WORKFLOW_INVALID_TRANSITION",
             "message": str(self),
@@ -40,7 +41,7 @@ class InvalidTransition(Exception):
                 "trigger": self.trigger,
                 "allowed": list(self.allowed),
             },
-            "timestamp": now,
+            "timestamp": ts,
         }
 
 

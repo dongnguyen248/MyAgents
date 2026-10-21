@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -143,6 +144,15 @@ class StateMachineTransitionsTests(unittest.TestCase):
                 self.assertFalse(err_dict["retryable"])
                 self.assertEqual(err_dict["details"]["stage"], st.stage)
                 self.assertEqual(err_dict["details"]["trigger"], str(trig))
+
+    def test_to_platform_error_with_explicit_datetime(self):
+        exc = InvalidTransition(
+            stage="NEW", trigger="APPROVED", allowed=("START", "FAIL", "CANCEL")
+        )
+        fixed_dt = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+        err_dict = exc.to_platform_error(now=fixed_dt)
+        self.error_validator.validate(err_dict)
+        self.assertEqual(err_dict["timestamp"], "2026-10-20T14:00:00+00:00")
 
     def test_purity_inputs_and_revisions_never_mutated(self):
         initial_revisions = {"spec": 1}
