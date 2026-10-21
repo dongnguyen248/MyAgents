@@ -95,6 +95,22 @@ class ApprovalPolicyTests(unittest.TestCase):
             approval_policy_from_project(make_profile({"approval": {"reviewers": ["r1", ""]}}))
         self.assert_has_issue_path(ctx.exception, "configuration.approval.reviewers")
 
+    def test_reviewer_identifier_whitespace_rejected_in_project(self):
+        bad_reviewers = ["", "   ", " reviewer-1", "reviewer-1 ", "\tr1", "r1\n"]
+        for bad in bad_reviewers:
+            with self.subTest(bad=bad):
+                with self.assertRaises(ConfigError) as ctx:
+                    approval_policy_from_project(
+                        make_profile({"approval": {"reviewers": [bad]}})
+                    )
+                self.assert_has_issue_path(ctx.exception, "configuration.approval.reviewers")
+                self.assertTrue(
+                    any(
+                        "Reviewer identifier must be a non-empty string without" in iss.message
+                        for iss in ctx.exception.issues
+                    )
+                )
+
     def test_min_approvals_validation(self):
         # minApprovals > len(reviewers)
         with self.assertRaises(ConfigError) as ctx:

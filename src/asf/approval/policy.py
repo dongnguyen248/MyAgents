@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from asf.approval.models import ApprovalPolicy
+from asf.approval.models import (
+    INVALID_REVIEWER_MESSAGE,
+    ApprovalPolicy,
+    validate_reviewer_identifier,
+)
 from asf.configuration.errors import ConfigError, ConfigIssue
 from asf.configuration.project import ProjectProfile
 
@@ -59,14 +63,18 @@ def approval_policy_from_project(profile: ProjectProfile) -> ApprovalPolicy:
                 )
             )
         else:
-            has_invalid = any(
-                not isinstance(r, str) or not r.strip() for r in raw_reviewers
-            )
+            has_invalid = False
+            for r in raw_reviewers:
+                try:
+                    validate_reviewer_identifier(r)
+                except ValueError:
+                    has_invalid = True
+                    break
             if has_invalid:
                 issues.append(
                     ConfigIssue(
                         path="configuration.approval.reviewers",
-                        message="Reviewers must be non-empty strings",
+                        message=INVALID_REVIEWER_MESSAGE,
                     )
                 )
             elif len(raw_reviewers) != len(set(raw_reviewers)):

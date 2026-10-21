@@ -12,7 +12,19 @@ __all__ = [
     "ApprovalPolicy",
     "ApprovalRequest",
     "ApprovalSpec",
+    "INVALID_REVIEWER_MESSAGE",
+    "validate_reviewer_identifier",
 ]
+
+INVALID_REVIEWER_MESSAGE: str = (
+    "Reviewer identifier must be a non-empty string without leading or trailing whitespace"
+)
+
+
+def validate_reviewer_identifier(r: Any) -> str:
+    if not isinstance(r, str) or not r.strip() or r != r.strip():
+        raise ValueError(INVALID_REVIEWER_MESSAGE)
+    return r
 
 
 class ApprovalPolicy(ConfigModel):
@@ -26,8 +38,7 @@ class ApprovalPolicy(ConfigModel):
         if not reviewers:
             raise ValueError("Reviewers list must not be empty")
         for r in reviewers:
-            if not isinstance(r, str) or not r:
-                raise ValueError("Reviewer identifier must be a non-empty string")
+            validate_reviewer_identifier(r)
         if len(reviewers) != len(set(reviewers)):
             raise ValueError("Reviewers list must contain unique identifiers")
         return reviewers
@@ -73,8 +84,7 @@ class ApprovalRequest(ConfigModel):
         if not reviewers:
             raise ValueError("Reviewers list must not be empty")
         for r in reviewers:
-            if not isinstance(r, str) or not r:
-                raise ValueError("Reviewer identifier must be a non-empty string")
+            validate_reviewer_identifier(r)
         if len(reviewers) != len(set(reviewers)):
             raise ValueError("Reviewers list must contain unique identifiers")
         return reviewers

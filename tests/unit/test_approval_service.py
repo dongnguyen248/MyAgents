@@ -415,6 +415,62 @@ class ApprovalServiceTests(unittest.TestCase):
         req2 = self.service.request(spec, policy, T2)
         self.assertEqual(req2.status, "PENDING")
 
+    def test_pending_request_expiry_blocking_cases(self):
+        # Case 1: Overdue PENDING request (expiresAt <= now) does NOT block;
+        # request() does not modify it
+        policy_exp = ApprovalPolicy(min_approvals=1, reviewers=["r1"], expires_in_seconds=60)
+        spec = default_spec(task_id="t_overdue", artifact_id="art_overdue", req_type="SPEC")
+        req1 = self.service.request(spec, policy_exp, T0)
+        # At T0 + 120s, req1 is overdue (expires_at is T0 + 60s <= T0 + 120s)
+        t_overdue = T0 + timedelta(seconds=120)
+        # Should NOT block:
+        req2 = self.service.request(spec, policy_exp, t_overdue)
+        self.assertEqual(req2.status, "PENDING")
+        self.assertNotEqual(req1.id, req2.id)
+        # request() did NOT modify req1 (still PENDING):
+        stored_req1 = self.service.get(req1.id)
+        self.assertEqual(stored_req1.status, "PENDING")
+
+        # Case 2: PENDING request without expiry (expiresAt is None) STILL blocks
+        policy_no_exp = ApprovalPolicy(min_approvals=1, reviewers=["r1"], expires_in_seconds=None)
+        spec_no_exp = default_spec(task_id="t_no_exp", artifact_id="art_no_exp", req_type="SPEC")
+        self.service.request(spec_no_exp, policy_no_exp, T0)
+        with self.assertRaises(ApprovalError) as ctx:
+            self.service.request(spec_no_exp, policy_no_exp, t_overdue)
+        self.assertEqual(ctx.exception.code, "VALIDATION_FAILED")
+
+        # Case 3: PENDING request with future expiry (expiresAt > now) STILL blocks
+        policy_future = ApprovalPolicy(min_approvals=1, reviewers=["r1"], expires_in_seconds=3600)
+        spec_future = default_spec(task_id="t_future", artifact_id="art_future", req_type="SPEC")
+        self.service.request(spec_future, policy_future, T0)
+        t_before = T0 + timedelta(seconds=600)
+        with self.assertRaises(ApprovalError) as ctx:
+            self.service.request(spec_future, policy_future, t_before)
+        self.assertEqual(ctx.exception.code, "VALIDATION_FAILED")
+
+    def test_overdue_pending_request_cancel_and_no_lazy_expiry_on_read(self):
+        policy = ApprovalPolicy(min_approvals=1, reviewers=["r1"], expires_in_seconds=60)
+        spec = default_spec(
+            task_id="t_cancel_overdue", artifact_id="art_cancel_overdue", req_type="SPEC"
+        )
+        req = self.service.request(spec, policy, T0)
+        t_overdue = T0 + timedelta(seconds=120)
+
+        # get() and decisions() never apply lazy expiry
+        # (an overdue request stays PENDING until expire_due)
+        fetched = self.service.get(req.id)
+        self.assertEqual(fetched.status, "PENDING")
+        decs = self.service.decisions(req.id)
+        self.assertEqual(decs, [])
+        fetched_after = self.service.get(req.id)
+        self.assertEqual(fetched_after.status, "PENDING")
+
+        # cancel() succeeds on an overdue PENDING request (result CANCELLED)
+        cancelled = self.service.cancel(req.id, t_overdue)
+        self.assertEqual(cancelled.status, "CANCELLED")
+        self.assertEqual(self.service.get(req.id).status, "CANCELLED")
+
+
     # (11) feedback_for returns only negative decisions in order, [] when none,
     # each item validates against $defs/ApprovalFeedback, and an AgentRequest dict
     # carrying that list validates against $defs/AgentRequest

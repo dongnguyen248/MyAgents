@@ -23,6 +23,27 @@ def _require_aware_datetime(dt: datetime, name: str = "now") -> None:
         raise ValueError(f"{name} must be a timezone-aware datetime")
 
 
+def _check_not_closed(req: ApprovalRequest) -> None:
+    if req.status == "EXPIRED":
+        raise ApprovalError(
+            "APPROVAL_EXPIRED",
+            f"Approval request '{req.id}' has expired",
+            details={"approvalId": req.id, "status": "EXPIRED"},
+        )
+    if req.status in ("APPROVED", "REJECTED", "CHANGES_REQUESTED"):
+        raise ApprovalError(
+            "APPROVAL_ALREADY_DECIDED",
+            f"Approval request '{req.id}' is already closed with status '{req.status}'",
+            details={"approvalId": req.id, "status": req.status},
+        )
+    if req.status == "CANCELLED":
+        raise ApprovalError(
+            "VALIDATION_FAILED",
+            f"Approval request '{req.id}' has been cancelled",
+            details={"approvalId": req.id, "status": "CANCELLED"},
+        )
+
+
 class ApprovalService:
     def __init__(
         self,
@@ -41,11 +62,14 @@ class ApprovalService:
     ) -> ApprovalRequest:
         _require_aware_datetime(now, "now")
 
-        # At most one PENDING request per (taskId, artifactId, type)
+        # At most one active PENDING request per (taskId, artifactId, type).
+        # An overdue PENDING request (expiresAt <= now) does not block a new request.
         pending_requests = self._repository.list_pending()
         for req in pending_requests:
+            is_active_pending = req.expires_at is None or req.expires_at > now
             if (
-                req.task_id == spec.task_id
+                is_active_pending
+                and req.task_id == spec.task_id
                 and req.artifact_id == spec.artifact_id
                 and req.type == spec.type
             ):
@@ -104,24 +128,7 @@ class ApprovalService:
             )
 
         # Rule 2: closed-request rule (A6), including lazy expiry
-        if req.status == "EXPIRED":
-            raise ApprovalError(
-                "APPROVAL_EXPIRED",
-                f"Approval request '{req.id}' has expired",
-                details={"approvalId": req.id, "status": "EXPIRED"},
-            )
-        if req.status in ("APPROVED", "REJECTED", "CHANGES_REQUESTED"):
-            raise ApprovalError(
-                "APPROVAL_ALREADY_DECIDED",
-                f"Approval request '{req.id}' is already closed with status '{req.status}'",
-                details={"approvalId": req.id, "status": req.status},
-            )
-        if req.status == "CANCELLED":
-            raise ApprovalError(
-                "VALIDATION_FAILED",
-                f"Approval request '{req.id}' has been cancelled",
-                details={"approvalId": req.id, "status": "CANCELLED"},
-            )
+        _check_not_closed(req)
 
         # Lazy expiry: status is PENDING and expiresAt is not null
         # and decision.createdAt >= expiresAt
@@ -218,24 +225,7 @@ class ApprovalService:
                 details={"approvalId": approval_id},
             )
 
-        if req.status == "EXPIRED":
-            raise ApprovalError(
-                "APPROVAL_EXPIRED",
-                f"Approval request '{req.id}' has expired",
-                details={"approvalId": req.id, "status": "EXPIRED"},
-            )
-        if req.status in ("APPROVED", "REJECTED", "CHANGES_REQUESTED"):
-            raise ApprovalError(
-                "APPROVAL_ALREADY_DECIDED",
-                f"Approval request '{req.id}' is already closed with status '{req.status}'",
-                details={"approvalId": req.id, "status": req.status},
-            )
-        if req.status == "CANCELLED":
-            raise ApprovalError(
-                "VALIDATION_FAILED",
-                f"Approval request '{req.id}' has already been cancelled",
-                details={"approvalId": req.id, "status": "CANCELLED"},
-            )
+        _check_not_closed(req)
 
         cancelled_req = req.model_copy(update={"status": "CANCELLED"})
         return self._repository.update(cancelled_req)

@@ -38,9 +38,10 @@ When `ApprovalService.decide(decision: ApprovalDecision)` is called, rules execu
    - `APPROVED` -> count distinct approving reviewers; if `>= minApprovals`, transition to `APPROVED`; otherwise stay `PENDING`.
 
 ## Lifecycle and Expiry (A7)
-- **Pending constraint:** At most one `PENDING` request is allowed per `(taskId, artifactId, type)`. Attempting a second pending request raises `ApprovalError` (`VALIDATION_FAILED`). Once closed, a new request may be opened.
-- **Cancellation:** `cancel(approvalId, now)` moves a `PENDING` request to `CANCELLED`. Calling `cancel` on a closed request follows the closed-request rule (A6).
+- **Pending constraint:** At most one `PENDING` request is allowed per `(taskId, artifactId, type)`. Attempting a second pending request raises `ApprovalError` (`VALIDATION_FAILED`). Once closed, a new request may be opened. An overdue `PENDING` request (`expiresAt <= now`) does not block a new request.
+- **Cancellation:** `cancel(approvalId, now)` moves a `PENDING` request to `CANCELLED`. Calling `cancel` on a closed request follows the closed-request rule (A6). `cancel()` succeeds on an overdue PENDING request (result CANCELLED).
 - **Proactive expiry:** `expire_due(now)` scans all `PENDING` requests with `expiresAt <= now`, moves them to `EXPIRED`, and returns the newly expired requests ordered by `(expiresAt, id)`. Subsequent calls return `[]`.
+- `get()` and `decisions()` never apply lazy expiry (an overdue request stays PENDING until expire_due).
 - All `now` arguments must be timezone-aware (naive raises `ValueError`).
 
 ## Feedback Collection (A8)

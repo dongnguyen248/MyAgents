@@ -249,6 +249,37 @@ class ApprovalModelsTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ApprovalPolicy(min_approvals=1, reviewers=[])
 
+    def test_reviewer_identifier_whitespace_rejected(self):
+        bad_reviewers = ["", "   ", " reviewer-1", "reviewer-1 ", "\tr1", "r1\n"]
+        for bad in bad_reviewers:
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValidationError) as ctx_policy:
+                    ApprovalPolicy(min_approvals=1, reviewers=[bad])
+                self.assertIn(
+                    "Reviewer identifier must be a non-empty string without",
+                    str(ctx_policy.exception),
+                )
+
+                with self.assertRaises(ValidationError) as ctx_req:
+                    ApprovalRequest(
+                        id="a1",
+                        task_id="t1",
+                        workflow_id="w1",
+                        project_id="p1",
+                        artifact_id="art1",
+                        type="SPEC",
+                        status="PENDING",
+                        requested_by="orch",
+                        requested_at=VALID_AWARE_TIME,
+                        min_approvals=1,
+                        reviewers=[bad],
+                    )
+                self.assertIn(
+                    "Reviewer identifier must be a non-empty string without",
+                    str(ctx_req.exception),
+                )
+
+
         # same invariants for ApprovalRequest
         with self.assertRaises(ValidationError):
             ApprovalRequest(
