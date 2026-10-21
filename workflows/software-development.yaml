@@ -1,0 +1,96 @@
+id: software-development
+name: Software development
+version: "1"
+metadata: {}
+steps:
+  - id: spec
+    name: Write specification
+    type: AGENT
+    stage: SPEC
+    agentType: spec
+    requiresApproval: true
+    configuration: {}
+    produces:
+      - SPEC
+
+  - id: plan
+    name: Write plan
+    type: AGENT
+    stage: PLAN
+    agentType: plan
+    requiresApproval: true
+    configuration: {}
+    consumes:
+      - SPEC
+    produces:
+      - PLAN
+
+  - id: task
+    name: Break down tasks
+    type: AGENT
+    stage: TASK
+    agentType: task
+    requiresApproval: true
+    configuration: {}
+    consumes:
+      - SPEC
+      - PLAN
+    produces:
+      - TASK
+
+  - id: implement
+    name: Implement
+    type: AGENT
+    stage: IMPLEMENTING
+    agentType: implement
+    requiresApproval: false
+    configuration: {}
+    consumes:
+      - TASK
+    produces:
+      - CODE
+
+  - id: review
+    name: Review code
+    type: AGENT
+    stage: CODE_REVIEW
+    agentType: review
+    requiresApproval: false
+    configuration: {}
+    consumes:
+      - CODE
+    produces:
+      - CODE_REVIEW
+
+  - id: test
+    name: Run tests
+    type: AGENT
+    stage: TESTING
+    agentType: test
+    requiresApproval: false
+    configuration: {}
+    consumes:
+      - CODE
+    produces:
+      - TEST_REPORT
+
+  - id: ci
+    name: Run pipeline
+    type: INTEGRATION
+    stage: CI
+    action: run-pipeline
+    requiresApproval: false
+    configuration: {}
+    consumes:
+      - CODE
+
+  - id: merge
+    name: Await merge
+    type: SYSTEM
+    stage: READY_TO_MERGE
+    action: await-merge
+    requiresApproval: false
+    configuration: {}
+    consumes:
+      - CODE_REVIEW
+      - TEST_REPORT
