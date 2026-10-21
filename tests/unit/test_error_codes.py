@@ -70,6 +70,13 @@ class ErrorCodesTest(unittest.TestCase):
                     f"Category {category} for code {code} must be in PlatformError.category enum",
                 )
 
+    def test_meanings_non_empty_and_unique(self):
+        rows = self.parse_table_rows()
+        meanings = [row["meaning"] for row in rows]
+        for row in rows:
+            self.assertTrue(row["meaning"].strip(), f"Meaning for {row['code']} is empty")
+        self.assertEqual(len(meanings), len(set(meanings)), "Error code meanings must be unique")
+
 
 if __name__ == "__main__":
     unittest.main()
