@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+from asf.approval.models import ApprovalDecision, ApprovalRequest
+
+__all__ = ["ApprovalRepository"]
+
+
+class ApprovalRepository(Protocol):
+    def create(self, approval: ApprovalRequest) -> ApprovalRequest: ...
+
+    def get(self, approval_id: str) -> ApprovalRequest | None: ...
+
+    def update(self, approval: ApprovalRequest) -> ApprovalRequest: ...
+
+    def list_by_task(self, task_id: str) -> list[ApprovalRequest]: ...
+
+    def list_pending(self) -> list[ApprovalRequest]: ...
+
+    def add_decision(self, decision: ApprovalDecision) -> None: ...
+
+    def list_decisions(self, approval_id: str) -> list[ApprovalDecision]: ...
