@@ -150,6 +150,7 @@ class BaseAgent(ABC):
         try:
             output, artifacts = self._run(request)
             t_end = self._runtime.clock()
+            artifacts = [art.model_copy(update={"created_at": t_end}) for art in artifacts]
 
             events = [
                 ActivityEvent(
