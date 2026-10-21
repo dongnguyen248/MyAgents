@@ -573,3 +573,71 @@ class ApprovalServiceTests(unittest.TestCase):
             self.service.decide(early_d)
         self.assertEqual(self.service.decisions(req.id), [])
         self.assertEqual(self.service.get(req.id).status, "PENDING")
+
+        # 4. Duplicate approver
+        policy_multi = ApprovalPolicy(min_approvals=2, reviewers=["r1", "r2"])
+        req_multi = self.service.request(default_spec(artifact_id="art-multi"), policy_multi, T0)
+        d_first = ApprovalDecision(
+            approval_id=req_multi.id,
+            decision="APPROVED",
+            reviewer="r1",
+            comment="ok",
+            created_at=T1,
+        )
+        self.service.decide(d_first)
+        self.assertEqual(len(self.service.decisions(req_multi.id)), 1)
+        self.assertEqual(self.service.get(req_multi.id).status, "PENDING")
+
+        d_dup = ApprovalDecision(
+            approval_id=req_multi.id,
+            decision="APPROVED",
+            reviewer="r1",
+            comment="ok again",
+            created_at=T2,
+        )
+        with self.assertRaises(ApprovalError):
+            self.service.decide(d_dup)
+        self.assertEqual(len(self.service.decisions(req_multi.id)), 1)
+        self.assertEqual(self.service.get(req_multi.id).status, "PENDING")
+
+    # (15) aliasing: mutating inputs or returned objects does not change stored request
+    def test_aliasing_and_isolation_at_service_boundary(self):
+        metadata_dict = {"env": "prod", "nested": {"key": "val"}}
+        spec = ApprovalSpec(
+            task_id="task-1",
+            workflow_id="software-development",
+            project_id="sample",
+            artifact_id="art-1",
+            type="SPEC",
+            requested_by="orchestrator",
+            metadata=metadata_dict,
+        )
+        reviewers_list = ["r1", "r2"]
+        policy = ApprovalPolicy(min_approvals=1, reviewers=reviewers_list)
+
+        req = self.service.request(spec, policy, T0)
+
+        # 1. Mutating caller's metadata dict after request() does not affect stored request
+        metadata_dict["env"] = "mutated"
+        metadata_dict["nested"]["key"] = "mutated"
+        spec.metadata["env"] = "mutated_spec"
+        stored = self.service.get(req.id)
+        self.assertEqual(stored.metadata, {"env": "prod", "nested": {"key": "val"}})
+
+        # 2. Mutating caller's reviewers list after request() does not affect stored request
+        reviewers_list.append("r3")
+        policy.reviewers.append("r4")
+        stored = self.service.get(req.id)
+        self.assertEqual(stored.reviewers, ["r1", "r2"])
+
+        # 3. Mutating returned ApprovalRequest's metadata does not affect stored request
+        req.metadata["env"] = "mutated_returned"
+        req.metadata["nested"]["key"] = "mutated_returned"
+        stored = self.service.get(req.id)
+        self.assertEqual(stored.metadata, {"env": "prod", "nested": {"key": "val"}})
+
+        # 4. Mutating returned ApprovalRequest's reviewers does not affect stored request
+        req.reviewers.append("r5")
+        stored = self.service.get(req.id)
+        self.assertEqual(stored.reviewers, ["r1", "r2"])
+
