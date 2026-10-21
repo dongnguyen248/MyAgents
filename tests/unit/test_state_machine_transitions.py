@@ -137,7 +137,8 @@ class StateMachineTransitionsTests(unittest.TestCase):
                 self.assertEqual(exc.stage, st.stage)
                 self.assertEqual(exc.trigger, str(trig))
 
-                err_dict = exc.to_platform_error()
+                fixed_now = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+                err_dict = exc.to_platform_error(now=fixed_now)
                 self.error_validator.validate(err_dict)
                 self.assertEqual(err_dict["code"], "WORKFLOW_INVALID_TRANSITION")
                 self.assertEqual(err_dict["category"], "WORKFLOW")
@@ -153,6 +154,15 @@ class StateMachineTransitionsTests(unittest.TestCase):
         err_dict = exc.to_platform_error(now=fixed_dt)
         self.error_validator.validate(err_dict)
         self.assertEqual(err_dict["timestamp"], "2026-10-20T14:00:00+00:00")
+
+    def test_to_platform_error_rejects_naive_datetime(self):
+        exc = InvalidTransition(
+            stage="NEW", trigger="APPROVED", allowed=("START", "FAIL", "CANCEL")
+        )
+        naive_dt = datetime(2026, 10, 20, 14, 0, 0)
+        with self.assertRaises(ValueError) as ctx:
+            exc.to_platform_error(now=naive_dt)
+        self.assertIn("timezone-aware", str(ctx.exception))
 
     def test_purity_inputs_and_revisions_never_mutated(self):
         initial_revisions = {"spec": 1}

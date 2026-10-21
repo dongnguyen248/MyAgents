@@ -216,6 +216,20 @@ logLevel: DEBUG
         self.assertEqual(merged["untouched"]["key"], "mutated")
         self.assertEqual(merged["added"]["key"], "mutated")
 
+    def test_no_dead_aliases_or_duplicate_reexports(self):
+        import asf.configuration.loader as config_loader
+        import asf.workflow.definition as wf_definition
+
+        self.assertFalse(
+            hasattr(config_loader, "_validation_error_to_config_error"),
+            "_validation_error_to_config_error dead alias should be removed",
+        )
+        self.assertNotIn(
+            "validation_error_to_config_error",
+            wf_definition.__all__,
+            "validation_error_to_config_error should not be re-exported by asf.workflow.definition",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

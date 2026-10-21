@@ -42,9 +42,6 @@ def validation_error_to_config_error(
     return ConfigError(issues=issues, source=source)
 
 
-_validation_error_to_config_error = validation_error_to_config_error
-
-
 def resolve_config_dir(
     config_dir: str | Path | None = None,
     *,
@@ -89,7 +86,7 @@ def load_platform_config(
         try:
             return PlatformConfig()
         except ValidationError as exc:
-            raise _validation_error_to_config_error(exc) from exc
+            raise validation_error_to_config_error(exc) from exc
 
     merged_data: dict[str, Any] = {}
     sources: list[str] = []
@@ -118,7 +115,7 @@ def load_platform_config(
     try:
         return PlatformConfig.model_validate(merged_data)
     except ValidationError as exc:
-        raise _validation_error_to_config_error(exc, source=primary_source) from exc
+        raise validation_error_to_config_error(exc, source=primary_source) from exc
 
 
 def load_project(path: str | Path) -> ProjectProfile:
@@ -154,7 +151,7 @@ def load_project(path: str | Path) -> ProjectProfile:
     try:
         return ProjectProfile.model_validate(data)
     except ValidationError as exc:
-        raise _validation_error_to_config_error(exc, source=str(file_path)) from exc
+        raise validation_error_to_config_error(exc, source=str(file_path)) from exc
 
 
 def load_projects(directory: str | Path) -> dict[str, ProjectProfile]:

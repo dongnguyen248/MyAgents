@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import Any, Mapping
 
 from asf.state_machine.graph import StageGraph
 from asf.state_machine.triggers import Trigger
 from asf.workflow.definition import DEFAULT_MAX_REVISIONS
-
-if TYPE_CHECKING:
-    from datetime import datetime
 
 
 class InvalidTransition(Exception):
@@ -27,10 +25,12 @@ class InvalidTransition(Exception):
             f"Allowed triggers: {list(allowed)}"
         )
 
-    def to_platform_error(self, now: datetime | None = None) -> dict[str, Any]:
-        from datetime import datetime, timezone
+    def to_platform_error(self, now: datetime) -> dict[str, Any]:
+        if not isinstance(now, datetime):
+            raise TypeError("now must be an instance of datetime")
+        if now.tzinfo is None or now.tzinfo.utcoffset(now) is None:
+            raise ValueError("Timestamp must be timezone-aware (tzinfo must not be None)")
 
-        ts = (now or datetime.now(timezone.utc)).isoformat()
         return {
             "code": "WORKFLOW_INVALID_TRANSITION",
             "message": str(self),
@@ -41,7 +41,7 @@ class InvalidTransition(Exception):
                 "trigger": self.trigger,
                 "allowed": list(self.allowed),
             },
-            "timestamp": ts,
+            "timestamp": now.isoformat(),
         }
 
 

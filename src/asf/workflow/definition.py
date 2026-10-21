@@ -5,7 +5,6 @@ from typing import Any, Self
 from pydantic import Field, model_validator
 from pydantic_core import InitErrorDetails, ValidationError
 
-from asf.configuration.loader import validation_error_to_config_error
 from asf.configuration.platform import ConfigModel, RetryPolicySettings
 
 DEFAULT_MAX_REVISIONS: int = 3
@@ -16,7 +15,6 @@ __all__ = [
     "RESERVED_STAGES",
     "WorkflowDefinition",
     "WorkflowStepDef",
-    "validation_error_to_config_error",
 ]
 
 
@@ -47,6 +45,8 @@ class WorkflowStepDef(ConfigModel):
                 max_rev = data.get("maxRevisions")
             if req and max_rev is None:
                 copied = dict(data)
+                copied.pop("maxRevisions", None)
+                copied.pop("max_revisions", None)
                 copied["max_revisions"] = DEFAULT_MAX_REVISIONS
                 return copied
         return data
@@ -205,9 +205,23 @@ class WorkflowDefinition(ConfigModel):
         # 2. GENERATED stage names across all steps are unique and not reserved
         seen_stages: dict[str, int] = {}
         for idx, step in enumerate(self.steps):
+            if step.stage in RESERVED_STAGES:
+                msg = (
+                    f"Step stage '{step.stage}' conflicts with "
+                    f"reserved stage name '{step.stage}'"
+                )
+                errs.append(
+                    {
+                        "type": "value_error",
+                        "loc": ("steps", idx, "stage"),
+                        "input": step.stage,
+                        "ctx": {"error": ValueError(msg)},
+                    }
+                )
+
             gen_stages = step.generated_stages()
             for stage_name in gen_stages:
-                if stage_name in RESERVED_STAGES or step.stage in RESERVED_STAGES:
+                if stage_name in RESERVED_STAGES and stage_name != step.stage:
                     msg = (
                         f"Step stage '{step.stage}' conflicts with "
                         f"reserved stage name '{stage_name}'"

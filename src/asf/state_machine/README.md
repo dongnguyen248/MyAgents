@@ -10,7 +10,7 @@ The state machine is **100% pure**:
 - No environment access (`os.environ` is forbidden).
 - No random numbers.
 - No clock calls during state transitions (`apply` is a deterministic mathematical function; same inputs always produce identical outputs).
-- Timestamps in `InvalidTransition.to_platform_error` accept an explicit `now` parameter or an injectable UTC default evaluated only upon error serialization.
+- Timestamps in `InvalidTransition.to_platform_error(now: datetime)` require an explicit, timezone-aware datetime passed by the caller (state machine has no clock).
 
 ## Public API
 
@@ -31,7 +31,7 @@ The state machine is **100% pure**:
 - `run_status(graph: StageGraph, stage: str) -> str`: Maps a stage to its corresponding coarse `WorkflowRun.status` (`PENDING`, `RUNNING`, `WAITING`, `COMPLETED`, `FAILED`, `CANCELLED`).
 
 ### Exceptions
-- `InvalidTransition(Exception)`: Raised when a trigger is invalid for the current stage, or when stage or trigger is unknown. Provides `.to_platform_error(now=None)` adhering to the `PlatformError` contract (`WORKFLOW_INVALID_TRANSITION`).
+- `InvalidTransition(Exception)`: Raised when a trigger is invalid for the current stage, or when stage or trigger is unknown. Provides `.to_platform_error(now: datetime)` adhering to the `PlatformError` contract (`WORKFLOW_INVALID_TRANSITION`).
 
 ## How to Read a Graph
 A `StageGraph` represents a finite state machine:

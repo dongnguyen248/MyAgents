@@ -46,6 +46,10 @@ class StateMachineRulesTests(unittest.TestCase):
             "import subprocess",
             "import requests",
             "import random",
+            "datetime.now",
+            "datetime.utcnow",
+            "time.time",
+            "time.monotonic",
         ]
 
         for py_file in py_files:
@@ -57,33 +61,16 @@ class StateMachineRulesTests(unittest.TestCase):
                     f"Forbidden pattern '{forbidden}' found in {py_file.name}",
                 )
 
-            # datetime.now check: only allowed as `datetime.now(timezone.utc)`
-            # inside `to_platform_error` in machine.py
-            if "datetime.now" in content:
-                self.assertEqual(
-                    py_file.name,
-                    "machine.py",
-                    f"datetime.now found in unexpected file: {py_file.name}",
-                )
-                tree = ast.parse(content, filename=str(py_file))
-                # Find all calls to datetime.now
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Call):
-                        func = node.func
-                        # match datetime.now(...)
-                        is_datetime_now = (
-                            isinstance(func, ast.Attribute)
-                            and func.attr == "now"
-                            and isinstance(func.value, ast.Name)
-                            and func.value.id == "datetime"
-                        )
-                        if is_datetime_now:
-                            # Verify that it takes timezone.utc as single arg
-                            self.assertEqual(len(node.args), 1)
-                            arg = node.args[0]
-                            self.assertTrue(
-                                isinstance(arg, ast.Attribute)
-                                and arg.attr == "utc"
-                                and isinstance(arg.value, ast.Name)
-                                and arg.value.id == "timezone"
+            tree = ast.parse(content, filename=str(py_file))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    func = node.func
+                    if isinstance(func, ast.Attribute):
+                        if func.attr in {"now", "utcnow"}:
+                            self.fail(
+                                f"Forbidden clock call '{func.attr}' found in {py_file.name}"
+                            )
+                        if func.attr in {"time", "monotonic"} and isinstance(func.value, ast.Name) and func.value.id == "time":
+                            self.fail(
+                                f"Forbidden clock call 'time.{func.attr}' found in {py_file.name}"
                             )

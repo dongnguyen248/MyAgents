@@ -184,6 +184,37 @@ steps:
                         any("reserved" in iss.message.lower() for iss in ctx.exception.issues)
                     )
 
+    def test_reserved_stage_with_approval_produces_single_issue(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            wf_file = Path(tmp_dir) / "test-wf.yaml"
+            wf_file.write_text(
+                """
+id: test-wf
+name: Test
+version: "1"
+steps:
+  - id: step1
+    name: Step 1
+    type: AGENT
+    stage: NEW
+    agentType: test
+    requiresApproval: true
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ConfigError) as ctx:
+                load_workflow(wf_file)
+
+            stage_issues = [
+                iss for iss in ctx.exception.issues if iss.path == "steps[0].stage"
+            ]
+            self.assertEqual(
+                len(stage_issues),
+                1,
+                f"Expected exactly 1 reserved stage error for step, got {len(stage_issues)}",
+            )
+            self.assertIn("reserved", stage_issues[0].message.lower())
+
     def test_consumes_not_produced_earlier_rejected(self):
         # Case A: Never produced
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -570,3 +601,114 @@ steps:
         self.assertEqual(raw_step, copy_raw)
         self.assertNotIn("max_revisions", raw_step)
         self.assertEqual(step.max_revisions, DEFAULT_MAX_REVISIONS)
+
+    def test_approval_step_max_revisions_null_and_missing_defaults_to_three(self):
+        cases = [
+            ("maxRevisions_null", {"requiresApproval": True, "maxRevisions": None}),
+            ("max_revisions_null", {"requires_approval": True, "max_revisions": None}),
+            ("missing_key", {"requiresApproval": True}),
+        ]
+        base_step = {
+            "id": "spec",
+            "name": "Spec",
+            "type": "AGENT",
+            "stage": "SPEC",
+            "agent_type": "spec",
+        }
+        for label, extra in cases:
+            with self.subTest(case=label):
+                raw = {**base_step, **extra}
+                step = WorkflowStepDef.model_validate(raw)
+                self.assertEqual(step.max_revisions, 3)
+                contract_dict = step.to_contract()
+                self.assertEqual(contract_dict.get("maxRevisions"), 3)
+
+    def test_model_to_contract_schema_drift_guard(self):
+        step_variants = [
+            (
+                "custom_step_type",
+                {
+                    "id": "s1",
+                    "name": "Custom",
+                    "type": "CUSTOM_STEP",
+                    "stage": "STAGE_CUSTOM",
+                    "action": "do-custom",
+                    "requiresApproval": False,
+                },
+            ),
+            (
+                "step_without_approval",
+                {
+                    "id": "s2",
+                    "name": "Plain",
+                    "type": "SYSTEM",
+                    "stage": "STAGE_PLAIN",
+                    "action": "do-plain",
+                    "requiresApproval": False,
+                },
+            ),
+            (
+                "step_approval_with_max_revisions",
+                {
+                    "id": "s3",
+                    "name": "Approval Custom Revs",
+                    "type": "AGENT",
+                    "stage": "STAGE_REV",
+                    "agentType": "agent-a",
+                    "requiresApproval": True,
+                    "maxRevisions": 5,
+                },
+            ),
+            (
+                "step_approval_without_max_revisions",
+                {
+                    "id": "s4",
+                    "name": "Approval Default Revs",
+                    "type": "AGENT",
+                    "stage": "STAGE_DEF_REV",
+                    "agentType": "agent-b",
+                    "requiresApproval": True,
+                },
+            ),
+            (
+                "step_consumes_produces",
+                {
+                    "id": "s5",
+                    "name": "Artifacts Step",
+                    "type": "AGENT",
+                    "stage": "STAGE_ART",
+                    "agentType": "agent-c",
+                    "requiresApproval": False,
+                    "produces": ["art_1"],
+                },
+            ),
+            (
+                "step_timeout_retry_policy",
+                {
+                    "id": "s6",
+                    "name": "Timeout Retry Step",
+                    "type": "AGENT",
+                    "stage": "STAGE_RETRY",
+                    "agentType": "agent-d",
+                    "requiresApproval": False,
+                    "timeout": 300,
+                    "retryPolicy": {
+                        "maxAttempts": 3,
+                        "backoffSeconds": 1.0,
+                    },
+                },
+            ),
+        ]
+
+        for variant_name, step_data in step_variants:
+            with self.subTest(variant=variant_name):
+                wf_dict = {
+                    "id": f"wf-{variant_name}",
+                    "name": f"Workflow {variant_name}",
+                    "version": "1.0.0",
+                    "steps": [step_data],
+                    "metadata": {"test": True},
+                }
+                wf = WorkflowDefinition.model_validate(wf_dict)
+                contract_dict = wf.to_contract()
+                self.workflow_validator.validate(contract_dict)
