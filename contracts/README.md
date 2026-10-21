@@ -13,7 +13,7 @@ The schema defines:
 - `RunMetrics` for single-run execution metrics (`durationSeconds`, `revisionCount`, `attempt`) returned in `AgentResult`.
 - `AgentMetrics` for aggregate agent performance statistics (`totalTasks`, success/approval rates, average execution time) aggregated and returned by `MetricsService.getAgentMetrics`.
 - `Artifact` for versioned content or an opaque external storage reference. Common artifact types include `SPEC`, `PLAN`, `TASK`, `CODE`, `CODE_REVIEW`, and `TEST_REPORT`; custom types are accepted.
-- `Task` (including fine-grained workflow `Task.stage` owned by the state machine) and `Workflow` / `WorkflowStep` for project-independent work and declarative workflow definitions.
+- `Task` (including fine-grained workflow `Task.stage` owned by the state machine), `Workflow` / `WorkflowStep` for declarative, project-independent workflow definitions, and `WorkflowRun` for tracking a single execution of a workflow definition.
 - `ApprovalRequest` and `ApprovalDecision` for human review, with extensible request types (`SPEC`, `PLAN`, `TASK`, `CODE_REVIEW`, `DEPLOYMENT`, or custom) and request status tracking (`PENDING`, `APPROVED`, `REJECTED`, `CHANGES_REQUESTED`, `CANCELLED`, `EXPIRED`).
 - `ActivityEvent` for observable platform activity, including the standard task, agent, artifact, approval, test, CI, and workflow events. Custom event types are accepted.
 - `ModelRequest` and `ModelResponse` for language-model gateway interactions independent of specific LLM providers.
@@ -21,7 +21,10 @@ The schema defines:
 - `PipelineRun` for tracking continuous integration builds and test pipelines.
 - `Project` and `PlatformError` for shared project configuration and standardized error reporting (with codes documented in [`errors.md`](errors.md)).
 
+> **Identity rule (W2):** In `Task`, `AgentRequest`, `ApprovalRequest`, and `ActivityEvent`, the `workflowId` field identifies the workflow DEFINITION. A task has at most one execution `WorkflowRun` (`WorkflowRun.taskId`).
+
 Rates are fractions from 0 through 1; `averageExecutionTime` and `durationSeconds` are measured in seconds. Metadata/configuration fields are JSON objects intended for producer-owned extensions. The contract enums deliberately distinguish closed lifecycle values from extensible type/event names.
+
 
 ## Agent communication
 

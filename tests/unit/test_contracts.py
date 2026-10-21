@@ -80,12 +80,14 @@ def workflow_step():
         "id": "spec",
         "name": "Write specification",
         "type": "AGENT",
+        "stage": "SPEC",
         "agentType": "spec",
         "requiresApproval": True,
         "timeout": 300,
         "retryPolicy": retry_policy(),
         "configuration": {},
     }
+
 
 
 VALID_INSTANCES = {
@@ -140,12 +142,23 @@ VALID_INSTANCES = {
         "id": "software-development",
         "name": "Software development",
         "version": "1",
-        "projectId": "sample",
         "steps": [workflow_step()],
-        "status": "ACTIVE",
-        "currentStep": "spec",
         "metadata": {},
     },
+    "WorkflowRun": {
+        "id": "run-1",
+        "workflowId": "software-development",
+        "workflowVersion": "1",
+        "projectId": "sample",
+        "taskId": "task-1",
+        "status": "PENDING",
+        "stage": "NEW",
+        "revisions": {},
+        "startedAt": TIMESTAMP,
+        "updatedAt": TIMESTAMP,
+        "metadata": {},
+    },
+
     "ApprovalRequest": {
         "id": "approval-1",
         "taskId": "task-1",
@@ -278,11 +291,13 @@ class ContractSchemaTests(unittest.TestCase):
             "id": "step-1",
             "name": "Invalid step",
             "type": "SYSTEM",
+            "stage": "STEP_1",
             "requiresApproval": False,
             "configuration": {},
         }
         workflow = dict(VALID_INSTANCES["Workflow"], steps=[step])
         self.assertFalse(validator_for("Workflow").is_valid(workflow))
+
 
     def test_approval_rejects_unknown_status_and_decision(self):
         request = dict(VALID_INSTANCES["ApprovalRequest"], status="WAITING")
@@ -346,8 +361,6 @@ class ContractSchemaTests(unittest.TestCase):
         approval = dict(VALID_INSTANCES["ApprovalRequest"], expiresAt=None)
         self.assertTrue(validator_for("ApprovalRequest").is_valid(approval))
 
-        workflow = dict(VALID_INSTANCES["Workflow"], currentStep=None)
-        self.assertTrue(validator_for("Workflow").is_valid(workflow))
 
         event_null_task = dict(VALID_INSTANCES["ActivityEvent"], taskId=None)
         self.assertTrue(validator_for("ActivityEvent").is_valid(event_null_task))
@@ -397,11 +410,11 @@ class ContractSchemaTests(unittest.TestCase):
                 lambda val: dict(VALID_INSTANCES["Task"], priority=val),
             ),
             (
-                "Workflow.status",
-                validator_for("Workflow"),
-                ["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"],
+                "WorkflowRun.status",
+                validator_for("WorkflowRun"),
+                ["PENDING", "RUNNING", "WAITING", "COMPLETED", "FAILED", "CANCELLED"],
                 "INVALID_STATUS",
-                lambda val: dict(VALID_INSTANCES["Workflow"], status=val),
+                lambda val: dict(VALID_INSTANCES["WorkflowRun"], status=val),
             ),
             (
                 "ApprovalRequest.status",
@@ -629,6 +642,7 @@ class ContractSchemaTests(unittest.TestCase):
             "ArtifactRepository",
             "TaskRepository",
             "WorkflowRepository",
+            "WorkflowRunRepository",
             "ApprovalService",
             "EventPublisher",
             "MetricsService",
@@ -656,6 +670,7 @@ class ContractSchemaTests(unittest.TestCase):
             "Artifact",
             "Task",
             "Workflow",
+            "WorkflowRun",
             "ApprovalRequest",
             "ApprovalDecision",
             "ActivityEvent",
@@ -667,6 +682,101 @@ class ContractSchemaTests(unittest.TestCase):
             "PipelineRun",
         }
         self.assertTrue(expected_contracts.issubset(contract_sig_types))
+
+    def test_workflow_rejects_legacy_fields_and_empty_steps(self):
+        # Workflow rejects projectId, status, currentStep (additionalProperties false)
+        wf_with_project = dict(VALID_INSTANCES["Workflow"], projectId="sample")
+        self.assertFalse(validator_for("Workflow").is_valid(wf_with_project))
+
+        wf_with_status = dict(VALID_INSTANCES["Workflow"], status="ACTIVE")
+        self.assertFalse(validator_for("Workflow").is_valid(wf_with_status))
+
+        wf_with_step = dict(VALID_INSTANCES["Workflow"], currentStep="spec")
+        self.assertFalse(validator_for("Workflow").is_valid(wf_with_step))
+
+        # Workflow rejects empty steps array
+        wf_empty_steps = dict(VALID_INSTANCES["Workflow"], steps=[])
+        self.assertFalse(validator_for("Workflow").is_valid(wf_empty_steps))
+
+    def test_workflow_step_stage_validation(self):
+        step_valid = dict(VALID_INSTANCES["WorkflowStep"], stage="SPEC")
+        self.assertTrue(validator_for("WorkflowStep").is_valid(step_valid))
+
+        step_missing_stage = dict(VALID_INSTANCES["WorkflowStep"])
+        step_missing_stage.pop("stage", None)
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_missing_stage))
+
+        step_lower_stage = dict(VALID_INSTANCES["WorkflowStep"], stage="spec")
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_lower_stage))
+
+        step_empty_stage = dict(VALID_INSTANCES["WorkflowStep"], stage="")
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_empty_stage))
+
+    def test_workflow_step_consumes_and_produces(self):
+        # consumes
+        step_consumes_ok = dict(VALID_INSTANCES["WorkflowStep"], consumes=["SPEC"])
+        self.assertTrue(validator_for("WorkflowStep").is_valid(step_consumes_ok))
+
+        step_consumes_dup = dict(VALID_INSTANCES["WorkflowStep"], consumes=["SPEC", "SPEC"])
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_consumes_dup))
+
+        step_consumes_empty_item = dict(VALID_INSTANCES["WorkflowStep"], consumes=[""])
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_consumes_empty_item))
+
+        # produces
+        step_produces_ok = dict(VALID_INSTANCES["WorkflowStep"], produces=["CODE"])
+        self.assertTrue(validator_for("WorkflowStep").is_valid(step_produces_ok))
+
+        step_produces_dup = dict(VALID_INSTANCES["WorkflowStep"], produces=["CODE", "CODE"])
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_produces_dup))
+
+        step_produces_empty_item = dict(VALID_INSTANCES["WorkflowStep"], produces=[""])
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_produces_empty_item))
+
+    def test_workflow_step_max_revisions(self):
+        step_rev_ok = dict(VALID_INSTANCES["WorkflowStep"], maxRevisions=3)
+        self.assertTrue(validator_for("WorkflowStep").is_valid(step_rev_ok))
+
+        step_rev_zero = dict(VALID_INSTANCES["WorkflowStep"], maxRevisions=0)
+        self.assertTrue(validator_for("WorkflowStep").is_valid(step_rev_zero))
+
+        step_rev_neg = dict(VALID_INSTANCES["WorkflowStep"], maxRevisions=-1)
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_rev_neg))
+
+        step_rev_float = dict(VALID_INSTANCES["WorkflowStep"], maxRevisions=1.5)
+        self.assertFalse(validator_for("WorkflowStep").is_valid(step_rev_float))
+
+    def test_workflow_run_validation(self):
+        run = dict(VALID_INSTANCES["WorkflowRun"])
+        self.assertTrue(validator_for("WorkflowRun").is_valid(run))
+
+        # Rejects missing fields
+        for field in [
+            "id", "workflowId", "workflowVersion", "projectId", "taskId",
+            "status", "stage", "revisions", "startedAt", "updatedAt", "metadata"
+        ]:
+            bad_run = dict(run)
+            bad_run.pop(field)
+            self.assertFalse(validator_for("WorkflowRun").is_valid(bad_run))
+
+        # Rejects unknown status
+        bad_status = dict(run, status="UNKNOWN_STATUS")
+        self.assertFalse(validator_for("WorkflowRun").is_valid(bad_status))
+
+        # Rejects negative or non-integer revision values
+        bad_rev_neg = dict(run, revisions={"step1": -1})
+        self.assertFalse(validator_for("WorkflowRun").is_valid(bad_rev_neg))
+
+        bad_rev_float = dict(run, revisions={"step1": 2.5})
+        self.assertFalse(validator_for("WorkflowRun").is_valid(bad_rev_float))
+
+        # Rejects bad timestamps
+        bad_started = dict(run, startedAt="not-a-timestamp")
+        self.assertFalse(validator_for("WorkflowRun").is_valid(bad_started))
+
+        bad_updated = dict(run, updatedAt="not-a-timestamp")
+        self.assertFalse(validator_for("WorkflowRun").is_valid(bad_updated))
+
 
 
 if __name__ == "__main__":

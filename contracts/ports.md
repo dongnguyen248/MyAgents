@@ -8,9 +8,11 @@ These are language-neutral port descriptions, not implementations. Implementatio
 | `AgentRegistry` | `get(agentId) -> Agent`; `list() -> AgentMetadata[]`; `register(agent)`; `unregister(agentId)` |
 | `ArtifactRepository` | `create(artifact: Artifact) -> Artifact`; `get(artifactId) -> Artifact`; `listByTask(taskId) -> Artifact[]` |
 | `TaskRepository` | `create(task: Task) -> Task`; `get(taskId) -> Task`; `update(task: Task) -> Task`; `listByProject(projectId) -> Task[]` |
-| `WorkflowRepository` | `get(workflowId) -> Workflow`; `listByProject(projectId) -> Workflow[]` |
+| `WorkflowRepository` | `get(workflowId) -> Workflow`; `list() -> Workflow[]` |
+| `WorkflowRunRepository` | `create(run: WorkflowRun) -> WorkflowRun`; `get(runId) -> WorkflowRun`; `getByTask(taskId) -> WorkflowRun`; `update(run: WorkflowRun) -> WorkflowRun`; `listByProject(projectId) -> WorkflowRun[]` |
 | `ApprovalService` | `request(approval: ApprovalRequest) -> ApprovalRequest`; `get(approvalId) -> ApprovalRequest`; `decide(decision: ApprovalDecision) -> ApprovalRequest` |
 | `EventPublisher` | `publish(event: ActivityEvent)` |
+
 | `MetricsService` | `record(agentId, result: AgentResult)`; `getAgentMetrics(agentId) -> AgentMetrics` |
 | `ProjectRepository` | `get(projectId) -> Project`; `list() -> Project[]` |
 | `ModelGateway` | `complete(request: ModelRequest) -> ModelResponse` |

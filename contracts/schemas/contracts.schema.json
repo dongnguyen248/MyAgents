@@ -187,7 +187,7 @@
         "assignedAgent": {"type": ["string", "null"]},
         "stage": {
           "type": ["string", "null"],
-          "description": "Fine-grained workflow stage owned by the state machine. Open string; null when the workflow does not use stages."
+          "description": "Fine-grained workflow stage owned by the state machine. Mirrors WorkflowRun.stage. Open string; null when the workflow does not use stages."
         },
         "artifacts": {"type": "array", "items": {"$ref": "#/$defs/Artifact"}},
         "createdAt": {"type": "string", "format": "date-time"},
@@ -208,7 +208,7 @@
     "WorkflowStep": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "type", "requiresApproval", "configuration"],
+      "required": ["id", "name", "type", "stage", "requiresApproval", "configuration"],
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "name": {"type": "string", "minLength": 1},
@@ -217,30 +217,86 @@
           "minLength": 1,
           "description": "Standard values are AGENT, APPROVAL, SYSTEM, and INTEGRATION. Custom step types are allowed."
         },
+        "stage": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Base stage name. Steps that require approval generate <STAGE>_DRAFT, _REVIEW, _REJECTED, _APPROVED and _ESCALATED; other steps generate exactly <STAGE>."
+        },
         "agentType": {"type": "string", "minLength": 1},
         "action": {"type": "string", "minLength": 1},
         "requiresApproval": {"type": "boolean"},
         "timeout": {"type": "integer", "minimum": 1, "description": "Timeout in seconds."},
         "retryPolicy": {"$ref": "#/$defs/RetryPolicy"},
-        "configuration": {"$ref": "#/$defs/Metadata"}
+        "configuration": {"$ref": "#/$defs/Metadata"},
+        "consumes": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true,
+          "description": "artifact types this step needs"
+        },
+        "produces": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true,
+          "description": "artifact types this step creates"
+        },
+        "maxRevisions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "rework cycles allowed after a rejection before escalation; meaningful only when requiresApproval is true"
+        }
       },
       "anyOf": [{"required": ["agentType"]}, {"required": ["action"]}]
     },
     "Workflow": {
       "type": "object",
+      "description": "Declarative, project-independent workflow definition. A single execution is a WorkflowRun.",
       "additionalProperties": false,
-      "required": ["id", "name", "version", "projectId", "steps", "status", "currentStep", "metadata"],
+      "required": ["id", "name", "version", "steps", "metadata"],
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "name": {"type": "string", "minLength": 1},
         "version": {"type": "string", "minLength": 1},
-        "projectId": {"type": "string", "minLength": 1},
-        "steps": {"type": "array", "items": {"$ref": "#/$defs/WorkflowStep"}},
-        "status": {"type": "string", "enum": ["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"]},
-        "currentStep": {"type": ["string", "null"]},
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/WorkflowStep"}
+        },
         "metadata": {"$ref": "#/$defs/Metadata"}
       }
     },
+    "WorkflowRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "workflowId", "workflowVersion", "projectId", "taskId",
+        "status", "stage", "revisions", "startedAt", "updatedAt", "metadata"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "workflowId": {"type": "string", "minLength": 1},
+        "workflowVersion": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "taskId": {"type": "string", "minLength": 1},
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "RUNNING", "WAITING", "COMPLETED", "FAILED", "CANCELLED"]
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1,
+          "description": "current stage, equals Task.stage"
+        },
+        "revisions": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "startedAt": {"type": "string", "format": "date-time"},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "metadata": {"$ref": "#/$defs/Metadata"}
+      }
+    },
+
     "ApprovalRequest": {
       "type": "object",
       "additionalProperties": false,
