@@ -19,12 +19,17 @@ class AgentRulesTests(unittest.TestCase):
         contracts_dir = REPO_ROOT / "src" / "asf" / "contracts"
         assert_pure_package(self, contracts_dir)
 
-        # 3. Purity guard over src/asf/models/ports.py and errors.py
+        # 3. Purity guard over src/asf/models (ports, errors, fake)
         models_dir = REPO_ROOT / "src" / "asf" / "models"
-        assert_pure_package(self, models_dir, include=["ports.py", "errors.py"])
+        assert_pure_package(self, models_dir, include=["ports.py", "errors.py", "fake.py"])
 
-        # 4. Purity check on fake.py
-        assert_pure_package(self, models_dir, include=["fake.py"])
+        # 4. Purity guard over src/asf/approval
+        approval_dir = REPO_ROOT / "src" / "asf" / "approval"
+        assert_pure_package(self, approval_dir)
+
+        # 5. Purity guard over src/asf/state_machine
+        sm_dir = REPO_ROOT / "src" / "asf" / "state_machine"
+        assert_pure_package(self, sm_dir)
 
     def test_agent_logic_modules_import_boundaries(self):
         """Logic modules (base.py, spec/agent.py, spec/prompts.py) may import only
