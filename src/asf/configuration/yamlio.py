@@ -47,14 +47,34 @@ UniqueKeyLoader.add_constructor(
 )
 
 
+def _format_yaml_error(exc: yaml.YAMLError) -> str:
+    if isinstance(exc, yaml.MarkedYAMLError):
+        pieces: list[str] = []
+        if exc.context:
+            pieces.append(str(exc.context).strip())
+        if exc.problem:
+            pieces.append(str(exc.problem).strip())
+        mark = exc.problem_mark or exc.context_mark
+        if mark:
+            pieces.append(f"at line {mark.line + 1}, column {mark.column + 1}")
+        if pieces:
+            if len(pieces) == 3:
+                return f"{pieces[0]}: {pieces[1]} {pieces[2]}"
+            if len(pieces) == 2:
+                return f"{pieces[0]} {pieces[1]}"
+            return pieces[0]
+    return "YAML parsing error"
+
+
 def load_yaml_mapping(
     stream: str | Path | TextIO,
     source: str | None = None,
 ) -> dict[str, Any]:
-    src_name = source or (str(stream) if isinstance(stream, (str, Path)) else None)
+    src_name = source
 
     content: str
     if isinstance(stream, Path):
+        src_name = src_name or str(stream)
         try:
             content = stream.read_text(encoding="utf-8")
         except OSError as e:
@@ -64,30 +84,29 @@ def load_yaml_mapping(
             ) from e
     elif isinstance(stream, str):
         # Could be path or raw yaml content
-        potential_path = Path(stream)
-        if potential_path.is_file():
-            try:
-                content = potential_path.read_text(encoding="utf-8")
+        try:
+            potential_path = Path(stream)
+            if potential_path.is_file():
                 src_name = src_name or stream
-            except OSError as e:
-                raise ConfigError(
-                    f"Cannot read file '{stream}': {e}",
-                    source=src_name,
-                ) from e
-        else:
+                content = potential_path.read_text(encoding="utf-8")
+            else:
+                content = stream
+        except OSError:
             content = stream
     else:
         content = stream.read()
 
+
     try:
         data = yaml.load(content, Loader=UniqueKeyLoader)
     except yaml.YAMLError as exc:
-        msg = str(exc)
+        msg = _format_yaml_error(exc)
         raise ConfigError(
             f"YAML syntax error: {msg}",
             issues=[ConfigIssue(path="", message=msg)],
             source=src_name,
         ) from exc
+
 
     if data is None:
         return {}

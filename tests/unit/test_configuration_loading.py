@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -9,8 +10,8 @@ from asf.configuration.yamlio import deep_merge, load_yaml_mapping
 
 
 class ConfigurationLoadingTests(unittest.TestCase):
-
     def test_defaults_only_valid(self):
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Empty directory with no platform.yaml
             config = load_platform_config(tmp_dir)
@@ -117,6 +118,38 @@ logLevel: DEBUG
         with self.assertRaises(ConfigError) as ctx:
             load_yaml_mapping(yaml_content)
         self.assertTrue(len(ctx.exception.issues) > 0)
+
+    def test_yaml_duplicate_key_never_embeds_source_snippets_or_secret_values(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "config.yaml"
+            file_path.write_text("token: SENTINEL_A\ntoken: SENTINEL_A\n", encoding="utf-8")
+            with self.assertRaises(ConfigError) as ctx:
+                load_yaml_mapping(file_path)
+            err = ctx.exception
+            err_str = str(err)
+            self.assertNotIn("SENTINEL_A", err_str)
+            for issue in err.issues:
+                self.assertNotIn("SENTINEL_A", issue.message)
+            platform_errors_json = json.dumps(err.to_platform_errors())
+            self.assertNotIn("SENTINEL_A", platform_errors_json)
+            self.assertRegex(err_str, r"\bline 2\b")
+
+    def test_yaml_syntax_error_never_embeds_source_snippets_or_secret_values(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "config.yaml"
+            file_path.write_text("apiKey: SENTINEL_B: bad\n", encoding="utf-8")
+            with self.assertRaises(ConfigError) as ctx:
+                load_yaml_mapping(file_path)
+            err = ctx.exception
+            err_str = str(err)
+            self.assertNotIn("SENTINEL_B", err_str)
+            for issue in err.issues:
+                self.assertNotIn("SENTINEL_B", issue.message)
+            platform_errors_json = json.dumps(err.to_platform_errors())
+            self.assertNotIn("SENTINEL_B", platform_errors_json)
+            self.assertRegex(err_str, r"\bline 1\b")
+
+
 
     def test_non_mapping_root_rejected(self):
         with self.assertRaises(ConfigError) as ctx:

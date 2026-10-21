@@ -26,7 +26,9 @@ class ConfigError(Exception):
 
         if not message:
             if issues:
-                joined = "; ".join(f"{iss.path}: {iss.message}" for iss in issues)
+                joined = "; ".join(
+                    f"{iss.path}: {iss.message}" if iss.path else iss.message for iss in issues
+                )
                 src_part = f" in '{source}'" if source else ""
                 message = f"Configuration error{src_part}: {joined}"
             elif source:
@@ -44,14 +46,16 @@ class ConfigError(Exception):
                 details: dict[str, Any] = {"path": issue.path}
                 if self.source is not None:
                     details["source"] = self.source
+                msg = f"{issue.path}: {issue.message}" if issue.path else issue.message
                 errors.append({
                     "code": "VALIDATION_FAILED",
-                    "message": f"{issue.path}: {issue.message}",
+                    "message": msg,
                     "category": "VALIDATION",
                     "details": details,
                     "retryable": False,
                     "timestamp": ts,
                 })
+
         else:
             details = {}
             if self.source is not None:
