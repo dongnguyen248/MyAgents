@@ -32,9 +32,9 @@ Agents receive an `AgentRequest`, validate it, and execute it to return an `Agen
 
 `AgentResult.status` captures execution outcome:
 - `SUCCESS`: Task completed and expected artifacts were produced.
-- `FAILURE`: Execution failed due to a runtime error or unrecoverable exception.
-- `REJECTED`: The agent deliberately refused or rejected the request (e.g., requirement violates policy, is contradictory, or unfulfillable) — distinct from operational `FAILURE` or `TIMEOUT`.
-- `TIMEOUT`: Execution or model interaction exceeded timeout limits.
+- `FAILED`: Execution failed due to a model error or unrecoverable exception.
+- `REJECTED`: The request was refused by validation (no gateway call, no events, errors = validation errors).
+- `WAITING`: Agent paused execution waiting on external dependency.
 - `CANCELLED`: Execution was cancelled externally.
 
 ### Conventions

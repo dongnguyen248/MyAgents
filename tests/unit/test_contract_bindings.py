@@ -5,8 +5,9 @@ import copy
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Literal
 
-from pydantic import ValidationError
+from pydantic import AwareDatetime, Field, ValidationError
 
 from asf.approval.models import ApprovalFeedback
 from asf.contracts.models import (
@@ -402,3 +403,74 @@ class ContractBindingsTests(unittest.TestCase):
                             allowed_asf_modules,
                             f"Forbidden import from '{node.module}' in {py_file.name}",
                         )
+
+    def test_helper_self_test_fails_on_wrong_model(self):
+        from asf.contracts.models import ContractModel
+
+        # 1. Extra field in model must fail assert_contract_binding
+        class ExtraFieldModel(ContractModel):
+            code: str = Field(min_length=1)
+            message: str = Field(min_length=1)
+            category: Literal["VALIDATION"] = "VALIDATION"
+            details: dict[str, Any] = Field(default_factory=dict)
+            retryable: bool = False
+            timestamp: AwareDatetime
+            extra_field: str = "bad"
+
+        with self.assertRaises(AssertionError):
+            assert_contract_binding(
+                self,
+                ExtraFieldModel,
+                "PlatformError",
+                ExtraFieldModel(
+                    code="E",
+                    message="M",
+                    retryable=False,
+                    timestamp=T_AWARE,
+                ),
+            )
+
+        # 2. Wrong enum value must fail assert_contract_binding
+        class WrongEnumModel(ContractModel):
+            code: str = Field(min_length=1)
+            message: str = Field(min_length=1)
+            category: Literal["INVALID_CATEGORY"] = "INVALID_CATEGORY"  # type: ignore[assignment]
+            details: dict[str, Any] = Field(default_factory=dict)
+            retryable: bool = False
+            timestamp: AwareDatetime
+
+        with self.assertRaises(AssertionError):
+            assert_contract_binding(
+                self,
+                WrongEnumModel,
+                "PlatformError",
+                WrongEnumModel(
+                    code="E",
+                    message="M",
+                    retryable=False,
+                    timestamp=T_AWARE,
+                ),
+                enum_paths={"category": "category"},
+            )
+
+        # 3. String timestamp instead of AwareDatetime must fail assert_contract_binding
+        class StrTimestampModel(ContractModel):
+            code: str = Field(min_length=1)
+            message: str = Field(min_length=1)
+            category: Literal["VALIDATION"] = "VALIDATION"
+            details: dict[str, Any] = Field(default_factory=dict)
+            retryable: bool = False
+            timestamp: str = "2026-10-20T14:00:00Z"
+
+        with self.assertRaises(AssertionError):
+            assert_contract_binding(
+                self,
+                StrTimestampModel,
+                "PlatformError",
+                StrTimestampModel(
+                    code="E",
+                    message="M",
+                    retryable=False,
+                ),
+            )
+

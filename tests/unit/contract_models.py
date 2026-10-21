@@ -110,7 +110,31 @@ def assert_contract_binding(
                 f"Enum mismatch for field '{field_name}' in {def_name}",
             )
 
-    # (d) Validates against $def
+    # (d) Date-time format check: every schema date-time field must be date-time in model schema
+    model_schema = model_cls.model_json_schema(by_alias=True)
+    for prop_name, prop_def in schema_def.get("properties", {}).items():
+        if prop_def.get("format") == "date-time":
+            m_prop_def = model_schema.get("properties", {}).get(prop_name, {})
+            is_dt = (m_prop_def.get("format") == "date-time")
+            if not is_dt and "anyOf" in m_prop_def:
+                is_dt = any(sub.get("format") == "date-time" for sub in m_prop_def["anyOf"])
+            test_case.assertTrue(
+                is_dt,
+                f"Property '{prop_name}' in {def_name} must have format 'date-time' "
+                "in model JSON schema",
+            )
+
+    # (e) additionalProperties is false on both sides
+    test_case.assertFalse(
+        schema_def.get("additionalProperties"),
+        f"Schema additionalProperties must be false for {def_name}",
+    )
+    test_case.assertFalse(
+        model_schema.get("additionalProperties"),
+        f"Model additionalProperties must be false for {def_name}",
+    )
+
+    # (f) Validates against $def
     defs = dict(SCHEMA["$defs"])
     if def_name not in defs:
         defs[def_name] = schema_def
