@@ -33,19 +33,16 @@ Agents follow a strict two-stage execution lifecycle:
 
 The result status (`AgentResult.status`) can be one of:
 - `SUCCESS`: Task completed successfully and expected artifacts were produced.
-- `FAILURE`: Execution failed due to a runtime error or unrecoverable exception.
-- `REJECTED`: The agent deliberately rejected the request (e.g. requirement violates policy, is contradictory, or cannot be fulfilled).
-- `TIMEOUT`: Execution or model interaction exceeded configured timeout limits.
-- `CANCELLED`: Execution was cancelled externally.
+- `FAILED`: Execution failed due to a model gateway error or unexpected exception.
+- `REJECTED`: The request was refused by validation (no gateway call, no events).
 
 ## Runtime Injection
 
 Agents never create side effects, read system clocks, or generate identifiers on their own. Instead, an `AgentRuntime` instance is injected into the agent constructor:
 
-- `clock`: Injected function returning the current ISO-8601 UTC timestamp or datetime.
-- `id_generator`: Injected function producing unique identifiers (e.g. for events and artifacts).
-- `model_gateway`: Injected `ModelGateway` implementation for completing model requests.
-- `event_publisher`: Optional injected `EventPublisher` for recording lifecycle and activity events.
+- `models`: Injected `ModelGateway` implementation for completing model requests.
+- `clock`: Injected function returning a timezone-aware `datetime` (UTC).
+- `new_id`: Injected function producing unique identifiers (e.g. for events and artifacts).
 
 ## Dependency Rules
 
@@ -58,7 +55,7 @@ To preserve isolation and modularity:
 2. **Prohibited imports:**
    - No imports of orchestrator, state machine, approval service, storage backends, integration adapters, or project profiles.
    - No direct network, filesystem, or operating system calls.
-3. **Side effects only via ports:**
+3. **Side effects only via ports and result:**
    - Language model calls must go through `ModelGateway`.
-   - Event publishing must go through `EventPublisher`.
-   - Artifact persistence is handled by the orchestrator upon receiving the returned `AgentResult`.
+   - Events and artifacts are returned on `AgentResult` for the orchestrator to publish and persist.
+

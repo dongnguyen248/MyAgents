@@ -60,10 +60,13 @@ The Spec Agent strictly respects the language of the provided requirement. For i
 
 ## Events, Metrics & Errors
 
-- **Activity Events:** Emits `agent.started` at execution beginning, and `agent.completed` or `agent.failed` upon termination.
-- **Run Metrics:** Returns `RunMetrics` tracking `duration_seconds`, `revision_count`, `attempt`, `tokens_used`, and `cost_usd`.
-- **Platform Errors:** Maps errors into standard codes:
-  - `VALIDATION_ERROR`: Input failed validation checks.
+- **Activity Events:** Emits `AGENT_STARTED` at start, `ARTIFACT_CREATED` per artifact, and `AGENT_COMPLETED` on success (or `AGENT_STARTED` and `AGENT_FAILED` on failure).
+- **Run Metrics:** Returns `RunMetrics` tracking `duration_seconds`, `revision_count`, and `attempt`.
+- **Platform Errors:** Maps errors into standard catalog codes:
+  - `VALIDATION_FAILED`: Input failed validation checks.
   - `LLM_TIMEOUT`: Model call timed out.
-  - `LLM_INVALID_RESPONSE`: Model response failed template validation or was corrupted.
-  - `AGENT_EXECUTION_FAILED`: General unhandled execution error.
+  - `LLM_RATE_LIMITED`: Model provider rate limit exceeded.
+  - `LLM_INVALID_RESPONSE`: Model response failed template validation or was empty.
+  - `INTEGRATION_UNAVAILABLE`: Underlying integration service unavailable.
+  - `AGENT_EXECUTION_FAILED`: General unhandled execution exception.
+
