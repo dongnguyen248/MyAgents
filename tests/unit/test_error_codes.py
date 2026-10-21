@@ -41,14 +41,17 @@ class ErrorCodesTest(unittest.TestCase):
 
     def test_error_codes_catalog(self):
         rows = self.parse_table_rows()
-        self.assertGreaterEqual(len(rows), 17)
+        self.assertGreaterEqual(len(rows), 18)
 
         codes = [row["code"] for row in rows]
         # Assert codes are unique
         self.assertEqual(len(codes), len(set(codes)), "Error codes must be unique")
 
-        # Assert table contains NOT_FOUND
+        # Assert table contains NOT_FOUND and APPROVAL_NOT_AUTHORIZED
         self.assertIn("NOT_FOUND", codes)
+        self.assertIn("APPROVAL_NOT_AUTHORIZED", codes)
+        not_auth_row = next(r for r in rows if r["code"] == "APPROVAL_NOT_AUTHORIZED")
+        self.assertEqual(not_auth_row["category"], "APPROVAL")
 
         for row in rows:
             code = row["code"]

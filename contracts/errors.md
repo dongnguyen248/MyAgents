@@ -14,7 +14,8 @@ Below is the standard catalog of built-in platform error codes. Each code maps t
 | WORKFLOW_INVALID_TRANSITION | WORKFLOW | false | state transition not allowed |
 | WORKFLOW_STEP_TIMEOUT | WORKFLOW | true | step exceeded its timeout |
 | APPROVAL_EXPIRED | APPROVAL | false | decision arrived after expiresAt |
-| APPROVAL_ALREADY_DECIDED | APPROVAL | false | a decision already exists |
+| APPROVAL_ALREADY_DECIDED | APPROVAL | false | a decision already exists, or the reviewer already approved |
+| APPROVAL_NOT_AUTHORIZED | APPROVAL | false | reviewer is not allowed to decide this approval |
 | INTEGRATION_UNAVAILABLE | INTEGRATION | true | external integration unreachable |
 | LLM_TIMEOUT | LLM | true | model call timed out |
 | LLM_RATE_LIMITED | LLM | true | model provider throttled the call |

@@ -10,7 +10,8 @@ These are language-neutral port descriptions, not implementations. Implementatio
 | `TaskRepository` | `create(task: Task) -> Task`; `get(taskId) -> Task`; `update(task: Task) -> Task`; `listByProject(projectId) -> Task[]` |
 | `WorkflowRepository` | `get(workflowId) -> Workflow`; `list() -> Workflow[]` |
 | `WorkflowRunRepository` | `create(run: WorkflowRun) -> WorkflowRun`; `get(runId) -> WorkflowRun`; `getByTask(taskId) -> WorkflowRun`; `update(run: WorkflowRun) -> WorkflowRun`; `listByProject(projectId) -> WorkflowRun[]` |
-| `ApprovalService` | `request(approval: ApprovalRequest) -> ApprovalRequest`; `get(approvalId) -> ApprovalRequest`; `decide(decision: ApprovalDecision) -> ApprovalRequest` |
+| `ApprovalRepository` | `create(approval: ApprovalRequest) -> ApprovalRequest`; `get(approvalId) -> ApprovalRequest`; `update(approval: ApprovalRequest) -> ApprovalRequest`; `listByTask(taskId) -> ApprovalRequest[]`; `listPending() -> ApprovalRequest[]`; `addDecision(decision: ApprovalDecision)`; `listDecisions(approvalId) -> ApprovalDecision[]` |
+| `ApprovalService` | `request(taskId, workflowId, projectId, artifactId, type, requestedBy, policy: ApprovalPolicy, metadata, now) -> ApprovalRequest`; `get(approvalId) -> ApprovalRequest`; `decide(decision: ApprovalDecision) -> ApprovalRequest`; `cancel(approvalId, now) -> ApprovalRequest`; `expireDue(now) -> ApprovalRequest[]`; `listDecisions(approvalId) -> ApprovalDecision[]`; `feedbackFor(approvalId) -> ApprovalFeedback[]` |
 | `EventPublisher` | `publish(event: ActivityEvent)` |
 
 | `MetricsService` | `record(agentId, result: AgentResult)`; `getAgentMetrics(agentId) -> AgentMetrics` |
@@ -20,6 +21,8 @@ These are language-neutral port descriptions, not implementations. Implementatio
 | `CiProvider` | `trigger(projectId, ref) -> PipelineRun`; `getRun(projectId, runId) -> PipelineRun` |
 
 `ValidationResult` is defined in the schema as `{ valid: boolean, errors: PlatformError[] }`. A validation failure is an ordinary result, not an execution; `execute` returns `AgentResult` and does not dispatch another agent.
+
+Operations that depend on time take an explicit timestamp (`now`) or carry it in the payload; implementations never read a clock; `ApprovalDecision.createdAt` is stamped by the caller from a trusted clock.
 
 ### Errors
 

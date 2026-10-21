@@ -14,7 +14,7 @@ The schema defines:
 - `AgentMetrics` for aggregate agent performance statistics (`totalTasks`, success/approval rates, average execution time) aggregated and returned by `MetricsService.getAgentMetrics`.
 - `Artifact` for versioned content or an opaque external storage reference. Common artifact types include `SPEC`, `PLAN`, `TASK`, `CODE`, `CODE_REVIEW`, and `TEST_REPORT`; custom types are accepted.
 - `Task` (including fine-grained workflow `Task.stage` owned by the state machine), `Workflow` / `WorkflowStep` for declarative, project-independent workflow definitions, and `WorkflowRun` for tracking a single execution of a workflow definition.
-- `ApprovalRequest` and `ApprovalDecision` for human review, with extensible request types (`SPEC`, `PLAN`, `TASK`, `CODE_REVIEW`, `DEPLOYMENT`, or custom) and request status tracking (`PENDING`, `APPROVED`, `REJECTED`, `CHANGES_REQUESTED`, `CANCELLED`, `EXPIRED`).
+- `ApprovalPolicy`, `ApprovalRequest`, `ApprovalDecision`, and `ApprovalFeedback` for human review, with extensible request types (`SPEC`, `PLAN`, `TASK`, `CODE_REVIEW`, `DEPLOYMENT`, or custom) and request status tracking (`PENDING`, `APPROVED`, `REJECTED`, `CHANGES_REQUESTED`, `CANCELLED`, `EXPIRED`).
 - `ActivityEvent` for observable platform activity, including the standard task, agent, artifact, approval, test, CI, and workflow events. Custom event types are accepted.
 - `ModelRequest` and `ModelResponse` for language-model gateway interactions independent of specific LLM providers.
 - `CodeChangeRequest` for tracking branches and change requests across source control systems.
@@ -34,9 +34,13 @@ The orchestrator controls workflow progression. An agent returns output and arti
 
 ## Approval and feedback
 
-When a workflow step requires human review, the platform creates an `ApprovalRequest` associated with its project, task, workflow, and artifact. An `ApprovalDecision` records the reviewer, decision (`APPROVED`, `REJECTED`, `REQUEST_CHANGES`), timestamp, and feedback comment.
+When a workflow step requires human review, the platform creates an `ApprovalRequest` associated with its project, task, workflow, and artifact. An `ApprovalPolicy` defines `minApprovals`, authorized `reviewers` (opaque identifier strings), and optional `expiresInSeconds`. When creating a request, `minApprovals` and `reviewers` are snapshotted onto the `ApprovalRequest`, and `expiresAt` is set to `now + expiresInSeconds` (or `null` if none).
 
-When an `ApprovalDecision` of `REQUEST_CHANGES` is made, the `ApprovalRequest` status transitions to `CHANGES_REQUESTED`. When a decision of `REJECTED` is made, the status transitions to `REJECTED`. Both `REQUEST_CHANGES -> CHANGES_REQUESTED` and `REJECTED -> REJECTED` return control to the orchestrator, which can include the reviewer's feedback in a subsequent `AgentRequest`; the approval service itself does not revise artifacts or call agents.
+An `ApprovalDecision` records the reviewer, decision (`APPROVED`, `REJECTED`, `REQUEST_CHANGES`), timestamp, and feedback comment. Decisions follow strict lifecycle rules:
+- **Distinct-approvals rule**: An `APPROVED` decision must come from an authorized reviewer who has not already approved. When the count of distinct approving reviewers reaches `minApprovals`, the request status becomes `APPROVED`; otherwise, it remains `PENDING`.
+- **Status mapping**: `APPROVED -> APPROVED` (once `minApprovals` are met); `REJECTED -> REJECTED` immediately; `REQUEST_CHANGES -> CHANGES_REQUESTED` immediately.
+- **Expiry**: Handled explicitly via `expireDue(now)` (or lazily upon decision at or after `expiresAt`), which transitions past-due pending requests to `EXPIRED`.
+- **Feedback**: Stored negative decisions (`REJECTED` or `REQUEST_CHANGES`) produce `ApprovalFeedback` records via `feedbackFor(approvalId)`. The `AgentRequest.feedback` field replaces the earlier `input.feedback` convention, allowing the orchestrator to pass reviewer feedback directly when re-invoking the producing agent. The approval service itself does not revise artifacts or call agents.
 
 ## Events and dashboard
 

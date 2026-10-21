@@ -170,6 +170,8 @@ VALID_INSTANCES = {
         "requestedBy": "orchestrator",
         "requestedAt": TIMESTAMP,
         "expiresAt": None,
+        "minApprovals": 1,
+        "reviewers": ["reviewer-1"],
         "metadata": {},
     },
     "ApprovalDecision": {
@@ -178,6 +180,17 @@ VALID_INSTANCES = {
         "reviewer": "reviewer-1",
         "comment": "Please clarify the requirements.",
         "createdAt": TIMESTAMP,
+    },
+    "ApprovalPolicy": {
+        "minApprovals": 1,
+        "reviewers": ["reviewer-1"],
+        "expiresInSeconds": 3600,
+    },
+    "ApprovalFeedback": {
+        "approvalId": "approval-1",
+        "reviewer": "reviewer-1",
+        "decision": "REQUEST_CHANGES",
+        "comment": "Please clarify the requirements.",
     },
     "ActivityEvent": activity_event(),
     "RunMetrics": run_metrics(),
@@ -361,6 +374,9 @@ class ContractSchemaTests(unittest.TestCase):
         approval = dict(VALID_INSTANCES["ApprovalRequest"], expiresAt=None)
         self.assertTrue(validator_for("ApprovalRequest").is_valid(approval))
 
+        policy = dict(VALID_INSTANCES["ApprovalPolicy"], expiresInSeconds=None)
+        self.assertTrue(validator_for("ApprovalPolicy").is_valid(policy))
+
 
         event_null_task = dict(VALID_INSTANCES["ActivityEvent"], taskId=None)
         self.assertTrue(validator_for("ActivityEvent").is_valid(event_null_task))
@@ -429,6 +445,13 @@ class ContractSchemaTests(unittest.TestCase):
                 ["APPROVED", "REJECTED", "REQUEST_CHANGES"],
                 "INVALID_DECISION",
                 lambda val: dict(VALID_INSTANCES["ApprovalDecision"], decision=val),
+            ),
+            (
+                "ApprovalFeedback.decision",
+                validator_for("ApprovalFeedback"),
+                ["REJECTED", "REQUEST_CHANGES"],
+                "INVALID_DECISION",
+                lambda val: dict(VALID_INSTANCES["ApprovalFeedback"], decision=val),
             ),
             (
                 "PlatformError.category",
@@ -579,6 +602,80 @@ class ContractSchemaTests(unittest.TestCase):
         empty_type_request = dict(VALID_INSTANCES["ApprovalRequest"], type="")
         self.assertFalse(validator_for("ApprovalRequest").is_valid(empty_type_request))
 
+    def test_approval_request_reviewers_and_min_approvals(self):
+        # rejects missing minApprovals
+        req = dict(VALID_INSTANCES["ApprovalRequest"])
+        del req["minApprovals"]
+        self.assertFalse(validator_for("ApprovalRequest").is_valid(req))
+
+        # rejects missing reviewers
+        req = dict(VALID_INSTANCES["ApprovalRequest"])
+        del req["reviewers"]
+        self.assertFalse(validator_for("ApprovalRequest").is_valid(req))
+
+        # rejects minApprovals 0
+        req = dict(VALID_INSTANCES["ApprovalRequest"], minApprovals=0)
+        self.assertFalse(validator_for("ApprovalRequest").is_valid(req))
+
+        # rejects empty reviewers
+        req = dict(VALID_INSTANCES["ApprovalRequest"], reviewers=[])
+        self.assertFalse(validator_for("ApprovalRequest").is_valid(req))
+
+        # rejects duplicate reviewers
+        req = dict(VALID_INSTANCES["ApprovalRequest"], reviewers=["reviewer-1", "reviewer-1"])
+        self.assertFalse(validator_for("ApprovalRequest").is_valid(req))
+
+    def test_approval_policy_validation(self):
+        # accepts null expiry
+        pol = dict(VALID_INSTANCES["ApprovalPolicy"], expiresInSeconds=None)
+        self.assertTrue(validator_for("ApprovalPolicy").is_valid(pol))
+
+        # rejects expiresInSeconds 0
+        pol = dict(VALID_INSTANCES["ApprovalPolicy"], expiresInSeconds=0)
+        self.assertFalse(validator_for("ApprovalPolicy").is_valid(pol))
+
+        # rejects minApprovals 0
+        pol = dict(VALID_INSTANCES["ApprovalPolicy"], minApprovals=0)
+        self.assertFalse(validator_for("ApprovalPolicy").is_valid(pol))
+
+        # rejects empty reviewers
+        pol = dict(VALID_INSTANCES["ApprovalPolicy"], reviewers=[])
+        self.assertFalse(validator_for("ApprovalPolicy").is_valid(pol))
+
+        # rejects duplicate reviewers
+        pol = dict(VALID_INSTANCES["ApprovalPolicy"], reviewers=["r1", "r1"])
+        self.assertFalse(validator_for("ApprovalPolicy").is_valid(pol))
+
+        # rejects empty reviewer string
+        pol = dict(VALID_INSTANCES["ApprovalPolicy"], reviewers=[""])
+        self.assertFalse(validator_for("ApprovalPolicy").is_valid(pol))
+
+    def test_approval_feedback_validation(self):
+        # rejects decision APPROVED
+        fb = dict(VALID_INSTANCES["ApprovalFeedback"], decision="APPROVED")
+        self.assertFalse(validator_for("ApprovalFeedback").is_valid(fb))
+
+        # rejects empty comment
+        fb = dict(VALID_INSTANCES["ApprovalFeedback"], comment="")
+        self.assertFalse(validator_for("ApprovalFeedback").is_valid(fb))
+
+        # accepts valid feedback
+        self.assertTrue(validator_for("ApprovalFeedback").is_valid(VALID_INSTANCES["ApprovalFeedback"]))
+
+    def test_agent_request_feedback(self):
+        # validates without feedback
+        req = dict(VALID_INSTANCES["AgentRequest"])
+        req.pop("feedback", None)
+        self.assertTrue(validator_for("AgentRequest").is_valid(req))
+
+        # accepts a valid feedback list
+        req = dict(VALID_INSTANCES["AgentRequest"], feedback=[VALID_INSTANCES["ApprovalFeedback"]])
+        self.assertTrue(validator_for("AgentRequest").is_valid(req))
+
+        # rejects an invalid item
+        req = dict(VALID_INSTANCES["AgentRequest"], feedback=[{"invalid": True}])
+        self.assertFalse(validator_for("AgentRequest").is_valid(req))
+
     def test_model_request_validation(self):
         empty_messages = dict(VALID_INSTANCES["ModelRequest"], messages=[])
         self.assertFalse(validator_for("ModelRequest").is_valid(empty_messages))
@@ -643,6 +740,7 @@ class ContractSchemaTests(unittest.TestCase):
             "TaskRepository",
             "WorkflowRepository",
             "WorkflowRunRepository",
+            "ApprovalRepository",
             "ApprovalService",
             "EventPublisher",
             "MetricsService",
@@ -671,8 +769,10 @@ class ContractSchemaTests(unittest.TestCase):
             "Task",
             "Workflow",
             "WorkflowRun",
+            "ApprovalPolicy",
             "ApprovalRequest",
             "ApprovalDecision",
+            "ApprovalFeedback",
             "ActivityEvent",
             "AgentMetrics",
             "Project",

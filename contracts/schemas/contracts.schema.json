@@ -69,6 +69,11 @@
         "input": {"type": "object"},
         "context": {"type": "object"},
         "artifacts": {"type": "array", "items": {"$ref": "#/$defs/Artifact"}},
+        "feedback": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/ApprovalFeedback"},
+          "description": "Reviewer feedback from the previous approval round, supplied by the orchestrator when it re-invokes the producing agent"
+        },
         "metadata": {"$ref": "#/$defs/Metadata"}
       }
     },
@@ -297,12 +302,32 @@
       }
     },
 
+    "ApprovalPolicy": {
+      "type": "object",
+      "description": "Who may decide an approval, how many distinct approvals are needed, and optional expiry. Invariant minApprovals <= number of reviewers is enforced by implementations, not by this schema.",
+      "additionalProperties": false,
+      "required": ["minApprovals", "reviewers", "expiresInSeconds"],
+      "properties": {
+        "minApprovals": {"type": "integer", "minimum": 1},
+        "reviewers": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "expiresInSeconds": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        }
+      }
+    },
     "ApprovalRequest": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "id", "taskId", "workflowId", "projectId", "artifactId", "type",
-        "status", "requestedBy", "requestedAt", "expiresAt", "metadata"
+        "status", "requestedBy", "requestedAt", "expiresAt", "minApprovals",
+        "reviewers", "metadata"
       ],
       "properties": {
         "id": {"type": "string", "minLength": 1},
@@ -322,6 +347,13 @@
         "requestedBy": {"type": "string", "minLength": 1},
         "requestedAt": {"type": "string", "format": "date-time"},
         "expiresAt": {"type": ["string", "null"], "format": "date-time"},
+        "minApprovals": {"type": "integer", "minimum": 1},
+        "reviewers": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1,
+          "uniqueItems": true
+        },
         "metadata": {"$ref": "#/$defs/Metadata"}
       }
     },
@@ -335,6 +367,20 @@
         "reviewer": {"type": "string", "minLength": 1},
         "comment": {"type": "string"},
         "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "ApprovalFeedback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "reviewer", "decision", "comment"],
+      "properties": {
+        "approvalId": {"type": "string", "minLength": 1},
+        "reviewer": {"type": "string", "minLength": 1},
+        "decision": {
+          "type": "string",
+          "enum": ["REJECTED", "REQUEST_CHANGES"]
+        },
+        "comment": {"type": "string", "minLength": 1}
       }
     },
     "Project": {
