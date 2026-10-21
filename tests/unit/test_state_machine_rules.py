@@ -70,7 +70,11 @@ class StateMachineRulesTests(unittest.TestCase):
                             self.fail(
                                 f"Forbidden clock call '{func.attr}' found in {py_file.name}"
                             )
-                        if func.attr in {"time", "monotonic"} and isinstance(func.value, ast.Name) and func.value.id == "time":
+                        if (
+                            func.attr in {"time", "monotonic"}
+                            and isinstance(func.value, ast.Name)
+                            and func.value.id == "time"
+                        ):
                             self.fail(
                                 f"Forbidden clock call 'time.{func.attr}' found in {py_file.name}"
                             )
