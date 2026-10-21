@@ -30,6 +30,18 @@ Rates are fractions from 0 through 1; `averageExecutionTime` and `durationSecond
 
 Agents receive an `AgentRequest`, validate it, and execute it to return an `AgentResult`. They do not call or sequence other agents, nor depend directly on GitLab, Teams, a dashboard, a database, or an LLM provider. The `Agent` port and repository/service ports are documented in [`ports.md`](ports.md); they specify required capabilities without binding them to a language or adapter.
 
+`AgentResult.status` captures execution outcome:
+- `SUCCESS`: Task completed and expected artifacts were produced.
+- `FAILURE`: Execution failed due to a runtime error or unrecoverable exception.
+- `REJECTED`: The agent deliberately refused or rejected the request (e.g., requirement violates policy, is contradictory, or unfulfillable) — distinct from operational `FAILURE` or `TIMEOUT`.
+- `TIMEOUT`: Execution or model interaction exceeded timeout limits.
+- `CANCELLED`: Execution was cancelled externally.
+
+### Conventions
+
+- **SPEC content convention:** For markdown specifications, `Artifact.content` is structured as `{"format": "markdown", "text": "..."}`, allowing consumers to inspect format and content without heuristic parsing.
+- **Attempt metadata convention:** `Artifact.metadata.attempt` and `RunMetrics.attempt` record the 1-indexed execution attempt number for the task or step, enabling clear correlation across revision cycles.
+
 The orchestrator controls workflow progression. An agent returns output and artifacts; the orchestrator stores or resolves the artifacts and makes relevant artifacts available to the next step. Agents therefore communicate indirectly through workflow-managed artifacts, rather than through tightly coupled calls. Artifact content can travel inline or through an opaque repository reference, allowing large content to live outside an agent process.
 
 ## Approval and feedback

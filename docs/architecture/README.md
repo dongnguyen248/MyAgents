@@ -18,7 +18,14 @@ Agents do not directly call each other. A direct chain would couple agent implem
 Approval is a platform service: an `ApprovalRequest` identifies the artifact and workflow context, and an `ApprovalDecision` records the reviewer, decision (`APPROVED`, `REJECTED`, `REQUEST_CHANGES`), and comment. When `REQUEST_CHANGES` is decided, the request transitions to `CHANGES_REQUESTED`; when `REJECTED`, it transitions to `REJECTED`. Both return feedback to the orchestrator; the orchestrator may include it in a subsequent agent request. Agents do not own approval or notification integrations.
 
 ## 3. Agent architecture
-Seven agents (spec, plan, task, implement, review, test, fix) in `src/asf/agents/`, each with `prompts/`, `instructions/`, `tools/`, `skills/`, `tests/`. Agents are stateless w.r.t. the workflow, never call each other, never own approval, and contain nothing project- or vendor-specific.
+Seven specialized agents (spec, plan, task, implement, review, test, fix) reside in `src/asf/agents/`, each structured with `prompts/`, `instructions/`, `tools/`, `skills/`, and `tests/`.
+
+- **BaseAgent & Lifecycle:** Agents inherit from `BaseAgent`, which enforces a two-stage lifecycle:
+  1. `validate(request: AgentRequest) -> ValidationResult`: Pre-execution validation of inputs, required schemas, and constraints.
+  2. `execute(request: AgentRequest) -> AgentResult`: Execution that records execution timing, captures `RunMetrics`, emits lifecycle `ActivityEvent` records (`agent.started`, `agent.completed`, `agent.failed`), and maps exceptions to standard `PlatformError` entries.
+- **Injected Runtime:** Agents receive an `AgentRuntime` (`clock`, `id_generator`, `model_gateway`, optional `event_publisher`) injected into their constructor. Agents never read system time, never generate uncoordinated IDs, and never interact with networks or LLMs directly.
+- **Spec Agent:** The first implemented agent (`asf.agents.spec`) turns a requirement and optional prior feedback/artifacts into a validated `SPEC` artifact conforming to the standard 7-section specification template. When reviewer feedback or prior specifications are provided, it executes a revision flow, preserving approved sections while addressing concerns.
+- **Independence:** Agents are stateless with respect to the workflow, never call each other directly, never own approval, and contain nothing project- or vendor-specific.
 
 ## 4. Skill architecture
 Skills are knowledge packages (java, spring, react, python, git, testing, security, ...). Projects enable/disable them; the orchestrator resolves enabled skills per agent run.
@@ -55,7 +62,7 @@ Agent requests and results do not expose a specific LLM provider. Model selectio
 6. Agents never perform side effects (shell, git, network including LLM calls, filesystem, database) directly. They act only through ports defined in contracts/ports.md; implementations live in src/asf/tools, src/asf/execution, src/asf/models, src/asf/storage and src/asf/integrations, and are wired in by the orchestrator.
 7. Configuration never contains secret values. Credentials are referenced by environment-variable name and resolved only by adapters at the moment of use.
 8. The state machine is pure (no I/O, no clock); stage lists are generated from workflow definitions and never hard-coded.
-9. Time is injected: engines (state machine, approval) never read the clock; callers pass `now`. Identifiers come from injected factories.
+9. Time and identifiers are injected: engines (state machine, approval) and agents never read the clock or generate ids; callers inject them (as `now`, `clock`, and identifier factories).
 
 ## 11. Future Harness² integration
 `harness/` is isolated from runtime. `evaluation/` scores agents, `optimization/` tests prompt/skill/tool/config changes, `harness2/` is reserved for the Harness² adapter. Runtime metrics from `src/asf/evaluation/` feed it.
