@@ -37,10 +37,16 @@ Project profiles (`ProjectProfile`) in `projects/<id>.yaml` map 1:1 to the `Proj
 - **Generated stages (W3):** Stage lists are generated dynamically from workflow definitions and are never hard-coded in platform code. Global stages are `NEW`, `COMPLETED`, `FAILED`, and `CANCELLED`. For each step with base stage `S`, steps requiring approval generate `S_DRAFT`, `S_REVIEW`, `S_REJECTED`, `S_APPROVED`, and `S_ESCALATED`; plain steps generate exactly `S`.
 - **Coarse status mapping (W7):** Fine-grained stages map deterministically by `StageKind` to coarse statuses: `Task.status` (`NEW`, `IN_PROGRESS`, `WAITING`, `COMPLETED`, `FAILED`, `CANCELLED`) and `WorkflowRun.status` (`PENDING`, `RUNNING`, `WAITING`, `COMPLETED`, `FAILED`, `CANCELLED`).
 
-## 8. Provider independence
+## 8. Approval engine architecture
+- **Pure in-memory engine:** The approval engine (`src/asf/approval/`) manages the review lifecycle without I/O or clock reads, enforcing policies, multi-reviewer thresholds, lazy/proactive expiry, and feedback collection.
+- **Reviewer snapshotting:** When a review request is created, authorized `reviewers` and `minApprovals` are snapshotted from the project's `ApprovalPolicy` onto the `ApprovalRequest`. `expiresAt` is computed as `now + expiresInSeconds`.
+- **Distinct approvals:** Transitioning to `APPROVED` requires `minApprovals` distinct authorized reviewers; duplicate approvals by the same reviewer are rejected. Negative decisions (`REJECTED`, `REQUEST_CHANGES`) close the request immediately.
+- **Feedback handoff:** Stored negative decisions produce `ApprovalFeedback` items which the orchestrator injects into `AgentRequest.feedback` when re-invoking the producing agent.
+
+## 9. Provider independence
 Agent requests and results do not expose a specific LLM provider. Model selection and provider-specific request/response translation belong behind future integration ports and adapters. Likewise, repository, CI, and approval providers are not embedded in core contracts; new providers implement the relevant port without requiring project-specific agents or workflows.
 
-## 9. Platform design rules
+## 10. Platform design rules
 1. `src/asf/`, `contracts/`, `skills/` and `workflows/` never reference a specific project.
 2. Agents never call each other; the orchestrator mediates via artifacts + approvals.
 3. Human approval is a platform capability, not part of any agent.
@@ -49,11 +55,12 @@ Agent requests and results do not expose a specific LLM provider. Model selectio
 6. Agents never perform side effects (shell, git, network including LLM calls, filesystem, database) directly. They act only through ports defined in contracts/ports.md; implementations live in src/asf/tools, src/asf/execution, src/asf/models, src/asf/storage and src/asf/integrations, and are wired in by the orchestrator.
 7. Configuration never contains secret values. Credentials are referenced by environment-variable name and resolved only by adapters at the moment of use.
 8. The state machine is pure (no I/O, no clock); stage lists are generated from workflow definitions and never hard-coded.
+9. Time is injected: engines (state machine, approval) never read the clock; callers pass `now`. Identifiers come from injected factories.
 
-## 10. Future Harness² integration
+## 11. Future Harness² integration
 `harness/` is isolated from runtime. `evaluation/` scores agents, `optimization/` tests prompt/skill/tool/config changes, `harness2/` is reserved for the Harness² adapter. Runtime metrics from `src/asf/evaluation/` feed it.
 
-## 11. Repository layout
+## 12. Repository layout
 
 ```text
 ai-software-factory/
@@ -92,7 +99,7 @@ ai-software-factory/
 
 **Rationale:** The `src/` layout with a single top-level importable package named `asf` avoids generic top-level namespace collisions (such as `core` or `agents`) with other installed packages or standard library extensions.
 
-## Dashboard Architecture
+## 13. Dashboard Architecture
 
 `apps/dashboard` is the **Control Tower**: a generic web UI for observing and managing the whole factory (agents, tasks, workflows, approvals, projects, metrics, live activity). It is a single React + TypeScript + Vite app, independent from the platform code.
 

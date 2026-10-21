@@ -63,3 +63,26 @@ configuration:
 
 status: ACTIVE
 ```
+
+## Approval settings
+
+Project profiles can configure human approval policies under `configuration.approval`:
+
+- `reviewers` (required list of non-empty strings): Authorized reviewer identifiers. Real reviewer identifiers will be mapped when the channel adapter is configured (Phase 8); currently neutral identifiers (e.g., `reviewer-1`) are used in tests. No real reviewer identifiers exist in existing project profiles yet.
+- `minApprovals` (optional integer >= 1, default 1): Number of distinct reviewer approvals required to transition an approval to `APPROVED`. Must be `<= len(reviewers)`.
+- `expiresInSeconds` (optional integer >= 1 or null, default null): Time-to-live for pending approval requests. `null` means the approval does not expire.
+- `channel` (optional mapping or string): Target notification channel metadata (e.g., Teams channel configuration). Passed through and consumed by notification adapters.
+
+### Example configuration
+
+```yaml
+configuration:
+  approval:
+    channel: teams
+    reviewers:
+      - reviewer-1
+      - reviewer-2
+    minApprovals: 1
+    expiresInSeconds: 86400
+```
+
