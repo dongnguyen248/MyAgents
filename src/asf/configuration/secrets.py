@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Mapping
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 

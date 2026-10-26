@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, Mapping
+from typing import Literal
 
 from asf.state_machine.triggers import StageKind, Trigger
 from asf.workflow.definition import (
