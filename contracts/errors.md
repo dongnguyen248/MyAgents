@@ -24,3 +24,6 @@ Below is the standard catalog of built-in platform error codes. Each code maps t
 | GIT_OPERATION_FAILED | GIT | true | source-control operation failed |
 | CI_RUN_FAILED | CI | false | pipeline finished with failure |
 | CI_UNAVAILABLE | CI | true | CI system unreachable |
+| REPOSITORY_ERROR | INTEGRATION | true | repository port read/list failure |
+| SANDBOX_ERROR | INTEGRATION | true | sandbox infrastructure failure |
+| COMMAND_TIMEOUT | INTEGRATION | true | command exceeded its timeout |

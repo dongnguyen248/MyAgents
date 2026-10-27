@@ -21,7 +21,7 @@ dist/
 .ruff_cache/
 .coverage
 htmlcov/
-
+tests/unit/test_shared_security.py
 # Runtime artifacts
 artifacts/
 
