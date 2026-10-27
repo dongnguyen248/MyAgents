@@ -34,6 +34,30 @@ class WorkflowDefinitionTests(unittest.TestCase):
     def setUp(self):
         self.workflow_validator = validator_for("Workflow")
 
+    def test_implement_consumes_spec_plan_task(self):
+        workflows_dir = REPO_ROOT / "workflows"
+        workflows = load_workflows(workflows_dir)
+        sd = workflows["software-development"]
+        implement_step = next(s for s in sd.steps if s.id == "implement")
+        self.assertEqual(implement_step.consumes, ["SPEC", "PLAN", "TASK"])
+        self.assertEqual(implement_step.produces, ["CODE"])
+
+    def test_review_consumes_spec_plan_task_code(self):
+        workflows_dir = REPO_ROOT / "workflows"
+        workflows = load_workflows(workflows_dir)
+        sd = workflows["software-development"]
+        review_step = next(s for s in sd.steps if s.id == "review")
+        self.assertEqual(review_step.consumes, ["SPEC", "PLAN", "TASK", "CODE"])
+        self.assertEqual(review_step.produces, ["CODE_REVIEW"])
+
+    def test_test_consumes_task_code(self):
+        workflows_dir = REPO_ROOT / "workflows"
+        workflows = load_workflows(workflows_dir)
+        sd = workflows["software-development"]
+        test_step = next(s for s in sd.steps if s.id == "test")
+        self.assertEqual(test_step.consumes, ["TASK", "CODE"])
+        self.assertEqual(test_step.produces, ["TEST_REPORT"])
+
     def test_real_workflows_load_and_validate_against_schema(self):
         workflows_dir = REPO_ROOT / "workflows"
         workflows = load_workflows(workflows_dir)

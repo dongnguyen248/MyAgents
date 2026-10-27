@@ -46,6 +46,8 @@ steps:
     requiresApproval: false
     configuration: {}
     consumes:
+      - SPEC
+      - PLAN
       - TASK
     produces:
       - CODE
@@ -58,6 +60,9 @@ steps:
     requiresApproval: false
     configuration: {}
     consumes:
+      - SPEC
+      - PLAN
+      - TASK
       - CODE
     produces:
       - CODE_REVIEW
@@ -70,6 +75,7 @@ steps:
     requiresApproval: false
     configuration: {}
     consumes:
+      - TASK
       - CODE
     produces:
       - TEST_REPORT
