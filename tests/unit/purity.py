@@ -18,6 +18,8 @@ FORBIDDEN_PATTERNS: tuple[str, ...] = (
     "datetime.utcnow",
     "time.time",
     "time.monotonic",
+    "time.sleep",
+    "import time",
     "import uuid",
     "uuid.",
 )

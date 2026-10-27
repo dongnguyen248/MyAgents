@@ -22,7 +22,7 @@ These are language-neutral port descriptions, not implementations. Implementatio
 
 `ValidationResult` is defined in the schema as `{ valid: boolean, errors: PlatformError[] }`. A validation failure is an ordinary result, not an execution; `execute` returns `AgentResult` and does not dispatch another agent.
 
-Operations that depend on time take an explicit timestamp (`now`) or carry it in the payload; implementations never read a clock; `ApprovalDecision.createdAt` is stamped by the caller from a trusted clock.
+Operations that depend on time obtain time only from a `now` argument, the payload, or an injected clock, never by reading a clock themselves; `ApprovalDecision.createdAt` is stamped by the caller from a trusted clock.
 
 ### Errors
 
