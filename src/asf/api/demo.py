@@ -268,13 +268,16 @@ class DemoFactoryService(FactoryService):
         )
 
 
-def _project_writer(projects_dir: Path) -> Callable[[ProjectProfile], None]:
-    """Persist dashboard-created projects as ``projects/<id>.yaml``.
+def _project_writer(
+    projects_dir: Path, *, overwrite: bool = False,
+) -> Callable[[ProjectProfile], None]:
+    """Persist dashboard-managed projects as ``projects/<id>.yaml``.
 
     The written file is a regular project profile: it goes through the same
     secret scan as hand-written files (literal secrets are rejected; use
     ``{env: VAR}`` references), and the loader picks it up on the next start
-    because its stem equals the profile id.
+    because its stem equals the profile id. ``overwrite`` is for edits of an
+    existing project; creation refuses to clobber a file.
     """
 
     def write(profile: ProjectProfile) -> None:
@@ -285,13 +288,22 @@ def _project_writer(projects_dir: Path) -> Callable[[ProjectProfile], None]:
                 "use {env: VAR} references instead",
             )
         path = projects_dir / f"{profile.id}.yaml"
-        if path.exists():
+        if path.exists() and not overwrite:
             raise ValueError(f"Project file already exists: {path.name}")
         path.write_text(
             yaml.safe_dump(data, sort_keys=False), encoding="utf-8",
         )
 
     return write
+
+
+def _project_remover(projects_dir: Path) -> Callable[[str], None]:
+    """Delete ``projects/<id>.yaml`` for a dashboard-deleted project."""
+
+    def remove(project_id: str) -> None:
+        (projects_dir / f"{project_id}.yaml").unlink(missing_ok=True)
+
+    return remove
 
 
 def build_demo(
@@ -337,6 +349,8 @@ def build_demo(
         engine, projects=projects, metrics=metrics, store=store,
         reviewer="dashboard", clock=clock,
         on_project_created=_project_writer(projects_dir),
+        on_project_updated=_project_writer(projects_dir, overwrite=True),
+        on_project_deleted=_project_remover(projects_dir),
     )
     return service, engine, store
 

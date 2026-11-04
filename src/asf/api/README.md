@@ -44,7 +44,9 @@ calls, plus run control and health:
 | `GET /workflows` / `GET /workflows/{id}` | `list_workflows()` / `get_workflow(id)` | id is the run id (task id also accepted) |
 | `GET /projects` | `list_projects()` | |
 | `POST /projects` | `create_project(profile)` | body is the project-profile shape (`projects/<id>.yaml`, camelCase); 201 with the project view; duplicate id → 409; invalid profile or non-slug id → 422. The service's optional `on_project_created` hook runs before registration; the demo assembly uses it to persist the profile as `projects/<id>.yaml` (secret-scanned, never overwrites). Without a hook, projects live in memory only. |
-| `GET /approvals` | `list_approvals()` | pending approvals across all known runs |
+| `PUT /projects/{id}` | `update_project(id, profile)` | the payload is merged over the stored profile, so unmanaged fields (`repository.url`, approval reviewers) survive a dashboard edit; the id cannot change (→ 422); unknown id → 404; invalid → 422. `on_project_updated` hook; the demo rewrites `projects/<id>.yaml`. The project view also exposes the editable profile fields (`description`, `workflow`, `enabledSkills`, `technologyGroups`, `approvalChannel`) for form prefill. |
+| `DELETE /projects/{id}` | `delete_project(id)` | 204 on success; unknown id → 404; 409 while the project has non-terminal runs (terminal runs stay in the task/workflow history). `on_project_deleted` hook; the demo removes `projects/<id>.yaml`. |
+| `GET /approvals` | `list_approvals()` | pending approvals across all known runs; each view carries `summary` (first line) and, when the artifact is known, `artifactContent` with its full text (structured payloads rendered as JSON) so reviewers can read before deciding |
 | `POST /approvals/{id}/decision` | `decide_approval(id, decision, comment)` | body `{decision, comment?}`; `ApprovalError` → 409 with `{"detail": <code>}` |
 | `GET /activity?agentId&taskId&projectId&limit` | `list_activity(filter)` | newest first |
 | `GET /metrics/overview` | `get_metrics_overview()` | passthrough, or a valid zeroed overview without a metrics service |

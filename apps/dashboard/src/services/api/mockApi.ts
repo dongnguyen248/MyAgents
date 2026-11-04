@@ -56,6 +56,11 @@ export const mockApi: FactoryApi = {
       name: input.name,
       repositoryProvider: input.repository.provider,
       technologies: [...input.technology.backend, ...input.technology.frontend],
+      description: input.description ?? '',
+      workflow: input.workflow,
+      enabledSkills: input.enabledSkills,
+      technologyGroups: { ...input.technology },
+      approvalChannel: input.configuration.approval?.channel ?? '',
       agentIds: agents.map((a) => a.id),
       ci: 'UNKNOWN',
       ciFailures24h: 0,
@@ -63,6 +68,29 @@ export const mockApi: FactoryApi = {
     };
     projectStore.push(project);
     return delay(project);
+  },
+  updateProject: (id, input) => {
+    const index = projectStore.findIndex((p) => p.id === id);
+    if (index < 0) return Promise.reject(new Error(`Project '${id}' not found`));
+    const updated: Project = {
+      ...projectStore[index],
+      name: input.name,
+      description: input.description ?? projectStore[index].description,
+      repositoryProvider: input.repository.provider,
+      technologies: [...input.technology.backend, ...input.technology.frontend],
+      workflow: input.workflow,
+      enabledSkills: input.enabledSkills,
+      technologyGroups: { ...input.technology },
+      approvalChannel: input.configuration.approval?.channel ?? '',
+    };
+    projectStore[index] = updated;
+    return delay(updated);
+  },
+  deleteProject: (id) => {
+    const index = projectStore.findIndex((p) => p.id === id);
+    if (index < 0) return Promise.reject(new Error(`Project '${id}' not found`));
+    projectStore.splice(index, 1);
+    return delay(undefined);
   },
 
   listApprovals: () => delay(approvals),

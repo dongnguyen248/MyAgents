@@ -12,7 +12,12 @@ import pytest
 from asf.agents.base import AgentRuntime
 from asf.agents.plan.factory import build_plan_agent
 from asf.agents.spec.factory import build_spec_agent
-from asf.api.service import FactoryService, ProjectExistsError
+from asf.api.service import (
+    FactoryService,
+    ProjectConflictError,
+    ProjectExistsError,
+    ProjectNotFoundError,
+)
 from asf.approval.models import ApprovalPolicy
 from asf.approval.service import ApprovalService
 from asf.configuration.platform import PlatformConfig
@@ -340,3 +345,51 @@ def test_create_project_hook_runs_before_registration():
     with pytest.raises(ValueError, match="disk full"):
         blocked.create_project(NEW_PROJECT)
     assert "proj-3" not in {p["id"] for p in blocked.list_projects()}
+
+
+def test_update_project_merges_over_stored_profile():
+    service, _metrics = build_service()
+    service.create_project(NEW_PROJECT)
+    updated = service.update_project("proj-3", {"name": "Project Three v2"})
+    assert updated["name"] == "Project Three v2"
+    assert updated["repositoryProvider"] == "github"  # kept from stored profile
+    assert updated["technologies"] == ["go", "vue"]
+    assert updated["workflow"] == "software-development"
+    assert updated["approvalChannel"] == "teams"
+
+
+def test_update_project_unknown_and_id_change():
+    service, _metrics = build_service()
+    with pytest.raises(ProjectNotFoundError):
+        service.update_project("nope", NEW_PROJECT)
+    with pytest.raises(ValueError):
+        service.update_project("proj-1", {**NEW_PROJECT, "id": "proj-9"})
+
+
+def test_delete_project_rules():
+    service, _metrics = build_service()
+    service.create_project(NEW_PROJECT)
+    service.delete_project("proj-3")
+    assert "proj-3" not in {p["id"] for p in service.list_projects()}
+    with pytest.raises(ProjectNotFoundError):
+        service.delete_project("proj-3")
+
+
+def test_delete_project_blocked_while_run_active():
+    service, _metrics = build_service()
+    start_at_spec_review(service)  # proj-1 run waiting at SPEC_REVIEW
+    with pytest.raises(ProjectConflictError):
+        service.delete_project("proj-1")
+
+
+def test_update_and_delete_hooks_run_in_order():
+    calls: list = []
+    service = FactoryService(
+        build_engine(), projects=PROJECTS, clock=lambda: NOW,
+        on_project_updated=lambda profile: calls.append(("updated", profile.id)),
+        on_project_deleted=lambda pid: calls.append(("deleted", pid)),
+    )
+    service.create_project(NEW_PROJECT)
+    service.update_project("proj-3", {"name": "Renamed"})
+    service.delete_project("proj-3")
+    assert calls == [("updated", "proj-3"), ("deleted", "proj-3")]

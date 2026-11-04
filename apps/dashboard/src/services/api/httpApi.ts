@@ -17,6 +17,18 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     if (!res.ok && res.status !== 404) throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
     return res;
   };
+  const send = async <T>(path: string, method: string, body?: unknown): Promise<T> => {
+    const res = await fetch(baseUrl + path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+      throw new Error(data?.detail ?? `${method} ${path} -> ${res.status}`);
+    }
+    return (res.status === 204 ? undefined : await res.json()) as T;
+  };
   const get = async <T>(path: string): Promise<T> => (await request(path)).json() as Promise<T>;
   const getOpt = async <T>(path: string): Promise<T | undefined> => {
     const res = await request(path);
@@ -36,18 +48,9 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     getWorkflow: (id) => getOpt(`/workflows/${id}`),
 
     listProjects: () => get('/projects'),
-    createProject: async (input) => {
-      const res = await fetch(baseUrl + '/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { detail?: string } | null;
-        throw new Error(data?.detail ?? `POST /projects -> ${res.status}`);
-      }
-      return (await res.json()) as Project;
-    },
+    createProject: (input) => send<Project>('/projects', 'POST', input),
+    updateProject: (id, input) => send<Project>(`/projects/${id}`, 'PUT', input),
+    deleteProject: (id) => send<void>(`/projects/${id}`, 'DELETE'),
 
     listApprovals: () => get('/approvals'),
     decideApproval: async (id, input) =>

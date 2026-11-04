@@ -27,6 +27,8 @@ export interface FactoryApi {
 
   listProjects(): Promise<Project[]>;
   createProject(input: ProjectProfileInput): Promise<Project>;
+  updateProject(id: string, input: ProjectProfileInput): Promise<Project>;
+  deleteProject(id: string): Promise<void>;
 
   listApprovals(): Promise<Approval[]>;
   decideApproval(id: string, input: ApprovalDecisionInput): Promise<Approval>;
