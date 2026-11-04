@@ -114,6 +114,32 @@ def test_factory_builds_openai_compatible_with_default_base():
     assert isinstance(gateway, OpenAICompatibleGateway)
 
 
+class _RecordingTransport:
+    def __init__(self) -> None:
+        self.urls: list[str] = []
+
+    def post(self, url, *, headers, body, timeout_seconds):  # noqa: ANN001, ANN202
+        self.urls.append(url)
+        payload = {
+            "model": "muse-spark-1.3",
+            "choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+        return 200, json.dumps(payload).encode()
+
+
+def test_factory_meta_preset_targets_meta_model_api():
+    transport = _RecordingTransport()
+    gateway = build_configured_gateway({
+        "provider": "meta", "model": "muse-spark-1.3",
+        "apiKey": "meta-key", "baseUrl": "",
+    }, transport)
+    assert isinstance(gateway, OpenAICompatibleGateway)
+    response = gateway.complete(_request())
+    assert response.content == "hi"
+    assert transport.urls == ["https://api.meta.ai/v1/chat/completions"]
+
+
 class _OkTransport:
     def post(self, url, *, headers, body, timeout_seconds):  # noqa: ANN001, ANN202
         payload = {
