@@ -87,5 +87,9 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     },
 
     getMetricsOverview: () => get('/metrics/overview'),
+
+    getModelSettings: () => get('/settings/model'),
+    updateModelSettings: (input) => send('/settings/model', 'PUT', input),
+    testModelSettings: () => send('/settings/model/test', 'POST', {}),
   };
 }

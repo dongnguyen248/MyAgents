@@ -184,6 +184,7 @@ class FactoryService:
         on_project_created: Callable[[ProjectProfile], None] | None = None,
         on_project_updated: Callable[[ProjectProfile], None] | None = None,
         on_project_deleted: Callable[[str], None] | None = None,
+        model_settings: Any = None,
     ) -> None:
         self._engine = engine
         self._metrics = metrics
@@ -192,6 +193,7 @@ class FactoryService:
         self._on_project_created = on_project_created
         self._on_project_updated = on_project_updated
         self._on_project_deleted = on_project_deleted
+        self._model_settings = model_settings
         # Raw profile payloads, kept so updates can merge over them and
         # preserve fields the caller did not resend (e.g. repository.url or
         # approval reviewers added by hand in the profile file).
@@ -209,6 +211,27 @@ class FactoryService:
         }
         self._tracked: list[str] = []
         self._store_runs: dict[str, WorkflowExecution] = {}
+
+    # ------------------------------------------------------------------
+    # model provider settings (optional; injected by the assembly)
+    # ------------------------------------------------------------------
+    def get_model_settings(self) -> dict[str, Any] | None:
+        """Public model settings (never contains the API key)."""
+        if self._model_settings is None:
+            return None
+        return self._model_settings.public()
+
+    def update_model_settings(
+        self, payload: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        if self._model_settings is None:
+            return None
+        return self._model_settings.update(payload)
+
+    def test_model_settings(self) -> dict[str, Any] | None:
+        if self._model_settings is None:
+            return None
+        return self._model_settings.test()
 
     # ------------------------------------------------------------------
     # project normalization

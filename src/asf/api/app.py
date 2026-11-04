@@ -42,6 +42,14 @@ class RunBody(BaseModel):
     context: dict[str, Any] | None = None
 
 
+class ModelSettingsBody(BaseModel):
+    provider: str
+    model: str = ""
+    baseUrl: str = ""
+    apiKey: str | None = None
+    clearKey: bool = False
+
+
 def _not_found(what: str) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": f"{what} not found"})
 
@@ -183,6 +191,38 @@ def create_app(service: FactoryService) -> FastAPI:
     @app.get("/metrics/overview")
     async def metrics_overview() -> dict[str, Any]:
         return service.get_metrics_overview()
+
+    @app.get("/settings/model")
+    def get_model_settings() -> Any:
+        settings = service.get_model_settings()
+        if settings is None:
+            return _not_found("Model settings")
+        return settings
+
+    @app.put("/settings/model")
+    def update_model_settings(body: ModelSettingsBody) -> Any:
+        payload: dict[str, Any] = {
+            "provider": body.provider,
+            "model": body.model,
+            "baseUrl": body.baseUrl,
+            "clearKey": body.clearKey,
+        }
+        if body.apiKey:
+            payload["apiKey"] = body.apiKey
+        try:
+            updated = service.update_model_settings(payload)
+        except ValueError as error:
+            return JSONResponse(status_code=422, content={"detail": str(error)})
+        if updated is None:
+            return _not_found("Model settings")
+        return updated
+
+    @app.post("/settings/model/test")
+    def test_model_settings() -> Any:
+        result = service.test_model_settings()
+        if result is None:
+            return _not_found("Model settings")
+        return result
 
     @app.get("/events")
     async def events(request: Request) -> StreamingResponse:

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import re
 import tempfile
 from collections.abc import Callable, Mapping
@@ -40,6 +41,7 @@ from asf.agents.spec.factory import build_spec_agent
 from asf.agents.task.factory import build_task_agent
 from asf.agents.test.factory import build_test_agent
 from asf.api.app import create_app
+from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
 from asf.api.service import FactoryService
 from asf.approval.models import ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
@@ -376,8 +378,19 @@ def build_demo(
     def new_id() -> str:
         return str(uuid4())
 
+    # UI-managed model provider settings: beside the run DB by default,
+    # so a provider/key configured in the dashboard survives restarts.
+    settings_override = os.environ.get("ASF_MODEL_SETTINGS_FILE")
+    settings_path = (
+        Path(settings_override) if settings_override
+        else db_path.parent / "model-settings.json"
+    )
+    model_settings = ModelSettings(settings_path)
     runtime = AgentRuntime(
-        models=DemoRoutingGateway(templates_dir), clock=clock, new_id=new_id,
+        models=SettingsRoutingGateway(
+            model_settings, DemoRoutingGateway(templates_dir),
+        ),
+        clock=clock, new_id=new_id,
     )
     # Local workspace: projects whose profile carries repository.path get
     # real filesystem repository/sandbox adapters (agents read the actual
@@ -448,6 +461,7 @@ def build_demo(
         on_project_created=on_created,
         on_project_updated=on_updated,
         on_project_deleted=on_deleted,
+        model_settings=model_settings,
     )
     service_ref["service"] = service
     return service, engine, store
