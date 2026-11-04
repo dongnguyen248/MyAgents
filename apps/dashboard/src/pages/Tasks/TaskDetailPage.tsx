@@ -6,6 +6,7 @@ import { CiBadge } from '../../components/common/Badge';
 import { Card, PageHeader, Stat } from '../../components/common/Layout';
 import { TaskStatusBadge } from '../../components/tasks/TaskStatusBadge';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
+import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { useAgents } from '../../features/agent-management';
@@ -71,6 +72,7 @@ export function TaskDetailPage() {
                 {retryError}
               </p>
             )}
+            {workflow && <WorkflowErrorBanner workflow={workflow} />}
             <div className="grid two-col">
               <Card title="Workflow timeline">{workflow ? <WorkflowStepper steps={workflow.steps} /> : <p className="muted">No workflow.</p>}</Card>
               <div className="stack">

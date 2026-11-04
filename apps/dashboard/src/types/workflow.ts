@@ -14,6 +14,14 @@ export interface WorkflowStep {
 
 export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
+/** The failure that ended a FAILED workflow run (absent otherwise). */
+export interface WorkflowError {
+  code: string;
+  message: string;
+  category: string;
+  at?: string;
+}
+
 export interface WorkflowArtifact {
   id: string;
   type: string;
@@ -30,6 +38,7 @@ export interface Workflow {
   projectId: string;
   type: WorkflowType;
   status: WorkflowStatus;
+  error?: WorkflowError | null;
   steps: WorkflowStep[];
   startedAt: string;
   updatedAt: string;
