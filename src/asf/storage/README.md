@@ -32,3 +32,15 @@ wrapped in `store.transaction()` to obtain multi-operation atomicity.
 
 WorkflowRun and Task are schema-validated projections from checkpoints, not new
 implementations of every standalone CRUD repository listed in `contracts/ports.md`.
+
+## MariaDB (`mariadb.py`)
+
+`MariaDbExecutionStore` implements the same `ExecutionStore` protocol over a
+MariaDB server (via PyMySQL, imported lazily — `pip install
+'ai-software-agents[mariadb]'`). Opening the store creates the database when
+missing and applies pending schema migrations recorded in `schema_migrations`,
+so the only manual setup is an account with privileges on the application
+database (`GRANT ALL PRIVILEGES ON asf.* TO ...`). Connection settings come
+from the `ASF_MARIADB_HOST` / `ASF_MARIADB_PORT` / `ASF_MARIADB_USER` /
+`ASF_MARIADB_PASSWORD` / `ASF_MARIADB_DATABASE` environment variables. The API
+demo selects it with `--mariadb`; SQLite remains the default.
