@@ -286,29 +286,27 @@ def test_resume_run_continues_from_the_failed_step(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
     service, engine, _store = build_demo(tmp_path / "demo.sqlite")
-    run = service.start_run(
-        "resume-task", "vhpc", inputs={"spec": {"requirement": "Resume me"}},
-    )
     spec_agent = engine._registry.for_type("spec")
 
     def explode(request: object) -> object:
         raise RuntimeError("gateway down")
 
+    # The spec agent dies during the start run's automatic advance.
     monkeypatch.setattr(spec_agent, "execute", explode)
-    failed = service.tick_run(run.id)
-    assert failed is not None and failed["status"] == "FAILED"
+    run = service.start_run(
+        "resume-task", "vhpc", inputs={"spec": {"requirement": "Resume me"}},
+    )
+    assert engine.get(run.id).state.stage == "FAILED"
     monkeypatch.undo()
 
+    # Resume re-runs the spec step and auto-advances to its approval gate.
     view = service.resume_run(run.id)
     assert view is not None
-    assert view["id"] != run.id and view["status"] == "RUNNING"
+    assert view["id"] != run.id and view["status"] == "WAITING_APPROVAL"
     resumed = engine.get(view["id"])
-    assert resumed.state.stage == "SPEC_DRAFT"
+    assert resumed.state.stage == "SPEC_REVIEW"
     assert resumed.inputs["spec"]["requirement"] == "Resume me"
     assert engine.get(run.id).state.stage == "FAILED"
-    # The resumed run dispatches the spec step again — and only that step.
-    view = service.tick_run(view["id"])
-    assert view is not None and view["status"] == "WAITING_APPROVAL"
 
 
 def test_resume_run_rejects_a_run_that_has_not_failed(tmp_path: Path):
@@ -318,3 +316,23 @@ def test_resume_run_rejects_a_run_that_has_not_failed(tmp_path: Path):
     )
     with pytest.raises(ValueError, match="has not failed"):
         service.resume_run(run.id)
+
+
+def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    run = service.start_run(
+        "hands-free", "vhpc", inputs={"spec": {"requirement": "No ticking"}},
+    )
+    # Creation alone already produced the spec and parked at its gate.
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "WAITING_APPROVAL"
+    # From here the only human input is approvals — never a tick — and
+    # each approval carries the run to the next gate on its own.
+    for _ in range(5):
+        pending = service.list_approvals()
+        if not pending:
+            break
+        service.decide_approval(pending[0]["id"], decision="APPROVE")
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "COMPLETED"
+    assert engine.get(run.id).state.stage == "COMPLETED"

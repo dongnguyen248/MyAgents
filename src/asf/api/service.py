@@ -1033,6 +1033,10 @@ class FactoryService:
                 "at": _iso(self._now() or decided_run.updated_at),
                 "text": comment,
             })
+        if view["status"] != "PENDING":
+            # The gate is cleared: the run continues on its own to the
+            # next approval gate (or to completion) — no manual tick.
+            self._drive(run.id)
         return view
 
     def _record_approval_decision(
@@ -1150,6 +1154,57 @@ class FactoryService:
     # ------------------------------------------------------------------
     # run control
     # ------------------------------------------------------------------
+    # Ceiling on automatic step executions per drive. A full workflow
+    # needs ~11 ticks plus bounded fix rounds — far below this; the cap
+    # only guards against a pathological no-progress loop.
+    _DRIVE_LIMIT = 100
+
+    def _drive(self, run_id: str) -> None:
+        """Advance a run automatically until it needs a human or stops.
+
+        Ticks while the run is RUNNING and each tick makes progress, so a
+        run flows on its own from one approval gate to the next — and
+        through the code/test/fix steps in between — without anyone
+        pressing a "next step" button. Stops at approval gates
+        (WAITING_APPROVAL), terminal stages, scheduled retries (the tick
+        makes no progress until the backoff is due) and escalations.
+        Best-effort by design: a dispatch problem (e.g. an interrupted
+        run awaiting recover()) stops the drive and leaves the run for
+        manual handling instead of failing the request that triggered it.
+        """
+        for _ in range(self._DRIVE_LIMIT):
+            run = self._engine.get(run_id)
+            if self._workflow_status(run) != "RUNNING":
+                break
+            before = (run.state.stage, len(run.results))
+            try:
+                self._engine.tick(run_id)
+            except Exception:
+                break
+            after = self._engine.get(run_id)
+            if (after.state.stage, len(after.results)) == before:
+                break
+        try:
+            self._engine.flush_observations(run_id)
+        except RuntimeError:
+            pass  # At-least-once delivery; retried on a later flush.
+
+    def drive_run(self, run_id: str) -> dict[str, Any] | None:
+        """Auto-advance a run to its next stopping point; returns its view."""
+        self._drive(run_id)
+        return self.get_workflow(run_id)
+
+    def drive_active_runs(self) -> None:
+        """Auto-advance every known mid-flight run (used at API startup).
+
+        A run left at a work stage by a backend restart continues to its
+        next approval gate on its own. Interrupted dispatches
+        (``in_flight`` set) are skipped: they need an explicit recover().
+        """
+        for run in self._runs():
+            if run.in_flight is None and self._workflow_status(run) == "RUNNING":
+                self._drive(run.id)
+
     def start_run(
         self,
         task_id: str,
@@ -1161,7 +1216,8 @@ class FactoryService:
             task_id=task_id, project_id=project_id, inputs=inputs, context=context,
         )
         self.track(run.id)
-        return run
+        self._drive(run.id)
+        return self._engine.get(run.id)
 
     def tick_run(self, run_id: str) -> dict[str, Any] | None:
         self._engine.tick(run_id)
@@ -1215,4 +1271,5 @@ class FactoryService:
         """
         run = self._engine.resume_failed(run_id)
         self.track(run.id)
+        self._drive(run.id)
         return self.get_workflow(run.id)

@@ -236,6 +236,37 @@ export const mockApi: FactoryApi = {
     if (!a) return Promise.reject(new Error(`Approval ${id} not found`));
     if (input.comment) a.comments.push({ author: 'You (mock)', at: new Date().toISOString(), text: input.comment });
     if (input.decision !== 'COMMENT') a.status = statusFor[input.decision] as ApprovalStatus;
+    if (input.decision === 'APPROVE') {
+      // Mock auto-advance: an approved run continues on its own — steps
+      // complete until the next approval step becomes active (or the
+      // workflow completes), mirroring the real backend's behaviour.
+      const workflow = workflowStore.find(
+        (w) => w.taskId === a.taskId && w.status === 'WAITING_APPROVAL',
+      );
+      if (workflow) {
+        workflow.status = 'RUNNING';
+        let idx = workflow.steps.findIndex((s) => s.state === 'active');
+        while (idx >= 0) {
+          workflow.steps[idx].state = 'done';
+          const next = workflow.steps[idx + 1];
+          if (!next) {
+            workflow.status = 'COMPLETED';
+            break;
+          }
+          next.state = 'active';
+          if (next.id.endsWith('_approval')) {
+            workflow.status = 'WAITING_APPROVAL';
+            break;
+          }
+          idx += 1;
+        }
+        if (workflow.status === 'COMPLETED') {
+          const task = taskStore.find((t) => t.id === workflow.taskId);
+          if (task) task.status = 'COMPLETED';
+        }
+        workflow.updatedAt = new Date().toISOString();
+      }
+    }
     return delay(a);
   },
 

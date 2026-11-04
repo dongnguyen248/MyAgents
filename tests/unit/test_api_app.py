@@ -69,7 +69,9 @@ def test_run_approval_decision_flow_over_http():
 
     tasks = client.get("/tasks", params={"projectId": "proj-1"})
     assert [task["id"] for task in tasks.json()] == ["task-1"]
-    assert client.get("/tasks/task-1").json()["status"] == "PLAN_DRAFT"
+    # Auto-advance: the approval already ran the plan step, so the task
+    # sits at the plan review gate instead of merely having a plan draft.
+    assert client.get("/tasks/task-1").json()["status"] == "PLAN_REVIEW"
     assert client.get(f"/workflows/{run_id}").json()["id"] == run_id
     assert client.get("/activity").json()
 
