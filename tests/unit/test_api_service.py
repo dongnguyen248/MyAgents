@@ -384,6 +384,20 @@ def test_delete_project_blocked_while_run_active():
         service.delete_project("proj-1")
 
 
+def test_project_view_exposes_repository_url():
+    service, _metrics = build_service()
+    created = service.create_project({
+        **NEW_PROJECT,
+        "repository": {
+            "provider": "gitlab",
+            "url": "https://gitlab.com/group/proj-3",
+        },
+    })
+    assert created["repositoryUrl"] == "https://gitlab.com/group/proj-3"
+    listed = next(p for p in service.list_projects() if p["id"] == "proj-1")
+    assert listed["repositoryUrl"] == ""
+
+
 def test_project_view_exposes_workspace_fields():
     service, _metrics = build_service()
     created = service.create_project({

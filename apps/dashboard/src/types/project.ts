@@ -5,6 +5,8 @@ export interface Project {
   id: string;
   name: string;
   repositoryProvider: string;
+  /** Repository link for the hosting/CI integration (profile `repository.url`); '' = none. */
+  repositoryUrl: string;
   /** Local folder the agents work in (profile `repository.path`); '' = none. */
   repositoryPath: string;
   /** Configured test commands as argv lists (profile `configuration.testCommands`). */
@@ -26,7 +28,7 @@ export interface ProjectProfileInput {
   id: string;
   name: string;
   description?: string;
-  repository: { provider: string; path?: string };
+  repository: { provider: string; path?: string; url?: string };
   technology: { backend: string[]; frontend: string[] };
   workflow: string;
   enabledSkills: string[];

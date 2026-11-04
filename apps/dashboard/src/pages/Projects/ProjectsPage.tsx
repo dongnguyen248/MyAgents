@@ -10,7 +10,7 @@ const toInput = (p: Project): ProjectProfileInput => ({
   id: p.id,
   name: p.name,
   description: p.description,
-  repository: { provider: p.repositoryProvider.toLowerCase(), path: p.repositoryPath },
+  repository: { provider: p.repositoryProvider.toLowerCase(), path: p.repositoryPath, url: p.repositoryUrl },
   technology: {
     backend: p.technologyGroups.backend ?? [],
     frontend: p.technologyGroups.frontend ?? [],
