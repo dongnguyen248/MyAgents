@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 from itertools import count
 from pathlib import Path
 
+import pytest
+
 from asf.agents.base import AgentRuntime
 from asf.agents.plan.factory import build_plan_agent
 from asf.agents.spec.factory import build_spec_agent
-from asf.api.service import FactoryService
+from asf.api.service import FactoryService, ProjectExistsError
 from asf.approval.models import ApprovalPolicy
 from asf.approval.service import ApprovalService
 from asf.configuration.platform import PlatformConfig
@@ -279,3 +281,62 @@ def test_store_discovered_runs_are_listed(tmp_path):
         assert len(service.list_approvals()) == 1
     finally:
         store.close()
+
+
+NEW_PROJECT = {
+    "id": "proj-3", "name": "Project Three",
+    "repository": {"provider": "github"},
+    "technology": {"backend": ["go"], "frontend": ["vue"]},
+    "workflow": "software-development",
+    "enabledSkills": ["go", "testing"],
+    "configuration": {"approval": {"channel": "teams"}},
+}
+
+
+def test_create_project_registers_dashboard_view():
+    service, _metrics = build_service()
+    view = service.create_project(NEW_PROJECT)
+    assert view["id"] == "proj-3"
+    assert view["name"] == "Project Three"
+    assert view["repositoryProvider"] == "github"
+    assert view["technologies"] == ["go", "vue"]
+    assert view["metrics"]["running"] == 0
+    assert "proj-3" in {p["id"] for p in service.list_projects()}
+
+
+def test_create_project_rejects_duplicate_and_invalid_payloads():
+    service, _metrics = build_service()
+    service.create_project(NEW_PROJECT)
+    with pytest.raises(ProjectExistsError):
+        service.create_project(NEW_PROJECT)
+    with pytest.raises(ProjectExistsError):
+        service.create_project({**NEW_PROJECT, "id": "proj-1"})
+    with pytest.raises(ValueError):
+        service.create_project({**NEW_PROJECT, "id": "Bad Id!"})
+    with pytest.raises(ValueError):
+        service.create_project(
+            {key: value for key, value in NEW_PROJECT.items() if key != "name"},
+        )
+    with pytest.raises(ValueError):
+        service.create_project({**NEW_PROJECT, "id": "proj-4", "bogus": 1})
+
+
+def test_create_project_hook_runs_before_registration():
+    seen: list[ProjectProfile] = []
+    service = FactoryService(
+        build_engine(), projects=PROJECTS, clock=lambda: NOW,
+        on_project_created=seen.append,
+    )
+    service.create_project(NEW_PROJECT)
+    assert [profile.id for profile in seen] == ["proj-3"]
+
+    def failing_hook(profile: ProjectProfile) -> None:
+        raise ValueError("disk full")
+
+    blocked = FactoryService(
+        build_engine(), projects=PROJECTS, clock=lambda: NOW,
+        on_project_created=failing_hook,
+    )
+    with pytest.raises(ValueError, match="disk full"):
+        blocked.create_project(NEW_PROJECT)
+    assert "proj-3" not in {p["id"] for p in blocked.list_projects()}

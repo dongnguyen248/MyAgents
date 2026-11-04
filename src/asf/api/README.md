@@ -43,6 +43,7 @@ calls, plus run control and health:
 | `GET /tasks/{id}` | `get_task(id)` | 404 when unknown |
 | `GET /workflows` / `GET /workflows/{id}` | `list_workflows()` / `get_workflow(id)` | id is the run id (task id also accepted) |
 | `GET /projects` | `list_projects()` | |
+| `POST /projects` | `create_project(profile)` | body is the project-profile shape (`projects/<id>.yaml`, camelCase); 201 with the project view; duplicate id → 409; invalid profile or non-slug id → 422. The service's optional `on_project_created` hook runs before registration; the demo assembly uses it to persist the profile as `projects/<id>.yaml` (secret-scanned, never overwrites). Without a hook, projects live in memory only. |
 | `GET /approvals` | `list_approvals()` | pending approvals across all known runs |
 | `POST /approvals/{id}/decision` | `decide_approval(id, decision, comment)` | body `{decision, comment?}`; `ApprovalError` → 409 with `{"detail": <code>}` |
 | `GET /activity?agentId&taskId&projectId&limit` | `list_activity(filter)` | newest first |
