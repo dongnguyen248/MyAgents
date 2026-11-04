@@ -17,10 +17,13 @@ import importlib
 import json
 import re
 import tempfile
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+import yaml
 
 import asf
 from asf.agents.base import AgentRuntime
@@ -36,6 +39,8 @@ from asf.api.app import create_app
 from asf.api.service import FactoryService
 from asf.approval.models import ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
+from asf.configuration.project import ProjectProfile
+from asf.configuration.yamlio import scan_secrets
 from asf.contracts.models import (
     ActivityEvent,
     AgentRequest,
@@ -263,6 +268,32 @@ class DemoFactoryService(FactoryService):
         )
 
 
+def _project_writer(projects_dir: Path) -> Callable[[ProjectProfile], None]:
+    """Persist dashboard-created projects as ``projects/<id>.yaml``.
+
+    The written file is a regular project profile: it goes through the same
+    secret scan as hand-written files (literal secrets are rejected; use
+    ``{env: VAR}`` references), and the loader picks it up on the next start
+    because its stem equals the profile id.
+    """
+
+    def write(profile: ProjectProfile) -> None:
+        data = profile.to_contract()
+        if scan_secrets(data):
+            raise ValueError(
+                "Project profile contains literal secrets; "
+                "use {env: VAR} references instead",
+            )
+        path = projects_dir / f"{profile.id}.yaml"
+        if path.exists():
+            raise ValueError(f"Project file already exists: {path.name}")
+        path.write_text(
+            yaml.safe_dump(data, sort_keys=False), encoding="utf-8",
+        )
+
+    return write
+
+
 def build_demo(
     db_path: Path,
 ) -> tuple[FactoryService, Orchestrator, SQLiteExecutionStore]:
@@ -270,7 +301,8 @@ def build_demo(
     root = Path(asf.__file__).resolve().parents[2]
     templates_dir = root / "templates"
     platform = load_platform_config(root / "config")
-    projects = load_projects(root / "projects")
+    projects_dir = root / "projects"
+    projects = load_projects(projects_dir)
     definition = load_workflow(root / "workflows" / "software-development.yaml")
 
     def clock() -> datetime:
@@ -304,6 +336,7 @@ def build_demo(
     service = DemoFactoryService(
         engine, projects=projects, metrics=metrics, store=store,
         reviewer="dashboard", clock=clock,
+        on_project_created=_project_writer(projects_dir),
     )
     return service, engine, store
 

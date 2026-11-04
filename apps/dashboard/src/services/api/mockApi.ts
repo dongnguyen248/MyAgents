@@ -7,6 +7,7 @@ import { tasks } from '../../mocks/tasks';
 import { workflows } from '../../mocks/workflows';
 import type { ActivityEvent } from '../../types/activity';
 import type { Approval, ApprovalStatus } from '../../types/approval';
+import type { Project } from '../../types/project';
 import type { FactoryApi } from './contract';
 
 const LATENCY_MS = 150;
@@ -15,6 +16,7 @@ const delay = <T>(value: T): Promise<T> =>
 
 // Mutable in-memory state so mock approval actions are visible until reload.
 const approvals: Approval[] = structuredClone(approvalSeed);
+const projectStore = structuredClone(projects);
 const statusFor = { APPROVE: 'APPROVED', REJECT: 'REJECTED', REQUEST_CHANGES: 'CHANGES_REQUESTED' } as const;
 
 export const mockApi: FactoryApi = {
@@ -44,7 +46,24 @@ export const mockApi: FactoryApi = {
   listWorkflows: () => delay(workflows),
   getWorkflow: (id) => delay(workflows.find((w) => w.id === id)),
 
-  listProjects: () => delay(projects),
+  listProjects: () => delay(projectStore),
+  createProject: (input) => {
+    if (projectStore.some((p) => p.id === input.id)) {
+      return Promise.reject(new Error(`Project '${input.id}' already exists`));
+    }
+    const project: Project = {
+      id: input.id,
+      name: input.name,
+      repositoryProvider: input.repository.provider,
+      technologies: [...input.technology.backend, ...input.technology.frontend],
+      agentIds: agents.map((a) => a.id),
+      ci: 'UNKNOWN',
+      ciFailures24h: 0,
+      metrics: { activeAgents: 0, running: 0, completed: 0, failed: 0, successRate: 0, pendingApprovals: 0 },
+    };
+    projectStore.push(project);
+    return delay(project);
+  },
 
   listApprovals: () => delay(approvals),
   decideApproval: (id, input) => {

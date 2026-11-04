@@ -14,12 +14,12 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import FastAPI, Query, Request
+from fastapi import Body, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from asf.api.service import FactoryService
+from asf.api.service import FactoryService, ProjectExistsError
 from asf.approval.errors import ApprovalError
 
 __all__ = ["create_app"]
@@ -112,6 +112,15 @@ def create_app(service: FactoryService) -> FastAPI:
     @app.get("/projects")
     async def list_projects() -> list[dict[str, Any]]:
         return service.list_projects()
+
+    @app.post("/projects", status_code=201)
+    async def create_project(payload: dict[str, Any] = Body(...)) -> Any:
+        try:
+            return service.create_project(payload)
+        except ProjectExistsError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        except ValueError as error:
+            return JSONResponse(status_code=422, content={"detail": str(error)})
 
     # -- approvals --------------------------------------------------------
     @app.get("/approvals")

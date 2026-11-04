@@ -1,3 +1,4 @@
+import type { Project } from '../../types/project';
 import type { FactoryApi } from './contract';
 
 /**
@@ -35,6 +36,18 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     getWorkflow: (id) => getOpt(`/workflows/${id}`),
 
     listProjects: () => get('/projects'),
+    createProject: async (input) => {
+      const res = await fetch(baseUrl + '/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(data?.detail ?? `POST /projects -> ${res.status}`);
+      }
+      return (await res.json()) as Project;
+    },
 
     listApprovals: () => get('/approvals'),
     decideApproval: async (id, input) =>

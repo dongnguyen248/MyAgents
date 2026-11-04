@@ -12,9 +12,12 @@ runs themselves or from the injected ``clock`` callable.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
+
+from pydantic import ValidationError
 
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import ProjectProfile
@@ -41,6 +44,12 @@ class MetricsProtocol(Protocol):
 
     def project_outcomes(self, project_id: str) -> dict[str, Any]: ...
 
+
+class ProjectExistsError(Exception):
+    """Raised when creating a project whose id is already registered."""
+
+
+_PROJECT_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -141,11 +150,13 @@ class FactoryService:
         store: Any = None,
         reviewer: str = "dashboard",
         clock: Callable[[], datetime] | None = None,
+        on_project_created: Callable[[ProjectProfile], None] | None = None,
     ) -> None:
         self._engine = engine
         self._metrics = metrics
         self._store = store
         self._reviewer = reviewer
+        self._on_project_created = on_project_created
         # The assembly injects a clock; the engine's own clock is the fallback
         # so this service still never reads the system clock directly.
         self._clock = clock or getattr(engine, "_clock", None)
@@ -660,6 +671,38 @@ class FactoryService:
                 "metrics": metrics,
             })
         return projects
+
+    def create_project(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Register a new project; returns its dashboard project view.
+
+        ``payload`` is the project-profile shape used by ``projects/*.yaml``
+        (camelCase keys), validated exactly like a profile file: the profile
+        must validate against :class:`ProjectProfile` and the id must be a
+        slug, because assemblies persist it as ``<id>.yaml``. The optional
+        ``on_project_created`` hook runs before the project becomes visible,
+        so a persistence failure leaves the registry unchanged.
+        """
+        try:
+            profile = ProjectProfile.model_validate(dict(payload))
+        except ValidationError as error:
+            details = "; ".join(
+                f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
+                for item in error.errors()
+            )
+            raise ValueError(f"Invalid project profile: {details}") from error
+        if _PROJECT_ID_PATTERN.fullmatch(profile.id) is None:
+            raise ValueError(
+                "Project id must be a slug: lowercase letters, digits, '-' or "
+                "'_', starting with a letter or digit",
+            )
+        if profile.id in self._projects:
+            raise ProjectExistsError(f"Project '{profile.id}' already exists")
+        if self._on_project_created is not None:
+            self._on_project_created(profile)
+        self._projects[profile.id] = self._normalize_project(profile.id, profile)
+        return next(
+            view for view in self.list_projects() if view["id"] == profile.id
+        )
 
     # ------------------------------------------------------------------
     # approvals

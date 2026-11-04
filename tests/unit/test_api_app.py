@@ -75,3 +75,25 @@ def test_run_approval_decision_flow_over_http():
 
     missing_tick = client.post("/runs/run-missing/tick")
     assert missing_tick.status_code == 404
+
+
+def test_create_project_over_http():
+    client = make_client()
+    payload = {
+        "id": "proj-3", "name": "Project Three",
+        "repository": {"provider": "github"},
+        "technology": {"backend": ["go"], "frontend": []},
+        "workflow": "software-development",
+        "enabledSkills": ["go"],
+        "configuration": {"approval": {"channel": "teams"}},
+    }
+    created = client.post("/projects", json=payload)
+    assert created.status_code == 201
+    assert created.json()["id"] == "proj-3"
+    assert created.json()["technologies"] == ["go"]
+    assert "proj-3" in {p["id"] for p in client.get("/projects").json()}
+
+    assert client.post("/projects", json=payload).status_code == 409
+    invalid = {key: value for key, value in payload.items() if key != "name"}
+    invalid["id"] = "proj-4"
+    assert client.post("/projects", json=invalid).status_code == 422

@@ -2,7 +2,7 @@ import type { ActivityEvent, ActivityFilter } from '../../types/activity';
 import type { Agent, AgentConfig, AgentRun } from '../../types/agent';
 import type { Approval, ApprovalDecisionInput } from '../../types/approval';
 import type { MetricsOverview } from '../../types/metrics';
-import type { Project } from '../../types/project';
+import type { Project, ProjectProfileInput } from '../../types/project';
 import type { Task, TaskFilter } from '../../types/task';
 import type { Workflow } from '../../types/workflow';
 
@@ -26,6 +26,7 @@ export interface FactoryApi {
   getWorkflow(id: string): Promise<Workflow | undefined>;
 
   listProjects(): Promise<Project[]>;
+  createProject(input: ProjectProfileInput): Promise<Project>;
 
   listApprovals(): Promise<Approval[]>;
   decideApproval(id: string, input: ApprovalDecisionInput): Promise<Approval>;
