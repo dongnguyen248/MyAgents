@@ -60,6 +60,7 @@ from asf.integrations.hosting.actions import build_hosting_actions
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.orchestrator.code_loop import CodeLoopPolicy
+from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
 from asf.storage.sqlite import SQLiteExecutionStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
 from asf.tools.local import LocalWorkspace, WorkspaceRepository, WorkspaceSandbox
@@ -467,8 +468,15 @@ def _profile_root(profile: ProjectProfile) -> str | None:
 
 def build_demo(
     db_path: Path,
-) -> tuple[FactoryService, Orchestrator, SQLiteExecutionStore]:
-    """Assemble store, engine (all seven agents), and dashboard service."""
+    *,
+    store: SQLiteExecutionStore | MariaDbExecutionStore | None = None,
+) -> tuple[FactoryService, Orchestrator, Any]:
+    """Assemble store, engine (all seven agents), and dashboard service.
+
+    ``db_path`` locates the SQLite store and the model-settings file kept
+    beside it; pass ``store`` to run on a different execution store (e.g.
+    MariaDB) — ``db_path`` then only anchors the settings file.
+    """
     root = Path(asf.__file__).resolve().parents[2]
     templates_dir = root / "templates"
     platform = load_platform_config(root / "config")
@@ -525,7 +533,7 @@ def build_demo(
         workspace,
     ))
 
-    store = SQLiteExecutionStore(db_path)
+    store = store if store is not None else SQLiteExecutionStore(db_path)
     metrics = _load_metrics()
     # Hosting actions (Phase 8): projects whose profile links a GitLab /
     # GitHub repository (repository.url + provider, token from the
@@ -613,23 +621,58 @@ def run_selftest(service: FactoryService, engine: Orchestrator) -> int:
     return 0
 
 
+def _resolve_db_path(db_arg: Path | None, *, selftest: bool) -> Path:
+    """Where the demo's SQLite store lives.
+
+    An explicit ``--db`` wins. Serving defaults to ``<repo>/data/asf.sqlite``
+    so runs — and the model settings stored beside the DB — survive
+    restarts no matter which directory the backend is started from; the
+    previous default (a fresh temp directory per start) silently discarded
+    every run on restart. The headless selftest keeps a throwaway temp DB
+    so it never pollutes the real one.
+    """
+    if db_arg is not None:
+        return db_arg
+    if selftest:
+        return Path(tempfile.mkdtemp(prefix="asf-api-demo-")) / "demo.sqlite"
+    root = Path(asf.__file__).resolve().parents[2]
+    return root / "data" / "asf.sqlite"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--db", type=Path, default=None, help="SQLite store path")
     parser.add_argument(
+        "--mariadb", action="store_true",
+        help="Store runs in MariaDB (ASF_MARIADB_* env vars) instead of SQLite",
+    )
+    parser.add_argument(
         "--selftest", action="store_true",
         help="Run one headless end-to-end run instead of serving HTTP",
     )
     args = parser.parse_args()
-    db_path = args.db or Path(tempfile.mkdtemp(prefix="asf-api-demo-")) / "demo.sqlite"
-    service, engine, store = build_demo(db_path)
+    if args.mariadb:
+        config = MariaDbConfig.from_env()
+        maria_store = MariaDbExecutionStore(config)
+        # Runs live in MariaDB; the model-settings file still needs a home,
+        # so anchor it at the usual data directory.
+        service, engine, store = build_demo(
+            _resolve_db_path(None, selftest=False), store=maria_store,
+        )
+        db_label = (
+            f"mariadb {config.user}@{config.host}:{config.port}/{config.database}"
+        )
+    else:
+        db_path = _resolve_db_path(args.db, selftest=args.selftest)
+        service, engine, store = build_demo(db_path)
+        db_label = str(db_path.resolve())
     try:
         if args.selftest:
             raise SystemExit(run_selftest(service, engine))
         import uvicorn
 
-        print(f"Dashboard API on http://127.0.0.1:{args.port} (db: {db_path})")
+        print(f"Dashboard API on http://127.0.0.1:{args.port} (db: {db_label})")
         print("Dashboard: set VITE_API_BASE_URL to that URL and run the frontend dev server.")
         uvicorn.run(create_app(service), host="127.0.0.1", port=args.port)
     finally:

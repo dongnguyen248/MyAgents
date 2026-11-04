@@ -7,7 +7,12 @@ from typing import Any
 
 import pytest
 
-from asf.api.demo import _project_remover, _project_writer, build_demo
+from asf.api.demo import (
+    _project_remover,
+    _project_writer,
+    _resolve_db_path,
+    build_demo,
+)
 from asf.configuration.loader import load_project, load_projects
 from asf.configuration.project import ProjectProfile
 
@@ -231,3 +236,19 @@ def test_retry_run_rejects_a_run_that_is_still_active(tmp_path: Path):
     )
     with pytest.raises(ValueError, match="still active"):
         service.retry_run(run.id)
+
+
+def test_resolve_db_path_serving_defaults_to_repo_data_dir():
+    path = _resolve_db_path(None, selftest=False)
+    assert path.name == "asf.sqlite" and path.parent.name == "data"
+
+
+def test_resolve_db_path_explicit_argument_wins(tmp_path: Path):
+    explicit = tmp_path / "custom.sqlite"
+    assert _resolve_db_path(explicit, selftest=False) == explicit
+    assert _resolve_db_path(explicit, selftest=True) == explicit
+
+
+def test_resolve_db_path_selftest_keeps_a_temp_db():
+    path = _resolve_db_path(None, selftest=True)
+    assert path.name == "demo.sqlite" and "asf-api-demo-" in path.parent.name
