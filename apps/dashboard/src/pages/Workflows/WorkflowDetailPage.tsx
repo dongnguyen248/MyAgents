@@ -4,6 +4,7 @@ import { ActivityFeed } from '../../components/activity/ActivityFeed';
 import { AsyncView } from '../../components/common/AsyncView';
 import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
+import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { resumeWorkflow, retryWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
@@ -57,6 +58,7 @@ export function WorkflowDetailPage() {
               back={{ to: '/workflows', label: 'Workflows' }}
               actions={<><WorkflowStatusBadge status={workflow.status} /><Link className="btn" to={`/tasks/${workflow.taskId}`}>Open task</Link></>}
             />
+            <WorkflowErrorBanner workflow={workflow} />
             {['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
               <Card>
                 <div className="filters">

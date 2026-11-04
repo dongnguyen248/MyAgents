@@ -336,3 +336,31 @@ def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
     view = service.get_workflow(run.id)
     assert view is not None and view["status"] == "COMPLETED"
     assert engine.get(run.id).state.stage == "COMPLETED"
+
+
+def test_workflow_view_exposes_the_failure_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    spec_agent = engine._registry.for_type("spec")
+
+    def explode(request: object) -> object:
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(spec_agent, "execute", explode)
+    run = service.start_run(
+        "doomed-task", "vhpc", inputs={"spec": {"requirement": "Boom"}},
+    )
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "FAILED"
+    assert view["error"]["code"] == "AGENT_EXECUTION_FAILED"
+    assert view["error"]["message"] == "Agent raised outside its result contract"
+    assert view["error"]["category"] == "AGENT"
+    assert view["error"]["at"]
+
+    monkeypatch.undo()
+    healthy = service.start_run(
+        "healthy-task", "vhpc", inputs={"spec": {"requirement": "Fine"}},
+    )
+    view = service.get_workflow(healthy.id)
+    assert view is not None and view["error"] is None

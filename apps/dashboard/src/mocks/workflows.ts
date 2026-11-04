@@ -1,5 +1,5 @@
 import type { Task, TaskStatus } from '../types/task';
-import type { StepState, Workflow, WorkflowStatus, WorkflowStep, WorkflowStepId } from '../types/workflow';
+import type { StepState, Workflow, WorkflowError, WorkflowStatus, WorkflowStep, WorkflowStepId } from '../types/workflow';
 import { tasks } from './tasks';
 
 const STEPS: [WorkflowStepId, string][] = [
@@ -41,6 +41,14 @@ function statusFor(t: Task): WorkflowStatus {
   return t.status.endsWith('_REVIEW') || t.status === 'READY_TO_MERGE' ? 'WAITING_APPROVAL' : 'RUNNING';
 }
 
+/** Mock-only failure reasons for FAILED tasks, mirroring backend errors. */
+function errorFor(t: Task): WorkflowError | undefined {
+  if (t.status !== 'FAILED') return undefined;
+  return t.id === 'ERP-3324'
+    ? { code: 'AGENT_EXECUTION_FAILED', message: 'Agent raised outside its result contract', category: 'AGENT', at: t.updatedAt }
+    : { code: 'VALIDATION_FAILED', message: 'Agent output artifacts are invalid', category: 'VALIDATION', at: t.updatedAt };
+}
+
 export const workflows: Workflow[] = tasks.map((t) => ({
   id: `wf-${t.id.toLowerCase()}`,
   taskId: t.id,
@@ -48,6 +56,7 @@ export const workflows: Workflow[] = tasks.map((t) => ({
   projectId: t.projectId,
   type: t.workflowType,
   status: statusFor(t),
+  error: errorFor(t),
   steps: stepsFor(t),
   startedAt: t.createdAt,
   updatedAt: t.updatedAt,

@@ -715,6 +715,25 @@ class FactoryService:
             return "done" if current_index > review_index else "pending"
         return "pending"
 
+    @staticmethod
+    def _run_error(run: WorkflowExecution, status: str) -> dict[str, Any] | None:
+        """The failure that ended a FAILED run, for the dashboard banner.
+
+        The last recorded error is the one that failed the run: an engine
+        failure appends its error last, and a failed agent result's errors
+        are recorded just before the FAIL transition. Without this, a
+        failed run showed a red step but never the reason.
+        """
+        if status != "FAILED" or not run.errors:
+            return None
+        error = run.errors[-1]
+        return {
+            "code": error.code,
+            "message": error.message,
+            "category": error.category,
+            "at": _iso(error.timestamp),
+        }
+
     def _workflow_view(self, run: WorkflowExecution) -> dict[str, Any]:
         definition = self._definition(run)
         status = self._workflow_status(run)
@@ -726,6 +745,7 @@ class FactoryService:
             "projectId": run.project_id,
             "type": self._workflow_type(run),
             "status": status,
+            "error": self._run_error(run, status),
             "steps": steps,
             "startedAt": _iso(run.started_at),
             "updatedAt": _iso(run.updated_at),
