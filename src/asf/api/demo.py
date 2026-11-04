@@ -613,6 +613,24 @@ def run_selftest(service: FactoryService, engine: Orchestrator) -> int:
     return 0
 
 
+def _resolve_db_path(db_arg: Path | None, *, selftest: bool) -> Path:
+    """Where the demo's SQLite store lives.
+
+    An explicit ``--db`` wins. Serving defaults to ``<repo>/data/asf.sqlite``
+    so runs — and the model settings stored beside the DB — survive
+    restarts no matter which directory the backend is started from; the
+    previous default (a fresh temp directory per start) silently discarded
+    every run on restart. The headless selftest keeps a throwaway temp DB
+    so it never pollutes the real one.
+    """
+    if db_arg is not None:
+        return db_arg
+    if selftest:
+        return Path(tempfile.mkdtemp(prefix="asf-api-demo-")) / "demo.sqlite"
+    root = Path(asf.__file__).resolve().parents[2]
+    return root / "data" / "asf.sqlite"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000)
@@ -622,14 +640,14 @@ def main() -> None:
         help="Run one headless end-to-end run instead of serving HTTP",
     )
     args = parser.parse_args()
-    db_path = args.db or Path(tempfile.mkdtemp(prefix="asf-api-demo-")) / "demo.sqlite"
+    db_path = _resolve_db_path(args.db, selftest=args.selftest)
     service, engine, store = build_demo(db_path)
     try:
         if args.selftest:
             raise SystemExit(run_selftest(service, engine))
         import uvicorn
 
-        print(f"Dashboard API on http://127.0.0.1:{args.port} (db: {db_path})")
+        print(f"Dashboard API on http://127.0.0.1:{args.port} (db: {db_path.resolve()})")
         print("Dashboard: set VITE_API_BASE_URL to that URL and run the frontend dev server.")
         uvicorn.run(create_app(service), host="127.0.0.1", port=args.port)
     finally:
