@@ -1,4 +1,5 @@
 import type { Project } from '../../types/project';
+import type { Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
 /**
@@ -43,9 +44,21 @@ export function createHttpApi(baseUrl: string): FactoryApi {
 
     listTasks: (f) => get(`/tasks${qs(f)}`),
     getTask: (id) => getOpt(`/tasks/${id}`),
+    startRun: (input) =>
+      send<Workflow>('/runs', 'POST', {
+        taskId: input.taskId,
+        projectId: input.projectId,
+        inputs: { spec: { requirement: input.requirement } },
+        context: {
+          ...(input.title ? { title: input.title } : {}),
+          ...(input.priority ? { priority: input.priority } : {}),
+          ...(input.workflowType ? { workflowType: input.workflowType } : {}),
+        },
+      }),
 
     listWorkflows: () => get('/workflows'),
     getWorkflow: (id) => getOpt(`/workflows/${id}`),
+    tickRun: (runId) => send<Workflow>(`/runs/${runId}/tick`, 'POST'),
 
     listProjects: () => get('/projects'),
     createProject: (input) => send<Project>('/projects', 'POST', input),
