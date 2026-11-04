@@ -243,6 +243,12 @@ class DemoFactoryService(FactoryService):
         "test": {"taskItemId": "T1", "ref": "main"},
     }
 
+    def __init__(
+        self, *args: Any, projects_dir: Path | None = None, **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._projects_dir = projects_dir
+
     def _default_test_commands(self, project_id: str) -> list[list[str]]:
         """The project's configured test commands, else the demo default.
 
@@ -268,6 +274,55 @@ class DemoFactoryService(FactoryService):
             return [[str(arg) for arg in argv] for argv in commands]
         return [["python", "-m", "pytest", "-q"]]
 
+    def _review_rules(self, project_id: str) -> str:
+        """The project's configured review standards, as one text block.
+
+        ``configuration.review.rulesFiles`` lists Markdown rule files
+        relative to the projects directory; ``configuration.review.rules``
+        holds inline rule text. Files are concatenated in listed order,
+        inline text last. A configured file that cannot be read fails the
+        run start loudly — silently reviewing without the project's rules
+        would be worse than not starting at all.
+        """
+        profile = self._project_profiles.get(project_id) or {}
+        configuration = profile.get("configuration")
+        review = (
+            configuration.get("review") if isinstance(configuration, dict)
+            else None
+        )
+        if not isinstance(review, dict):
+            return ""
+        parts: list[str] = []
+        files = review.get("rulesFiles")
+        if isinstance(files, list):
+            for entry in files:
+                if not isinstance(entry, str) or not entry.strip():
+                    continue
+                if self._projects_dir is None:
+                    raise ValueError(
+                        f"Project '{project_id}' configures review rulesFiles"
+                        " but the service has no projects directory",
+                    )
+                path = (self._projects_dir / entry).resolve()
+                if not path.is_relative_to(self._projects_dir.resolve()):
+                    raise ValueError(
+                        f"Review rules file '{entry}' for project"
+                        f" '{project_id}' escapes the projects directory",
+                    )
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except OSError as error:
+                    raise ValueError(
+                        f"Review rules file '{entry}' for project"
+                        f" '{project_id}' cannot be read: {error}",
+                    ) from error
+                if text.strip():
+                    parts.append(text.strip())
+        inline = review.get("rules")
+        if isinstance(inline, str) and inline.strip():
+            parts.append(inline.strip())
+        return "\n\n".join(parts)
+
     def start_run(
         self,
         task_id: str,
@@ -283,6 +338,9 @@ class DemoFactoryService(FactoryService):
         merged_context: dict[str, Any] = {
             "project": {"testCommands": self._default_test_commands(project_id)},
         }
+        review_rules = self._review_rules(project_id)
+        if review_rules:
+            merged_context["project"]["reviewRules"] = review_rules
         for key, value in dict(context or {}).items():
             if key == "project" and isinstance(value, dict):
                 merged_context["project"] = {**merged_context["project"], **value}
@@ -457,7 +515,7 @@ def build_demo(
 
     service = DemoFactoryService(
         engine, projects=projects, metrics=metrics, store=store,
-        reviewer="dashboard", clock=clock,
+        reviewer="dashboard", clock=clock, projects_dir=projects_dir,
         on_project_created=on_created,
         on_project_updated=on_updated,
         on_project_deleted=on_deleted,

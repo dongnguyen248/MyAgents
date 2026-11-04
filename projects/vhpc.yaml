@@ -16,3 +16,12 @@ enabledSkills: [java, spring, react, git, testing, security]
 configuration:
   approval:
     channel: teams
+  # The Review Agent reviews this project's code against these standards
+  # (Markdown files relative to this projects directory).
+  review:
+    rulesFiles:
+      - rules/vhpc/coding-rules.md
+      - rules/vhpc/api-rules.md
+      - rules/vhpc/security-rules.md
+      - rules/vhpc/typescript-coding-rules.md
+      - rules/vhpc/constants-rules.md

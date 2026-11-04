@@ -78,6 +78,18 @@ def build_review_messages(
         if not line.lstrip().startswith("Enabled skills:")
     ).rstrip()
     system += "\nEnabled skills: " + (", ".join(skill_names) or "none")
+    rules = project.get("reviewRules")
+    if isinstance(rules, str) and rules.strip():
+        # Review rules are project configuration resolved by the assembly
+        # (profile configuration.review), not artifact data: they belong
+        # in the system message as criteria. The output contract above
+        # still wins on any conflict.
+        system += (
+            "\n\nProject review rules — standards configured for this"
+            " project. Apply them as review criteria; where they conflict"
+            " with the output contract above, the output contract wins:\n"
+            + rules.strip()
+        )
     code = artifact_of(request, "CODE")
     payload = {
         "taskItemId": request.input["taskItemId"],
