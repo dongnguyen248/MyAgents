@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
@@ -212,6 +214,9 @@ class FactoryService:
         }
         self._tracked: list[str] = []
         self._store_runs: dict[str, WorkflowExecution] = {}
+        # Background drive threads, by run id (see _drive_in_background).
+        self._drive_lock = threading.Lock()
+        self._drive_threads: dict[str, threading.Thread] = {}
 
     # ------------------------------------------------------------------
     # model provider settings (optional; injected by the assembly)
@@ -1087,7 +1092,7 @@ class FactoryService:
         if view["status"] != "PENDING":
             # The gate is cleared: the run continues on its own to the
             # next approval gate (or to completion) — no manual tick.
-            self._drive(run.id)
+            self._drive_in_background(run.id)
         return view
 
     def _record_approval_decision(
@@ -1210,6 +1215,54 @@ class FactoryService:
     # only guards against a pathological no-progress loop.
     _DRIVE_LIMIT = 100
 
+    # Drives run on background threads: a step can sit in a model call
+    # for minutes, and driving on the request thread froze the whole
+    # API — the dashboard could not even load its lists until the call
+    # returned. The stores keep one connection per thread, so request
+    # threads and drive threads never share a connection object.
+    def _drive_in_background(self, run_id: str) -> None:
+        """Start a drive thread for a run (coalesced per run)."""
+        with self._drive_lock:
+            if run_id in self._drive_threads:
+                return
+            thread = threading.Thread(
+                target=self._drive_worker, args=(run_id,),
+                name=f"asf-drive-{run_id[:8]}", daemon=True,
+            )
+            self._drive_threads[run_id] = thread
+        thread.start()
+
+    def _drive_worker(self, run_id: str) -> None:
+        try:
+            self._drive(run_id)
+        finally:
+            with self._drive_lock:
+                self._drive_threads.pop(run_id, None)
+
+    def _wait_for_drive(self, run_id: str, timeout: float | None = None) -> None:
+        """Join a run's drive thread if one is active."""
+        with self._drive_lock:
+            thread = self._drive_threads.get(run_id)
+        if thread is not None:
+            thread.join(timeout)
+
+    def wait_for_drives(self, timeout: float | None = None) -> None:
+        """Block until every background drive finishes (tests/shutdown)."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            with self._drive_lock:
+                threads = list(self._drive_threads.values())
+            if not threads:
+                return
+            for thread in threads:
+                remaining = (
+                    None if deadline is None
+                    else max(0.0, deadline - time.monotonic())
+                )
+                thread.join(remaining)
+            if deadline is not None and time.monotonic() >= deadline:
+                return
+
     def _drive(self, run_id: str) -> None:
         """Advance a run automatically until it needs a human or stops.
 
@@ -1237,11 +1290,16 @@ class FactoryService:
                 break
         try:
             self._engine.flush_observations(run_id)
-        except RuntimeError:
-            pass  # At-least-once delivery; retried on a later flush.
+        except (RuntimeError, ValueError):
+            # ValueError: another thread is dispatching this run right
+            # now (a manual tick racing the drive) and the engine will
+            # not flush mid-dispatch. At-least-once delivery; retried
+            # on a later flush.
+            pass
 
     def drive_run(self, run_id: str) -> dict[str, Any] | None:
         """Auto-advance a run to its next stopping point; returns its view."""
+        self._wait_for_drive(run_id)
         self._drive(run_id)
         return self.get_workflow(run_id)
 
@@ -1249,12 +1307,25 @@ class FactoryService:
         """Auto-advance every known mid-flight run (used at API startup).
 
         A run left at a work stage by a backend restart continues to its
-        next approval gate on its own. Interrupted dispatches
-        (``in_flight`` set) are skipped: they need an explicit recover().
+        next approval gate on its own. A run left with ``in_flight`` set
+        had its dispatch interrupted by the stop — at startup nothing
+        can still be in flight, so the stale marker is recovered
+        (the interrupted step replays) instead of stranding the run.
         """
         for run in self._runs():
-            if run.in_flight is None and self._workflow_status(run) == "RUNNING":
-                self._drive(run.id)
+            if run.in_flight is not None:
+                try:
+                    self._engine.recover(
+                        run.id,
+                        reason="API startup: the previous backend stopped"
+                        " mid-dispatch",
+                        retry_interrupted=True,
+                    )
+                except Exception:
+                    continue
+                run = self._engine.get(run.id)
+            if self._workflow_status(run) == "RUNNING":
+                self._drive_in_background(run.id)
 
     def start_run(
         self,
@@ -1267,10 +1338,13 @@ class FactoryService:
             task_id=task_id, project_id=project_id, inputs=inputs, context=context,
         )
         self.track(run.id)
-        self._drive(run.id)
+        self._drive_in_background(run.id)
         return self._engine.get(run.id)
 
     def tick_run(self, run_id: str) -> dict[str, Any] | None:
+        # A manual tick must not race the run's background drive: wait
+        # for the drive to park the run, then tick (usually a no-op).
+        self._wait_for_drive(run_id)
         self._engine.tick(run_id)
         try:
             self._engine.flush_observations(run_id)
@@ -1322,5 +1396,5 @@ class FactoryService:
         """
         run = self._engine.resume_failed(run_id)
         self.track(run.id)
-        self._drive(run.id)
+        self._drive_in_background(run.id)
         return self.get_workflow(run.id)

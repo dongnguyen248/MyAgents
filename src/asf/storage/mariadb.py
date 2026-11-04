@@ -1,7 +1,8 @@
 """MariaDB-backed execution store.
 
-Same contract as :mod:`asf.storage.sqlite` — one connection, autocommit
-outside explicit transactions, JSON payloads — over a MariaDB server, for
+Same contract as :mod:`asf.storage.sqlite` — one connection per
+thread, autocommit outside explicit transactions, JSON payloads — over
+a MariaDB server, for
 deployments that outgrow a local SQLite file. The driver (PyMySQL) is
 imported lazily so SQLite users never need it installed.
 
@@ -19,7 +20,8 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -84,11 +86,11 @@ class MariaDbConfig:
 
 
 class MariaDbApprovalRepository:
-    def __init__(self, connection: Any) -> None:
-        self._connection = connection
+    def __init__(self, connect: Callable[[], Any]) -> None:
+        self._connect = connect
 
     def create(self, approval: ApprovalRequest) -> ApprovalRequest:
-        with self._connection.cursor() as cursor:
+        with self._connect().cursor() as cursor:
             cursor.execute(
                 "INSERT INTO approvals(id, payload) VALUES (%s, %s)",
                 (approval.id, approval.model_dump_json()),
@@ -96,7 +98,7 @@ class MariaDbApprovalRepository:
         return approval.model_copy(deep=True)
 
     def get(self, approval_id: str) -> ApprovalRequest | None:
-        with self._connection.cursor() as cursor:
+        with self._connect().cursor() as cursor:
             cursor.execute(
                 "SELECT payload FROM approvals WHERE id = %s", (approval_id,),
             )
@@ -104,7 +106,7 @@ class MariaDbApprovalRepository:
         return ApprovalRequest.model_validate_json(row[0]) if row else None
 
     def update(self, approval: ApprovalRequest) -> ApprovalRequest:
-        with self._connection.cursor() as cursor:
+        with self._connect().cursor() as cursor:
             cursor.execute(
                 "UPDATE approvals SET payload = %s WHERE id = %s",
                 (approval.model_dump_json(), approval.id),
@@ -114,7 +116,7 @@ class MariaDbApprovalRepository:
         return approval.model_copy(deep=True)
 
     def _all(self) -> list[ApprovalRequest]:
-        with self._connection.cursor() as cursor:
+        with self._connect().cursor() as cursor:
             cursor.execute("SELECT payload FROM approvals")
             rows = cursor.fetchall()
         return sorted(
@@ -129,14 +131,14 @@ class MariaDbApprovalRepository:
         return [approval for approval in self._all() if approval.status == "PENDING"]
 
     def add_decision(self, decision: ApprovalDecision) -> None:
-        with self._connection.cursor() as cursor:
+        with self._connect().cursor() as cursor:
             cursor.execute(
                 "INSERT INTO decisions(approval_id, payload) VALUES (%s, %s)",
                 (decision.approval_id, decision.model_dump_json()),
             )
 
     def list_decisions(self, approval_id: str) -> list[ApprovalDecision]:
-        with self._connection.cursor() as cursor:
+        with self._connect().cursor() as cursor:
             cursor.execute(
                 "SELECT payload FROM decisions WHERE approval_id = %s"
                 " ORDER BY sequence",
@@ -147,7 +149,12 @@ class MariaDbApprovalRepository:
 
 
 class MariaDbExecutionStore:
-    """One local worker; workflow checkpoints and approvals share a transaction."""
+    """Workflow checkpoints and approvals in a MariaDB database.
+
+    One connection per thread: run drives execute agent steps on a
+    background thread while the API keeps serving reads on its request
+    threads, and PyMySQL connections are not thread-safe.
+    """
 
     def __init__(self, config: MariaDbConfig) -> None:
         if not _DATABASE_NAME.match(config.database):
@@ -156,9 +163,17 @@ class MariaDbExecutionStore:
                 " letters, digits and underscores only",
             )
         self._config = config
-        self._connection = self._open()
+        self._local = threading.local()
+        self._local.connection = self._open()
         self._migrate()
         self.approvals = MariaDbApprovalRepository(self._connection)
+
+    def _connection(self) -> Any:
+        connection = getattr(self._local, "connection", None)
+        if connection is None:
+            connection = self._connect(database=self._config.database)
+            self._local.connection = connection
+        return connection
 
     # -- connection & migrations -------------------------------------------
     def _connect(self, *, database: str | None) -> Any:
@@ -210,7 +225,7 @@ class MariaDbExecutionStore:
         return self._connect(database=self._config.database)
 
     def _migrate(self) -> None:
-        with self._connection.cursor() as cursor:
+        with self._connection().cursor() as cursor:
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -234,16 +249,17 @@ class MariaDbExecutionStore:
     # -- executions ---------------------------------------------------------
     @contextmanager
     def transaction(self) -> Iterator[None]:
-        self._connection.begin()
+        connection = self._connection()
+        connection.begin()
         try:
             yield
-            self._connection.commit()
+            connection.commit()
         except BaseException:
-            self._connection.rollback()
+            connection.rollback()
             raise
 
     def create_execution(self, run: WorkflowExecution) -> None:
-        with self._connection.cursor() as cursor:
+        with self._connection().cursor() as cursor:
             cursor.execute(
                 "INSERT INTO executions(id, project_id, payload)"
                 " VALUES (%s, %s, %s)",
@@ -251,7 +267,7 @@ class MariaDbExecutionStore:
             )
 
     def save_execution(self, run: WorkflowExecution) -> None:
-        with self._connection.cursor() as cursor:
+        with self._connection().cursor() as cursor:
             cursor.execute(
                 "UPDATE executions SET payload = %s WHERE id = %s",
                 (run.model_dump_json(), run.id),
@@ -260,7 +276,7 @@ class MariaDbExecutionStore:
                 raise KeyError(run.id)
 
     def get_execution(self, run_id: str) -> WorkflowExecution:
-        with self._connection.cursor() as cursor:
+        with self._connection().cursor() as cursor:
             cursor.execute(
                 "SELECT payload FROM executions WHERE id = %s", (run_id,),
             )
@@ -270,7 +286,7 @@ class MariaDbExecutionStore:
         return WorkflowExecution.model_validate_json(row[0])
 
     def list_executions(self, project_id: str) -> list[WorkflowExecution]:
-        with self._connection.cursor() as cursor:
+        with self._connection().cursor() as cursor:
             cursor.execute(
                 "SELECT payload FROM executions WHERE project_id = %s"
                 " ORDER BY id",
@@ -280,4 +296,9 @@ class MariaDbExecutionStore:
         return [WorkflowExecution.model_validate_json(row[0]) for row in rows]
 
     def close(self) -> None:
-        self._connection.close()
+        # Closes the calling thread's connection; per-thread connections
+        # of other (daemon) threads end with the process.
+        connection = getattr(self._local, "connection", None)
+        if connection is not None:
+            connection.close()
+            self._local.connection = None

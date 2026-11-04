@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -296,11 +297,14 @@ def test_resume_run_continues_from_the_failed_step(
     run = service.start_run(
         "resume-task", "vhpc", inputs={"spec": {"requirement": "Resume me"}},
     )
+    service.wait_for_drives()
     assert engine.get(run.id).state.stage == "FAILED"
     monkeypatch.undo()
 
     # Resume re-runs the spec step and auto-advances to its approval gate.
     view = service.resume_run(run.id)
+    service.wait_for_drives()
+    view = service.get_workflow(view["id"]) if view is not None else None
     assert view is not None
     assert view["id"] != run.id and view["status"] == "WAITING_APPROVAL"
     resumed = engine.get(view["id"])
@@ -324,6 +328,7 @@ def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
         "hands-free", "vhpc", inputs={"spec": {"requirement": "No ticking"}},
     )
     # Creation alone already produced the spec and parked at its gate.
+    service.wait_for_drives()
     view = service.get_workflow(run.id)
     assert view is not None and view["status"] == "WAITING_APPROVAL"
     # From here the only human input is approvals — never a tick — and
@@ -333,6 +338,7 @@ def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
         if not pending:
             break
         service.decide_approval(pending[0]["id"], decision="APPROVE")
+        service.wait_for_drives()
     view = service.get_workflow(run.id)
     assert view is not None and view["status"] == "COMPLETED"
     assert engine.get(run.id).state.stage == "COMPLETED"
@@ -351,6 +357,7 @@ def test_workflow_view_exposes_the_failure_reason(
     run = service.start_run(
         "doomed-task", "vhpc", inputs={"spec": {"requirement": "Boom"}},
     )
+    service.wait_for_drives()
     view = service.get_workflow(run.id)
     assert view is not None and view["status"] == "FAILED"
     assert view["error"]["code"] == "AGENT_EXECUTION_FAILED"
@@ -364,3 +371,56 @@ def test_workflow_view_exposes_the_failure_reason(
     )
     view = service.get_workflow(healthy.id)
     assert view is not None and view["error"] is None
+
+
+def test_start_run_returns_while_a_step_is_still_executing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """A slow or hung model call must not block the triggering request.
+
+    Regression: drives ran on the request thread, so one stuck agent
+    call froze the whole API — every dashboard list stuck at Loading.
+    """
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    spec_agent = engine._registry.for_type("spec")
+    original = spec_agent.execute
+    gate = threading.Event()
+
+    def blocking(request: object) -> object:
+        gate.wait(timeout=30)  # failsafe: never hang the suite forever
+        return original(request)
+
+    monkeypatch.setattr(spec_agent, "execute", blocking)
+    run = service.start_run(
+        "slow-task", "vhpc", inputs={"spec": {"requirement": "Slow model"}},
+    )
+    # start_run returned while the spec agent is still blocked, and the
+    # API can still serve the run's (RUNNING) view in the meantime.
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "RUNNING"
+    gate.set()
+    service.wait_for_drives()
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "WAITING_APPROVAL"
+
+
+def test_startup_recovers_a_run_left_mid_dispatch(tmp_path: Path):
+    """A backend stopped mid-dispatch leaves ``in_flight`` set; startup
+    recovers it (nothing can be in flight in a fresh process) and the
+    run continues on its own instead of stranding at RUNNING forever.
+    """
+    service, engine, store = build_demo(tmp_path / "demo.sqlite")
+    run = engine.start(
+        task_id="wedged-task", project_id="vhpc",
+        inputs={"spec": {"requirement": "Heal me"}},
+    )
+    service.track(run.id)
+    wedged = engine.get(run.id)
+    wedged.in_flight = "interrupted-dispatch"
+    store.save_execution(wedged)
+
+    service.drive_active_runs()
+    service.wait_for_drives()
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "WAITING_APPROVAL"
+    assert engine.get(run.id).in_flight is None

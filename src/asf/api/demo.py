@@ -609,6 +609,7 @@ def run_selftest(service: FactoryService, engine: Orchestrator) -> int:
             service.decide_approval(pending.id, decision="APPROVE")
         else:
             service.tick_run(run.id)
+    service.wait_for_drives()
     run = engine.get(run.id)
     artifact_types = {artifact.type for artifact in run.artifact_history.values()}
     missing = {"SPEC", "PLAN", "TASK", "CODE"} - artifact_types

@@ -38,7 +38,8 @@ def test_health_agents_and_404s():
 
 
 def test_run_approval_decision_flow_over_http():
-    client = make_client()
+    service, _metrics = build_service()
+    client = TestClient(create_app(service))
     created = client.post(
         "/runs", json={"taskId": "task-1", "projectId": "proj-1",
                        "inputs": {"spec": {"requirement": "Build a calculator"}}},
@@ -69,8 +70,10 @@ def test_run_approval_decision_flow_over_http():
 
     tasks = client.get("/tasks", params={"projectId": "proj-1"})
     assert [task["id"] for task in tasks.json()] == ["task-1"]
-    # Auto-advance: the approval already ran the plan step, so the task
-    # sits at the plan review gate instead of merely having a plan draft.
+    # Auto-advance: the approval already ran the plan step (in the
+    # background), so the task sits at the plan review gate instead of
+    # merely having a plan draft.
+    service.wait_for_drives()
     assert client.get("/tasks/task-1").json()["status"] == "PLAN_REVIEW"
     assert client.get(f"/workflows/{run_id}").json()["id"] == run_id
     assert client.get("/activity").json()
