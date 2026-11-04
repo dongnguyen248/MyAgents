@@ -20,6 +20,8 @@ export interface WorkflowError {
   message: string;
   category: string;
   at?: string;
+  /** Structured specifics, e.g. which paths violated a changeset scope. */
+  details?: Record<string, unknown> | null;
 }
 
 export interface WorkflowArtifact {
