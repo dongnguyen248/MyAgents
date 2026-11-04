@@ -1,0 +1,77 @@
+"""FastAPI adapter tests: routes, status codes, and the decision flow."""
+
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from asf.api.app import create_app
+from tests.unit.test_api_service import build_service
+
+
+def make_client() -> TestClient:
+    service, _metrics = build_service()
+    return TestClient(create_app(service))
+
+
+def test_health_agents_and_404s():
+    client = make_client()
+    assert client.get("/health").json() == {"status": "ok"}
+
+    agents = client.get("/agents")
+    assert agents.status_code == 200
+    assert {agent["id"] for agent in agents.json()} == {"agent-spec", "agent-plan"}
+
+    assert client.get("/agents/agent-spec").status_code == 200
+    assert client.get("/agents/agent-nope").status_code == 404
+    config = client.get("/agents/agent-spec/config")
+    assert config.status_code == 200
+    assert config.json()["agentId"] == "agent-spec"
+    assert client.get("/agents/agent-nope/config").status_code == 404
+    assert client.get("/agents/agent-spec/runs").json() == []
+
+    assert client.get("/tasks/nope").status_code == 404
+    assert client.get("/workflows/nope").status_code == 404
+    assert client.get("/projects").status_code == 200
+    overview = client.get("/metrics/overview")
+    assert overview.status_code == 200
+    assert overview.json()["human"]["approvalRate"] == 1.0
+
+
+def test_run_approval_decision_flow_over_http():
+    client = make_client()
+    created = client.post(
+        "/runs", json={"taskId": "task-1", "projectId": "proj-1",
+                       "inputs": {"spec": {"requirement": "Build a calculator"}}},
+    )
+    assert created.status_code == 201
+    run_id = created.json()["id"]
+
+    ticked = client.post(f"/runs/{run_id}/tick")
+    assert ticked.status_code == 200
+    assert ticked.json()["status"] == "WAITING_APPROVAL"
+
+    approvals = client.get("/approvals")
+    assert approvals.status_code == 200
+    assert len(approvals.json()) == 1
+    approval_id = approvals.json()[0]["id"]
+
+    decided = client.post(
+        f"/approvals/{approval_id}/decision", json={"decision": "APPROVE"},
+    )
+    assert decided.status_code == 200
+    assert decided.json()["status"] == "APPROVED"
+
+    conflict = client.post(
+        "/approvals/approval-missing/decision", json={"decision": "APPROVE"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"] == "NOT_FOUND"
+
+    tasks = client.get("/tasks", params={"projectId": "proj-1"})
+    assert [task["id"] for task in tasks.json()] == ["task-1"]
+    assert client.get("/tasks/task-1").json()["status"] == "PLAN_DRAFT"
+    assert client.get(f"/workflows/{run_id}").json()["id"] == run_id
+    assert client.get("/activity").json()
+
+    missing_tick = client.post("/runs/run-missing/tick")
+    assert missing_tick.status_code == 404

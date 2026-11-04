@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from asf.agents._shared.codegen import (
     build_fix_context,
     build_implement_context,
@@ -102,10 +104,11 @@ def test_generate_changeset_delete_files() -> None:
 
 
 def test_generate_changeset_no_change_for_identical_content() -> None:
+    """generate_changeset raises when no changes (min_length=1 per D12)."""
     base = {"src/same.py": "content"}
     files = {"src/same.py": "content"}
-    cs = generate_changeset(files, base_files=base)
-    assert len(cs.changes) == 0
+    with pytest.raises(ValueError, match="no changes produced"):
+        generate_changeset(files, base_files=base)
 
 
 def test_generate_changeset_mixed_operations() -> None:

@@ -13,6 +13,11 @@ from asf.tools.ports import (
     SandboxError,
 )
 
+# Dummy ChangeSet for tests that don't care about the actual changes
+DUMMY_CHANGESET = ChangeSet(
+    changes=(FileChange(path="dummy.txt", operation="create", content="dummy"),)
+)
+
 
 def test_inmemory_repository_empty_repo() -> None:
     repo = InMemoryRepository()
@@ -72,7 +77,7 @@ def test_scripted_sandbox_default_result() -> None:
     sandbox = ScriptedSandbox()
     result = sandbox.run(
         commands=[CommandSpec(argv=("echo", "hello"))],
-        changes=ChangeSet(changes=()),
+        changes=DUMMY_CHANGESET,
         ref="main",
     )
     assert len(result.commands) == 1
@@ -90,7 +95,7 @@ def test_scripted_sandbox_recorded_result() -> None:
     )
     result = sandbox.run(
         commands=[CommandSpec(argv=("echo", "hello"))],
-        changes=ChangeSet(changes=()),
+        changes=DUMMY_CHANGESET,
         ref="main",
     )
     assert result.commands[0].stdout == "hello\n"
@@ -103,7 +108,7 @@ def test_scripted_sandbox_timeout_command() -> None:
     with pytest.raises(CommandTimeoutError):
         sandbox.run(
             commands=[CommandSpec(argv=("sleep", "10"))],
-            changes=ChangeSet(changes=()),
+            changes=DUMMY_CHANGESET,
             ref="main",
         )
 
@@ -120,7 +125,7 @@ def test_scripted_sandbox_multiple_commands() -> None:
             CommandSpec(argv=("cmd1",)),
             CommandSpec(argv=("cmd2",)),
         ],
-        changes=ChangeSet(changes=()),
+        changes=DUMMY_CHANGESET,
         ref="main",
     )
     assert len(result.commands) == 2
@@ -272,7 +277,7 @@ def test_inmemory_sandbox_command_results() -> None:
     )
     result = sandbox.run(
         commands=[CommandSpec(argv=("test",))],
-        changes=ChangeSet(changes=()),
+        changes=DUMMY_CHANGESET,
         ref="main",
     )
     assert result.commands[0].stdout == "test output"
@@ -294,7 +299,7 @@ def test_scripted_sandbox_record() -> None:
     sandbox.record(("custom", "cmd"), custom_result)
     result = sandbox.run(
         commands=[CommandSpec(argv=("custom", "cmd"))],
-        changes=ChangeSet(changes=()),
+        changes=DUMMY_CHANGESET,
         ref="main",
     )
     assert result.commands[0].stdout == "recorded"
@@ -307,7 +312,7 @@ def test_scripted_sandbox_set_timeout() -> None:
     with pytest.raises(CommandTimeoutError):
         sandbox.run(
             commands=[CommandSpec(argv=("sleep", "10"))],
-            changes=ChangeSet(changes=()),
+            changes=DUMMY_CHANGESET,
             ref="main",
         )
 
@@ -320,7 +325,7 @@ def test_inmemory_sandbox_set_command_result() -> None:
     sandbox.set_command_result(("custom", "cmd"), custom_result)
     result = sandbox.run(
         commands=[CommandSpec(argv=("custom", "cmd"))],
-        changes=ChangeSet(changes=()),
+        changes=DUMMY_CHANGESET,
         ref="main",
     )
     assert result.commands[0].stdout == "custom output"

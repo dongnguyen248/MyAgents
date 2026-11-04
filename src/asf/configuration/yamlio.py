@@ -98,7 +98,8 @@ def load_yaml_mapping(
 
 
     try:
-        data = yaml.load(content, Loader=UniqueKeyLoader)
+        # UniqueKeyLoader extends SafeLoader and only customizes duplicate-key handling.
+        data = yaml.load(content, Loader=UniqueKeyLoader)  # nosec B506
     except yaml.YAMLError as exc:
         msg = _format_yaml_error(exc)
         raise ConfigError(

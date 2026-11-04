@@ -2,4 +2,4 @@
 ## Summary
 ## Findings (severity / location / suggestion)
 ## Security & quality checks
-## Verdict (PASS / CHANGES_REQUESTED)
+## Verdict (APPROVE / CHANGES_REQUESTED)

@@ -41,6 +41,8 @@ ci:
     timeoutMinutes: 30
 
 # Notification channels for alerts and human approval requests
+# For Teams Workflows approvals (no custom bot), replace this example locally using:
+# ../src/asf/integrations/teams/README.md (workflow URL and callback secret via env references).
 notifications:
   - name: engineering-team
     type: example-provider

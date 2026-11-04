@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from asf.agents._shared.limits import (
     MAX_CHANGES_PER_CHANGESET,
     MAX_COMMAND_OUTPUT_BYTES,
@@ -51,14 +53,13 @@ def test_check_changeset_limits_within_limits() -> None:
 
 
 def test_check_changeset_limits_too_many_changes() -> None:
+    """ChangeSet validation rejects >50 changes before limits check (D12 max_length=50)."""
     changes = tuple(
         FileChange(path=f"f{i}.py", operation="create", content="x")
         for i in range(MAX_CHANGES_PER_CHANGESET + 1)
     )
-    changeset = ChangeSet(changes=changes)
-    issues = check_changeset_limits(changeset)
-    assert len(issues) == 1
-    assert "exceeds limit" in issues[0]
+    with pytest.raises(ValueError, match="at most 50"):
+        ChangeSet(changes=changes)
 
 
 def test_check_changeset_limits_total_content_over_limit() -> None:
@@ -72,6 +73,7 @@ def test_check_changeset_limits_total_content_over_limit() -> None:
     assert "total content size" in issues[0]
 
 
-def test_check_changeset_limits_empty_changeset() -> None:
-    changeset = ChangeSet(changes=())
-    assert check_changeset_limits(changeset) == []
+def test_check_changeset_limits_empty_changeset_rejected_by_model() -> None:
+    """Empty changeset rejected by ChangeSet model (D12 min_length=1)."""
+    with pytest.raises(ValueError, match="at least 1"):
+        ChangeSet(changes=())

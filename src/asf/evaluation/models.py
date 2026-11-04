@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import AwareDatetime, Field
+
+from asf.configuration.platform import ConfigModel
+
+__all__ = [
+    "AgentRunRecord",
+    "ApprovalRecord",
+    "QualityKind",
+    "QualityRecord",
+]
+
+QualityKind = Literal["TEST", "CI", "REVIEW"]
+
+
+class AgentRunRecord(ConfigModel):
+    """One recorded ``AgentResult``, reduced to the fields metrics aggregate."""
+
+    recorded_at: AwareDatetime
+    agent_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    project_id: str | None = None
+    task_id: str | None = None
+    status: Literal["SUCCESS", "FAILED", "REJECTED", "WAITING", "CANCELLED"]
+    duration_seconds: float = Field(ge=0)
+    revision_count: int = Field(ge=0)
+    attempt: int = Field(ge=1)
+
+
+class ApprovalRecord(ConfigModel):
+    """One human approval decision attributed to an agent."""
+
+    recorded_at: AwareDatetime
+    project_id: str = Field(min_length=1)
+    task_id: str | None = None
+    agent_id: str = Field(min_length=1)
+    decision: Literal["APPROVED", "REJECTED", "REQUEST_CHANGES"]
+
+
+class QualityRecord(ConfigModel):
+    """One pass/fail quality sample (a test run, a CI run, or a code review)."""
+
+    recorded_at: AwareDatetime
+    project_id: str | None = None
+    task_id: str | None = None
+    agent_id: str = Field(min_length=1)
+    kind: QualityKind
+    passed: bool

@@ -1,8 +1,23 @@
-# agents/test/
-**Responsibility:** Creates/runs tests and produces a TEST_REPORT artifact.
+# TestAgent
 
-- **Input / Output:** defined in `core/contracts/` (to be designed).
-- **Does not:** call other agents, request approval itself, or reference a specific project or LLM vendor.
-- Folders: `prompts/`, `instructions/`, `tools/`, `skills/`, `tests/`.
+Deterministic Phase 7 runner. Requires linked TASK/CODE artifacts and `input.taskItemId`.
+Only `context.project.testCommands` supplies commands: 1–20 argv lists, each with
+1–256 non-empty UTF-8 arguments of at most 4096 characters and no NUL. Executables
+must be bare or relative, without parent traversal, Windows drives or UNC roots.
+Arguments are passed unchanged; no shell heuristics or `verificationHint` execution.
 
-Status: placeholder.
+The injected SandboxPort receives all CommandSpecs in one call at CODE's `baseRef`,
+with CODE's ChangeSet. CommandSpec defaults supply timeout and output limits.
+There are no prompts, model calls, template loading, or direct subprocess calls.
+
+TEST_REPORT content wraps `format: "json"`, `report`, and `text`. The report contains
+`commands` (`argv`, `exitCode`, `stdout`, `stderr`, `durationMs`), `verdict`, and
+`summary`; artifact metadata carries upstream traceability. Agent output is the
+structured report itself. Any nonzero exit
+(including pytest exit 5) means FAIL while agent status remains SUCCESS.
+Timeouts produce COMMAND_TIMEOUT; sandbox errors or malformed results produce
+SANDBOX_ERROR. Error messages never echo runner exceptions.
+
+Command output is untrusted data, never instructions. Full shared secret-pattern
+matches are redacted before each stream is truncated to the UTF-8 byte limit.
+Report argv and traceability strings are also secret-redacted.

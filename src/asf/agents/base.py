@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from asf.contracts.models import (
     ActivityEvent,
@@ -19,7 +19,35 @@ from asf.contracts.models import (
 from asf.models.errors import ModelGatewayError
 from asf.models.ports import ModelGateway
 
-__all__ = ["AgentRuntime", "BaseAgent", "Issue"]
+__all__ = ["AgentRuntime", "BaseAgent", "Issue", "AgentExecutionError"]
+
+
+class AgentExecutionError(Exception):
+    """Expected agent/port failure with a safe, explicit platform error."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        category: str = "INTEGRATION",
+        retryable: bool = True,
+        details: dict[str, Any] | None = None,
+        status: Literal["FAILED", "REJECTED"] = "FAILED",
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.category = category
+        self.retryable = retryable
+        self.details = dict(details or {})
+        self.status = status
+
+    def to_platform_error(self, now: datetime) -> dict[str, Any]:
+        return {
+            "code": self.code, "message": self.message, "category": self.category,
+            "retryable": self.retryable, "details": self.details, "timestamp": now,
+        }
 
 
 @dataclass(frozen=True)
@@ -208,7 +236,7 @@ class BaseAgent(ABC):
                 errors=[],
             )
 
-        except ModelGatewayError as err:
+        except (ModelGatewayError, AgentExecutionError) as err:
             t_end = self._runtime.clock()
             p_err = PlatformError.model_validate(err.to_platform_error(t_end))
             events = [
@@ -237,10 +265,12 @@ class BaseAgent(ABC):
             ]
             duration = max(0.0, (t_end - t_start).total_seconds())
             metrics = self._compute_metrics(request, duration)
+            if isinstance(err, AgentExecutionError) and err.status == "REJECTED":
+                events = []
             return AgentResult(
                 request_id=request.request_id,
                 agent_id=self.metadata.id,
-                status="FAILED",
+                status=err.status if isinstance(err, AgentExecutionError) else "FAILED",
                 output=None,
                 artifacts=[],
                 events=events,

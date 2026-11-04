@@ -29,3 +29,19 @@ Operations that depend on time obtain time only from a `now` argument, the paylo
 A missing single resource returns a `PlatformError` with code `NOT_FOUND`; all ports report failures with `PlatformError` using codes from [`errors.md`](errors.md).
 
 The platform must not depend on a concrete persistence, transport, notification, source-control, or model provider through these ports. For example, an `ApprovalService` adapter may later use Teams, Slack, or a web UI, while an `EventPublisher` adapter may feed an in-memory observer, WebSocket/SSE, or a message queue.
+
+## Local orchestration checkpoint port
+
+The Phase 6 Python `ExecutionStore` is a unit-of-work port for a complete
+`WorkflowExecution` checkpoint: `create_execution`, `save_execution`,
+`get_execution`, `list_executions(project_id)`, `transaction()` and a store-owned
+`approvals` repository. The local SQLite adapter commits approval changes and
+workflow progress together. It is not a replacement implementation of every
+standalone CRUD repository above. WorkflowRun and Task are schema-shaped
+projections from the checkpoint; artifact history is retained inside it.
+
+The Python `EventPublisher.publish` follows the event port above.
+`MetricsRecorder.record(agent_id, result)` is the write-side subset of
+`MetricsService`, not an implementation of aggregate metric queries.
+Outbox delivery is at-least-once, with `ActivityEvent.id` / `AgentResult.requestId`
+as consumer deduplication keys. No configured sink means pending delivery.

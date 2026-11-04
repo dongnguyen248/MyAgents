@@ -31,6 +31,7 @@ from asf.agents._shared.paths import (
     DENIED_PATH_PATTERNS,
     check_denied_paths,
     check_scope,
+    find_out_of_scope,
     validate_relative_path,
 )
 from asf.agents._shared.security import SecretMatch, scan_secrets
@@ -46,6 +47,7 @@ __all__ = [
     "validate_relative_path",
     "check_denied_paths",
     "check_scope",
+    "find_out_of_scope",
     "DENIED_PATH_PATTERNS",
     "ALWAYS_DENIED_EXTENSIONS",
     "ALWAYS_DENIED_PREFIXES",
