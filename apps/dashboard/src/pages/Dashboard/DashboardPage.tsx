@@ -21,7 +21,7 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageHeader title="Dashboard" subtitle="What is the AI Software Factory doing right now?" />
+      <PageHeader title="Dashboard" subtitle="What is the AI Software Agents doing right now?" />
 
       <AsyncView {...summary}>
         {(s) => (

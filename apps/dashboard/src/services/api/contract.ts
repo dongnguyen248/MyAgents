@@ -9,7 +9,7 @@ import type { Workflow } from '../../types/workflow';
 export type Unsubscribe = () => void;
 
 /**
- * The single seam between the dashboard and the AI Software Factory backend.
+ * The single seam between the dashboard and the AI Software Agents backend.
  * Implementations: mockApi (in-browser) and httpApi (REST). Nothing above this
  * layer knows which one is active.
  */

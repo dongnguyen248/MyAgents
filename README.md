@@ -1,4 +1,4 @@
-# AI Software Factory
+# AI Software Agents
 
 A reusable, project-independent platform for running an AI software development team.
 Projects plug in through **project profiles** in `projects/`;

@@ -1,7 +1,7 @@
 # workflows/
 
 ## Purpose
-This directory contains declarative, project-independent workflow definitions for the AI Software Factory.
+This directory contains declarative, project-independent workflow definitions for the AI Software Agents.
 
 ## Guidelines
 1. **Data only**: Files in this folder are declarative YAML documents (`*.yaml`, `*.yml`). They contain definitions only, not code or execution state.

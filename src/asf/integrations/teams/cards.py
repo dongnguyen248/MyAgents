@@ -18,7 +18,7 @@ def approval_card(run_id: str, request: ApprovalRequest, artifact: Artifact) -> 
     return {
         "type": "AdaptiveCard", "version": "1.3",
         "body": [
-            {"type": "TextBlock", "text": "AI Software Factory: approval required",
+            {"type": "TextBlock", "text": "AI Software Agents: approval required",
              "weight": "Bolder", "wrap": True},
             {"type": "TextBlock",
              "text": f"{artifact.type} v{artifact.version} | {artifact.id}", "wrap": True},

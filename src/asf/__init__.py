@@ -1,9 +1,9 @@
-"""AI Software Factory core package."""
+"""AI Software Agents core package."""
 
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("ai-software-factory")
+    __version__ = version("ai-software-agents")
 except PackageNotFoundError:
     __version__ = "0.1.0"
 

@@ -1,4 +1,4 @@
-# Example platform configuration for AI Software Factory
+# Example platform configuration for AI Software Agents
 # Copy this file to platform.yaml (or platform.local.yaml for local overrides).
 
 version: 1

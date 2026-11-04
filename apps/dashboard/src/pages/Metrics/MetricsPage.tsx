@@ -10,7 +10,7 @@ export function MetricsPage() {
   const metrics = useMetricsOverview();
   return (
     <>
-      <PageHeader title="Metrics" subtitle="Is the AI Software Factory getting better?" />
+      <PageHeader title="Metrics" subtitle="Is the AI Software Agents getting better?" />
       <AsyncView {...metrics}>
         {(m) => {
           const labels = m.daily.map((d) => shortDate(d.date));
