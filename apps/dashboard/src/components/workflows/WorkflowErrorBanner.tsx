@@ -33,9 +33,18 @@ export function WorkflowErrorBanner({ workflow }: { workflow: Workflow }) {
   if (workflow.status !== 'FAILED' || !workflow.error) return null;
   const failedStep = workflow.steps.find((s) => s.state === 'failed');
   const lines = workflow.error.details ? detailLines(workflow.error.details) : [];
+  // A death inside the code-fix loop is attributed to the step whose
+  // verdict triggered the fix — but the thing that actually died is
+  // the fix attempt itself, so name it instead of blaming that step.
+  const where =
+    workflow.error.stage === 'CODE_FIX'
+      ? ` in code fix${failedStep ? ` (after ${failedStep.label})` : ''}`
+      : failedStep
+        ? ` at ${failedStep.label}`
+        : '';
   return (
     <p className="alert" role="alert">
-      Failed{failedStep ? ` at ${failedStep.label}` : ''}: {workflow.error.message}{' '}
+      Failed{where}: {workflow.error.message}{' '}
       <span className="muted small">
         ({workflow.error.code} · {workflow.error.category})
       </span>

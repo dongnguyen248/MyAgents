@@ -38,6 +38,7 @@ def _gateway(transport: FakeTransport) -> OpenAICompatibleGateway:
     return OpenAICompatibleGateway(
         base_url="https://models.example.com/v1/", model="gpt-x",
         api_key="secret-key", transport=transport,
+        sleep=lambda _: None,  # retries must not slow the suite down
     )
 
 
@@ -102,3 +103,88 @@ def test_constructor_validation():
         OpenAICompatibleGateway(base_url="https://x", model=" ", api_key="k")
     with pytest.raises(ValueError):
         OpenAICompatibleGateway(base_url="https://x", model="m", api_key="")
+
+
+_OK = {
+    "choices": [{
+        "message": {"role": "assistant", "content": "done"},
+        "finish_reason": "stop",
+    }],
+    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+}
+
+
+class SequenceTransport:
+    """Plays back scripted outcomes: exceptions or (status, payload)."""
+
+    def __init__(self, outcomes: list) -> None:
+        self.outcomes = list(outcomes)
+        self.calls = 0
+        self.timeouts: list[float] = []
+
+    def post(self, url, *, headers, body, timeout_seconds):  # noqa: ANN001, ANN202
+        self.calls += 1
+        self.timeouts.append(timeout_seconds)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        status, payload = outcome
+        raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        return status, raw
+
+
+def _retry_gateway(transport: SequenceTransport, sleeps: list) -> OpenAICompatibleGateway:
+    return OpenAICompatibleGateway(
+        base_url="https://models.example.com/v1", model="gpt-x",
+        api_key="key-1", transport=transport, sleep=sleeps.append,
+    )
+
+
+def _unreachable() -> ModelGatewayError:
+    return ModelGatewayError(
+        "INTEGRATION_UNAVAILABLE", "Model provider unreachable: timed out",
+    )
+
+
+def test_transport_timeout_is_retried_then_succeeds():
+    transport = SequenceTransport([_unreachable(), (200, _OK)])
+    sleeps: list[float] = []
+    response = _retry_gateway(transport, sleeps).complete(_request())
+    assert response.content == "done"
+    assert transport.calls == 2
+    assert sleeps == [1]  # first backoff is 2**0
+
+
+def test_http_503_is_retried_then_succeeds():
+    transport = SequenceTransport([(503, {"error": {"message": "down"}}), (200, _OK)])
+    sleeps: list[float] = []
+    response = _retry_gateway(transport, sleeps).complete(_request())
+    assert response.content == "done"
+    assert transport.calls == 2
+    assert sleeps == [1]
+
+
+def test_retries_exhaust_and_raise_the_last_error():
+    transport = SequenceTransport([_unreachable(), _unreachable(), _unreachable()])
+    sleeps: list[float] = []
+    with pytest.raises(ModelGatewayError) as caught:
+        _retry_gateway(transport, sleeps).complete(_request())
+    assert caught.value.code == "INTEGRATION_UNAVAILABLE"
+    assert transport.calls == 3  # initial attempt + 2 retries
+    assert sleeps == [1, 2]
+
+
+def test_client_error_is_not_retried():
+    transport = SequenceTransport([(401, {"error": {"message": "bad key"}})])
+    sleeps: list[float] = []
+    with pytest.raises(ModelGatewayError) as caught:
+        _retry_gateway(transport, sleeps).complete(_request())
+    assert caught.value.code == "LLM_INVALID_RESPONSE"
+    assert transport.calls == 1
+    assert sleeps == []
+
+
+def test_default_timeout_is_five_minutes():
+    transport = SequenceTransport([(200, _OK)])
+    _retry_gateway(transport, []).complete(_request())
+    assert transport.timeouts == [300.0]

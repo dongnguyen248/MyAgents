@@ -22,6 +22,8 @@ export interface WorkflowError {
   at?: string;
   /** Structured specifics, e.g. which paths violated a changeset scope. */
   details?: Record<string, unknown> | null;
+  /** The workflow stage the run died in (e.g. CODE_FIX for the fix loop). */
+  stage?: string | null;
 }
 
 export interface WorkflowArtifact {
