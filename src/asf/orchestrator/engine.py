@@ -628,6 +628,92 @@ class Orchestrator:
             self._event(run, "WORKFLOW_RESUMED", "Operator resumed an escalated execution")
         return self.get(run_id)
 
+    def resume_failed(self, run_id: str) -> WorkflowExecution:
+        """Fork a FAILED run into a new execution that re-runs the failed step.
+
+        The source run stays untouched as the immutable record of the
+        failure. The new run carries over the source's inputs, context,
+        artifacts (latest and history), results, task-item progress and
+        revision counters, rewound to the stage the source was in when it
+        failed — approved SPEC/PLAN/TASK artifacts are reused and only
+        the failed step (and what follows it) executes again.
+        """
+        if run_id in self._active:
+            raise ValueError("A running dispatch cannot be resumed")
+        source = self._load(run_id)
+        if kind_of(self._graph, source.state.stage) != StageKind.FAILED:
+            raise ValueError(
+                f"Run '{run_id}' has not failed (stage {source.state.stage}); "
+                "only a failed run can be resumed",
+            )
+        if source.in_flight is not None:
+            raise ValueError(
+                "Interrupted dispatch requires explicit recover() before resume",
+            )
+        stage = self._failed_stage(source)
+        now = self._now()
+        new_run_id = self._new_id()
+        if not new_run_id.strip() or new_run_id in self._runs:
+            raise ValueError("Run ID must be nonblank and unique")
+        run = WorkflowExecution(
+            id=new_run_id, task_id=source.task_id, project_id=source.project_id,
+            state=RunState(stage=stage, revisions=dict(source.state.revisions)),
+            inputs=deepcopy(source.inputs), context=deepcopy(source.context),
+            artifacts=deepcopy(source.artifacts),
+            results=deepcopy(source.results), errors=deepcopy(source.errors),
+            feedback=deepcopy(source.feedback), attempts=dict(source.attempts),
+            approval_id=(
+                source.approval_id
+                if kind_of(self._graph, stage) == StageKind.REVIEW else None
+            ),
+            definition=self._definition.to_contract(), settings=self._settings(),
+            started_at=now, updated_at=now,
+            task_order=list(source.task_order), item_index=source.item_index,
+            item_results=deepcopy(source.item_results),
+            artifact_history=deepcopy(source.artifact_history),
+            observations=deepcopy(source.observations),
+            recovery_notes=[
+                *source.recovery_notes,
+                f"Resumed from failed run {source.id}: "
+                f"re-running the step that failed at stage {stage}",
+            ],
+        )
+        self._event(run, "WORKFLOW_RESUMED", f"Resumed from failed run {source.id}")
+        if self._store:
+            with self._store.transaction():
+                self._store.create_execution(run)
+        self._runs[new_run_id] = run
+        return run.snapshot()
+
+    def _failed_stage(self, run: WorkflowExecution) -> str:
+        """The stage a FAILED run was in when it failed.
+
+        Read back from the run's own stage-change trail; the fallback is
+        the first step whose outputs were never published (the same rule
+        the dashboard uses to mark the failed step).
+        """
+        terminal = (
+            StageKind.FAILED, StageKind.COMPLETED,
+            StageKind.CANCELLED, StageKind.ESCALATED,
+        )
+        for observation in reversed(run.observations):
+            event = observation.event
+            if event is None or event.event_type not in (
+                "WORKFLOW_STARTED", "WORKFLOW_STAGE_CHANGED",
+            ):
+                continue
+            stage = event.metadata.get("stage")
+            if (
+                isinstance(stage, str) and stage != run.state.stage
+                and kind_of(self._graph, stage) not in terminal
+            ):
+                return stage
+        produced = {artifact.type for artifact in run.artifact_history.values()}
+        for step in self._definition.steps:
+            if step.produces and not set(step.produces) <= produced:
+                return step.generated_stages()[0]
+        return self._definition.steps[-1].generated_stages()[0]
+
     def recover(
         self, run_id: str, *, reason: str, retry_interrupted: bool = False,
     ) -> WorkflowExecution:

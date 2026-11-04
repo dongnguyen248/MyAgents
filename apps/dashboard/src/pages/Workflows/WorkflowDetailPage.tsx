@@ -6,7 +6,7 @@ import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
-import { retryWorkflow, tickWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
+import { resumeWorkflow, retryWorkflow, tickWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
 import { titleCase } from '../../utils/format';
 
 export function WorkflowDetailPage() {
@@ -17,6 +17,8 @@ export function WorkflowDetailPage() {
   const [tickError, setTickError] = useState<string | undefined>();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | undefined>();
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | undefined>();
 
   const runAgain = async () => {
     setRetryError(undefined);
@@ -28,6 +30,19 @@ export function WorkflowDetailPage() {
       setRetryError(err instanceof Error ? err.message : 'Failed to run again');
     } finally {
       setRetrying(false);
+    }
+  };
+
+  const resume = async () => {
+    setResumeError(undefined);
+    setResuming(true);
+    try {
+      const fresh = await resumeWorkflow(workflowId);
+      navigate(`/workflows/${fresh.id}`);
+    } catch (err) {
+      setResumeError(err instanceof Error ? err.message : 'Failed to resume');
+    } finally {
+      setResuming(false);
     }
   };
 
@@ -75,14 +90,23 @@ export function WorkflowDetailPage() {
             {['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
               <Card>
                 <div className="filters">
-                  <button type="button" className="btn btn-primary" onClick={runAgain} disabled={retrying}>
+                  {workflow.status === 'FAILED' && (
+                    <button type="button" className="btn btn-primary" onClick={resume} disabled={resuming || retrying}>
+                      {resuming ? 'Resuming…' : 'Resume from failure'}
+                    </button>
+                  )}
+                  <button type="button" className={workflow.status === 'FAILED' ? 'btn' : 'btn btn-primary'} onClick={runAgain} disabled={retrying || resuming}>
                     {retrying ? 'Starting…' : 'Run again'}
                   </button>
-                  <span className="muted small">Starts a fresh run of this task with its original requirement; this finished run stays as the record.</span>
+                  <span className="muted small">
+                    {workflow.status === 'FAILED'
+                      ? 'Resume keeps the approved spec, plan and task breakdown and re-runs only the failed step. Run again starts over from the spec; either way this failed run stays as the record.'
+                      : 'Starts a fresh run of this task with its original requirement; this finished run stays as the record.'}
+                  </span>
                 </div>
-                {retryError && (
+                {(retryError || resumeError) && (
                   <p className="alert" role="alert">
-                    {retryError}
+                    {resumeError ?? retryError}
                   </p>
                 )}
               </Card>

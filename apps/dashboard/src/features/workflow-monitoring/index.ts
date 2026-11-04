@@ -6,3 +6,4 @@ export const useWorkflowDetail = (id: string) => useAsync(() => svc.getWorkflowD
 
 export const tickWorkflow = svc.tickWorkflow;
 export const retryWorkflow = svc.retryWorkflow;
+export const resumeWorkflow = svc.resumeWorkflow;

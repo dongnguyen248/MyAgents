@@ -132,3 +132,21 @@ def test_delete_project_with_active_run_conflicts_over_http():
     run_id = created.json()["id"]
     client.post(f"/runs/{run_id}/tick")
     assert client.delete("/projects/proj-1").status_code == 409
+
+
+def test_resume_endpoint_rejects_non_failed_runs():
+    client = make_client()
+    created = client.post(
+        "/runs", json={"taskId": "task-1", "projectId": "proj-1",
+                       "inputs": {"spec": {"requirement": "Build a calculator"}}},
+    )
+    assert created.status_code == 201
+    run_id = created.json()["id"]
+
+    active = client.post(f"/runs/{run_id}/resume")
+    assert active.status_code == 409
+    assert "has not failed" in active.json()["detail"]
+    assert client.post("/runs/run-missing/resume").status_code == 404
+
+    assert client.post(f"/runs/{run_id}/cancel").status_code == 200
+    assert client.post(f"/runs/{run_id}/resume").status_code == 409

@@ -31,6 +31,8 @@ export interface FactoryApi {
   tickRun(runId: string): Promise<Workflow>;
   /** Start a fresh run of a finished run's task with its original inputs. */
   retryRun(runId: string): Promise<Workflow>;
+  /** Continue a failed run from its failed step, keeping its artifacts and approvals. */
+  resumeRun(runId: string): Promise<Workflow>;
 
   listProjects(): Promise<Project[]>;
   createProject(input: ProjectProfileInput): Promise<Project>;
