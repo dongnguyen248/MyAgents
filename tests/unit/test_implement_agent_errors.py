@@ -238,8 +238,14 @@ def test_invalid_reply_empty_object() -> None:
 
 
 # Semantic validation tests
-def test_modify_missing_file_rejected() -> None:
-    """Modify on missing file -> FAILED/LLM_INVALID_RESPONSE with missingPaths."""
+def test_modify_missing_file_treated_as_create() -> None:
+    """Modify on missing file -> the operation label is normalized.
+
+    Changesets carry full file contents, so create/modify are two
+    labels for one intent (set this path to this content); the label
+    is aligned with the repository state instead of rejecting a reply
+    whose only fault is the label.
+    """
     repo = InMemoryRepository()  # Empty repo
     reply = make_valid_changeset_reply(
         changes=[{"path": "src/missing.py", "operation": "modify", "content": "new content\n"}]
@@ -248,11 +254,9 @@ def test_modify_missing_file_rejected() -> None:
     req = make_implement_request(expected_files=["src/missing.py"])
 
     res = agent.execute(req)
-    assert res.status == "FAILED"
-    assert res.errors[0].code == "LLM_INVALID_RESPONSE"
-    assert "missingPaths" in res.errors[0].details
-    missing = res.errors[0].details["missingPaths"]
-    assert any(m["path"] == "src/missing.py" and m["operation"] == "modify" for m in missing)
+    assert res.status == "SUCCESS"
+    changes = res.artifacts[0].content["changeSet"]["changes"]
+    assert changes[0]["operation"] == "create"
 
 
 def test_delete_missing_file_rejected() -> None:
@@ -272,8 +276,13 @@ def test_delete_missing_file_rejected() -> None:
     assert any(m["path"] == "src/missing.py" and m["operation"] == "delete" for m in missing)
 
 
-def test_create_existing_file_rejected() -> None:
-    """Create on existing file -> FAILED/LLM_INVALID_RESPONSE with existingPaths."""
+def test_create_existing_file_treated_as_modify() -> None:
+    """Create on existing file -> the operation label is normalized.
+
+    A local workspace folder already holds files from earlier steps
+    and runs; insisting on the exact label would fail the run for a
+    reply whose content is exactly what was asked for.
+    """
     repo = InMemoryRepository({"main": {"src/existing.py": "old content\n"}})
     reply = make_valid_changeset_reply(
         changes=[{"path": "src/existing.py", "operation": "create", "content": "new content\n"}]
@@ -282,8 +291,6 @@ def test_create_existing_file_rejected() -> None:
     req = make_implement_request(expected_files=["src/existing.py"])
 
     res = agent.execute(req)
-    assert res.status == "FAILED"
-    assert res.errors[0].code == "LLM_INVALID_RESPONSE"
-    assert "existingPaths" in res.errors[0].details
-    existing = res.errors[0].details["existingPaths"]
-    assert any(m["path"] == "src/existing.py" and m["operation"] == "create" for m in existing)
+    assert res.status == "SUCCESS"
+    changes = res.artifacts[0].content["changeSet"]["changes"]
+    assert changes[0]["operation"] == "modify"

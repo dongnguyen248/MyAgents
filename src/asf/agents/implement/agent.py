@@ -7,6 +7,7 @@ from typing import Any
 from asf.agents._shared.codegen import (
     build_implement_context,
     changeset_secret_issues,
+    normalize_changeset_operations,
     validate_changeset,
 )
 from asf.agents._shared.limits import (
@@ -431,7 +432,10 @@ class ImplementAgent(BaseAgent):
                 details=details,
             )
 
-        # Validate change set
+        # Align operation labels with the repository state (a "create"
+        # for a file that already exists is a "modify" in effect), then
+        # validate the change set.
+        changeset = normalize_changeset_operations(changeset, ref, self._repository)
         validation_issues = self._validate_changeset(
             changeset,
             expected_files,

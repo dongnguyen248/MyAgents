@@ -135,7 +135,7 @@ def test_fix_rejects_invalid_model_reply(reply: str):
 @pytest.mark.parametrize(
     ("path", "operation"),
     [("src/other.py", "create"), (".env", "create"),
-     ("src/calculator.py", "modify"), ("src/calculator.py", "delete")],
+     ("src/calculator.py", "delete")],
 )
 def test_fix_enforces_scope_and_base_existence(path: str, operation: str):
     change: dict[str, Any] = {"path": path, "operation": operation}
@@ -145,6 +145,28 @@ def test_fix_enforces_scope_and_base_existence(path: str, operation: str):
     result = agent.execute(fix_request())
     assert result.status == "FAILED"
     assert result.errors[0].code == "LLM_INVALID_RESPONSE"
+
+
+def test_fix_create_for_existing_file_is_treated_as_modify():
+    """The replacement is relative to the original base ref, where the
+    file did not exist — but a local workspace already holds the
+    implemented file, so the model's "create" is normalized to the
+    "modify" it means instead of failing the run (Dong's live case)."""
+    repository = InMemoryRepository({"main": {"src/calculator.py": "value = 0"}})
+    agent, _ = fix_agent([make_valid_changeset_reply()], repository)
+    result = agent.execute(fix_request())
+    assert result.status == "SUCCESS"
+    code = result.artifacts[0]
+    assert code.content["changeSet"]["changes"][0]["operation"] == "modify"
+
+
+def test_fix_modify_for_missing_file_is_treated_as_create():
+    change = {"path": "src/calculator.py", "operation": "modify", "content": "value = 1"}
+    agent, _ = fix_agent([json.dumps({"changes": [change]})])
+    result = agent.execute(fix_request())
+    assert result.status == "SUCCESS"
+    code = result.artifacts[0]
+    assert code.content["changeSet"]["changes"][0]["operation"] == "create"
 
 
 def test_fix_secret_rejection_never_echoes_value():

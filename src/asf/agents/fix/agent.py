@@ -18,6 +18,7 @@ from asf.agents._shared.code_agents import (
 from asf.agents._shared.codegen import (
     build_fix_context,
     changeset_secret_issues,
+    normalize_changeset_operations,
     validate_changeset,
 )
 from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
@@ -172,6 +173,7 @@ class FixAgent(BaseAgent):
         except (ValueError, ValidationError, ParseError):
             raise invalid_response("Invalid replacement ChangeSet") from None
         try:
+            changeset = normalize_changeset_operations(changeset, ref, self._repository)
             issues = validate_changeset(changeset, expected, ref, self._repository)
         except RepositoryError:
             raise AgentExecutionError("REPOSITORY_ERROR", "Could not validate base files") from None
