@@ -6,15 +6,13 @@ import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
-import { resumeWorkflow, retryWorkflow, tickWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
+import { resumeWorkflow, retryWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
 import { titleCase } from '../../utils/format';
 
 export function WorkflowDetailPage() {
   const { workflowId = '' } = useParams();
   const detail = useWorkflowDetail(workflowId);
   const navigate = useNavigate();
-  const [ticking, setTicking] = useState(false);
-  const [tickError, setTickError] = useState<string | undefined>();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | undefined>();
   const [resuming, setResuming] = useState(false);
@@ -46,19 +44,6 @@ export function WorkflowDetailPage() {
     }
   };
 
-  const runNextStep = async () => {
-    setTickError(undefined);
-    setTicking(true);
-    try {
-      await tickWorkflow(workflowId);
-      detail.reload();
-    } catch (err) {
-      setTickError(err instanceof Error ? err.message : 'Failed to run the next step');
-    } finally {
-      setTicking(false);
-    }
-  };
-
   return (
     <AsyncView {...detail}>
       {({ workflow, events }) =>
@@ -72,21 +57,6 @@ export function WorkflowDetailPage() {
               back={{ to: '/workflows', label: 'Workflows' }}
               actions={<><WorkflowStatusBadge status={workflow.status} /><Link className="btn" to={`/tasks/${workflow.taskId}`}>Open task</Link></>}
             />
-            {workflow.status === 'RUNNING' && (
-              <Card>
-                <div className="filters">
-                  <button type="button" className="btn btn-primary" onClick={runNextStep} disabled={ticking}>
-                    {ticking ? 'Running…' : 'Run next step'}
-                  </button>
-                  <span className="muted small">Runs one engine step; the run pauses again at the next approval.</span>
-                </div>
-                {tickError && (
-                  <p className="alert" role="alert">
-                    {tickError}
-                  </p>
-                )}
-              </Card>
-            )}
             {['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
               <Card>
                 <div className="filters">
@@ -115,7 +85,8 @@ export function WorkflowDetailPage() {
               <Card>
                 <p className="muted">
                   This run is waiting for approval. Review the artifact and decide on the{' '}
-                  <Link to="/approvals">Approvals page</Link>, then come back and run the next step.
+                  <Link to="/approvals">Approvals page</Link> — once decided, the run continues
+                  on its own to the next step.
                 </p>
               </Card>
             )}

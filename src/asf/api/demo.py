@@ -697,6 +697,9 @@ def main() -> None:
             raise SystemExit(run_selftest(service, engine))
         import uvicorn
 
+        # Runs left mid-flight by a previous backend process (restart,
+        # crash) pick themselves up to their next approval gate.
+        service.drive_active_runs()
         print(f"Dashboard API on http://127.0.0.1:{args.port} (db: {db_label})")
         print("Dashboard: set VITE_API_BASE_URL to that URL and run the frontend dev server.")
         uvicorn.run(create_app(service), host="127.0.0.1", port=args.port)

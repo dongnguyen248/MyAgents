@@ -18,7 +18,8 @@ def test_dashboard_api_full_chain():
     )
     assert created.status_code == 201
     run_id = created.json()["id"]
-    assert created.json()["status"] == "RUNNING"
+    # Auto-advance: creation already ran the spec step to its gate.
+    assert created.json()["status"] == "WAITING_APPROVAL"
 
     def tick() -> dict:
         response = client.post(f"/runs/{run_id}/tick")

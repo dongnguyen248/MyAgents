@@ -217,17 +217,19 @@ def test_run_task_workflow_and_approval_flow():
     assert decided["status"] == "APPROVED"
     assert metrics.decisions[0]["agent_id"] == "agent-spec"  # agent id, matching AgentResult keys
     assert metrics.decisions[0]["decision"] == "APPROVED"
-    assert service.list_approvals() == []
+    # Auto-advance: approving the spec already ran the plan step, so the
+    # PLAN approval is pending without anyone ticking the run.
+    plan_approvals = service.list_approvals()
+    assert len(plan_approvals) == 1 and plan_approvals[0]["type"] == "PLAN"
 
     runs = service.get_agent_runs("agent-spec")
     assert len(runs) == 1
     assert runs[0]["status"] == "Completed"
     assert runs[0]["taskId"] == "task-1"
 
+    # A manual tick at an approval gate remains a harmless no-op.
     view = service.tick_run(run_id)
     assert view is not None and view["status"] == "WAITING_APPROVAL"
-    plan_approvals = service.list_approvals()
-    assert len(plan_approvals) == 1 and plan_approvals[0]["type"] == "PLAN"
 
     commented = service.decide_approval(
         plan_approvals[0]["id"], decision="COMMENT", comment="Looks close",
@@ -241,7 +243,9 @@ def test_run_task_workflow_and_approval_flow():
     )
     assert changed["status"] == "CHANGES_REQUESTED"
     assert changed["comments"][-1]["text"] == "Add risks"
-    assert service.get_task("task-1")["status"] == "PLAN_DRAFT"
+    # Auto-advance also covers rework: the plan agent already redid the
+    # plan with the feedback and the task is back at the plan review gate.
+    assert service.get_task("task-1")["status"] == "PLAN_REVIEW"
 
     activity = service.list_activity()
     assert activity  # orchestrator + agent events were collected
