@@ -3,6 +3,7 @@ import type { Agent, AgentConfig, AgentRun } from '../../types/agent';
 import type { Approval, ApprovalDecisionInput } from '../../types/approval';
 import type { MetricsOverview } from '../../types/metrics';
 import type { Project, ProjectProfileInput } from '../../types/project';
+import type { ModelSettings, ModelSettingsInput, ModelTestResult } from '../../types/settings';
 import type { Task, TaskFilter } from '../../types/task';
 import type { Workflow } from '../../types/workflow';
 
@@ -38,4 +39,8 @@ export interface FactoryApi {
   subscribeActivity(onEvent: (e: ActivityEvent) => void): Unsubscribe;
 
   getMetricsOverview(): Promise<MetricsOverview>;
+
+  getModelSettings(): Promise<ModelSettings>;
+  updateModelSettings(input: ModelSettingsInput): Promise<ModelSettings>;
+  testModelSettings(): Promise<ModelTestResult>;
 }

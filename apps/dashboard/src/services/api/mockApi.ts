@@ -17,6 +17,14 @@ const delay = <T>(value: T): Promise<T> =>
 // Mutable in-memory state so mock approval actions are visible until reload.
 const approvals: Approval[] = structuredClone(approvalSeed);
 const projectStore = structuredClone(projects);
+let modelSettings = { provider: 'scripted', model: '', baseUrl: '', apiKey: '' };
+const modelSettingsView = () => ({
+  provider: modelSettings.provider,
+  model: modelSettings.model,
+  baseUrl: modelSettings.baseUrl,
+  keyConfigured: Boolean(modelSettings.apiKey),
+  keyHint: modelSettings.apiKey.length >= 4 ? `…${modelSettings.apiKey.slice(-4)}` : '',
+});
 const statusFor = { APPROVE: 'APPROVED', REJECT: 'REJECTED', REQUEST_CHANGES: 'CHANGES_REQUESTED' } as const;
 
 export const mockApi: FactoryApi = {
@@ -126,4 +134,32 @@ export const mockApi: FactoryApi = {
   },
 
   getMetricsOverview: () => delay(metricsOverview),
+
+  getModelSettings: () => delay(modelSettingsView()),
+
+  updateModelSettings: (input) => {
+    if (input.provider !== 'scripted' && !input.model.trim()) {
+      return Promise.reject(new Error(`A model name is required for provider '${input.provider}'`));
+    }
+    if (input.provider === 'custom' && !/^https?:\/\//.test(input.baseUrl.trim())) {
+      return Promise.reject(new Error('The custom provider needs a base URL (http/https)'));
+    }
+    modelSettings = {
+      provider: input.provider,
+      model: input.model.trim(),
+      baseUrl: input.baseUrl.trim(),
+      apiKey: input.clearKey ? '' : input.apiKey || modelSettings.apiKey,
+    };
+    return delay(modelSettingsView());
+  },
+
+  testModelSettings: () => {
+    if (modelSettings.provider === 'scripted') {
+      return delay({ ok: true, message: 'Scripted demo provider: no network call to test (mock).' });
+    }
+    if (!modelSettings.apiKey) {
+      return delay({ ok: false, message: `No API key stored for provider '${modelSettings.provider}' (mock).` });
+    }
+    return delay({ ok: true, message: `Mock check passed for '${modelSettings.model}' (no real network call in mock mode).` });
+  },
 };
