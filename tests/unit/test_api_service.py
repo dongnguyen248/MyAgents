@@ -219,6 +219,7 @@ def test_run_task_workflow_and_approval_flow():
     assert metrics.decisions[0]["decision"] == "APPROVED"
     # Auto-advance: approving the spec already ran the plan step, so the
     # PLAN approval is pending without anyone ticking the run.
+    service.wait_for_drives()
     plan_approvals = service.list_approvals()
     assert len(plan_approvals) == 1 and plan_approvals[0]["type"] == "PLAN"
 
@@ -245,6 +246,7 @@ def test_run_task_workflow_and_approval_flow():
     assert changed["comments"][-1]["text"] == "Add risks"
     # Auto-advance also covers rework: the plan agent already redid the
     # plan with the feedback and the task is back at the plan review gate.
+    service.wait_for_drives()
     assert service.get_task("task-1")["status"] == "PLAN_REVIEW"
 
     activity = service.list_activity()

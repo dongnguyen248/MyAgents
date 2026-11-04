@@ -18,8 +18,10 @@ def test_dashboard_api_full_chain():
     )
     assert created.status_code == 201
     run_id = created.json()["id"]
-    # Auto-advance: creation already ran the spec step to its gate.
-    assert created.json()["status"] == "WAITING_APPROVAL"
+    # Auto-advance: creation already ran the spec step to its gate (the
+    # drive runs in the background; wait for it to park the run).
+    service.wait_for_drives()
+    assert client.get(f"/workflows/{run_id}").json()["status"] == "WAITING_APPROVAL"
 
     def tick() -> dict:
         response = client.post(f"/runs/{run_id}/tick")
@@ -56,6 +58,7 @@ def test_dashboard_api_full_chain():
     )
     assert decided.json()["status"] == "APPROVED"
 
+    service.wait_for_drives()
     workflow = client.get(f"/workflows/{run_id}").json()
     assert workflow["status"] == "COMPLETED"
     assert all(step["state"] == "done" for step in workflow["steps"])
