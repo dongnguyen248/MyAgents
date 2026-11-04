@@ -24,6 +24,7 @@ from asf.approval.errors import ApprovalError
 from asf.configuration.project import ProjectProfile
 from asf.configuration.yamlio import deep_merge
 from asf.contracts.models import ActivityEvent
+from asf.orchestrator.code_loop import FIX_STAGE
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
 from asf.state_machine.graph import build_graph
@@ -642,6 +643,22 @@ class FactoryService:
             return "WAITING_APPROVAL"
         return "RUNNING"
 
+    @staticmethod
+    def _stage_before_failure(run: WorkflowExecution) -> str | None:
+        """The stage a FAILED run was in when it failed, from its event trail."""
+        for observation in reversed(run.observations):
+            event = observation.event
+            if event is None or event.event_type not in (
+                "WORKFLOW_STARTED", "WORKFLOW_STAGE_CHANGED",
+            ):
+                continue
+            stage = event.metadata.get("stage")
+            if isinstance(stage, str) and stage not in (
+                "FAILED", "COMPLETED", "CANCELLED",
+            ):
+                return stage
+        return None
+
     def _step_states(
         self, run: WorkflowExecution, definition: WorkflowDefinition, status: str,
     ) -> list[dict[str, Any]]:
@@ -652,6 +669,17 @@ class FactoryService:
         stage = run.state.stage
         current_index = sequence.index(stage) if stage in sequence else None
         produced = {artifact.type for artifact in run.artifact_history.values()}
+        # A run that died inside the code-fix loop has every quality
+        # artifact published, so the generic FAILED rule below would
+        # blame the next step (CI). The failure really belongs to the
+        # step whose verdict triggered the fix: Run tests when a test
+        # report exists, otherwise Review code.
+        forced_failed: str | None = None
+        if status == "FAILED" and self._stage_before_failure(run) == FIX_STAGE:
+            if "TEST_REPORT" in run.artifacts:
+                forced_failed = "testing"
+            elif "CODE_REVIEW" in run.artifacts:
+                forced_failed = "code_review"
         steps: list[dict[str, Any]] = []
         failure_marked = False
         for step in definition.steps:
@@ -670,7 +698,9 @@ class FactoryService:
                 else:
                     main_state = "active"
             elif status == "FAILED":
-                if step.produces and set(step.produces) <= produced:
+                if main_id == forced_failed and not failure_marked:
+                    main_state, failure_marked = "failed", True
+                elif step.produces and set(step.produces) <= produced:
                     main_state = "done"
                 elif not failure_marked:
                     main_state, failure_marked = "failed", True
@@ -732,6 +762,7 @@ class FactoryService:
             "message": error.message,
             "category": error.category,
             "at": _iso(error.timestamp),
+            "details": error.details or None,
         }
 
     def _workflow_view(self, run: WorkflowExecution) -> dict[str, Any]:
