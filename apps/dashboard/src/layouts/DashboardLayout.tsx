@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { ThemeToggle } from '../components/common/ThemeToggle';
+import { backendBaseUrl } from '../services/api';
 
 const GROUPS: { title?: string; links: [string, string][] }[] = [
   { links: [['/', 'Dashboard']] },
@@ -35,7 +36,9 @@ export function DashboardLayout() {
         </nav>
         <div className="sidebar-foot">
           <ThemeToggle />
-          <div className="brand-sub">Mock data · no backend connected</div>
+          <div className="brand-sub">
+            {backendBaseUrl ? `Backend · ${backendBaseUrl}` : 'Mock data · no backend connected'}
+          </div>
         </div>
       </aside>
       <main id="main" className="main">
