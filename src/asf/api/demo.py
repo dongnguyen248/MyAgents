@@ -22,7 +22,7 @@ import json
 import os
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -54,9 +54,9 @@ from asf.contracts.models import (
     AgentResult,
     ModelRequest,
     ModelResponse,
-    RunMetrics,
     ValidationResult,
 )
+from asf.integrations.hosting.actions import build_hosting_actions
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.storage.sqlite import SQLiteExecutionStore
@@ -225,15 +225,6 @@ def _load_metrics() -> Any:
             ):
                 return instance
     return _FallbackMetrics()
-
-
-def _action_ok(request: AgentRequest) -> AgentResult:
-    """Successful no-artifact result for the workflow's CI / merge actions."""
-    return AgentResult(
-        request_id=request.request_id, agent_id=request.agent_id, status="SUCCESS",
-        output={}, artifacts=[], events=[],
-        metrics=RunMetrics(duration_seconds=0.0, revision_count=0, attempt=1),
-    )
 
 
 class DemoFactoryService(FactoryService):
@@ -432,10 +423,23 @@ def build_demo(
 
     store = SQLiteExecutionStore(db_path)
     metrics = _load_metrics()
+    # Hosting actions (Phase 8): projects whose profile links a GitLab /
+    # GitHub repository (repository.url + provider, token from the
+    # environment) get real push / change-request / pipeline behavior at
+    # the CI and merge steps; other projects keep the no-op success.
+    # Profiles are read through the service, which only exists after the
+    # engine — the actions run on ticks, long after this assembly, so a
+    # late-bound lookup is safe.
+    service_ref: dict[str, FactoryService] = {}
+
+    def profile_of(project_id: str) -> Mapping[str, Any] | None:
+        service = service_ref.get("service")
+        return service._project_profiles.get(project_id) if service else None
+
     engine = Orchestrator(
         definition, registry, clock=clock, new_id=new_id, store=store,
         approval_policy=ApprovalPolicy(reviewers=["dashboard"]),
-        actions={"run-pipeline": _action_ok, "await-merge": _action_ok},
+        actions=build_hosting_actions(profiles=profile_of, clock=clock),
         events=metrics if hasattr(metrics, "publish") else None,
         metrics=metrics if hasattr(metrics, "record") else None,
     )
@@ -459,6 +463,7 @@ def build_demo(
         on_project_deleted=on_deleted,
         model_settings=model_settings,
     )
+    service_ref["service"] = service
     return service, engine, store
 
 

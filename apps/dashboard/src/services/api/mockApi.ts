@@ -8,6 +8,8 @@ import { workflows } from '../../mocks/workflows';
 import type { ActivityEvent } from '../../types/activity';
 import type { Approval, ApprovalStatus } from '../../types/approval';
 import type { Project } from '../../types/project';
+import type { Task } from '../../types/task';
+import type { Workflow, WorkflowStep, WorkflowStepId } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
 const LATENCY_MS = 150;
@@ -25,6 +27,18 @@ const modelSettingsView = () => ({
   keyConfigured: Boolean(modelSettings.apiKey),
   keyHint: modelSettings.apiKey.length >= 4 ? `…${modelSettings.apiKey.slice(-4)}` : '',
 });
+const taskStore: Task[] = structuredClone(tasks);
+const workflowStore: Workflow[] = structuredClone(workflows);
+
+const STEP_DEFS: [WorkflowStepId, string][] = [
+  ['requirement', 'Requirement'], ['spec', 'Spec'], ['spec_approval', 'Spec Approval'],
+  ['plan', 'Plan'], ['plan_approval', 'Plan Approval'], ['task', 'Task'], ['task_approval', 'Task Approval'],
+  ['implementation', 'Implementation'], ['code_review', 'Code Review'], ['testing', 'Testing'],
+  ['ci', 'CI'], ['merge', 'Merge'],
+];
+
+const freshSteps = (): WorkflowStep[] =>
+  STEP_DEFS.map(([id, label], i) => ({ id, label, state: i === 0 ? 'active' : 'pending' }));
 const statusFor = { APPROVE: 'APPROVED', REJECT: 'REJECTED', REQUEST_CHANGES: 'CHANGES_REQUESTED' } as const;
 
 export const mockApi: FactoryApi = {
@@ -39,7 +53,7 @@ export const mockApi: FactoryApi = {
   listTasks: (f = {}) => {
     const cutoff = f.sinceHours ? Date.now() - f.sinceHours * 3600_000 : 0;
     return delay(
-      tasks
+      taskStore
         .filter((t) => !f.projectId || t.projectId === f.projectId)
         .filter((t) => !f.agentId || t.assignedAgentId === f.agentId)
         .filter((t) => !f.status || t.status === f.status)
@@ -49,10 +63,62 @@ export const mockApi: FactoryApi = {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     );
   },
-  getTask: (id) => delay(tasks.find((t) => t.id === id)),
+  getTask: (id) => delay(taskStore.find((t) => t.id === id)),
 
-  listWorkflows: () => delay(workflows),
-  getWorkflow: (id) => delay(workflows.find((w) => w.id === id)),
+  startRun: (input) => {
+    if (!projectStore.some((p) => p.id === input.projectId)) {
+      return Promise.reject(new Error(`Project '${input.projectId}' not found`));
+    }
+    const now = new Date().toISOString();
+    const task: Task = {
+      id: input.taskId,
+      title: input.title || input.taskId,
+      projectId: input.projectId,
+      workflowType: input.workflowType ?? 'feature-development',
+      status: 'NEW',
+      priority: input.priority ?? 'MEDIUM',
+      createdAt: now,
+      updatedAt: now,
+      revisions: 0,
+    };
+    taskStore.unshift(task);
+    const workflow: Workflow = {
+      id: `wf-${input.taskId.toLowerCase()}`,
+      taskId: input.taskId,
+      title: task.title,
+      projectId: input.projectId,
+      type: task.workflowType,
+      status: 'RUNNING',
+      steps: freshSteps(),
+      startedAt: now,
+      updatedAt: now,
+    };
+    workflowStore.unshift(workflow);
+    return delay(workflow);
+  },
+
+  listWorkflows: () => delay(workflowStore),
+  getWorkflow: (id) => delay(workflowStore.find((w) => w.id === id)),
+
+  tickRun: (runId) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return Promise.reject(new Error(`Run '${runId}' not found`));
+    // Mock advance: complete the active step, activate the next one.
+    const active = workflow.steps.findIndex((s) => s.state === 'active');
+    if (active >= 0) {
+      workflow.steps[active].state = 'done';
+      const next = workflow.steps[active + 1];
+      if (next) next.state = 'active';
+      else workflow.status = 'COMPLETED';
+      workflow.updatedAt = new Date().toISOString();
+      const task = taskStore.find((t) => t.id === workflow.taskId);
+      if (task) {
+        task.status = workflow.status === 'COMPLETED' ? 'COMPLETED' : 'IMPLEMENTING';
+        task.updatedAt = workflow.updatedAt;
+      }
+    }
+    return delay(workflow);
+  },
 
   listProjects: () => delay(projectStore),
   createProject: (input) => {
@@ -63,6 +129,7 @@ export const mockApi: FactoryApi = {
       id: input.id,
       name: input.name,
       repositoryProvider: input.repository.provider,
+      repositoryUrl: input.repository.url ?? '',
       repositoryPath: input.repository.path ?? '',
       testCommands: input.configuration.testCommands ?? [],
       technologies: [...input.technology.backend, ...input.technology.frontend],
@@ -87,6 +154,7 @@ export const mockApi: FactoryApi = {
       name: input.name,
       description: input.description ?? projectStore[index].description,
       repositoryProvider: input.repository.provider,
+      repositoryUrl: input.repository.url ?? '',
       repositoryPath: input.repository.path ?? '',
       testCommands: input.configuration.testCommands ?? [],
       technologies: [...input.technology.backend, ...input.technology.frontend],

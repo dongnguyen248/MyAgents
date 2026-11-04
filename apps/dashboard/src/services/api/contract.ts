@@ -4,7 +4,7 @@ import type { Approval, ApprovalDecisionInput } from '../../types/approval';
 import type { MetricsOverview } from '../../types/metrics';
 import type { Project, ProjectProfileInput } from '../../types/project';
 import type { ModelSettings, ModelSettingsInput, ModelTestResult } from '../../types/settings';
-import type { Task, TaskFilter } from '../../types/task';
+import type { StartRunInput, Task, TaskFilter } from '../../types/task';
 import type { Workflow } from '../../types/workflow';
 
 export type Unsubscribe = () => void;
@@ -22,9 +22,13 @@ export interface FactoryApi {
 
   listTasks(filter?: TaskFilter): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
+  /** Start a workflow run for a new task; resolves to its workflow view. */
+  startRun(input: StartRunInput): Promise<Workflow>;
 
   listWorkflows(): Promise<Workflow[]>;
   getWorkflow(id: string): Promise<Workflow | undefined>;
+  /** Advance a run by one engine step; resolves to its workflow view. */
+  tickRun(runId: string): Promise<Workflow>;
 
   listProjects(): Promise<Project[]>;
   createProject(input: ProjectProfileInput): Promise<Project>;

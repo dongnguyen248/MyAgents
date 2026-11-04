@@ -86,6 +86,12 @@ steps:
     stage: CI
     action: run-pipeline
     requiresApproval: false
+    # Poll while the provider's pipeline is running (hosting actions
+    # report PIPELINE_RUNNING as a retryable failure).
+    retryPolicy:
+      maxAttempts: 120
+      backoffSeconds: 30
+      retryOn: [PIPELINE_RUNNING]
     configuration: {}
     consumes:
       - CODE
@@ -96,6 +102,12 @@ steps:
     stage: READY_TO_MERGE
     action: await-merge
     requiresApproval: false
+    # Poll while the change request is open (hosting actions report
+    # MERGE_PENDING as a retryable failure).
+    retryPolicy:
+      maxAttempts: 120
+      backoffSeconds: 60
+      retryOn: [MERGE_PENDING]
     configuration: {}
     consumes:
       - CODE_REVIEW
