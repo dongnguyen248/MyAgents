@@ -56,3 +56,119 @@ def test_project_writer_overwrite_and_remover(tmp_path: Path):
     _project_remover(tmp_path)("demo-x")
     assert not (tmp_path / "demo-x.yaml").exists()
     _project_remover(tmp_path)("demo-x")  # a missing file is tolerated
+
+
+# ---------------------------------------------------------------------------
+# Per-project review rules (configuration.review -> run context)
+# ---------------------------------------------------------------------------
+
+from asf.api.demo import DemoFactoryService, build_demo  # noqa: E402
+
+
+def make_service(tmp_path: Path, configuration: dict[str, Any]) -> DemoFactoryService:
+    return DemoFactoryService(
+        object(),
+        projects={"p": {"id": "p", "name": "P", "configuration": configuration}},
+        projects_dir=tmp_path,
+    )
+
+
+def test_review_rules_concatenate_files_then_inline(tmp_path: Path):
+    (tmp_path / "a.md").write_text("# A\nrule a", encoding="utf-8")
+    (tmp_path / "b.md").write_text("# B\nrule b", encoding="utf-8")
+    service = make_service(tmp_path, {"review": {
+        "rulesFiles": ["a.md", "b.md"], "rules": "inline rule",
+    }})
+    text = service._review_rules("p")
+    assert text.index("rule a") < text.index("rule b") < text.index("inline rule")
+
+
+def test_review_rules_absent_configuration_is_empty(tmp_path: Path):
+    assert make_service(tmp_path, {})._review_rules("p") == ""
+    assert make_service(tmp_path, {"review": {}})._review_rules("p") == ""
+    assert make_service(tmp_path, {})._review_rules("unknown") == ""
+
+
+def test_review_rules_missing_file_fails_loudly(tmp_path: Path):
+    service = make_service(tmp_path, {"review": {"rulesFiles": ["nope.md"]}})
+    with pytest.raises(ValueError, match="cannot be read"):
+        service._review_rules("p")
+
+
+def test_review_rules_file_cannot_escape_projects_dir(tmp_path: Path):
+    service = make_service(tmp_path, {"review": {"rulesFiles": ["../secret.md"]}})
+    with pytest.raises(ValueError, match="escapes the projects directory"):
+        service._review_rules("p")
+
+
+def test_vhpc_rules_reach_the_run_context(tmp_path: Path):
+    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    rules = service._review_rules("vhpc")
+    for marker in (
+        "Java Coding Rules", "API Design Rules", "Security Rules",
+        "TypeScript and React Coding Rules", "Constants and Magic Values",
+    ):
+        assert marker in rules
+    # Language packs (java, then typescript) precede the project rules.
+    assert rules.index("Java Coding Rules") < rules.index(
+        "TypeScript and React Coding Rules",
+    ) < rules.index("API Design Rules")
+    assert service._review_rules("vnpc") == ""
+    run = service.start_run(
+        "rules-task", "vhpc",
+        inputs={"spec": {"requirement": "Check the review rules wiring"}},
+    )
+    assert "Constants and Magic Values" in run.context["project"]["reviewRules"]
+
+
+def write_pack(tmp_path: Path, pack: str, text: str) -> None:
+    directory = tmp_path / "rules" / "languages"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{pack}.md").write_text(text, encoding="utf-8")
+
+
+def make_stack_service(
+    tmp_path: Path,
+    technology: dict[str, Any],
+    configuration: dict[str, Any] | None = None,
+) -> DemoFactoryService:
+    return DemoFactoryService(
+        object(),
+        projects={"p": {
+            "id": "p", "name": "P", "technology": technology,
+            "configuration": configuration or {},
+        }},
+        projects_dir=tmp_path,
+    )
+
+
+@pytest.mark.parametrize("token", ["csharp", "C#", "dotnet", ".NET"])
+def test_csharp_tokens_select_the_csharp_pack(tmp_path: Path, token: str):
+    write_pack(tmp_path, "csharp", "# CSharp Pack")
+    service = make_stack_service(tmp_path, {"backend": [token]})
+    assert service._review_rules("p") == "# CSharp Pack"
+
+
+def test_react_and_typescript_select_the_typescript_pack_once(tmp_path: Path):
+    write_pack(tmp_path, "typescript", "# TS Pack")
+    service = make_stack_service(
+        tmp_path, {"frontend": ["react", "typescript"]},
+    )
+    assert service._review_rules("p") == "# TS Pack"
+
+
+def test_unknown_language_and_missing_pack_add_nothing(tmp_path: Path):
+    service = make_stack_service(tmp_path, {"backend": ["python"]})
+    assert service._review_rules("p") == ""
+    # A mapped language whose pack file is absent is skipped, not fatal.
+    service = make_stack_service(tmp_path, {"backend": ["java"]})
+    assert service._review_rules("p") == ""
+
+
+def test_language_packs_precede_project_rules(tmp_path: Path):
+    write_pack(tmp_path, "java", "# Java Pack")
+    service = make_stack_service(
+        tmp_path, {"backend": ["java"]}, {"review": {"rules": "project rule"}},
+    )
+    text = service._review_rules("p")
+    assert text.index("# Java Pack") < text.index("project rule")

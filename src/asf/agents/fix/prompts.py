@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from asf.agents._shared.codegen import FixContext
+from asf.agents._shared.rules import rules_section
 from asf.contracts.models import AgentRequest, ModelMessage
 
 
@@ -24,6 +25,13 @@ def build_fix_messages(
         skills = project.get("enabledSkills", [])
         if isinstance(skills, list) and all(isinstance(skill, str) for skill in skills):
             system += "\nEnabled skills: " + ", ".join(skills)
+    system += rules_section(
+        project,
+        "Project development rules — the standards this project's code"
+        " must follow. Write the fix so the resulting code complies with"
+        " them; where they conflict with the output contract above, the"
+        " output contract wins:",
+    )
     payload: dict[str, Any] = {
         "taskItemId": context.task_id,
         "baseRef": request.input["ref"],

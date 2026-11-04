@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from asf.agents._shared.rules import rules_section
 from asf.contracts.models import ApprovalFeedback, ModelMessage
 
 __all__ = [
@@ -102,6 +103,14 @@ def build_spec_messages(
         system_content = f"{prompts.system}\n\n{prompts.revision}"
     else:
         system_content = prompts.system
+    system_content += rules_section(
+        project_context,
+        "Project standards — where these standards govern what the"
+        " specification describes (API contracts, security requirements,"
+        " naming and structure), write the specification to comply with"
+        " them; where they conflict with the output contract above, the"
+        " output contract wins:",
+    )
 
     user_content = build_user_message(
         requirement=requirement,

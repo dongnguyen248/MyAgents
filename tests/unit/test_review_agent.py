@@ -469,3 +469,26 @@ def test_real_loader_and_factory_integration_uses_packaged_prompt() -> None:
     agent = build_review_agent(runtime, PlatformConfig(), Path("."))
     assert_success(agent.execute(make_request()))
     assert gateway.requests[0].messages[0].content.startswith(loading.load_review_prompts().system)
+
+
+def test_project_review_rules_become_system_criteria() -> None:
+    request = make_request()
+    request.context["project"] = {
+        "reviewRules": "Never hardcode an HTTP status code.",
+    }
+    messages = build_review_messages(prompts=ReviewPrompts("Review."), request=request)
+    system = messages[0].content
+    assert system.startswith("Review.\nEnabled skills: none")
+    assert "Project review rules" in system
+    assert "Never hardcode an HTTP status code." in system
+    # Rules are configuration, not data: they never enter the payload.
+    assert "reviewRules" not in messages[1].content
+    assert "Never hardcode" not in messages[1].content
+
+
+@pytest.mark.parametrize("rules", [None, "", "   ", 42, ["rule"], {"text": "rule"}])
+def test_absent_or_invalid_review_rules_leave_prompt_unchanged(rules: Any) -> None:
+    request = make_request()
+    request.context["project"] = {"reviewRules": rules}
+    messages = build_review_messages(prompts=ReviewPrompts("Review."), request=request)
+    assert messages[0].content == "Review.\nEnabled skills: none"
