@@ -18,6 +18,8 @@ export interface Approval {
   requestedByAgentId: string;
   artifact: string; // e.g. "SPEC.md"
   summary: string;
+  /** Full artifact text (or JSON rendering) so reviewers can read before deciding. */
+  artifactContent?: string;
   comments: ApprovalComment[];
 }
 
