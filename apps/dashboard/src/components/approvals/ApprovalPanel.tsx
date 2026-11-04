@@ -14,6 +14,7 @@ interface Props {
 
 export function ApprovalPanel({ approval: a, busy, message, onDecide }: Props) {
   const [comment, setComment] = useState('');
+  const [showContent, setShowContent] = useState(false);
   const act = (d: ApprovalDecisionKind) => {
     onDecide(d, comment.trim() || undefined);
     setComment('');
@@ -24,6 +25,16 @@ export function ApprovalPanel({ approval: a, busy, message, onDecide }: Props) {
       <p><ApprovalStatusBadge status={a.status} /> <span className="muted">requested {ago(a.requestedAt)} by {a.requestedByAgentId}</span></p>
       <p>{a.summary}</p>
       <p className="muted small">Artifact: {a.artifact} · <Link to={`/tasks/${a.taskId}`}>Open task</Link></p>
+      {a.artifactContent && (
+        <>
+          <p>
+            <button type="button" className="link" onClick={() => setShowContent((v) => !v)}>
+              {showContent ? 'Hide artifact content' : 'View artifact content'}
+            </button>
+          </p>
+          {showContent && <pre className="artifact-content">{a.artifactContent}</pre>}
+        </>
+      )}
       {a.comments.length > 0 && (
         <ul className="comments">
           {a.comments.map((c, i) => (

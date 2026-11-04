@@ -203,6 +203,8 @@ def test_run_task_workflow_and_approval_flow():
     assert approval["status"] == "PENDING"
     assert approval["artifact"] == "SPEC.md"
     assert approval["summary"].startswith("SPEC")
+    assert approval["artifactContent"].startswith("# SPEC: Test Feature")
+    assert "REQ-1: Implement add(a, b)" in approval["artifactContent"]
     assert approval["requestedByAgentId"] == "agent-spec"
     assert approval["requestedAt"] == NOW.isoformat()
 
@@ -340,3 +342,13 @@ def test_create_project_hook_runs_before_registration():
     with pytest.raises(ValueError, match="disk full"):
         blocked.create_project(NEW_PROJECT)
     assert "proj-3" not in {p["id"] for p in blocked.list_projects()}
+
+
+def test_artifact_text_renders_structured_content_as_json():
+    class FakeArtifact:
+        content = {"changes": [{"path": "a.py", "operation": "create"}]}
+
+    rendered = FactoryService._artifact_text(FakeArtifact())
+    assert rendered is not None
+    assert '"path": "a.py"' in rendered
+    assert FactoryService._artifact_text(None) is None

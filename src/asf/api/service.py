@@ -12,6 +12,7 @@ runs themselves or from the injected ``clock`` callable.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
@@ -708,6 +709,26 @@ class FactoryService:
     # approvals
     # ------------------------------------------------------------------
     @staticmethod
+    def _artifact_text(artifact: Any | None) -> str | None:
+        """Full readable content of an artifact, for the approval view.
+
+        Text artifacts contribute their ``text`` body; structured payloads
+        (e.g. a CODE changeset) are rendered as indented JSON so a reviewer
+        can read exactly what they are approving.
+        """
+        if artifact is None:
+            return None
+        content = artifact.content
+        if isinstance(content, str):
+            return content
+        if isinstance(content, Mapping):
+            text = content.get("text")
+            if isinstance(text, str):
+                return text
+            return json.dumps(content, indent=2, ensure_ascii=False, default=str)
+        return None
+
+    @staticmethod
     def _artifact_summary(artifact: Any | None) -> str:
         if artifact is None:
             return ""
@@ -743,7 +764,7 @@ class FactoryService:
         requested_at = getattr(request, "requested_at", None) or getattr(
             request, "created_at", None,
         )
-        return {
+        view: dict[str, Any] = {
             "id": request.id,
             "projectId": run.project_id,
             "taskId": run.task_id,
@@ -755,6 +776,10 @@ class FactoryService:
             "summary": self._artifact_summary(artifact),
             "comments": [],
         }
+        content = self._artifact_text(artifact)
+        if content:
+            view["artifactContent"] = content
+        return view
 
     def list_approvals(self) -> list[dict[str, Any]]:
         approvals: list[dict[str, Any]] = []
