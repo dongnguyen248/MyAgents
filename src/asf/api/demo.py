@@ -244,6 +244,12 @@ class DemoFactoryService(FactoryService):
         "test": {"taskItemId": "T1", "ref": "main"},
     }
 
+    def __init__(
+        self, *args: Any, projects_dir: Path | None = None, **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._projects_dir = projects_dir
+
     def _default_test_commands(self, project_id: str) -> list[list[str]]:
         """The project's configured test commands, else the demo default.
 
@@ -269,6 +275,100 @@ class DemoFactoryService(FactoryService):
             return [[str(arg) for arg in argv] for argv in commands]
         return [["python", "-m", "pytest", "-q"]]
 
+    # Shared review standards per language, as ``rules/languages/<pack>.md``
+    # under the projects directory. A profile technology token selects the
+    # pack(s) the project is reviewed against; frameworks that imply a
+    # language (react -> typescript) map to that language's pack.
+    _LANGUAGE_PACK_ORDER: tuple[str, ...] = ("java", "typescript", "csharp")
+    _TECHNOLOGY_TO_PACK: dict[str, str] = {
+        "java": "java",
+        "typescript": "typescript",
+        "ts": "typescript",
+        "react": "typescript",
+        "csharp": "csharp",
+        "c#": "csharp",
+        "dotnet": "csharp",
+        ".net": "csharp",
+    }
+
+    def _language_rule_packs(self, project_id: str) -> list[str]:
+        """Shared language rule packs selected by the project's stack."""
+        if self._projects_dir is None:
+            return []
+        view = self._projects.get(project_id) or {}
+        technologies = view.get("technologies")
+        if not isinstance(technologies, list):
+            return []
+        selected = {
+            self._TECHNOLOGY_TO_PACK[token.strip().lower()]
+            for token in technologies
+            if isinstance(token, str)
+            and token.strip().lower() in self._TECHNOLOGY_TO_PACK
+        }
+        packs: list[str] = []
+        for pack in self._LANGUAGE_PACK_ORDER:
+            if pack not in selected:
+                continue
+            path = self._projects_dir / "rules" / "languages" / f"{pack}.md"
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue  # A missing shared pack must not block other runs.
+            if text.strip():
+                packs.append(text.strip())
+        return packs
+
+    def _review_rules(self, project_id: str) -> str:
+        """The project's review standards, as one text block.
+
+        Shared language packs (``rules/languages/``, selected by the
+        profile's technologies) come first, then the project's own rules:
+        ``configuration.review.rulesFiles`` lists Markdown rule files
+        relative to the projects directory and ``configuration.review.
+        rules`` holds inline rule text; files are concatenated in listed
+        order, inline text last. A configured project file that cannot be
+        read fails the run start loudly — silently reviewing without the
+        project's rules would be worse than not starting at all.
+        """
+        parts: list[str] = self._language_rule_packs(project_id)
+        profile = self._project_profiles.get(project_id) or {}
+        configuration = profile.get("configuration")
+        review = (
+            configuration.get("review") if isinstance(configuration, dict)
+            else None
+        )
+        if not isinstance(review, dict):
+            return "\n\n".join(parts)
+        files = review.get("rulesFiles")
+        if isinstance(files, list):
+            for entry in files:
+                if not isinstance(entry, str) or not entry.strip():
+                    continue
+                if self._projects_dir is None:
+                    raise ValueError(
+                        f"Project '{project_id}' configures review rulesFiles"
+                        " but the service has no projects directory",
+                    )
+                path = (self._projects_dir / entry).resolve()
+                if not path.is_relative_to(self._projects_dir.resolve()):
+                    raise ValueError(
+                        f"Review rules file '{entry}' for project"
+                        f" '{project_id}' escapes the projects directory",
+                    )
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except OSError as error:
+                    raise ValueError(
+                        f"Review rules file '{entry}' for project"
+                        f" '{project_id}' cannot be read: {error}",
+                    ) from error
+                if text.strip():
+                    parts.append(text.strip())
+        inline = review.get("rules")
+        if isinstance(inline, str) and inline.strip():
+            parts.append(inline.strip())
+        return "\n\n".join(parts)
+
     def start_run(
         self,
         task_id: str,
@@ -284,6 +384,9 @@ class DemoFactoryService(FactoryService):
         merged_context: dict[str, Any] = {
             "project": {"testCommands": self._default_test_commands(project_id)},
         }
+        review_rules = self._review_rules(project_id)
+        if review_rules:
+            merged_context["project"]["reviewRules"] = review_rules
         for key, value in dict(context or {}).items():
             if key == "project" and isinstance(value, dict):
                 merged_context["project"] = {**merged_context["project"], **value}
@@ -465,7 +568,7 @@ def build_demo(
 
     service = DemoFactoryService(
         engine, projects=projects, metrics=metrics, store=store,
-        reviewer="dashboard", clock=clock,
+        reviewer="dashboard", clock=clock, projects_dir=projects_dir,
         on_project_created=on_created,
         on_project_updated=on_updated,
         on_project_deleted=on_deleted,
