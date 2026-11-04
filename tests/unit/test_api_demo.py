@@ -62,3 +62,30 @@ def test_demo_engine_has_bounded_code_loop_enabled(tmp_path: Path):
     _service, engine, _store = build_demo(tmp_path / "demo.sqlite")
     assert engine._code_loop is not None
     assert engine._code_loop.max_fixes == 3
+
+
+def test_workflow_view_exposes_artifact_contents(tmp_path: Path):
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    run = service.start_run(
+        "artifact-task", service.list_projects()[0]["id"],
+        inputs={
+            "spec": {"requirement": "Demonstrate the artifacts view"},
+            "implement": {"taskItemId": "T1", "ref": "main"},
+            "review": {"taskItemId": "T1", "ref": "main"},
+            "test": {"taskItemId": "T1", "ref": "main"},
+        },
+    )
+    for _ in range(40):
+        if run.state.stage in ("COMPLETED", "FAILED", "CANCELLED"):
+            break
+        if run.approval_id:
+            run = engine.decide(run.id, reviewer="dashboard", decision="APPROVED")
+        else:
+            run = engine.tick(run.id)
+    assert run.state.stage == "COMPLETED"
+    view = service.get_workflow(run.id)
+    assert view is not None
+    artifacts = {entry["type"]: entry for entry in view["artifacts"]}
+    assert "TEST_REPORT" in artifacts
+    content = artifacts["TEST_REPORT"]["content"]
+    assert isinstance(content, str) and "PASS" in content

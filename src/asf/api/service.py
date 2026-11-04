@@ -729,6 +729,22 @@ class FactoryService:
             "steps": steps,
             "startedAt": _iso(run.started_at),
             "updatedAt": _iso(run.updated_at),
+            # Full artifact history (every version, in creation order) with
+            # readable content, so a failed run can be diagnosed from the
+            # dashboard — e.g. the TEST_REPORT carries each test command's
+            # exit code and output. Before this, artifact content was only
+            # exposed on the approval view, leaving failed runs opaque.
+            "artifacts": [
+                {
+                    "id": artifact.id,
+                    "type": artifact.type,
+                    "name": artifact.name,
+                    "version": artifact.version,
+                    "createdBy": artifact.created_by,
+                    "content": self._artifact_text(artifact),
+                }
+                for artifact in run.artifact_history.values()
+            ],
         }
 
     def list_workflows(self) -> list[dict[str, Any]]:
