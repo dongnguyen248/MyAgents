@@ -1,4 +1,4 @@
-# AI Software Factory – Dashboard (Control Tower)
+# AI Software Agents – Dashboard (Control Tower)
 
 Generic web UI to observe and manage AI agents, tasks, workflows, approvals and projects.
 **UI-first:** runs entirely on mock data. No backend, auth, LLM, GitLab, Teams or WebSocket code exists here.

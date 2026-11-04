@@ -18,7 +18,7 @@ export function DashboardLayout() {
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">◈</span>
           <div>
-            <strong>AI Software Factory</strong>
+            <strong>AI Software Agents</strong>
             <div className="brand-sub">Control Tower</div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:ai-software-factory:contracts:1",
-  "title": "AI Software Factory Core Contracts",
+  "title": "AI Software Agents Core Contracts",
   "$defs": {
     "Metadata": {
       "type": "object",

@@ -1,6 +1,6 @@
-# asf (AI Software Factory Core)
+# asf (AI Software Agents Core)
 
-Platform-level package for the AI Software Factory. Contains no project-specific, vendor-specific or provider-specific code.
+Platform-level package for the AI Software Agents. Contains no project-specific, vendor-specific or provider-specific code.
 
 | Subpackage | Responsibility |
 |---|---|

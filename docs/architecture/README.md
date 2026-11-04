@@ -70,7 +70,7 @@ Agent requests and results do not expose a specific LLM provider. Model selectio
 ## 12. Repository layout
 
 ```text
-ai-software-factory/
+ai-software-agents/
 ├── src/asf/                    # Core Python package ("asf")
 │   ├── orchestrator/           # Agent sequencing and workflow progression
 │   ├── workflow/               # Declarative workflow definitions
@@ -117,7 +117,7 @@ Frontend Services (services/<domain>)
    ↓
 API Contract (FactoryApi + src/types)
    ↓
-AI Software Factory Backend (REST + real-time events + metrics)
+AI Software Agents Backend (REST + real-time events + metrics)
 ```
 
 Today the "API Contract" layer is satisfied by an in-browser mock (`mockApi`). A REST skeleton (`httpApi`) already exists and is enabled by `VITE_API_BASE_URL`.

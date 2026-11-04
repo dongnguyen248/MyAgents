@@ -48,7 +48,7 @@ def _not_found(what: str) -> JSONResponse:
 
 def create_app(service: FactoryService) -> FastAPI:
     """Build the dashboard REST + SSE application around ``service``."""
-    app = FastAPI(title="AI Software Factory API")
+    app = FastAPI(title="AI Software Agents API")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
