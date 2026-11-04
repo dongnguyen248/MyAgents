@@ -16,10 +16,15 @@ from typing import Any
 
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from asf.api.service import FactoryService, ProjectExistsError
+from asf.api.service import (
+    FactoryService,
+    ProjectConflictError,
+    ProjectExistsError,
+    ProjectNotFoundError,
+)
 from asf.approval.errors import ApprovalError
 
 __all__ = ["create_app"]
@@ -121,6 +126,27 @@ def create_app(service: FactoryService) -> FastAPI:
             return JSONResponse(status_code=409, content={"detail": str(error)})
         except ValueError as error:
             return JSONResponse(status_code=422, content={"detail": str(error)})
+
+    @app.put("/projects/{project_id}")
+    async def update_project(
+        project_id: str, payload: dict[str, Any] = Body(...),
+    ) -> Any:
+        try:
+            return service.update_project(project_id, payload)
+        except ProjectNotFoundError:
+            return _not_found("Project")
+        except ValueError as error:
+            return JSONResponse(status_code=422, content={"detail": str(error)})
+
+    @app.delete("/projects/{project_id}")
+    async def delete_project(project_id: str) -> Any:
+        try:
+            service.delete_project(project_id)
+        except ProjectNotFoundError:
+            return _not_found("Project")
+        except ProjectConflictError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return Response(status_code=204)
 
     # -- approvals --------------------------------------------------------
     @app.get("/approvals")

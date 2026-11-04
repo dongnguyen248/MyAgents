@@ -4,3 +4,7 @@ import * as svc from '../../services/projects/projectService';
 export const useProjects = () => useAsync(svc.listProjects);
 
 export const createProject = svc.createProject;
+
+export const updateProject = svc.updateProject;
+
+export const deleteProject = svc.deleteProject;

@@ -6,6 +6,11 @@ export interface Project {
   name: string;
   repositoryProvider: string;
   technologies: string[];
+  description: string;
+  workflow: string;
+  enabledSkills: string[];
+  technologyGroups: Record<string, string[]>;
+  approvalChannel: string;
   agentIds: string[];
   ci: CiStatus;
   ciFailures24h: number;

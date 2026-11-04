@@ -18,24 +18,31 @@ const slugify = (value: string): string =>
 interface Props {
   onCreate: (input: ProjectProfileInput) => Promise<void>;
   onCancel: () => void;
+  /** When set, the form edits this profile: the id is locked and every field is prefilled. */
+  initial?: ProjectProfileInput;
+  title?: string;
+  submitLabel?: string;
 }
 
 /**
- * Creates a project profile (the `projects/<id>.yaml` shape). With a real
- * backend the profile is validated server-side and persisted; in mock mode
- * it is kept in memory until reload.
+ * Creates or edits a project profile (the `projects/<id>.yaml` shape). With
+ * a real backend the profile is validated server-side and persisted; in
+ * mock mode it is kept in memory until reload.
  */
-export function ProjectForm({ onCreate, onCancel }: Props) {
-  const [name, setName] = useState('');
-  const [id, setId] = useState('');
-  const [idTouched, setIdTouched] = useState(false);
-  const [description, setDescription] = useState('');
-  const [provider, setProvider] = useState('gitlab');
-  const [backend, setBackend] = useState('');
-  const [frontend, setFrontend] = useState('');
-  const [workflow, setWorkflow] = useState('software-development');
-  const [skills, setSkills] = useState('');
-  const [channel, setChannel] = useState('teams');
+export function ProjectForm({ onCreate, onCancel, initial, title = 'New project', submitLabel = 'Create project' }: Props) {
+  const editing = initial !== undefined;
+  const [name, setName] = useState(initial?.name ?? '');
+  const [id, setId] = useState(initial?.id ?? '');
+  const [idTouched, setIdTouched] = useState(editing);
+  const [description, setDescription] = useState(initial?.description ?? '');
+  const [provider, setProvider] = useState(initial?.repository.provider ?? 'gitlab');
+  const [backend, setBackend] = useState((initial?.technology.backend ?? []).join(', '));
+  const [frontend, setFrontend] = useState((initial?.technology.frontend ?? []).join(', '));
+  const [workflow, setWorkflow] = useState(initial?.workflow ?? 'software-development');
+  const [skills, setSkills] = useState((initial?.enabledSkills ?? []).join(', '));
+  const [channel, setChannel] = useState(
+    initial ? (initial.configuration.approval?.channel ?? 'none') || 'none' : 'teams',
+  );
   const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
 
@@ -52,12 +59,19 @@ export function ProjectForm({ onCreate, onCancel }: Props) {
       await onCreate({
         id: id.trim(),
         name: name.trim(),
-        ...(description.trim() ? { description: description.trim() } : {}),
+        // In edit mode always send the description so clearing it works.
+        ...(description.trim() || editing ? { description: description.trim() } : {}),
         repository: { provider },
         technology: { backend: list(backend), frontend: list(frontend) },
         workflow: workflow.trim() || 'software-development',
         enabledSkills: list(skills),
-        configuration: channel === 'none' ? {} : { approval: { channel } },
+        // In edit mode an explicit empty channel clears a stored one on merge.
+        configuration:
+          channel === 'none'
+            ? editing
+              ? { approval: { channel: '' } }
+              : {}
+            : { approval: { channel } },
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project');
@@ -66,7 +80,7 @@ export function ProjectForm({ onCreate, onCancel }: Props) {
   };
 
   return (
-    <Card title="New project">
+    <Card title={title}>
       <form className="form" onSubmit={submit}>
         <div className="form-grid">
           <label className="field">
@@ -82,6 +96,7 @@ export function ProjectForm({ onCreate, onCancel }: Props) {
                 setIdTouched(true);
               }}
               required
+              readOnly={editing}
               placeholder="my-project"
             />
           </label>
@@ -133,7 +148,7 @@ export function ProjectForm({ onCreate, onCancel }: Props) {
         )}
         <div className="filters">
           <button type="submit" className="btn btn-primary" disabled={submitting || !name.trim() || !id.trim()}>
-            {submitting ? 'Creating…' : 'Create project'}
+            {submitting ? 'Saving…' : submitLabel}
           </button>
           <button type="button" className="btn" onClick={onCancel} disabled={submitting}>
             Cancel

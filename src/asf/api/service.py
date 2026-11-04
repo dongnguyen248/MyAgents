@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import ProjectProfile
+from asf.configuration.yamlio import deep_merge
 from asf.contracts.models import ActivityEvent
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
@@ -48,6 +49,14 @@ class MetricsProtocol(Protocol):
 
 class ProjectExistsError(Exception):
     """Raised when creating a project whose id is already registered."""
+
+
+class ProjectNotFoundError(Exception):
+    """Raised when updating or deleting an unknown project id."""
+
+
+class ProjectConflictError(Exception):
+    """Raised when a project cannot change state, e.g. delete with active runs."""
 
 
 _PROJECT_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]*")
@@ -152,12 +161,25 @@ class FactoryService:
         reviewer: str = "dashboard",
         clock: Callable[[], datetime] | None = None,
         on_project_created: Callable[[ProjectProfile], None] | None = None,
+        on_project_updated: Callable[[ProjectProfile], None] | None = None,
+        on_project_deleted: Callable[[str], None] | None = None,
     ) -> None:
         self._engine = engine
         self._metrics = metrics
         self._store = store
         self._reviewer = reviewer
         self._on_project_created = on_project_created
+        self._on_project_updated = on_project_updated
+        self._on_project_deleted = on_project_deleted
+        # Raw profile payloads, kept so updates can merge over them and
+        # preserve fields the caller did not resend (e.g. repository.url or
+        # approval reviewers added by hand in the profile file).
+        self._project_profiles: dict[str, dict[str, Any]] = {}
+        for pid, profile in projects.items():
+            if isinstance(profile, ProjectProfile):
+                self._project_profiles[pid] = profile.to_contract()
+            elif isinstance(profile, Mapping):
+                self._project_profiles[pid] = dict(profile)
         # The assembly injects a clock; the engine's own clock is the fallback
         # so this service still never reads the system clock directly.
         self._clock = clock or getattr(engine, "_clock", None)
@@ -174,15 +196,27 @@ class FactoryService:
     def _normalize_project(project_id: str, profile: Any) -> dict[str, Any]:
         if isinstance(profile, ProjectProfile):
             technologies: list[str] = []
-            for values in profile.technology.values():
-                for value in values if isinstance(values, list) else [values]:
+            groups: dict[str, list[str]] = {}
+            for group, values in profile.technology.items():
+                items = values if isinstance(values, list) else [values]
+                groups[str(group)] = [item for item in items if isinstance(item, str)]
+                for value in items:
                     if isinstance(value, str) and value not in technologies:
                         technologies.append(value)
+            approval = profile.configuration.get("approval")
+            channel = (
+                approval.get("channel") if isinstance(approval, Mapping) else None
+            )
             return {
                 "id": profile.id,
                 "name": profile.name,
                 "repositoryProvider": str(profile.repository.get("provider", "")),
                 "technologies": technologies,
+                "description": profile.description,
+                "workflow": profile.workflow,
+                "enabledSkills": [str(skill) for skill in profile.enabled_skills],
+                "technologyGroups": groups,
+                "approvalChannel": channel if isinstance(channel, str) else "",
             }
         data = dict(profile)
         repository = data.get("repository") or {}
@@ -200,11 +234,31 @@ class FactoryService:
                     for value in values if isinstance(values, list) else [values]:
                         if isinstance(value, str) and value not in technologies:
                             technologies.append(value)
+        technology_map = data.get("technology") or {}
+        groups = {}
+        if isinstance(technology_map, Mapping):
+            for group, values in technology_map.items():
+                items = values if isinstance(values, list) else [values]
+                groups[str(group)] = [str(item) for item in items if isinstance(item, str)]
+        configuration = data.get("configuration") or {}
+        approval = (
+            configuration.get("approval") if isinstance(configuration, Mapping) else None
+        )
+        channel = approval.get("channel") if isinstance(approval, Mapping) else None
+        raw_skills = data.get("enabledSkills", data.get("enabled_skills"))
         return {
             "id": str(data.get("id", project_id)),
             "name": str(data.get("name", project_id)),
             "repositoryProvider": str(provider),
             "technologies": [str(item) for item in technologies],
+            "description": str(data.get("description", "")),
+            "workflow": str(data.get("workflow", "")),
+            "enabledSkills": (
+                [str(skill) for skill in raw_skills if isinstance(skill, str)]
+                if isinstance(raw_skills, list) else []
+            ),
+            "technologyGroups": groups,
+            "approvalChannel": channel if isinstance(channel, str) else "",
         }
 
     # ------------------------------------------------------------------
@@ -666,6 +720,11 @@ class FactoryService:
                 "name": profile["name"],
                 "repositoryProvider": profile["repositoryProvider"],
                 "technologies": profile["technologies"],
+                "description": profile["description"],
+                "workflow": profile["workflow"],
+                "enabledSkills": profile["enabledSkills"],
+                "technologyGroups": profile["technologyGroups"],
+                "approvalChannel": profile["approvalChannel"],
                 "agentIds": agent_ids,
                 "ci": "UNKNOWN",
                 "ciFailures24h": 0,
@@ -683,14 +742,7 @@ class FactoryService:
         ``on_project_created`` hook runs before the project becomes visible,
         so a persistence failure leaves the registry unchanged.
         """
-        try:
-            profile = ProjectProfile.model_validate(dict(payload))
-        except ValidationError as error:
-            details = "; ".join(
-                f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
-                for item in error.errors()
-            )
-            raise ValueError(f"Invalid project profile: {details}") from error
+        profile = self._validate_profile(payload)
         if _PROJECT_ID_PATTERN.fullmatch(profile.id) is None:
             raise ValueError(
                 "Project id must be a slug: lowercase letters, digits, '-' or "
@@ -700,10 +752,75 @@ class FactoryService:
             raise ProjectExistsError(f"Project '{profile.id}' already exists")
         if self._on_project_created is not None:
             self._on_project_created(profile)
+        self._register_project(profile)
+        return self._project_view(profile.id)
+
+    @staticmethod
+    def _validate_profile(payload: Mapping[str, Any]) -> ProjectProfile:
+        try:
+            return ProjectProfile.model_validate(dict(payload))
+        except ValidationError as error:
+            details = "; ".join(
+                f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
+                for item in error.errors()
+            )
+            raise ValueError(f"Invalid project profile: {details}") from error
+
+    def _register_project(self, profile: ProjectProfile) -> None:
         self._projects[profile.id] = self._normalize_project(profile.id, profile)
+        self._project_profiles[profile.id] = profile.to_contract()
+
+    def _project_view(self, project_id: str) -> dict[str, Any]:
         return next(
-            view for view in self.list_projects() if view["id"] == profile.id
+            view for view in self.list_projects() if view["id"] == project_id
         )
+
+    def update_project(
+        self, project_id: str, payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Replace a project's profile; returns its dashboard project view.
+
+        The payload is merged over the stored profile, so fields the caller
+        does not manage (e.g. ``repository.url`` or approval reviewers added
+        by hand in the profile file) survive a dashboard edit. The id is the
+        project's identity and cannot change; the optional
+        ``on_project_updated`` hook runs before the change becomes visible.
+        """
+        if project_id not in self._projects:
+            raise ProjectNotFoundError(f"Project '{project_id}' not found")
+        merged = deep_merge(
+            self._project_profiles.get(project_id, {}), dict(payload),
+        )
+        profile = self._validate_profile(merged)
+        if profile.id != project_id:
+            raise ValueError("Project id cannot be changed")
+        if self._on_project_updated is not None:
+            self._on_project_updated(profile)
+        self._register_project(profile)
+        return self._project_view(project_id)
+
+    def delete_project(self, project_id: str) -> None:
+        """Remove a project, unless it still has non-terminal runs.
+
+        Historical (terminal) runs stay visible in the task/workflow views;
+        the optional ``on_project_deleted`` hook runs before removal, so a
+        persistence failure leaves the registry unchanged.
+        """
+        if project_id not in self._projects:
+            raise ProjectNotFoundError(f"Project '{project_id}' not found")
+        active = [
+            run for run in self._runs()
+            if run.project_id == project_id
+            and run.state.stage not in _TERMINAL_STAGES
+        ]
+        if active:
+            raise ProjectConflictError(
+                f"Project '{project_id}' has {len(active)} active run(s)",
+            )
+        if self._on_project_deleted is not None:
+            self._on_project_deleted(project_id)
+        del self._projects[project_id]
+        self._project_profiles.pop(project_id, None)
 
     # ------------------------------------------------------------------
     # approvals

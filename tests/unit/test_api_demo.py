@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from asf.api.demo import _project_writer
+from asf.api.demo import _project_remover, _project_writer
 from asf.configuration.loader import load_project, load_projects
 from asf.configuration.project import ProjectProfile
 
@@ -45,3 +45,14 @@ def test_project_writer_refuses_overwrite_and_literal_secrets(tmp_path: Path):
             repository={"provider": "gitlab", "token": "literal-secret-value"},
         ))
     assert not (tmp_path / "demo-y.yaml").exists()
+
+
+def test_project_writer_overwrite_and_remover(tmp_path: Path):
+    create = _project_writer(tmp_path)
+    update = _project_writer(tmp_path, overwrite=True)
+    create(make_profile())
+    update(make_profile(name="Demo X2"))
+    assert load_project(tmp_path / "demo-x.yaml").name == "Demo X2"
+    _project_remover(tmp_path)("demo-x")
+    assert not (tmp_path / "demo-x.yaml").exists()
+    _project_remover(tmp_path)("demo-x")  # a missing file is tolerated
