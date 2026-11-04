@@ -274,16 +274,62 @@ class DemoFactoryService(FactoryService):
             return [[str(arg) for arg in argv] for argv in commands]
         return [["python", "-m", "pytest", "-q"]]
 
-    def _review_rules(self, project_id: str) -> str:
-        """The project's configured review standards, as one text block.
+    # Shared review standards per language, as ``rules/languages/<pack>.md``
+    # under the projects directory. A profile technology token selects the
+    # pack(s) the project is reviewed against; frameworks that imply a
+    # language (react -> typescript) map to that language's pack.
+    _LANGUAGE_PACK_ORDER: tuple[str, ...] = ("java", "typescript", "csharp")
+    _TECHNOLOGY_TO_PACK: dict[str, str] = {
+        "java": "java",
+        "typescript": "typescript",
+        "ts": "typescript",
+        "react": "typescript",
+        "csharp": "csharp",
+        "c#": "csharp",
+        "dotnet": "csharp",
+        ".net": "csharp",
+    }
 
+    def _language_rule_packs(self, project_id: str) -> list[str]:
+        """Shared language rule packs selected by the project's stack."""
+        if self._projects_dir is None:
+            return []
+        view = self._projects.get(project_id) or {}
+        technologies = view.get("technologies")
+        if not isinstance(technologies, list):
+            return []
+        selected = {
+            self._TECHNOLOGY_TO_PACK[token.strip().lower()]
+            for token in technologies
+            if isinstance(token, str)
+            and token.strip().lower() in self._TECHNOLOGY_TO_PACK
+        }
+        packs: list[str] = []
+        for pack in self._LANGUAGE_PACK_ORDER:
+            if pack not in selected:
+                continue
+            path = self._projects_dir / "rules" / "languages" / f"{pack}.md"
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue  # A missing shared pack must not block other runs.
+            if text.strip():
+                packs.append(text.strip())
+        return packs
+
+    def _review_rules(self, project_id: str) -> str:
+        """The project's review standards, as one text block.
+
+        Shared language packs (``rules/languages/``, selected by the
+        profile's technologies) come first, then the project's own rules:
         ``configuration.review.rulesFiles`` lists Markdown rule files
-        relative to the projects directory; ``configuration.review.rules``
-        holds inline rule text. Files are concatenated in listed order,
-        inline text last. A configured file that cannot be read fails the
-        run start loudly — silently reviewing without the project's rules
-        would be worse than not starting at all.
+        relative to the projects directory and ``configuration.review.
+        rules`` holds inline rule text; files are concatenated in listed
+        order, inline text last. A configured project file that cannot be
+        read fails the run start loudly — silently reviewing without the
+        project's rules would be worse than not starting at all.
         """
+        parts: list[str] = self._language_rule_packs(project_id)
         profile = self._project_profiles.get(project_id) or {}
         configuration = profile.get("configuration")
         review = (
@@ -291,8 +337,7 @@ class DemoFactoryService(FactoryService):
             else None
         )
         if not isinstance(review, dict):
-            return ""
-        parts: list[str] = []
+            return "\n\n".join(parts)
         files = review.get("rulesFiles")
         if isinstance(files, list):
             for entry in files:

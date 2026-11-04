@@ -86,8 +86,10 @@ def build_review_messages(
         # still wins on any conflict.
         system += (
             "\n\nProject review rules — standards configured for this"
-            " project. Apply them as review criteria; where they conflict"
-            " with the output contract above, the output contract wins:\n"
+            " project. Apply them as review criteria. Shared language"
+            " rule packs come first and project-specific rules follow;"
+            " project-specific rules win over a language pack, and the"
+            " output contract above wins over both:\n"
             + rules.strip()
         )
     code = artifact_of(request, "CODE")
