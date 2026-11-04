@@ -59,6 +59,7 @@ from asf.contracts.models import (
 from asf.integrations.hosting.actions import build_hosting_actions
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
+from asf.orchestrator.code_loop import CodeLoopPolicy
 from asf.storage.sqlite import SQLiteExecutionStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
 from asf.tools.local import LocalWorkspace, WorkspaceRepository, WorkspaceSandbox
@@ -542,6 +543,13 @@ def build_demo(
     engine = Orchestrator(
         definition, registry, clock=clock, new_id=new_id, store=store,
         approval_policy=ApprovalPolicy(reviewers=["dashboard"]),
+        # Bounded rework: a CHANGES_REQUESTED review or a FAIL test verdict
+        # routes the CODE (with the review / test report attached) to the
+        # Fix agent and re-runs review + test, up to 3 fixes per task item;
+        # beyond that the run escalates for a human instead of dying at the
+        # quality gate. Without this policy the engine stops the run on the
+        # first failing verdict.
+        code_loop=CodeLoopPolicy(max_fixes=3),
         actions=build_hosting_actions(profiles=profile_of, clock=clock),
         events=metrics if hasattr(metrics, "publish") else None,
         metrics=metrics if hasattr(metrics, "record") else None,

@@ -4,6 +4,7 @@ import { AsyncView } from '../../components/common/AsyncView';
 import { CiBadge } from '../../components/common/Badge';
 import { Card, PageHeader, Stat } from '../../components/common/Layout';
 import { TaskStatusBadge } from '../../components/tasks/TaskStatusBadge';
+import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { useAgents } from '../../features/agent-management';
 import { useTaskDetail } from '../../features/task-monitoring';
@@ -41,6 +42,7 @@ export function TaskDetailPage() {
                 </Card>
               </div>
             </div>
+            <WorkflowArtifacts artifacts={workflow?.artifacts} />
             <Card title="Execution history"><ActivityFeed events={events} showTask={false} /></Card>
           </>
         )

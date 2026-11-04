@@ -14,6 +14,15 @@ export interface WorkflowStep {
 
 export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
+export interface WorkflowArtifact {
+  id: string;
+  type: string;
+  name: string;
+  version: string;
+  createdBy: string;
+  content?: string | null;
+}
+
 export interface Workflow {
   id: string;
   taskId: string;
@@ -24,4 +33,5 @@ export interface Workflow {
   steps: WorkflowStep[];
   startedAt: string;
   updatedAt: string;
+  artifacts?: WorkflowArtifact[];
 }

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ActivityFeed } from '../../components/activity/ActivityFeed';
 import { AsyncView } from '../../components/common/AsyncView';
 import { Card, PageHeader } from '../../components/common/Layout';
+import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { tickWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
@@ -67,6 +68,7 @@ export function WorkflowDetailPage() {
               <Card title="Steps"><WorkflowStepper steps={workflow.steps} /></Card>
               <Card title="Execution history"><ActivityFeed events={events} showTask={false} /></Card>
             </div>
+            <WorkflowArtifacts artifacts={workflow.artifacts} />
           </>
         )
       }
