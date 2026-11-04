@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from asf.api.demo import _project_remover, _project_writer
+from asf.api.demo import _project_remover, _project_writer, build_demo
 from asf.configuration.loader import load_project, load_projects
 from asf.configuration.project import ProjectProfile
 
@@ -56,3 +56,9 @@ def test_project_writer_overwrite_and_remover(tmp_path: Path):
     _project_remover(tmp_path)("demo-x")
     assert not (tmp_path / "demo-x.yaml").exists()
     _project_remover(tmp_path)("demo-x")  # a missing file is tolerated
+
+
+def test_demo_engine_has_bounded_code_loop_enabled(tmp_path: Path):
+    _service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    assert engine._code_loop is not None
+    assert engine._code_loop.max_fixes == 3
