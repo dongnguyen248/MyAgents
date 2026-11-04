@@ -11,7 +11,12 @@ from asf.agents._shared.limits import (
 from asf.agents._shared.paths import check_denied_paths, find_out_of_scope
 from asf.agents._shared.security import scan_secrets
 from asf.tools.changeset import ChangeSet, FileChange
-from asf.tools.ports import FileNotFoundInRepository, FileTooLargeError, RepositoryPort
+from asf.tools.ports import (
+    FileNotFoundInRepository,
+    FileTooLargeError,
+    RepositoryError,
+    RepositoryPort,
+)
 
 __all__ = [
     "ImplementContext",
@@ -19,6 +24,8 @@ __all__ = [
     "build_implement_context",
     "build_fix_context",
     "generate_changeset",
+    "normalize_changeset_operations",
+    "validate_changeset",
 ]
 
 
@@ -131,6 +138,50 @@ def generate_changeset(
         )
 
     return ChangeSet(changes=changes)
+
+
+def normalize_changeset_operations(
+    changeset: ChangeSet, ref: str, repository: RepositoryPort,
+) -> ChangeSet:
+    """Align each change's operation with the repository's actual state.
+
+    A change carries the file's FULL new content, so "create" and
+    "modify" are two labels for one intent — set this path to this
+    content. The label still gets picked wrong in practice: the fix
+    contract asks for a replacement relative to the ORIGINAL base ref
+    (where the file did not exist yet, so "create" reads correctly),
+    while a local workspace folder already holds the implemented file.
+    Rejecting the whole changeset for the label alone wastes the run,
+    so rewrite the label to match reality. A delete of a file that
+    does not exist is already satisfied and drops out. Genuine
+    violations (scope, denied paths, content) are still caught by
+    :func:`validate_changeset` afterwards.
+    """
+    changes: list[FileChange] = []
+    for change in changeset.changes:
+        try:
+            repository.read_file(change.path, ref, max_bytes=MAX_FILE_SIZE_BYTES)
+            exists = True
+        except FileNotFoundInRepository:
+            exists = False
+        except FileTooLargeError:
+            exists = True  # Present, just large; validation flags the size.
+        except RepositoryError:
+            changes.append(change)  # Cannot tell; leave it for validation.
+            continue
+        if change.operation == "delete":
+            if exists:
+                changes.append(change)
+            continue
+        operation = "modify" if exists else "create"
+        changes.append(
+            change if change.operation == operation
+            else change.model_copy(update={"operation": operation})
+        )
+    # If every change dropped out (only deletes of missing files), keep
+    # the original so validation can report the real problem instead of
+    # an empty changeset.
+    return ChangeSet(changes=changes) if changes else changeset
 
 
 def validate_changeset(
