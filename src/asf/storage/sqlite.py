@@ -66,6 +66,10 @@ class SQLiteExecutionStore:
     """One local worker; workflow checkpoints and approvals share a transaction."""
 
     def __init__(self, path: str | Path) -> None:
+        # sqlite3 creates the database file but not its parent directories,
+        # so a path like data/asf.sqlite fails on a fresh checkout unless
+        # the caller created data/ first. Create them here instead.
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(path, isolation_level=None)
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.executescript(
