@@ -2,6 +2,14 @@
 
 Reference document for ImplementAgent, ReviewAgent, TestAgent, FixAgent. Decisions only; no discussion.
 
+Implementation note (2026-11-02): C3/C4/C5 now have agent logic, factories and
+fake-driven unit/chain tests. Review payload validation lives in
+`agents/review/prompts.py`; the legacy shared content dataclasses remain for
+compatibility. TestAgent builds its deterministic report from validated sandbox
+results. Shared input/traceability validation is in `_shared/code_agents.py`;
+ImplementAgent and FixAgent share scope/content/secret checks in `_shared/codegen.py`.
+This does not implement Phase 6 orchestration or real repository/sandbox adapters.
+
 ---
 
 ## Corrected Decisions (D1–D16 with E1–E15 applied)
@@ -177,9 +185,10 @@ for path in expected_files:
 | Sandbox exception | FAILED | SANDBOX_ERROR | INTEGRATION | true |
 | Command timeout | FAILED | COMMAND_TIMEOUT | INTEGRATION | true |
 
-New codes added to:
-- `src/asf/models/errors.py` → `ALLOWED_GATEWAY_ERROR_CODES`
-- `contracts/errors.md` → catalog table
+Port failures use `AgentExecutionError` in `src/asf/agents/base.py`.
+They do not extend the provider-only `ALLOWED_GATEWAY_ERROR_CODES`.
+The codes are cataloged in `contracts/errors.md`. Agent-detected invalid model
+output is non-retryable; gateway errors retain their provider retryability.
 
 ### D12 – Contracts (Pydantic content models, camelCase aliases)
 ```python
@@ -431,6 +440,10 @@ These are unrelated to our changes.
 ### Phase 6 (Orchestrator)
 - REWORK loop: after `review` (CODE_REVIEW) or `test` (TEST_REPORT) produces `CHANGES_REQUESTED`/`FAIL`, orchestrator triggers `REVISE` on a `REWORK` stage that invokes FixAgent.
 - Applying changes between tasks: when task T2 depends on T1, orchestrator applies T1's CODE to the workspace at `ref` before invoking ImplementAgent for T2. This is orchestrator responsibility, not agent.
+  - Phase 6 local-mode decision (2026-11-02): the user selected dependency-ordered
+    execution with each item's CODE still relative to the original baseRef,
+    without accumulating a workspace. The cumulative behavior above remains a
+    live-integration target, not a capability established by the current tests.
 - `ci` step: runs pipeline on the merged change set (Phase 8).
 - `merge` step: awaits approvals on CODE_REVIEW and TEST_REPORT (Phase 6/8).
 

@@ -2,6 +2,15 @@
 
 Reusable agent implementations and base abstractions.
 
+Implemented packages: Spec, Plan, Task, Implement, Review, Test and Fix.
+Review/Test/Fix builders are exported from their respective packages. TestAgent
+is a deterministic SandboxPort runner and never calls the model gateway.
+Implement/Fix use RepositoryPort for base reads, with shared scope/content/secret
+checks. No agent dispatches another agent or persists/applies its own artifacts.
+Phase 7 integration tests compose agents explicitly with fakes. Separate Phase 6
+tests now drive these same agents through the local orchestrator, also with fake
+model/repository/sandbox ports. Neither establishes live-chain readiness.
+
 ## Agent Structure
 
 Each agent package adheres to a uniform structure:
@@ -33,7 +42,7 @@ Agents follow a strict two-stage execution lifecycle:
 
 The result status (`AgentResult.status`) can be one of:
 - `SUCCESS`: Task completed successfully and expected artifacts were produced.
-- `FAILED`: Execution failed due to a model gateway error or unexpected exception.
+- `FAILED`: Model, repository, sandbox or unexpected execution failure.
 - `REJECTED`: The request was refused by validation (no gateway call, no events).
 
 ## Runtime Injection
@@ -43,6 +52,11 @@ Agents never create side effects, read system clocks, or generate identifiers on
 - `models`: Injected `ModelGateway` implementation for completing model requests.
 - `clock`: Injected function returning a timezone-aware `datetime` (UTC).
 - `new_id`: Injected function producing unique identifiers (e.g. for events and artifacts).
+
+Expected agent/port failures use `AgentExecutionError` so codes such as
+`REPOSITORY_ERROR`, `SANDBOX_ERROR` and `COMMAND_TIMEOUT` retain their category
+and retryability. Invalid generated payloads are non-retryable. A failing test
+command is `SUCCESS` with report verdict `FAIL`, not an infrastructure failure.
 
 ## Dependency Rules
 
@@ -58,4 +72,3 @@ To preserve isolation and modularity:
 3. **Side effects only via ports and result:**
    - Language model calls must go through `ModelGateway`.
    - Events and artifacts are returned on `AgentResult` for the orchestrator to publish and persist.
-

@@ -135,10 +135,14 @@ class InMemorySandbox:
             if fc.operation == "create":
                 if fc.path in working_files:
                     raise SandboxError(f"Cannot create existing file: {fc.path}", command=None)
+                if fc.content is None:
+                    raise SandboxError("create operation requires content", command=None)
                 working_files[fc.path] = fc.content
             elif fc.operation == "modify":
                 if fc.path not in working_files:
                     raise SandboxError(f"Cannot modify missing file: {fc.path}", command=None)
+                if fc.content is None:
+                    raise SandboxError("modify operation requires content", command=None)
                 working_files[fc.path] = fc.content
             elif fc.operation == "delete":
                 if fc.path not in working_files:

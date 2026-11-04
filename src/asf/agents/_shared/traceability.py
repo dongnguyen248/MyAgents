@@ -17,7 +17,7 @@ class ArtifactKind:
 def build_metadata(
     kind: str,
     *,
-    task_id: str,
+    task_item_id: str,
     generated_at: datetime,
     spec_id: str | None = None,
     plan_id: str | None = None,
@@ -28,7 +28,7 @@ def build_metadata(
 
     Args:
         kind: One of "CODE", "CODE_REVIEW", "TEST_REPORT".
-        task_id: The task ID this artifact belongs to.
+        task_item_id: The task item ID this artifact belongs to (e.g., "T1").
         generated_at: Timestamp from the agent's runtime clock (timezone-aware UTC).
         spec_id: Optional spec ID for traceability.
         plan_id: Optional plan ID for traceability.
@@ -45,7 +45,7 @@ def build_metadata(
 
     metadata: dict[str, Any] = {
         "artifactKind": kind,
-        "taskId": task_id,
+        "taskItemId": task_item_id,
         "generatedAt": generated_at.isoformat(),
         "generatedBy": "agent",
     }

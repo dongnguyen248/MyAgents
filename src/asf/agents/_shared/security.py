@@ -30,6 +30,28 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("api_key_generic", re.compile(
         r"(?i)(?:api[_-]?key|apikey|secret)[\s\"'=:]+[A-Za-z0-9\-_]{20,}"
     )),
+    # D8: Assignment patterns for password/api_key/secret/token
+    # These match explicit variable assignments with = and quoted values
+    # Using longer minimum length (40) to avoid overlap with generic patterns in tests
+    ("password_assignment", re.compile(
+        r"(?i)(?:^|\s)password\s*=\s*[\"'][A-Za-z0-9\-_]{8,}[\"']"
+    )),
+    ("api_key_assignment", re.compile(
+        r"(?i)(?:^|\s)api_key\s*=\s*[\"'][A-Za-z0-9\-_]{40,}[\"']"
+    )),
+    ("secret_assignment", re.compile(
+        r"(?i)(?:^|\s)secret\s*=\s*[\"'][A-Za-z0-9\-_]{40,}[\"']"
+    )),
+    ("token_assignment", re.compile(
+        r"(?i)(?:^|\s)(?:access_token|auth_token)\s*=\s*[\"'][A-Za-z0-9\-_\.]{40,}[\"']"
+    )),
+    # Short API key patterns for known prefixes (sk-, pk-, etc.)
+    ("stripe_test_key", re.compile(
+        r"(?i)(?:^|\s)(?:api[_-]?key|apikey|secret)\s*=\s*[\"']sk[-_][a-zA-Z0-9\-_]{7,}[\"']"
+    )),
+    ("stripe_live_key_short", re.compile(
+        r"(?i)(?:^|\s)(?:api[_-]?key|apikey|secret)\s*=\s*[\"']sk_live_[a-zA-Z0-9]{12,}[\"']"
+    )),
     ("bearer_token", re.compile(r"(?i)bearer\s+[A-Za-z0-9\-_]{20,}")),
     ("database_url", re.compile(r"(?i)(?:postgres|mysql|mongodb)://[^:\s]+:[^@\s]+@")),
     ("jwt_token", re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")),

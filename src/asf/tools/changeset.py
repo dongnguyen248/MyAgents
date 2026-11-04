@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = ["FileChange", "ChangeSet"]
 
@@ -16,19 +16,25 @@ class FileChange(BaseModel):
     operation: Literal["create", "modify", "delete"] = Field(..., alias="operation")
     content: str | None = Field(default=None, alias="content")
 
-    @field_validator("content", mode="after")
-    @classmethod
-    def validate_content_rules(cls, v: str | None, info) -> str | None:
-        operation = info.data.get("operation")
+    @model_validator(mode="after")
+    def validate_content_rules(self) -> "FileChange":
+        """Validate content rules per D12/D9:
+        - create/modify require non-None content
+        - delete forbids content
+        - no NUL bytes in content
+        """
+        operation = self.operation
+        content = self.content
+
         if operation in ("create", "modify"):
-            if v is None:
+            if content is None:
                 raise ValueError(f"{operation} operation requires 'content'")
-            if "\x00" in v:
+            if "\x00" in content:
                 raise ValueError("content must not contain NUL bytes")
         elif operation == "delete":
-            if v is not None:
+            if content is not None:
                 raise ValueError("delete operation must not have 'content'")
-        return v
+        return self
 
 
 class ChangeSet(BaseModel):
@@ -36,12 +42,11 @@ class ChangeSet(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
 
-    changes: list[FileChange] = Field(default_factory=list, alias="changes")
+    changes: list[FileChange] = Field(..., alias="changes", min_length=1, max_length=50)
 
-    @field_validator("changes", mode="after")
-    @classmethod
-    def validate_no_duplicate_paths(cls, v: list[FileChange]) -> list[FileChange]:
-        paths = [fc.path for fc in v]
+    @model_validator(mode="after")
+    def validate_no_duplicate_paths(self) -> "ChangeSet":
+        paths = [fc.path for fc in self.changes]
         if len(paths) != len(set(paths)):
             raise ValueError("ChangeSet contains duplicate paths")
-        return v
+        return self

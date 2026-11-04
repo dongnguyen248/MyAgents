@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 __all__ = [
     "strip_code_fence",
@@ -37,7 +38,7 @@ def strip_code_fence(text: str) -> str:
     return text
 
 
-def parse_json(text: str) -> dict:
+def parse_json(text: str) -> dict[str, Any]:
     """Parse JSON with code fence stripping and clear error messages.
 
     Args:

@@ -1,13 +1,15 @@
 import json
+import subprocess
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from asf.state_machine.graph import build_graph
+from asf.state_machine.graph import Edge, StageGraph, StageInfo, build_graph
 from asf.state_machine.machine import InvalidTransition, RunState, apply
-from asf.state_machine.triggers import Trigger
+from asf.state_machine.triggers import StageKind, Trigger
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 from asf.workflow.loader import load_workflow
 
@@ -33,6 +35,41 @@ class StateMachineTransitionsTests(unittest.TestCase):
         cls.workflow_def = load_workflow(wf_path)
         cls.graph = build_graph(cls.workflow_def)
         cls.error_validator = validator_for("PlatformError")
+
+    def test_revise_requires_step_id_for_custom_graph(self):
+        graph = StageGraph(
+            stages=(StageInfo(name="BROKEN", kind=StageKind.REJECTED),),
+            edges=(Edge(source="BROKEN", trigger=Trigger.REVISE, target="BROKEN"),),
+            max_revisions={},
+        )
+        with self.assertRaisesRegex(ValueError, "BROKEN.*REVISE.*step_id"):
+            apply(graph, RunState(stage="BROKEN"), Trigger.REVISE)
+
+    def test_revise_requires_step_id_under_optimized_python(self):
+        script = """
+from asf.state_machine.graph import Edge, StageGraph, StageInfo
+from asf.state_machine.machine import RunState, apply
+from asf.state_machine.triggers import StageKind, Trigger
+graph = StageGraph(
+    stages=(StageInfo(name="BROKEN", kind=StageKind.REJECTED),),
+    edges=(Edge(source="BROKEN", trigger=Trigger.REVISE, target="BROKEN"),),
+    max_revisions={},
+)
+try:
+    apply(graph, RunState(stage="BROKEN"), Trigger.REVISE)
+except ValueError as exc:
+    print(exc)
+else:
+    raise SystemExit("missing invariant error")
+"""
+        result = subprocess.run(
+            [sys.executable, "-O", "-c", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, "BROKEN.*REVISE.*step_id")
 
     def test_full_happy_path_new_to_completed(self):
         transitions = [

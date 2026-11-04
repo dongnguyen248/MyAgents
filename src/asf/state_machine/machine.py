@@ -113,7 +113,8 @@ def apply(
     step_id = current_stage_info.step_id
 
     if trig == Trigger.REVISE:
-        assert step_id is not None
+        if step_id is None:
+            raise ValueError(f"Stage '{state.stage}' with REVISE transition must have a step_id")
         max_rev = graph.max_revisions.get(step_id, DEFAULT_MAX_REVISIONS)
         curr_rev = state.revisions.get(step_id, 0)
         if curr_rev < max_rev:
