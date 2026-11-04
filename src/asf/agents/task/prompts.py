@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from asf.agents._shared.rules import rules_section
 from asf.agents.plan.milestones import (
     MAX_MILESTONES,
     milestone_ancestors,
@@ -155,6 +156,15 @@ def build_task_messages(
         system_content = f"{prompts.system}\n\n{prompts.revision}"
     else:
         system_content = prompts.system
+    system_content += rules_section(
+        project_context,
+        "Project development rules — the standards this project's code"
+        " must follow. Break the work into tasks that comply with them,"
+        " including any tasks the standards require (for example"
+        " dedicated constants files, DTOs, or tests); where they"
+        " conflict with the output contract above, the output contract"
+        " wins:",
+    )
 
     user_content = build_user_message(
         spec_artifact=spec_artifact,

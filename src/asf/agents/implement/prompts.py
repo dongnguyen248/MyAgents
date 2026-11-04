@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from asf.agents._shared.rules import rules_section
 from asf.contracts.models import ModelMessage
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,14 @@ def build_implement_messages(
 
     if skills_line:
         system_msg += skills_line
+
+    system_msg += rules_section(
+        project_context,
+        "Project development rules — the standards this project's code"
+        " must follow. Write code that complies with them; where they"
+        " conflict with the output contract above, the output contract"
+        " wins:",
+    )
 
     # Build context sections
     sections: list[str] = []

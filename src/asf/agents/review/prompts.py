@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from asf.agents._shared.code_agents import artifact_of, code_changeset, task_item
+from asf.agents._shared.rules import rules_section
 from asf.contracts.models import AgentRequest, ModelMessage
 
 MAX_FINDINGS = 100
@@ -78,20 +79,18 @@ def build_review_messages(
         if not line.lstrip().startswith("Enabled skills:")
     ).rstrip()
     system += "\nEnabled skills: " + (", ".join(skill_names) or "none")
-    rules = project.get("reviewRules")
-    if isinstance(rules, str) and rules.strip():
-        # Review rules are project configuration resolved by the assembly
-        # (profile configuration.review), not artifact data: they belong
-        # in the system message as criteria. The output contract above
-        # still wins on any conflict.
-        system += (
-            "\n\nProject review rules — standards configured for this"
-            " project. Apply them as review criteria. Shared language"
-            " rule packs come first and project-specific rules follow;"
-            " project-specific rules win over a language pack, and the"
-            " output contract above wins over both:\n"
-            + rules.strip()
-        )
+    # Review rules are project configuration resolved by the assembly
+    # (profile configuration.review), not artifact data: they belong in
+    # the system message as criteria. The output contract above still
+    # wins on any conflict.
+    system += rules_section(
+        project,
+        "Project review rules — standards configured for this project."
+        " Apply them as review criteria. Shared language rule packs come"
+        " first and project-specific rules follow; project-specific rules"
+        " win over a language pack, and the output contract above wins"
+        " over both:",
+    )
     code = artifact_of(request, "CODE")
     payload = {
         "taskItemId": request.input["taskItemId"],
