@@ -40,6 +40,7 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
   const [frontend, setFrontend] = useState((initial?.technology.frontend ?? []).join(', '));
   const [workflow, setWorkflow] = useState(initial?.workflow ?? 'software-development');
   const [skills, setSkills] = useState((initial?.enabledSkills ?? []).join(', '));
+  const [repoUrl, setRepoUrl] = useState(initial?.repository.url ?? '');
   const [workspacePath, setWorkspacePath] = useState(initial?.repository.path ?? '');
   const [testCommand, setTestCommand] = useState(
     (initial?.configuration.testCommands?.[0] ?? []).join(' '),
@@ -55,6 +56,18 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
     if (!idTouched) setId(slugify(value));
   };
 
+  const changeRepoUrl = (value: string) => {
+    setRepoUrl(value);
+    // Paste a GitHub or GitLab link and the provider follows it.
+    try {
+      const host = new URL(value.trim()).hostname;
+      if (host === 'github.com') setProvider('github');
+      else if (host.includes('gitlab')) setProvider('gitlab');
+    } catch {
+      // Not a URL yet; leave the provider as chosen.
+    }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(undefined);
@@ -66,7 +79,7 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
         name: name.trim(),
         // In edit mode always send the description so clearing it works.
         ...(description.trim() || editing ? { description: description.trim() } : {}),
-        repository: { provider, path: workspacePath.trim() },
+        repository: { provider, path: workspacePath.trim(), url: repoUrl.trim() },
         technology: { backend: list(backend), frontend: list(frontend) },
         workflow: workflow.trim() || 'software-development',
         enabledSkills: list(skills),
@@ -149,6 +162,14 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
           <span>Enabled skills (comma separated)</span>
           <input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="git, testing, security" />
         </label>
+        <label className="field block">
+          <span>Repository URL (optional, for GitLab/GitHub CI)</span>
+          <input
+            value={repoUrl}
+            onChange={(e) => changeRepoUrl(e.target.value)}
+            placeholder="https://github.com/owner/repo or https://gitlab.com/group/project"
+          />
+        </label>
         <div className="form-grid">
           <label className="field">
             <span>Local folder path (optional)</span>
@@ -170,7 +191,9 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
         <p className="muted small">
           With a local folder set, agents read the project's real files, generated code is written into
           that folder, and the test command runs there for real. Without it, runs use the in-memory demo
-          workspace.
+          workspace. With a repository URL set, the CI step pushes the generated code to a branch on
+          GitLab/GitHub, opens a merge/pull request, and the run waits for it to merge — the access token
+          comes from the backend's environment (ASF_GITLAB_TOKEN / ASF_GITHUB_TOKEN), never from this form.
         </p>
         {error && (
           <p className="alert" role="alert">

@@ -232,6 +232,7 @@ class FactoryService:
                 "id": profile.id,
                 "name": profile.name,
                 "repositoryProvider": str(profile.repository.get("provider", "")),
+                "repositoryUrl": str(profile.repository.get("url") or ""),
                 "repositoryPath": str(profile.repository.get("path") or ""),
                 "testCommands": _valid_test_commands(
                     profile.configuration.get("testCommands"),
@@ -275,6 +276,10 @@ class FactoryService:
             "id": str(data.get("id", project_id)),
             "name": str(data.get("name", project_id)),
             "repositoryProvider": str(provider),
+            "repositoryUrl": (
+                str(repository.get("url") or "")
+                if isinstance(repository, Mapping) else ""
+            ),
             "repositoryPath": (
                 str(repository.get("path") or "")
                 if isinstance(repository, Mapping) else ""
@@ -752,6 +757,7 @@ class FactoryService:
                 "id": profile["id"],
                 "name": profile["name"],
                 "repositoryProvider": profile["repositoryProvider"],
+                "repositoryUrl": profile["repositoryUrl"],
                 "repositoryPath": profile["repositoryPath"],
                 "testCommands": profile["testCommands"],
                 "technologies": profile["technologies"],
