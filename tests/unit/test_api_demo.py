@@ -95,7 +95,7 @@ def test_workflow_view_exposes_artifact_contents(tmp_path: Path):
 # Per-project review rules (configuration.review -> run context)
 # ---------------------------------------------------------------------------
 
-from asf.api.demo import DemoFactoryService, build_demo  # noqa: E402
+from asf.api.demo import DemoFactoryService  # noqa: E402
 
 
 def make_service(tmp_path: Path, configuration: dict[str, Any]) -> DemoFactoryService:
