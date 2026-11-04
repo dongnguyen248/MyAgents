@@ -280,3 +280,41 @@ def test_load_dotenv_missing_file_is_a_no_op(tmp_path: Path):
     from asf.api.demo import _load_dotenv
 
     assert _load_dotenv(tmp_path / ".env") is False
+
+
+def test_resume_run_continues_from_the_failed_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    run = service.start_run(
+        "resume-task", "vhpc", inputs={"spec": {"requirement": "Resume me"}},
+    )
+    spec_agent = engine._registry.for_type("spec")
+
+    def explode(request: object) -> object:
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(spec_agent, "execute", explode)
+    failed = service.tick_run(run.id)
+    assert failed is not None and failed["status"] == "FAILED"
+    monkeypatch.undo()
+
+    view = service.resume_run(run.id)
+    assert view is not None
+    assert view["id"] != run.id and view["status"] == "RUNNING"
+    resumed = engine.get(view["id"])
+    assert resumed.state.stage == "SPEC_DRAFT"
+    assert resumed.inputs["spec"]["requirement"] == "Resume me"
+    assert engine.get(run.id).state.stage == "FAILED"
+    # The resumed run dispatches the spec step again — and only that step.
+    view = service.tick_run(view["id"])
+    assert view is not None and view["status"] == "WAITING_APPROVAL"
+
+
+def test_resume_run_rejects_a_run_that_has_not_failed(tmp_path: Path):
+    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    run = service.start_run(
+        "active-task-2", "vhpc", inputs={"spec": {"requirement": "Still running"}},
+    )
+    with pytest.raises(ValueError, match="has not failed"):
+        service.resume_run(run.id)

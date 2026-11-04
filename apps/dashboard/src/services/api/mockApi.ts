@@ -9,7 +9,7 @@ import type { ActivityEvent } from '../../types/activity';
 import type { Approval, ApprovalStatus } from '../../types/approval';
 import type { Project } from '../../types/project';
 import type { Task } from '../../types/task';
-import type { Workflow, WorkflowStep, WorkflowStepId } from '../../types/workflow';
+import type { StepState, Workflow, WorkflowStep, WorkflowStepId } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
 const LATENCY_MS = 150;
@@ -140,6 +140,38 @@ export const mockApi: FactoryApi = {
     const task = taskStore.find((t) => t.id === previous.taskId);
     if (task) {
       task.status = 'NEW';
+      task.updatedAt = now;
+    }
+    return delay(workflow);
+  },
+
+  resumeRun: (runId) => {
+    const previous = workflowStore.find((w) => w.id === runId);
+    if (!previous) return Promise.reject(new Error(`Run '${runId}' not found`));
+    if (previous.status !== 'FAILED') {
+      return Promise.reject(new Error('Only a failed run can be resumed'));
+    }
+    const now = new Date().toISOString();
+    // Mock resume: steps before the failed one stay done; the failed step
+    // becomes active again; later steps go back to pending. Artifacts are
+    // kept, unlike retryRun which starts from a clean slate.
+    const failedAt = previous.steps.findIndex((s) => s.state !== 'done');
+    const steps = previous.steps.map((step, index) => ({
+      ...step,
+      state: (index < failedAt ? 'done' : index === failedAt ? 'active' : 'pending') as StepState,
+    }));
+    const workflow: Workflow = {
+      ...structuredClone(previous),
+      id: `wf-${previous.taskId.toLowerCase()}-${Date.now()}`,
+      status: 'RUNNING',
+      steps,
+      startedAt: now,
+      updatedAt: now,
+    };
+    workflowStore.unshift(workflow);
+    const task = taskStore.find((t) => t.id === previous.taskId);
+    if (task) {
+      task.status = failedAt > 0 ? 'IMPLEMENTING' : 'NEW';
       task.updatedAt = now;
     }
     return delay(workflow);

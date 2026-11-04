@@ -10,7 +10,7 @@ import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBa
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { useAgents } from '../../features/agent-management';
 import { useTaskDetail } from '../../features/task-monitoring';
-import { retryWorkflow } from '../../features/workflow-monitoring';
+import { resumeWorkflow, retryWorkflow } from '../../features/workflow-monitoring';
 import { dateTime, duration, titleCase } from '../../utils/format';
 
 export function TaskDetailPage() {
@@ -18,6 +18,7 @@ export function TaskDetailPage() {
   const detail = useTaskDetail(taskId);
   const agents = useAgents();
   const [retrying, setRetrying] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [retryError, setRetryError] = useState<string | undefined>();
 
   const runAgain = async (runId: string) => {
@@ -32,6 +33,19 @@ export function TaskDetailPage() {
       setRetrying(false);
     }
   };
+
+  const resume = async (runId: string) => {
+    setRetryError(undefined);
+    setResuming(true);
+    try {
+      await resumeWorkflow(runId);
+      detail.reload();
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : 'Failed to resume');
+    } finally {
+      setResuming(false);
+    }
+  };
   return (
     <AsyncView {...detail}>
       {({ task, workflow, events, runs }) =>
@@ -40,8 +54,13 @@ export function TaskDetailPage() {
         ) : (
           <>
             <PageHeader title={`${task.id} · ${task.title}`} back={{ to: '/tasks', label: 'Tasks' }} actions={<>
+              {workflow && workflow.status === 'FAILED' && (
+                <button type="button" className="btn btn-primary" onClick={() => resume(workflow.id)} disabled={resuming || retrying}>
+                  {resuming ? 'Resuming…' : 'Resume'}
+                </button>
+              )}
               {workflow && ['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
-                <button type="button" className="btn btn-primary" onClick={() => runAgain(workflow.id)} disabled={retrying}>
+                <button type="button" className={workflow.status === 'FAILED' ? 'btn' : 'btn btn-primary'} onClick={() => runAgain(workflow.id)} disabled={retrying || resuming}>
                   {retrying ? 'Starting…' : 'Run again'}
                 </button>
               )}

@@ -280,4 +280,13 @@ def create_app(service: FactoryService) -> FastAPI:
         except ValueError as error:
             return JSONResponse(status_code=409, content={"detail": str(error)})
 
+    @app.post("/runs/{run_id}/resume", status_code=201)
+    async def resume_run(run_id: str) -> Any:
+        try:
+            return service.resume_run(run_id)
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+
     return app

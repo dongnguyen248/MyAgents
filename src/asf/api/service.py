@@ -1202,3 +1202,17 @@ class FactoryService:
             inputs=dict(run.inputs), context=context or None,
         )
         return self.get_workflow(new_run.id)
+
+    def resume_run(self, run_id: str) -> dict[str, Any] | None:
+        """Continue a FAILED run from the step that failed, in a new run.
+
+        Unlike :meth:`retry_run` (a fresh execution from the first step),
+        the resumed run inherits the failed run's artifacts and approvals:
+        the spec, plan and task breakdown are neither rewritten nor
+        re-approved — only the failed step and what follows it execute
+        again. The failed run itself stays untouched as the record of
+        the failure. A run that has not failed raises ``ValueError``.
+        """
+        run = self._engine.resume_failed(run_id)
+        self.track(run.id)
+        return self.get_workflow(run.id)
