@@ -1,19 +1,35 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ActivityFeed } from '../../components/activity/ActivityFeed';
 import { AsyncView } from '../../components/common/AsyncView';
 import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
-import { tickWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
+import { retryWorkflow, tickWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
 import { titleCase } from '../../utils/format';
 
 export function WorkflowDetailPage() {
   const { workflowId = '' } = useParams();
   const detail = useWorkflowDetail(workflowId);
+  const navigate = useNavigate();
   const [ticking, setTicking] = useState(false);
   const [tickError, setTickError] = useState<string | undefined>();
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | undefined>();
+
+  const runAgain = async () => {
+    setRetryError(undefined);
+    setRetrying(true);
+    try {
+      const fresh = await retryWorkflow(workflowId);
+      navigate(`/workflows/${fresh.id}`);
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : 'Failed to run again');
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const runNextStep = async () => {
     setTickError(undefined);
@@ -52,6 +68,21 @@ export function WorkflowDetailPage() {
                 {tickError && (
                   <p className="alert" role="alert">
                     {tickError}
+                  </p>
+                )}
+              </Card>
+            )}
+            {['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
+              <Card>
+                <div className="filters">
+                  <button type="button" className="btn btn-primary" onClick={runAgain} disabled={retrying}>
+                    {retrying ? 'Starting…' : 'Run again'}
+                  </button>
+                  <span className="muted small">Starts a fresh run of this task with its original requirement; this finished run stays as the record.</span>
+                </div>
+                {retryError && (
+                  <p className="alert" role="alert">
+                    {retryError}
                   </p>
                 )}
               </Card>

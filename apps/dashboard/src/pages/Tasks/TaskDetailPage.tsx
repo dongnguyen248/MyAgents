@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ActivityFeed } from '../../components/activity/ActivityFeed';
 import { AsyncView } from '../../components/common/AsyncView';
@@ -8,12 +9,28 @@ import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts'
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { useAgents } from '../../features/agent-management';
 import { useTaskDetail } from '../../features/task-monitoring';
+import { retryWorkflow } from '../../features/workflow-monitoring';
 import { dateTime, duration, titleCase } from '../../utils/format';
 
 export function TaskDetailPage() {
   const { taskId = '' } = useParams();
   const detail = useTaskDetail(taskId);
   const agents = useAgents();
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | undefined>();
+
+  const runAgain = async (runId: string) => {
+    setRetryError(undefined);
+    setRetrying(true);
+    try {
+      await retryWorkflow(runId);
+      detail.reload();
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : 'Failed to run again');
+    } finally {
+      setRetrying(false);
+    }
+  };
   return (
     <AsyncView {...detail}>
       {({ task, workflow, events }) =>
@@ -21,7 +38,19 @@ export function TaskDetailPage() {
           <p className="muted">Task not found.</p>
         ) : (
           <>
-            <PageHeader title={`${task.id} · ${task.title}`} back={{ to: '/tasks', label: 'Tasks' }} actions={<TaskStatusBadge status={task.status} />} />
+            <PageHeader title={`${task.id} · ${task.title}`} back={{ to: '/tasks', label: 'Tasks' }} actions={<>
+              {workflow && ['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
+                <button type="button" className="btn btn-primary" onClick={() => runAgain(workflow.id)} disabled={retrying}>
+                  {retrying ? 'Starting…' : 'Run again'}
+                </button>
+              )}
+              <TaskStatusBadge status={task.status} />
+            </>} />
+            {retryError && (
+              <p className="alert" role="alert">
+                {retryError}
+              </p>
+            )}
             <div className="grid two-col">
               <Card title="Workflow timeline">{workflow ? <WorkflowStepper steps={workflow.steps} /> : <p className="muted">No workflow.</p>}</Card>
               <div className="stack">

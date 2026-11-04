@@ -29,6 +29,8 @@ export interface FactoryApi {
   getWorkflow(id: string): Promise<Workflow | undefined>;
   /** Advance a run by one engine step; resolves to its workflow view. */
   tickRun(runId: string): Promise<Workflow>;
+  /** Start a fresh run of a finished run's task with its original inputs. */
+  retryRun(runId: string): Promise<Workflow>;
 
   listProjects(): Promise<Project[]>;
   createProject(input: ProjectProfileInput): Promise<Project>;
