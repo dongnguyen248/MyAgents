@@ -26,6 +26,16 @@ export interface Task {
   mergeRequest?: string; // e.g. "!214"
 }
 
+/** Payload for starting a task: creates a workflow run on a project. */
+export interface StartRunInput {
+  taskId: string;
+  projectId: string;
+  title?: string;
+  requirement: string;
+  priority?: TaskPriority;
+  workflowType?: WorkflowType;
+}
+
 export interface TaskFilter {
   projectId?: string;
   agentId?: string;
