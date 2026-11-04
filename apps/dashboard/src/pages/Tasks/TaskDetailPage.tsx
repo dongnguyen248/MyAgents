@@ -6,6 +6,7 @@ import { CiBadge } from '../../components/common/Badge';
 import { Card, PageHeader, Stat } from '../../components/common/Layout';
 import { TaskStatusBadge } from '../../components/tasks/TaskStatusBadge';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
+import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { useAgents } from '../../features/agent-management';
 import { useTaskDetail } from '../../features/task-monitoring';
@@ -33,7 +34,7 @@ export function TaskDetailPage() {
   };
   return (
     <AsyncView {...detail}>
-      {({ task, workflow, events }) =>
+      {({ task, workflow, events, runs }) =>
         !task ? (
           <p className="muted">Task not found.</p>
         ) : (
@@ -72,6 +73,19 @@ export function TaskDetailPage() {
               </div>
             </div>
             <WorkflowArtifacts artifacts={workflow?.artifacts} />
+            {runs && runs.length > 1 && (
+              <Card title="Run history">
+                <div className="stack">
+                  {runs.map((run, index) => (
+                    <p key={run.id}>
+                      <WorkflowStatusBadge status={run.status} />{' '}
+                      <Link to={`/workflows/${run.id}`}>Run · {dateTime(run.startedAt)}</Link>
+                      {index === 0 && <span className="muted small"> (latest — shown above)</span>}
+                    </p>
+                  ))}
+                </div>
+              </Card>
+            )}
             <Card title="Execution history"><ActivityFeed events={events} showTask={false} /></Card>
           </>
         )

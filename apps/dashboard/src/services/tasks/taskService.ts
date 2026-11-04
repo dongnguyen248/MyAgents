@@ -9,5 +9,11 @@ export const createTask = (input: StartRunInput): Promise<Workflow> => api.start
 
 export async function getTaskDetail(taskId: string) {
   const [task, events, workflows] = await Promise.all([api.getTask(taskId), api.listActivity({ taskId }), api.listWorkflows()]);
-  return { task, events, workflow: workflows.find((w) => w.taskId === taskId) };
+  // Every run of this task, newest first; the page's workflow is the latest
+  // run, and the rest form the run history (a task is one row everywhere
+  // else, always reflecting its latest run).
+  const runs = workflows
+    .filter((w) => w.taskId === taskId)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return { task, events, workflow: runs[0], runs };
 }
