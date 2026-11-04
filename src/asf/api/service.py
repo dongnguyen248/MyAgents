@@ -786,6 +786,10 @@ class FactoryService:
             "category": error.category,
             "at": _iso(error.timestamp),
             "details": error.details or None,
+            # The stage the run died in (from its event trail), so the
+            # banner can name the code-fix loop instead of blaming the
+            # step whose verdict triggered it.
+            "stage": FactoryService._stage_before_failure(run),
         }
 
     def _workflow_view(self, run: WorkflowExecution) -> dict[str, Any]:

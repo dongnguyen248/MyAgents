@@ -39,6 +39,7 @@ def test_fix_rejected_after_test_failure_blames_run_tests(tmp_path):
     assert states["ci"] == "pending"
     assert states["merge"] == "pending"
     assert view["error"]["details"]["outOfScopePaths"] == ["outside.py"]
+    assert view["error"]["stage"] == "CODE_FIX"
     store.close()
 
 
@@ -85,4 +86,5 @@ def test_crash_on_second_review_blames_code_review(
     assert states["code_review"] == "failed"
     assert states["testing"] == "done"
     assert states["ci"] == "pending"
+    assert view["error"]["stage"] == "CODE_REVIEW"
     store.close()

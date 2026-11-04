@@ -14,14 +14,22 @@ The transport is injectable, so tests never touch the network.
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from asf.contracts.models import ModelRequest, ModelResponse, ModelUsage
 from asf.models.errors import ModelGatewayError
 
 __all__ = ["HttpTransport", "OpenAICompatibleGateway", "UrlLibTransport"]
+
+# Transient failures (timeouts, connection errors, HTTP 429/5xx) are
+# retried with exponential backoff, mirroring the Gemini gateway: a
+# momentary provider stall should cost seconds, not the agent step —
+# through a session proxy, stalls of a few seconds are routine.
+DEFAULT_MAX_RETRIES = 2
 
 
 class HttpTransport(Protocol):
@@ -63,7 +71,9 @@ class OpenAICompatibleGateway:
         model: str,
         api_key: str,
         transport: HttpTransport | None = None,
-        timeout_seconds: float = 120.0,
+        timeout_seconds: float = 300.0,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if not base_url.startswith(("https://", "http://")):
             raise ValueError("Base URL must be an http(s) URL")
@@ -71,11 +81,15 @@ class OpenAICompatibleGateway:
             raise ValueError("Model must not be empty")
         if not api_key:
             raise ValueError("API key must not be empty")
+        if timeout_seconds <= 0 or max_retries < 0:
+            raise ValueError("Timeout must be positive and retries non-negative")
         self._base = base_url.rstrip("/")
         self._model = model.strip()
         self._api_key = api_key
         self._transport = transport or UrlLibTransport()
         self._timeout = timeout_seconds
+        self._max_retries = max_retries
+        self._sleep = sleep
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         model = request.model or self._model
@@ -89,15 +103,7 @@ class OpenAICompatibleGateway:
         temperature = request.parameters.get("temperature")
         if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
             payload["temperature"] = temperature
-        status, raw = self._transport.post(
-            f"{self._base}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            body=json.dumps(payload).encode("utf-8"),
-            timeout_seconds=self._timeout,
-        )
+        status, raw = self._post_with_retries(payload)
         if status >= 400:
             detail = _provider_message(raw)
             code = (
@@ -133,6 +139,39 @@ class OpenAICompatibleGateway:
                 "LLM_INVALID_RESPONSE",
                 f"Model provider returned an unexpected response: {error}",
             ) from None
+
+    def _post_with_retries(self, payload: dict[str, Any]) -> tuple[int, bytes]:
+        """POST, retrying transient failures with exponential backoff.
+
+        Transport errors (timeouts, unreachable host) and HTTP 429/5xx
+        are transient by nature; everything else returns at once. After
+        the retries run out, the last transport error is re-raised, or
+        the last error status is returned for the caller to report.
+        """
+        body = json.dumps(payload).encode("utf-8")
+        retries = 0
+        while True:
+            try:
+                status, raw = self._transport.post(
+                    f"{self._base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    body=body,
+                    timeout_seconds=self._timeout,
+                )
+            except ModelGatewayError:
+                if retries >= self._max_retries:
+                    raise
+                self._sleep(2**retries)
+                retries += 1
+                continue
+            if (status == 429 or status >= 500) and retries < self._max_retries:
+                self._sleep(2**retries)
+                retries += 1
+                continue
+            return status, raw
 
 
 def _provider_message(body: bytes) -> str:
