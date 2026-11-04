@@ -384,6 +384,25 @@ def test_delete_project_blocked_while_run_active():
         service.delete_project("proj-1")
 
 
+def test_project_view_exposes_workspace_fields():
+    service, _metrics = build_service()
+    created = service.create_project({
+        **NEW_PROJECT,
+        "repository": {"provider": "github", "path": "/srv/proj-3"},
+        "configuration": {
+            "testCommands": [["python", "-m", "pytest", "-q"]],
+        },
+    })
+    assert created["repositoryPath"] == "/srv/proj-3"
+    assert created["testCommands"] == [["python", "-m", "pytest", "-q"]]
+    updated = service.update_project("proj-3", {"repository": {"path": ""}})
+    assert updated["repositoryPath"] == ""
+    assert updated["repositoryProvider"] == "github"  # merge kept it
+    listed = next(p for p in service.list_projects() if p["id"] == "proj-1")
+    assert listed["repositoryPath"] == ""
+    assert listed["testCommands"] == []
+
+
 def test_update_and_delete_hooks_run_in_order():
     calls: list = []
     service = FactoryService(

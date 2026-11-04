@@ -6,8 +6,12 @@
 All seven real agents are registered with one deterministic routing
 ``ScriptedModelGateway``: replies are chosen per agent from the system
 prompt and use the exact canned SPEC/PLAN/TASK/CODE/CODE_REVIEW formats the
-agents' own tests use. The TestAgent is deterministic and runs against a
-scripted sandbox. This demonstrates wiring, not real LLM reasoning.
+agents' own tests use. The TestAgent is deterministic: it runs against a
+scripted sandbox, except for projects whose profile sets
+``repository.path`` — those get the real local workspace adapters
+(``asf.tools.local``), so their change sets land in the project folder
+and their configured test commands run there for real. This demonstrates
+wiring, not real LLM reasoning.
 """
 
 from __future__ import annotations
@@ -43,16 +47,19 @@ from asf.configuration.project import ProjectProfile
 from asf.configuration.yamlio import scan_secrets
 from asf.contracts.models import (
     ActivityEvent,
+    AgentMetadata,
     AgentRequest,
     AgentResult,
     ModelRequest,
     ModelResponse,
     RunMetrics,
+    ValidationResult,
 )
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.storage.sqlite import SQLiteExecutionStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
+from asf.tools.local import LocalWorkspace, WorkspaceRepository, WorkspaceSandbox
 from asf.workflow.loader import load_workflow
 
 _TASK_REPLY = json.dumps({
@@ -243,6 +250,31 @@ class DemoFactoryService(FactoryService):
         "test": {"taskItemId": "T1", "ref": "main"},
     }
 
+    def _default_test_commands(self, project_id: str) -> list[list[str]]:
+        """The project's configured test commands, else the demo default.
+
+        A project with a local workspace (``repository.path``) normally
+        configures its real test command under
+        ``configuration.testCommands`` in its profile; that command then
+        runs for real in the project folder via the local sandbox.
+        """
+        profile = self._project_profiles.get(project_id) or {}
+        configuration = profile.get("configuration")
+        commands = (
+            configuration.get("testCommands")
+            if isinstance(configuration, dict) else None
+        )
+        if (
+            isinstance(commands, list) and commands
+            and all(
+                isinstance(argv, list) and argv
+                and all(isinstance(arg, str) and arg for arg in argv)
+                for argv in commands
+            )
+        ):
+            return [[str(arg) for arg in argv] for argv in commands]
+        return [["python", "-m", "pytest", "-q"]]
+
     def start_run(
         self,
         task_id: str,
@@ -256,7 +288,7 @@ class DemoFactoryService(FactoryService):
         for step, values in dict(inputs or {}).items():
             merged_inputs[step] = {**merged_inputs.get(step, {}), **dict(values)}
         merged_context: dict[str, Any] = {
-            "project": {"testCommands": [["python", "-m", "pytest", "-q"]]},
+            "project": {"testCommands": self._default_test_commands(project_id)},
         }
         for key, value in dict(context or {}).items():
             if key == "project" and isinstance(value, dict):
@@ -306,6 +338,36 @@ def _project_remover(projects_dir: Path) -> Callable[[str], None]:
     return remove
 
 
+class _WorkspaceBindingAgent:
+    """Agent wrapper that binds the local workspace to the run's project.
+
+    The repository/sandbox ports carry no project id, so before the code
+    agents (implement, test, fix) execute, the workspace is bound to the
+    request's project; the routed ports then resolve that project's
+    ``repository.path`` folder, if it has one. Runs are driven one step
+    at a time by the local worker, so the binding is never contended.
+    """
+
+    def __init__(self, inner: Any, workspace: LocalWorkspace) -> None:
+        self._inner = inner
+        self._workspace = workspace
+
+    def get_metadata(self) -> AgentMetadata:
+        return self._inner.get_metadata()
+
+    def validate(self, request: AgentRequest) -> ValidationResult:
+        return self._inner.validate(request)
+
+    def execute(self, request: AgentRequest) -> AgentResult:
+        self._workspace.bind(request.project_id)
+        return self._inner.execute(request)
+
+
+def _profile_root(profile: ProjectProfile) -> str | None:
+    path = profile.repository.get("path")
+    return path if isinstance(path, str) and path.strip() else None
+
+
 def build_demo(
     db_path: Path,
 ) -> tuple[FactoryService, Orchestrator, SQLiteExecutionStore]:
@@ -326,15 +388,34 @@ def build_demo(
     runtime = AgentRuntime(
         models=DemoRoutingGateway(templates_dir), clock=clock, new_id=new_id,
     )
-    repository = InMemoryRepository()
+    # Local workspace: projects whose profile carries repository.path get
+    # real filesystem repository/sandbox adapters (agents read the actual
+    # files, change sets land in the folder, test commands really run);
+    # every other project keeps the in-memory/scripted fakes.
+    workspace = LocalWorkspace({
+        profile.id: root_path
+        for profile in projects.values()
+        if (root_path := _profile_root(profile)) is not None
+    })
+    repository = WorkspaceRepository(workspace, InMemoryRepository())
+    sandbox = WorkspaceSandbox(workspace, ScriptedSandbox())
     registry = AgentRegistry()
     registry.register(build_spec_agent(runtime, platform, templates_dir))
     registry.register(build_plan_agent(runtime, platform, templates_dir))
     registry.register(build_task_agent(runtime, platform, templates_dir))
-    registry.register(build_implement_agent(runtime, platform, templates_dir, repository))
+    registry.register(_WorkspaceBindingAgent(
+        build_implement_agent(runtime, platform, templates_dir, repository),
+        workspace,
+    ))
     registry.register(build_review_agent(runtime, platform, templates_dir))
-    registry.register(build_test_agent(runtime, platform, templates_dir, ScriptedSandbox()))
-    registry.register(build_fix_agent(runtime, platform, templates_dir, repository))
+    registry.register(_WorkspaceBindingAgent(
+        build_test_agent(runtime, platform, templates_dir, sandbox),
+        workspace,
+    ))
+    registry.register(_WorkspaceBindingAgent(
+        build_fix_agent(runtime, platform, templates_dir, repository),
+        workspace,
+    ))
 
     store = SQLiteExecutionStore(db_path)
     metrics = _load_metrics()
@@ -345,12 +426,24 @@ def build_demo(
         events=metrics if hasattr(metrics, "publish") else None,
         metrics=metrics if hasattr(metrics, "record") else None,
     )
+    def on_created(profile: ProjectProfile) -> None:
+        _project_writer(projects_dir)(profile)
+        workspace.set_root(profile.id, _profile_root(profile))
+
+    def on_updated(profile: ProjectProfile) -> None:
+        _project_writer(projects_dir, overwrite=True)(profile)
+        workspace.set_root(profile.id, _profile_root(profile))
+
+    def on_deleted(project_id: str) -> None:
+        _project_remover(projects_dir)(project_id)
+        workspace.remove(project_id)
+
     service = DemoFactoryService(
         engine, projects=projects, metrics=metrics, store=store,
         reviewer="dashboard", clock=clock,
-        on_project_created=_project_writer(projects_dir),
-        on_project_updated=_project_writer(projects_dir, overwrite=True),
-        on_project_deleted=_project_remover(projects_dir),
+        on_project_created=on_created,
+        on_project_updated=on_updated,
+        on_project_deleted=on_deleted,
     )
     return service, engine, store
 

@@ -10,14 +10,17 @@ const toInput = (p: Project): ProjectProfileInput => ({
   id: p.id,
   name: p.name,
   description: p.description,
-  repository: { provider: p.repositoryProvider.toLowerCase() },
+  repository: { provider: p.repositoryProvider.toLowerCase(), path: p.repositoryPath },
   technology: {
     backend: p.technologyGroups.backend ?? [],
     frontend: p.technologyGroups.frontend ?? [],
   },
   workflow: p.workflow || 'software-development',
   enabledSkills: p.enabledSkills,
-  configuration: p.approvalChannel ? { approval: { channel: p.approvalChannel } } : {},
+  configuration: {
+    ...(p.approvalChannel ? { approval: { channel: p.approvalChannel } } : {}),
+    ...(p.testCommands.length ? { testCommands: p.testCommands } : {}),
+  },
 });
 
 export function ProjectsPage() {

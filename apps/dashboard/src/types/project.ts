@@ -5,6 +5,10 @@ export interface Project {
   id: string;
   name: string;
   repositoryProvider: string;
+  /** Local folder the agents work in (profile `repository.path`); '' = none. */
+  repositoryPath: string;
+  /** Configured test commands as argv lists (profile `configuration.testCommands`). */
+  testCommands: string[][];
   technologies: string[];
   description: string;
   workflow: string;
@@ -22,9 +26,9 @@ export interface ProjectProfileInput {
   id: string;
   name: string;
   description?: string;
-  repository: { provider: string };
+  repository: { provider: string; path?: string };
   technology: { backend: string[]; frontend: string[] };
   workflow: string;
   enabledSkills: string[];
-  configuration: { approval?: { channel: string } };
+  configuration: { approval?: { channel: string }; testCommands?: string[][] };
 }
