@@ -205,3 +205,29 @@ def test_language_packs_precede_project_rules(tmp_path: Path):
     )
     text = service._review_rules("p")
     assert text.index("# Java Pack") < text.index("project rule")
+
+
+def test_retry_run_replays_the_original_inputs(tmp_path: Path):
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    run = service.start_run(
+        "retry-task", "vhpc",
+        inputs={"spec": {"requirement": "Retry me"}},
+        context={"title": "Retry demo", "priority": "HIGH"},
+    )
+    engine.cancel(run.id)
+    view = service.retry_run(run.id)
+    assert view is not None
+    assert view["taskId"] == "retry-task" and view["id"] != run.id
+    retried = engine.get(view["id"])
+    assert retried.inputs["spec"]["requirement"] == "Retry me"
+    assert retried.context["title"] == "Retry demo"
+    assert retried.context["priority"] == "HIGH"
+
+
+def test_retry_run_rejects_a_run_that_is_still_active(tmp_path: Path):
+    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    run = service.start_run(
+        "active-task", "vhpc", inputs={"spec": {"requirement": "Still running"}},
+    )
+    with pytest.raises(ValueError, match="still active"):
+        service.retry_run(run.id)

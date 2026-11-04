@@ -1174,3 +1174,31 @@ class FactoryService:
     def cancel_run(self, run_id: str) -> dict[str, Any] | None:
         self._engine.cancel(run_id)
         return self.get_workflow(run_id)
+
+    def retry_run(self, run_id: str) -> dict[str, Any] | None:
+        """Start a fresh run of a finished run's task, with its original inputs.
+
+        A run is an immutable execution record and FAILED is terminal, so
+        "run it again" means a new execution of the same task rather than
+        resurrecting the old one. The engine persists each run's inputs, so
+        the retry replays exactly what the original run was given — the
+        requirement included — while the project context (test commands,
+        review rules) is rebuilt from the project's current configuration.
+        Only terminal runs qualify; a live run raises ``ValueError``.
+        """
+        run = self._engine.get(run_id)
+        if run.state.stage not in _TERMINAL_STAGES:
+            raise ValueError(
+                f"Run '{run_id}' is still active at stage {run.state.stage}; "
+                "only a completed, failed or cancelled run can be run again",
+            )
+        context = {
+            key: run.context[key]
+            for key in ("title", "priority", "workflowType")
+            if isinstance(run.context, Mapping) and run.context.get(key) is not None
+        }
+        new_run = self.start_run(
+            run.task_id, run.project_id,
+            inputs=dict(run.inputs), context=context or None,
+        )
+        return self.get_workflow(new_run.id)

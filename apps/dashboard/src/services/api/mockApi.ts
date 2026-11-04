@@ -120,6 +120,31 @@ export const mockApi: FactoryApi = {
     return delay(workflow);
   },
 
+  retryRun: (runId) => {
+    const previous = workflowStore.find((w) => w.id === runId);
+    if (!previous) return Promise.reject(new Error(`Run '${runId}' not found`));
+    if (!['FAILED', 'CANCELLED', 'COMPLETED'].includes(previous.status)) {
+      return Promise.reject(new Error('Only a finished run can be run again'));
+    }
+    const now = new Date().toISOString();
+    const workflow: Workflow = {
+      ...structuredClone(previous),
+      id: `wf-${previous.taskId.toLowerCase()}-${Date.now()}`,
+      status: 'RUNNING',
+      steps: freshSteps(),
+      startedAt: now,
+      updatedAt: now,
+      artifacts: undefined,
+    };
+    workflowStore.unshift(workflow);
+    const task = taskStore.find((t) => t.id === previous.taskId);
+    if (task) {
+      task.status = 'NEW';
+      task.updatedAt = now;
+    }
+    return delay(workflow);
+  },
+
   listProjects: () => delay(projectStore),
   createProject: (input) => {
     if (projectStore.some((p) => p.id === input.id)) {
