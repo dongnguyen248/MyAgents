@@ -1,0 +1,911 @@
+"""Framework-free dashboard service over the orchestrator.
+
+``FactoryService`` maps the orchestrator's contract-shaped views onto the
+exact JSON shapes the dashboard frontend consumes (see
+``apps/dashboard/src/types/*.ts``). It contains no web-framework imports so it
+can be unit-tested (and reused) without FastAPI installed.
+
+Lossy points of the mapping are documented in ``src/asf/api/README.md``.
+Time is never read from the system clock here: timestamps come from the
+runs themselves or from the injected ``clock`` callable.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from datetime import datetime, timedelta, timezone
+from typing import Any, Protocol
+
+from asf.approval.errors import ApprovalError
+from asf.configuration.project import ProjectProfile
+from asf.contracts.models import ActivityEvent
+from asf.orchestrator.engine import Orchestrator
+from asf.orchestrator.execution import WorkflowExecution
+from asf.state_machine.graph import build_graph
+from asf.state_machine.status import kind_of
+from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
+
+
+class MetricsProtocol(Protocol):
+    """The fixed evaluation interface the service programs against.
+
+    Implementations are supplied by the assembly (``asf.evaluation`` or a
+    test fake); this module deliberately does not import that package.
+    """
+
+    def agent_metrics(self, agent_id: str) -> dict[str, Any]: ...
+
+    def overview(self) -> dict[str, Any]: ...
+
+    def events(self) -> list[ActivityEvent]: ...
+
+    def project_outcomes(self, project_id: str) -> dict[str, Any]: ...
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+_AGENT_STATUS_MAP = {
+    "RUNNING": "BUSY",
+    "IDLE": "IDLE",
+    "WAITING": "WAITING",
+    "ERROR": "ERROR",
+    "DISABLED": "DISABLED",
+    "OFFLINE": "OFFLINE",
+}
+
+_RESULT_STATUS_MAP = {
+    "SUCCESS": "Completed",
+    "FAILED": "Failed",
+    "REJECTED": "Failed",
+    "CANCELLED": "Cancelled",
+    "WAITING": "Running",
+}
+
+_TASK_STATUSES = {
+    "NEW",
+    "SPEC_DRAFT", "SPEC_REVIEW", "SPEC_REJECTED", "SPEC_APPROVED",
+    "PLAN_DRAFT", "PLAN_REVIEW", "PLAN_REJECTED", "PLAN_APPROVED",
+    "TASK_DRAFT", "TASK_REVIEW", "TASK_REJECTED", "TASK_APPROVED",
+    "IMPLEMENTING", "CODE_REVIEW", "TESTING", "CI", "READY_TO_MERGE",
+    "COMPLETED", "FAILED", "CANCELLED",
+}
+
+_WORKFLOW_TYPES = {"feature-development", "bug-fix", "refactoring"}
+_PRIORITIES = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+_APPROVAL_TYPES = {"SPEC", "PLAN", "TASK", "CODE_REVIEW", "DEPLOYMENT"}
+_TERMINAL_STAGES = {"COMPLETED", "FAILED", "CANCELLED"}
+
+_DASHBOARD_STEP_IDS = {"spec", "plan", "task", "implementation", "code_review",
+                       "testing", "ci", "merge"}
+_STEP_ID_BY_STEP_ID = {
+    "spec": "spec", "plan": "plan", "task": "task", "implement": "implementation",
+    "review": "code_review", "test": "testing", "ci": "ci", "merge": "merge",
+}
+_STEP_ID_BY_STAGE = {
+    "SPEC": "spec", "PLAN": "plan", "TASK": "task", "IMPLEMENTING": "implementation",
+    "CODE_REVIEW": "code_review", "TESTING": "testing", "CI": "ci",
+    "READY_TO_MERGE": "merge",
+}
+_APPROVAL_STEP_IDS = {"spec": "spec_approval", "plan": "plan_approval", "task": "task_approval"}
+
+_ZERO_AGENT_METRICS: dict[str, Any] = {
+    "total": 0, "completed": 0, "running": 0, "failed": 0, "cancelled": 0,
+    "successRate": 0.0, "avgDurationSec": 0.0, "avgRevisions": 0.0,
+    "humanApprovalRate": 0.0, "testPassRate": 0.0, "ciPassRate": 0.0,
+}
+
+_EMPTY_OVERVIEW: dict[str, Any] = {
+    "daily": [],
+    "human": {
+        "approvalRate": 0.0, "rejectionRate": 0.0, "avgRevisions": 0.0,
+        "avgApprovalMinutes": 0.0, "daily": [],
+    },
+    "quality": {
+        "codeReviewRejectionRate": 0.0, "testPassRate": 0.0, "ciPassRate": 0.0,
+        "reworkRate": 0.0, "daily": [],
+    },
+    "agents": [],
+}
+
+# Dashboard decision kind -> (engine decision, dashboard approval status)
+_DECISIONS = {
+    "APPROVE": ("APPROVED", "APPROVED"),
+    "REJECT": ("REJECTED", "REJECTED"),
+    "REQUEST_CHANGES": ("REQUEST_CHANGES", "CHANGES_REQUESTED"),
+}
+
+
+def _iso(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _camelize(key: str) -> str:
+    head, _, rest = key.partition("_")
+    while rest:
+        nxt, _, rest = rest.partition("_")
+        head += nxt[:1].upper() + nxt[1:]
+    return head
+
+
+class FactoryService:
+    """Dashboard-shaped read/write views over one ``Orchestrator`` instance."""
+
+    def __init__(
+        self,
+        engine: Orchestrator,
+        *,
+        projects: Mapping[str, Any],
+        metrics: MetricsProtocol | None = None,
+        store: Any = None,
+        reviewer: str = "dashboard",
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._engine = engine
+        self._metrics = metrics
+        self._store = store
+        self._reviewer = reviewer
+        # The assembly injects a clock; the engine's own clock is the fallback
+        # so this service still never reads the system clock directly.
+        self._clock = clock or getattr(engine, "_clock", None)
+        self._projects = {
+            pid: self._normalize_project(pid, profile) for pid, profile in projects.items()
+        }
+        self._tracked: list[str] = []
+        self._store_runs: dict[str, WorkflowExecution] = {}
+
+    # ------------------------------------------------------------------
+    # project normalization
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalize_project(project_id: str, profile: Any) -> dict[str, Any]:
+        if isinstance(profile, ProjectProfile):
+            technologies: list[str] = []
+            for values in profile.technology.values():
+                for value in values if isinstance(values, list) else [values]:
+                    if isinstance(value, str) and value not in technologies:
+                        technologies.append(value)
+            return {
+                "id": profile.id,
+                "name": profile.name,
+                "repositoryProvider": str(profile.repository.get("provider", "")),
+                "technologies": technologies,
+            }
+        data = dict(profile)
+        repository = data.get("repository") or {}
+        provider = data.get("repositoryProvider") or repository.get("provider", "")
+        raw_technologies = data.get("technologies")
+        technologies = (
+            [value for value in raw_technologies if isinstance(value, str)]
+            if isinstance(raw_technologies, list)
+            else []
+        )
+        if not isinstance(raw_technologies, list):
+            technology = data.get("technology") or {}
+            if isinstance(technology, Mapping):
+                for values in technology.values():
+                    for value in values if isinstance(values, list) else [values]:
+                        if isinstance(value, str) and value not in technologies:
+                            technologies.append(value)
+        return {
+            "id": str(data.get("id", project_id)),
+            "name": str(data.get("name", project_id)),
+            "repositoryProvider": str(provider),
+            "technologies": [str(item) for item in technologies],
+        }
+
+    # ------------------------------------------------------------------
+    # run discovery
+    # ------------------------------------------------------------------
+    def track(self, run_id: str) -> WorkflowExecution | None:
+        """Register an externally started run so it appears in the views."""
+        if run_id not in self._tracked:
+            self._tracked.append(run_id)
+        try:
+            return self._engine.get(run_id)
+        except Exception:
+            return self._store_runs.get(run_id)
+
+    def _discover_store_runs(self) -> None:
+        if self._store is None:
+            return
+        for project_id in self._projects:
+            try:
+                executions = self._store.list_executions(project_id)
+            except Exception:  # nosec B112
+                continue
+            for run in executions:
+                self._store_runs[run.id] = run
+                if run.id not in self._tracked:
+                    self._tracked.append(run.id)
+
+    def _runs(self) -> list[WorkflowExecution]:
+        self._discover_store_runs()
+        found: dict[str, WorkflowExecution] = {}
+        for run_id in self._tracked:
+            try:
+                found[run_id] = self._engine.get(run_id)
+            except Exception:
+                if run_id in self._store_runs:
+                    found[run_id] = self._store_runs[run_id]
+        for run_id, run in self._store_runs.items():
+            found.setdefault(run_id, run)
+        return sorted(found.values(), key=lambda run: (run.started_at, run.id))
+
+    # ------------------------------------------------------------------
+    # engine internals: registry / definition / stage helpers
+    # ------------------------------------------------------------------
+    def _metadata_list(self) -> list[Any]:
+        registry = getattr(self._engine, "_registry", None)
+        return list(registry.list()) if registry is not None else []
+
+    def _metadata(self, agent_id: str) -> Any | None:
+        return next((m for m in self._metadata_list() if m.id == agent_id), None)
+
+    def _definition(self, run: WorkflowExecution | None = None) -> WorkflowDefinition | None:
+        definition = getattr(self._engine, "_definition", None)
+        if isinstance(definition, WorkflowDefinition):
+            return definition
+        if run is not None and run.definition:
+            try:
+                return WorkflowDefinition.model_validate(run.definition)
+            except Exception:
+                return None
+        return None
+
+    def _step_for_stage(
+        self, run: WorkflowExecution, stage: str,
+    ) -> WorkflowStepDef | None:
+        definition = self._definition(run)
+        if definition is None:
+            return None
+        for step in definition.steps:
+            if stage in step.generated_stages():
+                return step
+        return None
+
+    def _agent_id_for_type(self, agent_type: str | None) -> str | None:
+        if agent_type is None:
+            return None
+        metadata = next((m for m in self._metadata_list() if m.type == agent_type), None)
+        return metadata.id if metadata else None
+
+    def _agent_type_for_id(self, agent_id: str | None) -> str | None:
+        if agent_id is None:
+            return None
+        metadata = self._metadata(agent_id)
+        return metadata.type if metadata else None
+
+    def _stage_kind(self, run: WorkflowExecution, stage: str) -> str | None:
+        definition = self._definition(run)
+        if definition is None:
+            return None
+        try:
+            return str(kind_of(build_graph(definition), stage))
+        except Exception:
+            return None
+
+    def _now(self) -> datetime | None:
+        return self._clock() if self._clock is not None else None
+
+    # ------------------------------------------------------------------
+    # agents
+    # ------------------------------------------------------------------
+    def _agent_metrics(self, agent_id: str) -> dict[str, Any]:
+        raw: Any = None
+        if self._metrics is not None and hasattr(self._metrics, "agent_metrics"):
+            try:
+                raw = self._metrics.agent_metrics(agent_id)
+            except Exception:
+                raw = None
+        if not isinstance(raw, Mapping):
+            return dict(_ZERO_AGENT_METRICS)
+        view = dict(_ZERO_AGENT_METRICS)
+        for key, value in raw.items():
+            camel = _camelize(str(key))
+            if camel in view:
+                view[camel] = value
+        if "healthScore" in raw:
+            view["healthScore"] = raw["healthScore"]
+        return view
+
+    def _agent_view(self, metadata: Any) -> dict[str, Any]:
+        config = metadata.configuration or {}
+        runs = self._runs()
+        own = [
+            (run, result) for run in runs for result in run.results
+            if result.agent_id == metadata.id
+        ]
+        last_activity = max((run.updated_at for run, _ in own), default=None)
+        current: WorkflowExecution | None = None
+        for run in runs:
+            if run.state.stage in _TERMINAL_STAGES:
+                continue
+            step = self._step_for_stage(run, run.state.stage)
+            if step is not None and step.agent_type == metadata.type:
+                current = run
+                break
+        status = _AGENT_STATUS_MAP.get(str(metadata.status), "OFFLINE")
+        if current is not None and status == "IDLE":
+            status = "BUSY"
+        view: dict[str, Any] = {
+            "id": metadata.id,
+            "name": metadata.name,
+            "type": metadata.type,
+            "status": status,
+            "version": metadata.version,
+            "model": str(config.get("model") or config.get("modelProfile") or "default"),
+            "lastActivityAt": _iso(last_activity or self._now() or _EPOCH),
+            "metrics": self._agent_metrics(metadata.id),
+        }
+        if current is not None:
+            view["currentTaskId"] = current.task_id
+            view["currentTaskTitle"] = self._task_title(current)
+            view["currentProjectId"] = current.project_id
+            view["startedAt"] = _iso(current.started_at)
+        return view
+
+    def list_agents(self) -> list[dict[str, Any]]:
+        return [self._agent_view(metadata) for metadata in self._metadata_list()]
+
+    def get_agent(self, agent_id: str) -> dict[str, Any] | None:
+        metadata = self._metadata(agent_id)
+        return self._agent_view(metadata) if metadata is not None else None
+
+    def get_agent_config(self, agent_id: str) -> dict[str, Any] | None:
+        metadata = self._metadata(agent_id)
+        if metadata is None:
+            return None
+        config = metadata.configuration or {}
+        agent = self._agent_view(metadata)
+        retry = config.get("retryPolicy") or {}
+        if not isinstance(retry, Mapping):
+            retry = {}
+        return {
+            "agentId": metadata.id,
+            "name": metadata.name,
+            "type": metadata.type,
+            "enabled": str(metadata.status) != "DISABLED",
+            "model": agent["model"],
+            "modelVersion": str(config.get("modelVersion", "latest")),
+            "systemPrompt": str(config.get("systemPrompt", "")),
+            "skills": list(config.get("skills") or metadata.capabilities),
+            "tools": list(config.get("tools") or []),
+            "allowedProjectIds": list(
+                config.get("allowedProjectIds") or self._projects.keys()
+            ),
+            "maxConcurrentTasks": int(config.get("maxConcurrentTasks", 1)),
+            "timeoutSeconds": int(config.get("timeoutSeconds", 1800)),
+            "retryPolicy": {
+                "maxRetries": int(
+                    retry.get("maxRetries", retry.get("maxAttempts", 0))
+                ),
+                "backoff": str(retry.get("backoff", "none")),
+                "backoffSeconds": int(retry.get("backoffSeconds", 0)),
+            },
+        }
+
+    def get_agent_runs(self, agent_id: str) -> list[dict[str, Any]]:
+        if self._metadata(agent_id) is None:
+            return []
+        entries: list[dict[str, Any]] = []
+        for run in self._runs():
+            for result in run.results:
+                if result.agent_id != agent_id:
+                    continue
+                entries.append({
+                    "taskId": run.task_id,
+                    "projectId": run.project_id,
+                    "title": run.task_id,
+                    "status": _RESULT_STATUS_MAP.get(str(result.status), "Running"),
+                    "startedAt": _iso(run.started_at),
+                    "durationSec": float(result.metrics.duration_seconds),
+                })
+        return entries
+
+    # ------------------------------------------------------------------
+    # tasks
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _task_title(run: WorkflowExecution) -> str:
+        title = run.context.get("title") if isinstance(run.context, Mapping) else None
+        return title if isinstance(title, str) and title else run.task_id
+
+    def _workflow_type(self, run: WorkflowExecution) -> str:
+        value = run.context.get("workflowType") if isinstance(run.context, Mapping) else None
+        return value if value in _WORKFLOW_TYPES else "feature-development"
+
+    def _task_status(self, run: WorkflowExecution) -> str:
+        stage = run.state.stage
+        if stage in _TASK_STATUSES:
+            return stage
+        kind = self._stage_kind(run, stage)
+        if kind == "INITIAL":
+            return "NEW"
+        if kind == "ESCALATED":
+            candidate = stage.removesuffix("_ESCALATED") + "_REVIEW"
+            return candidate if candidate in _TASK_STATUSES else "IMPLEMENTING"
+        if kind in _TERMINAL_STAGES:
+            return str(kind)
+        return "IMPLEMENTING"
+
+    def _task_view(self, run: WorkflowExecution) -> dict[str, Any]:
+        step = self._step_for_stage(run, run.state.stage)
+        assigned = self._agent_id_for_type(step.agent_type) if step is not None else None
+        priority = run.context.get("priority") if isinstance(run.context, Mapping) else None
+        if priority == "NORMAL" or priority not in _PRIORITIES:
+            priority = "MEDIUM"
+        view: dict[str, Any] = {
+            "id": run.task_id,
+            "title": self._task_title(run),
+            "projectId": run.project_id,
+            "workflowType": self._workflow_type(run),
+            "status": self._task_status(run),
+            "priority": priority,
+            "createdAt": _iso(run.started_at),
+            "updatedAt": _iso(run.updated_at),
+            "revisions": sum(run.state.revisions.values()),
+        }
+        if assigned is not None:
+            view["assignedAgentId"] = assigned
+        if run.state.stage in _TERMINAL_STAGES:
+            view["durationSec"] = max(
+                0.0, (run.updated_at - run.started_at).total_seconds()
+            )
+        return view
+
+    def list_tasks(
+        self, filter: Mapping[str, Any] | None = None, **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        criteria: dict[str, Any] = {**(filter or {}), **kwargs}
+        latest: dict[str, WorkflowExecution] = {}
+        for run in sorted(self._runs(), key=lambda item: item.updated_at):
+            latest[run.task_id] = run
+        views = [self._task_view(run) for run in latest.values()]
+        if criteria.get("projectId"):
+            views = [v for v in views if v["projectId"] == criteria["projectId"]]
+        if criteria.get("agentId"):
+            views = [v for v in views if v.get("assignedAgentId") == criteria["agentId"]]
+        if criteria.get("status"):
+            views = [v for v in views if v["status"] == criteria["status"]]
+        if criteria.get("workflowType"):
+            views = [v for v in views if v["workflowType"] == criteria["workflowType"]]
+        if criteria.get("priority"):
+            views = [v for v in views if v["priority"] == criteria["priority"]]
+        if criteria.get("sinceHours"):
+            reference = self._now() or max(
+                (run.updated_at for run in latest.values()), default=None
+            )
+            if reference is not None:
+                cutoff = reference - timedelta(hours=float(criteria["sinceHours"]))
+                views = [
+                    v for v in views
+                    if datetime.fromisoformat(v["createdAt"]) >= cutoff
+                ]
+        return sorted(views, key=lambda view: view["updatedAt"], reverse=True)
+
+    def get_task(self, task_id: str) -> dict[str, Any] | None:
+        return next((v for v in self.list_tasks() if v["id"] == task_id), None)
+
+    # ------------------------------------------------------------------
+    # workflows
+    # ------------------------------------------------------------------
+    def _is_review_stage(self, run: WorkflowExecution) -> bool:
+        """True for generated ``<STEP>_REVIEW`` stages of approval steps.
+
+        Note the code-review step's plain stage is literally ``CODE_REVIEW``,
+        so a naive ``endswith("_REVIEW")`` check would misclassify it; the
+        stage must belong to a step that actually requires approval.
+        """
+        step = self._step_for_stage(run, run.state.stage)
+        return bool(
+            step is not None and step.requires_approval
+            and run.state.stage == f"{step.stage}_REVIEW"
+        )
+
+    def _workflow_status(self, run: WorkflowExecution) -> str:
+        try:
+            raw = str(self._engine.workflow_run(run.id)["status"])
+        except Exception:
+            raw = "COMPLETED" if run.state.stage == "COMPLETED" else "RUNNING"
+        if raw in _TERMINAL_STAGES:
+            return raw
+        if self._is_review_stage(run):
+            return "WAITING_APPROVAL"
+        return "RUNNING"
+
+    def _step_states(
+        self, run: WorkflowExecution, definition: WorkflowDefinition, status: str,
+    ) -> list[dict[str, Any]]:
+        sequence = ["NEW"]
+        for step in definition.steps:
+            sequence.extend(step.generated_stages())
+        sequence.extend(["COMPLETED", "FAILED", "CANCELLED"])
+        stage = run.state.stage
+        current_index = sequence.index(stage) if stage in sequence else None
+        produced = {artifact.type for artifact in run.artifact_history.values()}
+        steps: list[dict[str, Any]] = []
+        failure_marked = False
+        for step in definition.steps:
+            main_id = _STEP_ID_BY_STEP_ID.get(step.id) or _STEP_ID_BY_STAGE.get(step.stage)
+            if main_id is None or main_id not in _DASHBOARD_STEP_IDS:
+                continue
+            stages = step.generated_stages()
+            indexes = [sequence.index(name) for name in stages]
+            if status == "COMPLETED":
+                main_state = "done"
+            elif stage in stages:
+                if stage.endswith("_REJECTED"):
+                    main_state = "rejected"
+                elif step.requires_approval and stage.endswith(("_REVIEW", "_APPROVED")):
+                    main_state = "done"
+                else:
+                    main_state = "active"
+            elif status == "FAILED":
+                if step.produces and set(step.produces) <= produced:
+                    main_state = "done"
+                elif not failure_marked:
+                    main_state, failure_marked = "failed", True
+                else:
+                    main_state = "pending"
+            elif current_index is not None:
+                main_state = "done" if max(indexes) < current_index else "pending"
+            elif status == "CANCELLED":
+                main_state = (
+                    "done" if step.produces and set(step.produces) <= produced
+                    else "cancelled"
+                )
+            else:
+                main_state = "pending"
+            steps.append({"id": main_id, "label": step.name, "state": main_state})
+            approval_id = _APPROVAL_STEP_IDS.get(main_id)
+            if step.requires_approval and approval_id is not None:
+                steps.append({
+                    "id": approval_id,
+                    "label": f"{step.name} approval",
+                    "state": self._approval_step_state(
+                        step, stage, current_index, sequence, status,
+                    ),
+                })
+        return steps
+
+    @staticmethod
+    def _approval_step_state(
+        step: WorkflowStepDef, stage: str, current_index: int | None,
+        sequence: list[str], status: str,
+    ) -> str:
+        if status == "COMPLETED":
+            return "done"
+        if stage == f"{step.stage}_REVIEW" or stage == f"{step.stage}_ESCALATED":
+            return "active"
+        if stage == f"{step.stage}_REJECTED":
+            return "rejected"
+        if stage == f"{step.stage}_APPROVED":
+            return "done"
+        review_index = sequence.index(f"{step.stage}_REVIEW")
+        if current_index is not None:
+            return "done" if current_index > review_index else "pending"
+        return "pending"
+
+    def _workflow_view(self, run: WorkflowExecution) -> dict[str, Any]:
+        definition = self._definition(run)
+        status = self._workflow_status(run)
+        steps = self._step_states(run, definition, status) if definition else []
+        return {
+            "id": run.id,
+            "taskId": run.task_id,
+            "title": self._task_title(run),
+            "projectId": run.project_id,
+            "type": self._workflow_type(run),
+            "status": status,
+            "steps": steps,
+            "startedAt": _iso(run.started_at),
+            "updatedAt": _iso(run.updated_at),
+        }
+
+    def list_workflows(self) -> list[dict[str, Any]]:
+        return [self._workflow_view(run) for run in self._runs()]
+
+    def get_workflow(self, workflow_id: str) -> dict[str, Any] | None:
+        runs = self._runs()
+        run = next((item for item in runs if item.id == workflow_id), None)
+        if run is None:
+            by_task = [item for item in runs if item.task_id == workflow_id]
+            run = by_task[-1] if by_task else None
+        return self._workflow_view(run) if run is not None else None
+
+    # ------------------------------------------------------------------
+    # projects
+    # ------------------------------------------------------------------
+    def list_projects(self) -> list[dict[str, Any]]:
+        runs = self._runs()
+        agent_ids = [metadata.id for metadata in self._metadata_list()]
+        projects: list[dict[str, Any]] = []
+        for project_id, profile in self._projects.items():
+            own = [run for run in runs if run.project_id == project_id]
+            completed = sum(run.state.stage == "COMPLETED" for run in own)
+            failed = sum(run.state.stage == "FAILED" for run in own)
+            finished = completed + failed
+            metrics: dict[str, Any] = {
+                "activeAgents": len({
+                    result.agent_id for run in own for result in run.results
+                }),
+                "running": sum(run.state.stage not in _TERMINAL_STAGES for run in own),
+                "completed": completed,
+                "failed": failed,
+                "successRate": completed / finished if finished else 0.0,
+                "pendingApprovals": sum(
+                    self._is_review_stage(run) for run in own
+                ),
+            }
+            if self._metrics is not None and hasattr(self._metrics, "project_outcomes"):
+                try:
+                    outcomes = self._metrics.project_outcomes(project_id)
+                except Exception:
+                    outcomes = None
+                if isinstance(outcomes, Mapping):
+                    for key, value in outcomes.items():
+                        camel = _camelize(str(key))
+                        if camel in metrics and isinstance(value, (int, float)):
+                            metrics[camel] = value
+            projects.append({
+                "id": profile["id"],
+                "name": profile["name"],
+                "repositoryProvider": profile["repositoryProvider"],
+                "technologies": profile["technologies"],
+                "agentIds": agent_ids,
+                "ci": "UNKNOWN",
+                "ciFailures24h": 0,
+                "metrics": metrics,
+            })
+        return projects
+
+    # ------------------------------------------------------------------
+    # approvals
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _artifact_summary(artifact: Any | None) -> str:
+        if artifact is None:
+            return ""
+        content = artifact.content
+        text: str | None = None
+        if isinstance(content, Mapping):
+            candidate = content.get("text")
+            text = candidate if isinstance(candidate, str) else None
+        elif isinstance(content, str):
+            text = content
+        if not text:
+            return ""
+        for line in text.splitlines():
+            if line.strip():
+                return line.strip().lstrip("#").strip()
+        return ""
+
+    def _approval_view(self, run: WorkflowExecution, request: Any) -> dict[str, Any]:
+        artifact = run.artifact_history.get(request.artifact_id)
+        if artifact is not None:
+            requested_by = artifact.created_by
+            artifact_name = artifact.name
+        else:
+            step_id = (request.metadata or {}).get("stepId")
+            definition = self._definition(run)
+            step = next(
+                (item for item in definition.steps if item.id == step_id), None,
+            ) if definition is not None else None
+            requested_by = (
+                self._agent_id_for_type(step.agent_type) if step is not None else None
+            ) or request.requested_by
+            artifact_name = request.artifact_id
+        requested_at = getattr(request, "requested_at", None) or getattr(
+            request, "created_at", None,
+        )
+        return {
+            "id": request.id,
+            "projectId": run.project_id,
+            "taskId": run.task_id,
+            "type": request.type if request.type in _APPROVAL_TYPES else "SPEC",
+            "status": "PENDING",
+            "requestedAt": _iso(requested_at or run.updated_at),
+            "requestedByAgentId": requested_by,
+            "artifact": artifact_name,
+            "summary": self._artifact_summary(artifact),
+            "comments": [],
+        }
+
+    def list_approvals(self) -> list[dict[str, Any]]:
+        approvals: list[dict[str, Any]] = []
+        for run in self._runs():
+            if run.approval_id is None:
+                continue
+            try:
+                request = self._engine.pending_approval(run.id)
+            except (ApprovalError, KeyError, ValueError):
+                continue
+            approvals.append(self._approval_view(run, request))
+        return approvals
+
+    def decide_approval(
+        self, approval_id: str, *, decision: str, comment: str = "",
+    ) -> dict[str, Any]:
+        if decision not in (*_DECISIONS, "COMMENT"):
+            raise ValueError(f"Unknown approval decision: {decision}")
+        run = next(
+            (item for item in self._runs() if item.approval_id == approval_id), None,
+        )
+        if run is None:
+            raise ApprovalError(
+                "NOT_FOUND", "Approval is not pending for any known run",
+            )
+        request = self._engine.pending_approval(run.id)
+        view = self._approval_view(run, request)
+        if decision == "COMMENT":
+            if comment:
+                view["comments"].append({
+                    "author": self._reviewer,
+                    "at": _iso(self._now() or run.updated_at),
+                    "text": comment,
+                })
+            return view
+        engine_decision, dashboard_status = _DECISIONS[decision]
+        artifact = run.artifact_history.get(request.artifact_id)
+        producing_agent = artifact.created_by if artifact is not None else None
+        self._engine.decide(
+            run.id, reviewer=self._reviewer, decision=engine_decision,  # type: ignore[arg-type]
+            comment=comment, expected_approval_id=approval_id,
+        )
+        # Metrics are keyed by agent id (as in AgentResult.agent_id), so the
+        # approval outcome must be recorded under the same id, not the type.
+        self._record_approval_decision(run, producing_agent, engine_decision)
+        decided_run = self._engine.get(run.id)
+        # A multi-approval quorum may leave the same request still pending.
+        view["status"] = (
+            "PENDING" if decided_run.approval_id == approval_id else dashboard_status
+        )
+        if comment:
+            view["comments"].append({
+                "author": self._reviewer,
+                "at": _iso(self._now() or decided_run.updated_at),
+                "text": comment,
+            })
+        return view
+
+    def _record_approval_decision(
+        self, run: WorkflowExecution, agent_id: str | None, decision: str,
+    ) -> None:
+        if not agent_id:
+            return
+        if self._metrics is None or not hasattr(self._metrics, "record_approval_decision"):
+            return
+        record = getattr(self._metrics, "record_approval_decision")
+        try:
+            record(
+                project_id=run.project_id, task_id=run.task_id,
+                agent_id=agent_id, decision=decision, at=None,
+            )
+        except TypeError:
+            try:
+                record(
+                    project_id=run.project_id, task_id=run.task_id,
+                    agent_id=agent_id, decision=decision,
+                )
+            except Exception:  # nosec B110
+                pass
+        except Exception:  # nosec B110
+            pass
+
+    # ------------------------------------------------------------------
+    # activity
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _activity_view(event: ActivityEvent) -> dict[str, Any]:
+        event_type = event.event_type or ""
+        metadata = event.metadata or {}
+        if event_type.startswith("APPROVAL"):
+            source_kind = "approval"
+        elif str(metadata.get("source", "")).lower() in {
+            "integration", "ci", "gitlab", "github",
+        } or event_type.startswith(("CI_", "GIT_")):
+            source_kind = "integration"
+        elif event.agent_id:
+            source_kind = "agent"
+        else:
+            source_kind = "orchestrator"
+        source_id = event.agent_id or event.workflow_id or "orchestrator"
+        if "FAILED" in event_type or "ERROR" in event_type:
+            level = "error"
+        elif "REJECT" in event_type or "ESCALAT" in event_type:
+            level = "warn"
+        elif "COMPLETED" in event_type or "APPROVED" in event_type:
+            level = "success"
+        else:
+            level = "info"
+        view: dict[str, Any] = {
+            "id": event.id,
+            "timestamp": _iso(event.timestamp),
+            "sourceKind": source_kind,
+            "sourceId": source_id,
+            "sourceLabel": source_id,
+            "level": level,
+            "message": event.message or event_type,
+        }
+        if event.project_id:
+            view["projectId"] = event.project_id
+        if event.task_id:
+            view["taskId"] = event.task_id
+        return view
+
+    def list_activity(
+        self, filter: Mapping[str, Any] | None = None, **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        criteria: dict[str, Any] = {**(filter or {}), **kwargs}
+        events: dict[str, ActivityEvent] = {}
+        for run in self._runs():
+            for observation in run.observations:
+                if observation.event is not None:
+                    events.setdefault(observation.event.id, observation.event)
+        if self._metrics is not None and hasattr(self._metrics, "events"):
+            try:
+                for event in self._metrics.events():
+                    events.setdefault(event.id, event)
+            except Exception:  # nosec B110
+                pass
+        ordered = sorted(
+            events.values(), key=lambda event: event.timestamp, reverse=True,
+        )
+        views = [self._activity_view(event) for event in ordered]
+        if criteria.get("agentId"):
+            views = [v for v in views if v["sourceId"] == criteria["agentId"]]
+        if criteria.get("taskId"):
+            views = [v for v in views if v.get("taskId") == criteria["taskId"]]
+        if criteria.get("projectId"):
+            views = [v for v in views if v.get("projectId") == criteria["projectId"]]
+        if criteria.get("limit") is not None:
+            views = views[: int(criteria["limit"])]
+        return views
+
+    # ------------------------------------------------------------------
+    # metrics overview
+    # ------------------------------------------------------------------
+    def get_metrics_overview(self) -> dict[str, Any]:
+        if self._metrics is not None and hasattr(self._metrics, "overview"):
+            try:
+                raw = self._metrics.overview()
+            except Exception:
+                raw = None
+            if isinstance(raw, Mapping):
+                return dict(raw)
+        return {
+            "daily": [],
+            "human": dict(_EMPTY_OVERVIEW["human"]),
+            "quality": dict(_EMPTY_OVERVIEW["quality"]),
+            "agents": [],
+        }
+
+    # ------------------------------------------------------------------
+    # run control
+    # ------------------------------------------------------------------
+    def start_run(
+        self,
+        task_id: str,
+        project_id: str,
+        inputs: Mapping[str, Any] | None = None,
+        context: Mapping[str, Any] | None = None,
+    ) -> WorkflowExecution:
+        run = self._engine.start(
+            task_id=task_id, project_id=project_id, inputs=inputs, context=context,
+        )
+        self.track(run.id)
+        return run
+
+    def tick_run(self, run_id: str) -> dict[str, Any] | None:
+        self._engine.tick(run_id)
+        try:
+            self._engine.flush_observations(run_id)
+        except RuntimeError:
+            pass  # Observation delivery is at-least-once; a retry happens later.
+        return self.get_workflow(run_id)
+
+    def cancel_run(self, run_id: str) -> dict[str, Any] | None:
+        self._engine.cancel(run_id)
+        return self.get_workflow(run_id)

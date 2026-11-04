@@ -41,10 +41,20 @@ export function createHttpApi(baseUrl: string): FactoryApi {
       (await request(`/approvals/${id}/decision`, { method: 'POST', body: JSON.stringify(input) })).json(),
 
     listActivity: (f) => get(`/activity${qs(f)}`),
-    subscribeActivity: () => {
-      // Real-time is intentionally not implemented yet.
-      // Later: new EventSource(`${baseUrl}/events`) or new WebSocket(...) -> onEvent(JSON.parse(msg.data)).
-      return () => undefined;
+    subscribeActivity: (onEvent) => {
+      // Server-Sent Events from the backend's GET /events stream. Errors are
+      // swallowed: EventSource reconnects on its own and a dead stream must
+      // never break the dashboard.
+      const source = new EventSource(`${baseUrl}/events`);
+      source.onmessage = (msg) => {
+        try {
+          onEvent(JSON.parse(msg.data));
+        } catch {
+          // Ignore malformed frames rather than tearing down the stream.
+        }
+      };
+      source.onerror = () => undefined;
+      return () => source.close();
     },
 
     getMetricsOverview: () => get('/metrics/overview'),

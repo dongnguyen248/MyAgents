@@ -1,0 +1,281 @@
+"""FactoryService mapping tests over a real spec -> plan orchestrator run."""
+
+from __future__ import annotations
+
+import re
+from datetime import datetime, timezone
+from itertools import count
+from pathlib import Path
+
+from asf.agents.base import AgentRuntime
+from asf.agents.plan.factory import build_plan_agent
+from asf.agents.spec.factory import build_spec_agent
+from asf.api.service import FactoryService
+from asf.approval.models import ApprovalPolicy
+from asf.approval.service import ApprovalService
+from asf.configuration.platform import PlatformConfig
+from asf.configuration.project import ProjectProfile
+from asf.contracts.models import ModelRequest, ModelResponse
+from asf.models.fake import ScriptedModelGateway
+from asf.orchestrator import AgentRegistry, Orchestrator
+from asf.storage.memory import InMemoryApprovalRepository
+from asf.storage.sqlite import SQLiteExecutionStore
+from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
+from tests.integration.test_chain import make_plan_artifact, make_spec_artifact
+
+NOW = datetime(2026, 11, 3, 9, 0, tzinfo=timezone.utc)
+TEMPLATES = Path(__file__).resolve().parents[2] / "templates"
+
+PROJECTS = {
+    "proj-1": {
+        "id": "proj-1", "name": "Project One",
+        "repository": {"provider": "gitlab"},
+        "technology": {"backend": ["python"], "frontend": ["react"]},
+    },
+    "proj-2": ProjectProfile(
+        id="proj-2", name="Project Two", repository={"provider": "github"},
+        technology={"backend": ["java", "spring"]}, workflow="software-development",
+    ),
+}
+
+
+class RoutingGateway:
+    """One deterministic gateway whose replies route on the system prompt."""
+
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        self.requests.append(request)
+        system = request.messages[0].content
+        if "business analyst" in system:
+            reply = make_spec_artifact().content["text"]
+        elif "software architect" in system:
+            linked = re.search(
+                r"## Linked SPEC\nID: ([^\n]+)\nVersion: ([^\n]+)",
+                request.messages[-1].content,
+            )
+            assert linked is not None
+            reply = make_plan_artifact().content["text"].replace(
+                "ID: spec-1", f"ID: {linked[1]}",
+            ).replace("Version: 1", f"Version: {linked[2]}", 1)
+        else:  # pragma: no cover - the test workflow only uses spec/plan
+            raise AssertionError(f"Unexpected model request: {system[:80]}")
+        return ScriptedModelGateway([reply]).complete(request)
+
+
+class FakeMetrics:
+    """Small fake implementing the evaluation protocol used by the service."""
+
+    def __init__(self) -> None:
+        self.decisions: list[dict] = []
+        self._overview = {
+            "daily": [], "human": {"approvalRate": 1.0}, "quality": {}, "agents": [],
+        }
+
+    def agent_metrics(self, agent_id: str) -> dict:
+        return {
+            "total": 3, "completed": 2, "running": 1, "failed": 0, "cancelled": 0,
+            "success_rate": 0.5, "avg_duration_sec": 12.0, "avg_revisions": 1.0,
+            "human_approval_rate": 1.0, "test_pass_rate": 1.0, "ci_pass_rate": 1.0,
+        }
+
+    def overview(self) -> dict:
+        return self._overview
+
+    def events(self) -> list:
+        return []
+
+    def project_outcomes(self, project_id: str) -> dict:
+        return {}
+
+    def record_approval_decision(self, **kwargs) -> None:
+        self.decisions.append(kwargs)
+
+
+def build_engine(store=None) -> Orchestrator:
+    ids = count(1)
+
+    def new_id() -> str:
+        return f"id-{next(ids)}"
+
+    gateway = RoutingGateway()
+    runtime = AgentRuntime(models=gateway, clock=lambda: NOW, new_id=new_id)
+    registry = AgentRegistry()
+    registry.register(build_spec_agent(runtime, PlatformConfig(), TEMPLATES))
+    registry.register(build_plan_agent(runtime, PlatformConfig(), TEMPLATES))
+    definition = WorkflowDefinition(
+        id="spec-plan", name="Spec and Plan", version="1", steps=[
+            WorkflowStepDef(
+                id="spec", name="Spec", type="AGENT", stage="SPEC",
+                agent_type="spec", requires_approval=True, produces=["SPEC"],
+            ),
+            WorkflowStepDef(
+                id="plan", name="Plan", type="AGENT", stage="PLAN",
+                agent_type="plan", requires_approval=True,
+                consumes=["SPEC"], produces=["PLAN"],
+            ),
+        ],
+    )
+    kwargs: dict = {}
+    if store is not None:
+        kwargs["store"] = store
+    else:
+        kwargs["approvals"] = ApprovalService(
+            InMemoryApprovalRepository(), id_factory=new_id,
+        )
+    return Orchestrator(
+        definition, registry, clock=lambda: NOW, new_id=new_id,
+        approval_policy=ApprovalPolicy(reviewers=["dashboard"]), **kwargs,
+    )
+
+
+def build_service(store=None) -> tuple[FactoryService, FakeMetrics]:
+    metrics = FakeMetrics()
+    service = FactoryService(
+        build_engine(store), projects=PROJECTS, metrics=metrics,
+        store=store, clock=lambda: NOW,
+    )
+    return service, metrics
+
+
+def start_at_spec_review(service: FactoryService) -> str:
+    run = service.start_run(
+        "task-1", "proj-1", inputs={"spec": {"requirement": "Build a calculator"}},
+    )
+    view = service.tick_run(run.id)
+    assert view is not None and view["status"] == "WAITING_APPROVAL"
+    return run.id
+
+
+def test_agents_config_and_metrics_normalization():
+    service, _ = build_service()
+    agents = service.list_agents()
+    assert {agent["id"] for agent in agents} == {"agent-spec", "agent-plan"}
+    spec = service.get_agent("agent-spec")
+    assert spec is not None
+    assert spec["status"] == "IDLE"
+    assert spec["metrics"]["successRate"] == 0.5  # snake_case normalized
+    assert spec["metrics"]["avgDurationSec"] == 12.0
+    assert service.get_agent("agent-nope") is None
+
+    config = service.get_agent_config("agent-spec")
+    assert config is not None
+    assert config["agentId"] == "agent-spec"
+    assert config["skills"] == ["write-spec", "revise-spec"]
+    assert config["allowedProjectIds"] == ["proj-1", "proj-2"]
+    assert config["timeoutSeconds"] == 1800
+    assert config["retryPolicy"] == {
+        "maxRetries": 0, "backoff": "none", "backoffSeconds": 0,
+    }
+    assert service.get_agent_config("agent-nope") is None
+    assert service.get_agent_runs("agent-spec") == []
+
+
+def test_run_task_workflow_and_approval_flow():
+    service, metrics = build_service()
+    run_id = start_at_spec_review(service)
+
+    task = service.get_task("task-1")
+    assert task is not None
+    assert task["status"] == "SPEC_REVIEW"
+    assert task["priority"] == "MEDIUM"  # contract NORMAL mapped to MEDIUM
+    assert task["assignedAgentId"] == "agent-spec"
+    assert [t["id"] for t in service.list_tasks({"projectId": "proj-1"})] == ["task-1"]
+    assert service.list_tasks({"projectId": "proj-2"}) == []
+    assert service.list_tasks({"status": "COMPLETED"}) == []
+
+    workflow = service.get_workflow(run_id)
+    assert workflow is not None
+    assert workflow["status"] == "WAITING_APPROVAL"
+    states = {step["id"]: step["state"] for step in workflow["steps"]}
+    assert states == {
+        "spec": "done", "spec_approval": "active",
+        "plan": "pending", "plan_approval": "pending",
+    }
+
+    approvals = service.list_approvals()
+    assert len(approvals) == 1
+    approval = approvals[0]
+    assert approval["type"] == "SPEC"
+    assert approval["status"] == "PENDING"
+    assert approval["artifact"] == "SPEC.md"
+    assert approval["summary"].startswith("SPEC")
+    assert approval["requestedByAgentId"] == "agent-spec"
+    assert approval["requestedAt"] == NOW.isoformat()
+
+    decided = service.decide_approval(approval["id"], decision="APPROVE")
+    assert decided["status"] == "APPROVED"
+    assert metrics.decisions[0]["agent_id"] == "agent-spec"  # agent id, matching AgentResult keys
+    assert metrics.decisions[0]["decision"] == "APPROVED"
+    assert service.list_approvals() == []
+
+    runs = service.get_agent_runs("agent-spec")
+    assert len(runs) == 1
+    assert runs[0]["status"] == "Completed"
+    assert runs[0]["taskId"] == "task-1"
+
+    view = service.tick_run(run_id)
+    assert view is not None and view["status"] == "WAITING_APPROVAL"
+    plan_approvals = service.list_approvals()
+    assert len(plan_approvals) == 1 and plan_approvals[0]["type"] == "PLAN"
+
+    commented = service.decide_approval(
+        plan_approvals[0]["id"], decision="COMMENT", comment="Looks close",
+    )
+    assert commented["status"] == "PENDING"
+    assert commented["comments"][0]["author"] == "dashboard"
+    assert len(service.list_approvals()) == 1  # comment changed no state
+
+    changed = service.decide_approval(
+        plan_approvals[0]["id"], decision="REQUEST_CHANGES", comment="Add risks",
+    )
+    assert changed["status"] == "CHANGES_REQUESTED"
+    assert changed["comments"][-1]["text"] == "Add risks"
+    assert service.get_task("task-1")["status"] == "PLAN_DRAFT"
+
+    activity = service.list_activity()
+    assert activity  # orchestrator + agent events were collected
+    assert all(event["timestamp"] for event in activity)
+    assert service.list_activity({"taskId": "task-1"})
+    assert service.list_activity({"taskId": "other"}) == []
+    assert service.list_activity({"limit": 1}) == activity[:1]
+
+    projects = {p["id"]: p for p in service.list_projects()}
+    assert projects["proj-1"]["repositoryProvider"] == "gitlab"
+    assert projects["proj-1"]["technologies"] == ["python", "react"]
+    assert projects["proj-2"]["technologies"] == ["java", "spring"]
+    assert set(projects["proj-1"]["agentIds"]) == {"agent-spec", "agent-plan"}
+    assert projects["proj-1"]["ci"] == "UNKNOWN"
+
+    assert service.get_metrics_overview()["human"]["approvalRate"] == 1.0
+
+
+def test_metrics_overview_defaults_without_metrics():
+    service = FactoryService(
+        build_engine(), projects=PROJECTS, clock=lambda: NOW,
+    )
+    overview = service.get_metrics_overview()
+    assert overview["daily"] == [] and overview["agents"] == []
+    assert overview["human"]["approvalRate"] == 0.0
+    agent = service.get_agent("agent-spec")
+    assert agent is not None and agent["metrics"]["total"] == 0
+
+
+def test_store_discovered_runs_are_listed(tmp_path):
+    store = SQLiteExecutionStore(tmp_path / "executions.sqlite")
+    try:
+        engine = build_engine(store)
+        run = engine.start(
+            task_id="task-9", project_id="proj-1",
+            inputs={"spec": {"requirement": "Stored run"}},
+        )
+        engine.tick(run.id)
+        service = FactoryService(
+            engine, projects=PROJECTS, store=store, clock=lambda: NOW,
+        )
+        assert [t["id"] for t in service.list_tasks()] == ["task-9"]
+        assert service.get_workflow(run.id)["status"] == "WAITING_APPROVAL"
+        assert len(service.list_approvals()) == 1
+    finally:
+        store.close()

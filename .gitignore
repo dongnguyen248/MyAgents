@@ -29,3 +29,5 @@ artifacts/
 node_modules/
 .idea/
 .vscode/
+
+!.env.example
