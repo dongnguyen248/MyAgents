@@ -4,7 +4,7 @@ const rate = (c: number, f: number) => c / (c + f);
 
 export const projects: Project[] = [
   {
-    id: 'vhpc', name: 'VHPC', repositoryProvider: 'GitLab', technologies: ['java', 'spring', 'react'],
+    id: 'vhpc', name: 'VHPC', repositoryProvider: 'GitLab', repositoryPath: '', testCommands: [], technologies: ['java', 'spring', 'react'],
     description: '', workflow: 'software-development', enabledSkills: ['java', 'spring', 'react', 'git', 'testing', 'security'],
     technologyGroups: { backend: ['java', 'spring'], frontend: ['react'] }, approvalChannel: 'teams',
     agentIds: ['spec-agent', 'plan-agent', 'task-agent', 'implement-agent', 'review-agent', 'test-agent', 'fix-agent'],
@@ -12,7 +12,7 @@ export const projects: Project[] = [
     metrics: { activeAgents: 7, running: 4, completed: 128, failed: 11, successRate: rate(128, 11), pendingApprovals: 1 },
   },
   {
-    id: 'vnpc', name: 'VNPC', repositoryProvider: 'GitLab', technologies: ['java', 'spring'],
+    id: 'vnpc', name: 'VNPC', repositoryProvider: 'GitLab', repositoryPath: '', testCommands: [], technologies: ['java', 'spring'],
     description: '', workflow: 'software-development', enabledSkills: ['git', 'testing', 'security'],
     technologyGroups: { backend: ['java', 'spring'], frontend: [] }, approvalChannel: 'teams',
     agentIds: ['spec-agent', 'plan-agent', 'task-agent', 'implement-agent', 'review-agent'],
@@ -20,7 +20,7 @@ export const projects: Project[] = [
     metrics: { activeAgents: 5, running: 5, completed: 84, failed: 9, successRate: rate(84, 9), pendingApprovals: 3 },
   },
   {
-    id: 'erp', name: 'ERP', repositoryProvider: 'GitLab', technologies: ['python', 'database'],
+    id: 'erp', name: 'ERP', repositoryProvider: 'GitLab', repositoryPath: '', testCommands: [], technologies: ['python', 'database'],
     description: '', workflow: 'software-development', enabledSkills: ['python', 'git', 'testing'],
     technologyGroups: { backend: ['python', 'database'], frontend: [] }, approvalChannel: '',
     agentIds: ['task-agent', 'implement-agent', 'test-agent', 'fix-agent'],

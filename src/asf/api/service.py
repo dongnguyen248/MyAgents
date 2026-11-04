@@ -140,6 +140,27 @@ def _iso(value: Any) -> str:
     return str(value)
 
 
+def _valid_test_commands(raw: Any) -> list[list[str]]:
+    """Normalize a profile's ``configuration.testCommands`` value.
+
+    Returns the commands as a list of argv lists, or an empty list when
+    the value is not a non-empty list of non-empty string lists (the
+    test agent reports malformed commands itself when a run uses them;
+    the view layer just refuses to echo nonsense).
+    """
+    if not isinstance(raw, list) or not raw:
+        return []
+    commands: list[list[str]] = []
+    for argv in raw:
+        if (
+            not isinstance(argv, list) or not argv
+            or not all(isinstance(arg, str) and arg for arg in argv)
+        ):
+            return []
+        commands.append([str(arg) for arg in argv])
+    return commands
+
+
 def _camelize(key: str) -> str:
     head, _, rest = key.partition("_")
     while rest:
@@ -211,6 +232,10 @@ class FactoryService:
                 "id": profile.id,
                 "name": profile.name,
                 "repositoryProvider": str(profile.repository.get("provider", "")),
+                "repositoryPath": str(profile.repository.get("path") or ""),
+                "testCommands": _valid_test_commands(
+                    profile.configuration.get("testCommands"),
+                ),
                 "technologies": technologies,
                 "description": profile.description,
                 "workflow": profile.workflow,
@@ -250,6 +275,14 @@ class FactoryService:
             "id": str(data.get("id", project_id)),
             "name": str(data.get("name", project_id)),
             "repositoryProvider": str(provider),
+            "repositoryPath": (
+                str(repository.get("path") or "")
+                if isinstance(repository, Mapping) else ""
+            ),
+            "testCommands": _valid_test_commands(
+                configuration.get("testCommands")
+                if isinstance(configuration, Mapping) else None
+            ),
             "technologies": [str(item) for item in technologies],
             "description": str(data.get("description", "")),
             "workflow": str(data.get("workflow", "")),
@@ -719,6 +752,8 @@ class FactoryService:
                 "id": profile["id"],
                 "name": profile["name"],
                 "repositoryProvider": profile["repositoryProvider"],
+                "repositoryPath": profile["repositoryPath"],
+                "testCommands": profile["testCommands"],
                 "technologies": profile["technologies"],
                 "description": profile["description"],
                 "workflow": profile["workflow"],

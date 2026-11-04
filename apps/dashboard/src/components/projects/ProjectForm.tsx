@@ -40,6 +40,10 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
   const [frontend, setFrontend] = useState((initial?.technology.frontend ?? []).join(', '));
   const [workflow, setWorkflow] = useState(initial?.workflow ?? 'software-development');
   const [skills, setSkills] = useState((initial?.enabledSkills ?? []).join(', '));
+  const [workspacePath, setWorkspacePath] = useState(initial?.repository.path ?? '');
+  const [testCommand, setTestCommand] = useState(
+    (initial?.configuration.testCommands?.[0] ?? []).join(' '),
+  );
   const [channel, setChannel] = useState(
     initial ? (initial.configuration.approval?.channel ?? 'none') || 'none' : 'teams',
   );
@@ -55,23 +59,27 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
     e.preventDefault();
     setError(undefined);
     setSubmitting(true);
+    const testCommands = testCommand.trim() ? [testCommand.trim().split(/\s+/)] : [];
     try {
       await onCreate({
         id: id.trim(),
         name: name.trim(),
         // In edit mode always send the description so clearing it works.
         ...(description.trim() || editing ? { description: description.trim() } : {}),
-        repository: { provider },
+        repository: { provider, path: workspacePath.trim() },
         technology: { backend: list(backend), frontend: list(frontend) },
         workflow: workflow.trim() || 'software-development',
         enabledSkills: list(skills),
         // In edit mode an explicit empty channel clears a stored one on merge.
-        configuration:
-          channel === 'none'
+        configuration: {
+          ...(channel === 'none'
             ? editing
               ? { approval: { channel: '' } }
               : {}
-            : { approval: { channel } },
+            : { approval: { channel } }),
+          // In edit mode an empty test command clears the stored one.
+          ...(testCommands.length || editing ? { testCommands } : {}),
+        },
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project');
@@ -141,6 +149,29 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
           <span>Enabled skills (comma separated)</span>
           <input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="git, testing, security" />
         </label>
+        <div className="form-grid">
+          <label className="field">
+            <span>Local folder path (optional)</span>
+            <input
+              value={workspacePath}
+              onChange={(e) => setWorkspacePath(e.target.value)}
+              placeholder="E:\projects\my-app"
+            />
+          </label>
+          <label className="field">
+            <span>Test command (optional)</span>
+            <input
+              value={testCommand}
+              onChange={(e) => setTestCommand(e.target.value)}
+              placeholder="python -m pytest -q"
+            />
+          </label>
+        </div>
+        <p className="muted small">
+          With a local folder set, agents read the project's real files, generated code is written into
+          that folder, and the test command runs there for real. Without it, runs use the in-memory demo
+          workspace.
+        </p>
         {error && (
           <p className="alert" role="alert">
             {error}
