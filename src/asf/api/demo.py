@@ -639,7 +639,32 @@ def _resolve_db_path(db_arg: Path | None, *, selftest: bool) -> Path:
     return root / "data" / "asf.sqlite"
 
 
+def _load_dotenv(path: Path) -> bool:
+    """Load ``KEY=VALUE`` pairs from a repo-root ``.env`` into the environment.
+
+    Real environment variables win — the file is a local-development
+    convenience so settings like ``ASF_MARIADB_PASSWORD`` do not have to be
+    re-typed every run. ``.env`` is git-ignored (see ``.env.example`` for
+    the supported keys); it must never be committed.
+    """
+    if not path.is_file():
+        return False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+    return True
+
+
 def main() -> None:
+    dotenv_path = Path(asf.__file__).resolve().parents[2] / ".env"
+    if _load_dotenv(dotenv_path):
+        print(f"Loaded environment from {dotenv_path}")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--db", type=Path, default=None, help="SQLite store path")
