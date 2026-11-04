@@ -1,0 +1,1 @@
+{"expected_artifacts":["SPEC","PLAN"],"id":"calculator","max_revisions":2,"must_complete":true,"requirement":"Build a small calculator module with add, subtract, multiply and divide functions, where division by zero raises a clear error."}

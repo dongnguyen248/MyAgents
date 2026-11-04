@@ -1,0 +1,1 @@
+{"expected_artifacts":["SPEC","PLAN"],"id":"invoice-service","max_revisions":2,"must_complete":true,"requirement":"Build an invoice service that creates invoices with line items, computes totals including tax, and marks invoices as paid."}
