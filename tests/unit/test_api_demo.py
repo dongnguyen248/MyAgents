@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -252,3 +253,30 @@ def test_resolve_db_path_explicit_argument_wins(tmp_path: Path):
 def test_resolve_db_path_selftest_keeps_a_temp_db():
     path = _resolve_db_path(None, selftest=True)
     assert path.name == "demo.sqlite" and "asf-api-demo-" in path.parent.name
+
+
+def test_load_dotenv_reads_pairs_and_keeps_real_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from asf.api.demo import _load_dotenv
+
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(
+        "# a comment\n"
+        "\n"
+        "ASF_MARIADB_PASSWORD=from-file\n"
+        'ASF_MARIADB_HOST="db.internal"\n'
+        "NOT_A_PAIR\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("ASF_MARIADB_PASSWORD", raising=False)
+    monkeypatch.setenv("ASF_MARIADB_HOST", "real-env-wins")
+    assert _load_dotenv(dotenv) is True
+    assert os.environ["ASF_MARIADB_PASSWORD"] == "from-file"
+    assert os.environ["ASF_MARIADB_HOST"] == "real-env-wins"
+
+
+def test_load_dotenv_missing_file_is_a_no_op(tmp_path: Path):
+    from asf.api.demo import _load_dotenv
+
+    assert _load_dotenv(tmp_path / ".env") is False
