@@ -674,17 +674,35 @@ class FactoryService:
         stage = run.state.stage
         current_index = sequence.index(stage) if stage in sequence else None
         produced = {artifact.type for artifact in run.artifact_history.values()}
-        # A run that died inside the code-fix loop has every quality
-        # artifact published, so the generic FAILED rule below would
-        # blame the next step (CI). The failure really belongs to the
-        # step whose verdict triggered the fix: Run tests when a test
-        # report exists, otherwise Review code.
+        # The generic FAILED rule below ("first step whose outputs are
+        # missing from the artifact history") misattributes any failure
+        # that happens after every artifact exists at least once: a run
+        # that died inside the code-fix loop, or crashed on a later
+        # cycle's re-review / re-test, would blame the next step (CI,
+        # which produces nothing). The run's event trail records the
+        # stage it actually died in, so blame that step instead: for
+        # the fix loop, the step whose verdict triggered the fix (Run
+        # tests when a test report exists, otherwise Review code); for
+        # any other stage, the step that generates that stage.
         forced_failed: str | None = None
-        if status == "FAILED" and self._stage_before_failure(run) == FIX_STAGE:
-            if "TEST_REPORT" in run.artifacts:
-                forced_failed = "testing"
-            elif "CODE_REVIEW" in run.artifacts:
-                forced_failed = "code_review"
+        if status == "FAILED":
+            failed_stage = self._stage_before_failure(run)
+            if failed_stage == FIX_STAGE:
+                if "TEST_REPORT" in run.artifacts:
+                    forced_failed = "testing"
+                elif "CODE_REVIEW" in run.artifacts:
+                    forced_failed = "code_review"
+            elif failed_stage is not None:
+                for candidate in definition.steps:
+                    if failed_stage not in candidate.generated_stages():
+                        continue
+                    mapped = (
+                        _STEP_ID_BY_STEP_ID.get(candidate.id)
+                        or _STEP_ID_BY_STAGE.get(candidate.stage)
+                    )
+                    if mapped in _DASHBOARD_STEP_IDS:
+                        forced_failed = mapped
+                    break
         steps: list[dict[str, Any]] = []
         failure_marked = False
         for step in definition.steps:
