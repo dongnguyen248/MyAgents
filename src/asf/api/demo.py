@@ -703,7 +703,16 @@ def main() -> None:
         service.drive_active_runs()
         print(f"Dashboard API on http://127.0.0.1:{args.port} (db: {db_label})")
         print("Dashboard: set VITE_API_BASE_URL to that URL and run the frontend dev server.")
-        uvicorn.run(create_app(service), host="127.0.0.1", port=args.port)
+        # Bound the graceful shutdown: the dashboard holds a server-sent
+        # events stream open for as long as its tab lives, and uvicorn
+        # otherwise waits for it forever on Ctrl+C ("Waiting for
+        # connections to close"). Five seconds of grace, then the
+        # remaining connections close and the process exits; run state
+        # lives in the store and mid-flight runs heal on the next boot.
+        uvicorn.run(
+            create_app(service), host="127.0.0.1", port=args.port,
+            timeout_graceful_shutdown=5,
+        )
     finally:
         store.close()
 
