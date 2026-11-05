@@ -19,11 +19,24 @@ const delay = <T>(value: T): Promise<T> =>
 // Mutable in-memory state so mock approval actions are visible until reload.
 const approvals: Approval[] = structuredClone(approvalSeed);
 const projectStore = structuredClone(projects);
-let modelSettings = { provider: 'scripted', model: '', baseUrl: '', apiKey: '' };
+let modelSettings: {
+  provider: string; model: string; baseUrl: string; apiKey: string;
+  agentModels: Record<string, string>;
+} = { provider: 'scripted', model: '', baseUrl: '', apiKey: '', agentModels: {} };
+const MODEL_AGENTS = ['spec', 'plan', 'task', 'implement', 'review', 'fix'];
+const cleanAgentModels = (raw?: Record<string, string>): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw ?? {})) {
+    const name = key.startsWith('agent-') ? key.slice('agent-'.length) : key;
+    if (MODEL_AGENTS.includes(name) && value.trim()) out[name] = value.trim();
+  }
+  return out;
+};
 const modelSettingsView = () => ({
   provider: modelSettings.provider,
   model: modelSettings.model,
   baseUrl: modelSettings.baseUrl,
+  agentModels: { ...modelSettings.agentModels },
   keyConfigured: Boolean(modelSettings.apiKey),
   keyHint: modelSettings.apiKey.length >= 4 ? `…${modelSettings.apiKey.slice(-4)}` : '',
 });
@@ -300,22 +313,33 @@ export const mockApi: FactoryApi = {
     if (input.provider === 'custom' && !/^https?:\/\//.test(input.baseUrl.trim())) {
       return Promise.reject(new Error('The custom provider needs a base URL (http/https)'));
     }
+    if (input.agentModels) {
+      const unknown = Object.keys(input.agentModels).find(
+        (k) => !MODEL_AGENTS.includes(k.startsWith('agent-') ? k.slice('agent-'.length) : k),
+      );
+      if (unknown) return Promise.reject(new Error(`Unknown agent '${unknown}' in agentModels (mock)`));
+    }
     modelSettings = {
       provider: input.provider,
       model: input.model.trim(),
       baseUrl: input.baseUrl.trim(),
       apiKey: input.clearKey ? '' : input.apiKey || modelSettings.apiKey,
+      agentModels: input.agentModels ? cleanAgentModels(input.agentModels) : modelSettings.agentModels,
     };
     return delay(modelSettingsView());
   },
 
-  testModelSettings: () => {
+  testModelSettings: (agent) => {
+    if (agent && !MODEL_AGENTS.includes(agent)) {
+      return delay({ ok: false, message: `Unknown agent '${agent}' (mock).` });
+    }
     if (modelSettings.provider === 'scripted') {
       return delay({ ok: true, message: 'Scripted demo provider: no network call to test (mock).' });
     }
     if (!modelSettings.apiKey) {
       return delay({ ok: false, message: `No API key stored for provider '${modelSettings.provider}' (mock).` });
     }
-    return delay({ ok: true, message: `Mock check passed for '${modelSettings.model}' (no real network call in mock mode).` });
+    const effective = (agent && modelSettings.agentModels[agent]) || modelSettings.model;
+    return delay({ ok: true, message: `Mock check passed for '${effective}' (no real network call in mock mode).` });
   },
 };

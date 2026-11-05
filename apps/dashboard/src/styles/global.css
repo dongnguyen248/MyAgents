@@ -102,6 +102,7 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
 .filters .field { min-width: 140px; }
 .form { display: grid; gap: 16px; max-width: 900px; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: end; }
+.agent-model-row { display: flex; gap: 6px; } .agent-model-row input { flex: 1; min-width: 0; } .agent-model-row .btn { flex: none; }
 .comments { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
 .comments li { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
 .artifact-content { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; max-height: 480px; overflow: auto; font-size: 0.85rem; line-height: 1.5; }

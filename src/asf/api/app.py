@@ -48,6 +48,11 @@ class ModelSettingsBody(BaseModel):
     baseUrl: str = ""
     apiKey: str | None = None
     clearKey: bool = False
+    agentModels: dict[str, str] | None = None
+
+
+class ModelTestBody(BaseModel):
+    agent: str | None = None
 
 
 def _not_found(what: str) -> JSONResponse:
@@ -209,6 +214,8 @@ def create_app(service: FactoryService) -> FastAPI:
         }
         if body.apiKey:
             payload["apiKey"] = body.apiKey
+        if body.agentModels is not None:
+            payload["agentModels"] = body.agentModels
         try:
             updated = service.update_model_settings(payload)
         except ValueError as error:
@@ -218,8 +225,10 @@ def create_app(service: FactoryService) -> FastAPI:
         return updated
 
     @app.post("/settings/model/test")
-    def test_model_settings() -> Any:
-        result = service.test_model_settings()
+    def test_model_settings(body: ModelTestBody | None = None) -> Any:
+        result = service.test_model_settings(
+            agent=body.agent if body is not None else None,
+        )
         if result is None:
             return _not_found("Model settings")
         return result

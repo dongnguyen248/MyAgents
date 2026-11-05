@@ -5,4 +5,4 @@ export const getModelSettings = () => api.getModelSettings();
 
 export const updateModelSettings = (input: ModelSettingsInput) => api.updateModelSettings(input);
 
-export const testModelSettings = () => api.testModelSettings();
+export const testModelSettings = (agent?: string) => api.testModelSettings(agent);

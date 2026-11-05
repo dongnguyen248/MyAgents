@@ -53,7 +53,7 @@ def test_defaults_and_public_view_hide_the_key(tmp_path: Path):
     settings = ModelSettings(tmp_path / "model-settings.json")
     assert settings.public() == {
         "provider": "scripted", "model": "", "baseUrl": "",
-        "keyConfigured": False, "keyHint": "",
+        "agentModels": {}, "keyConfigured": False, "keyHint": "",
     }
     view = settings.update({
         "provider": "gemini", "model": "gemini-x", "apiKey": "AIza-secret-1234",
@@ -164,3 +164,98 @@ def test_router_delegates_and_pins_the_configured_model(tmp_path: Path):
     response = router.complete(_request(model="agent-pinned"))
     assert response.content == "real-answer"
     assert real.requests[0].model == "gpt-real"  # settings model wins
+
+
+# ---------------------------------------------------------------------------
+# per-agent model overrides
+# ---------------------------------------------------------------------------
+
+def test_per_agent_overrides_store_validate_and_persist(tmp_path: Path):
+    path = tmp_path / "s.json"
+    settings = ModelSettings(path)
+    view = settings.update({
+        "provider": "custom", "model": "shared-m",
+        "baseUrl": "https://x/v1", "apiKey": "k-1",
+        "agentModels": {
+            "implement": " code-m ", "agent-spec": "spec-m", "fix": "",
+        },
+    })
+    # Values are trimmed, blanks drop out, agent- ids normalize.
+    assert view["agentModels"] == {"implement": "code-m", "spec": "spec-m"}
+    assert settings.effective_model("implement") == "code-m"
+    assert settings.effective_model("agent-spec") == "spec-m"
+    assert settings.effective_model("plan") == "shared-m"
+    assert settings.effective_model(None) == "shared-m"
+    # Persisted beside the other settings and reloaded.
+    assert ModelSettings(path).agent_models() == {
+        "implement": "code-m", "spec": "spec-m",
+    }
+    # A later update replaces the whole map (the dashboard sends it all).
+    settings.update({
+        "provider": "custom", "model": "shared-m",
+        "baseUrl": "https://x/v1", "agentModels": {"review": "rev-m"},
+    })
+    assert settings.agent_models() == {"review": "rev-m"}
+    # The Test agent has no model to override; unknown agents are errors.
+    with pytest.raises(ValueError, match="Unknown agent"):
+        settings.update({"agentModels": {"test": "m"}})
+    with pytest.raises(ValueError, match="Unknown agent"):
+        settings.update({"agentModels": {"nope": "m"}})
+    with pytest.raises(ValueError, match="must be an object"):
+        settings.update({"agentModels": "implement=m"})
+
+
+def test_router_pins_per_agent_models(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    settings.update({
+        "provider": "openai", "model": "gpt-shared", "apiKey": "sk-1",
+        "agentModels": {"implement": "gpt-code", "review": "gpt-review"},
+    })
+    real = RecordingGateway("real-answer")
+    router = SettingsRoutingGateway(
+        settings, RecordingGateway("scripted"),
+        gateway_factory=lambda s, t: real,
+    )
+
+    def call(agent_id: str | None) -> str | None:
+        metadata = {"agentId": agent_id} if agent_id else {}
+        return router.complete(ModelRequest(
+            messages=[ModelMessage(role="user", content="hi")],
+            metadata=metadata,
+        )).model
+
+    assert call("agent-implement") == "gpt-code"
+    assert call("agent-review") == "gpt-review"
+    assert call("agent-spec") == "gpt-shared"   # no override -> shared
+    assert call(None) == "gpt-shared"           # unattributed -> shared
+    assert call("agent-test") == "gpt-shared"   # test never overrides
+
+
+class _RecordingTransport:
+    def __init__(self) -> None:
+        self.models: list[str] = []
+
+    def post(self, url, *, headers, body, timeout_seconds):  # noqa: ANN001, ANN202
+        self.models.append(json.loads(body)["model"])
+        payload = {
+            "model": "whatever",
+            "choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1},
+        }
+        return 200, json.dumps(payload).encode()
+
+
+def test_connection_test_uses_the_agents_effective_model(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    settings.update({
+        "provider": "openai", "model": "gpt-shared", "apiKey": "sk-1",
+        "agentModels": {"fix": "gpt-fix"},
+    })
+    transport = _RecordingTransport()
+    assert settings.test(transport)["ok"] is True
+    assert settings.test(transport, agent="fix")["ok"] is True
+    assert settings.test(transport, agent="spec")["ok"] is True
+    assert transport.models == ["gpt-shared", "gpt-fix", "gpt-shared"]
+    unknown = settings.test(transport, agent="test")
+    assert unknown["ok"] is False
+    assert "Unknown agent" in unknown["message"]
