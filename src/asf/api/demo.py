@@ -49,6 +49,7 @@ from asf.api.service import FactoryService
 from asf.approval.models import ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
 from asf.configuration.project import ProjectProfile
+from asf.configuration.secrets import SecretRef
 from asf.configuration.yamlio import scan_secrets
 from asf.contracts.models import (
     ActivityEvent,
@@ -66,7 +67,13 @@ from asf.orchestrator.code_loop import CodeLoopPolicy
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
 from asf.storage.sqlite import SQLiteExecutionStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
-from asf.tools.local import LocalWorkspace, WorkspaceRepository, WorkspaceSandbox
+from asf.tools.local import (
+    LocalWorkspace,
+    SandboxResourceLimits,
+    SandboxSettings,
+    WorkspaceRepository,
+    WorkspaceSandbox,
+)
 from asf.workflow.loader import load_workflow
 
 _TASK_REPLY = json.dumps({
@@ -531,6 +538,76 @@ def _profile_root(profile: ProjectProfile) -> str | None:
     return path if isinstance(path, str) and path.strip() else None
 
 
+def _profile_sandbox_settings(profile: ProjectProfile) -> SandboxSettings | None:
+    """Extracts a local project's sandbox settings from its profile.
+
+    Reads ``configuration.testEnv`` (literal strings or
+    ``{"env": NAME}`` references, resolved against the process
+    environment — a missing reference fails loudly, the platform's
+    secret convention), ``configuration.testEnvAllowlist`` and
+    ``configuration.sandboxLimits``. Returns None when the profile
+    declares none of them.
+    """
+    configuration = profile.configuration
+    raw_env = configuration.get("testEnv")
+    raw_allowlist = configuration.get("testEnvAllowlist")
+    raw_limits = configuration.get("sandboxLimits")
+    if raw_env is None and raw_allowlist is None and raw_limits is None:
+        return None
+    extra: dict[str, str] = {}
+    if raw_env is not None:
+        if not isinstance(raw_env, dict):
+            raise ValueError(
+                f"Project {profile.id}: configuration.testEnv must be a map",
+            )
+        for name, value in raw_env.items():
+            if isinstance(value, dict) and set(value) == {"env"}:
+                extra[str(name)] = SecretRef(env=str(value["env"])).resolve()
+            elif isinstance(value, str):
+                extra[str(name)] = value
+            else:
+                raise ValueError(
+                    f"Project {profile.id}: configuration.testEnv.{name} must"
+                    " be a string or an {env: NAME} reference",
+                )
+    allowlist: tuple[str, ...] = ()
+    if raw_allowlist is not None:
+        if not isinstance(raw_allowlist, list) or not all(
+            isinstance(name, str) for name in raw_allowlist
+        ):
+            raise ValueError(
+                f"Project {profile.id}: configuration.testEnvAllowlist must"
+                " be a list of variable names",
+            )
+        allowlist = tuple(raw_allowlist)
+    limits: SandboxResourceLimits | None = None
+    if raw_limits is not None:
+        if not isinstance(raw_limits, dict):
+            raise ValueError(
+                f"Project {profile.id}: configuration.sandboxLimits must be a map",
+            )
+
+        def _limit(key: str) -> int | None:
+            value = raw_limits.get(key)
+            if value is None:
+                return None
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(
+                    f"Project {profile.id}: configuration.sandboxLimits.{key}"
+                    " must be a positive integer",
+                )
+            return value
+
+        limits = SandboxResourceLimits(
+            cpu_seconds=_limit("cpuSeconds"),
+            memory_bytes=_limit("memoryBytes"),
+            max_processes=_limit("maxProcesses"),
+        )
+    return SandboxSettings(
+        env_allowlist=allowlist, env_extra=extra, resource_limits=limits,
+    )
+
+
 def build_demo(
     db_path: Path,
     *,
@@ -580,11 +657,18 @@ def build_demo(
     # real filesystem repository/sandbox adapters (agents read the actual
     # files, change sets land in the folder, test commands really run);
     # every other project keeps the in-memory/scripted fakes.
-    workspace = LocalWorkspace({
-        profile.id: root_path
-        for profile in projects.values()
-        if (root_path := _profile_root(profile)) is not None
-    })
+    workspace = LocalWorkspace(
+        {
+            profile.id: root_path
+            for profile in projects.values()
+            if (root_path := _profile_root(profile)) is not None
+        },
+        sandbox_settings={
+            profile.id: settings
+            for profile in projects.values()
+            if (settings := _profile_sandbox_settings(profile)) is not None
+        },
+    )
     repository = WorkspaceRepository(workspace, InMemoryRepository())
     sandbox = WorkspaceSandbox(workspace, ScriptedSandbox())
     registry = AgentRegistry()
@@ -639,10 +723,16 @@ def build_demo(
     def on_created(profile: ProjectProfile) -> None:
         _project_writer(projects_dir)(profile)
         workspace.set_root(profile.id, _profile_root(profile))
+        workspace.set_sandbox_settings(
+            profile.id, _profile_sandbox_settings(profile),
+        )
 
     def on_updated(profile: ProjectProfile) -> None:
         _project_writer(projects_dir, overwrite=True)(profile)
         workspace.set_root(profile.id, _profile_root(profile))
+        workspace.set_sandbox_settings(
+            profile.id, _profile_sandbox_settings(profile),
+        )
 
     def on_deleted(project_id: str) -> None:
         _project_remover(projects_dir)(project_id)
