@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from asf.agents._shared.rules import rules_section
+from asf.agents._shared.skills import skills_section
 from asf.contracts.models import ModelMessage
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ def build_implement_messages(
         " conflict with the output contract above, the output contract"
         " wins:",
     )
+    system_msg += skills_section(project_context, "implement")
 
     # Build context sections
     sections: list[str] = []

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from asf.agents._shared.rules import rules_section
+from asf.agents._shared.skills import skills_section
 from asf.contracts.models import ApprovalFeedback, ModelMessage
 
 __all__ = [
@@ -111,6 +112,7 @@ def build_spec_messages(
         " them; where they conflict with the output contract above, the"
         " output contract wins:",
     )
+    system_content += skills_section(project_context, "spec")
 
     user_content = build_user_message(
         requirement=requirement,

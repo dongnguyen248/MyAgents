@@ -40,7 +40,10 @@ class AgentRulesTests(unittest.TestCase):
         rules into agent system prompts. The routing helper
         (asf.agents._shared.routing) is allowlisted on the same terms:
         pure (typing only), it carries the run's model tier into agent
-        model-request metadata.
+        model-request metadata. The skills helper
+        (asf.agents._shared.skills) is allowlisted on the same terms:
+        pure (json/typing only), it carries the project's enabled
+        skill bodies into agent system prompts.
         """
         agents_dir = REPO_ROOT / "src" / "asf" / "agents"
         logic_modules = [
@@ -59,6 +62,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents.base",
             "asf.agents._shared.rules",
             "asf.agents._shared.routing",
+            "asf.agents._shared.skills",
             "asf.agents.spec",
             "asf.agents.spec.agent",
             "asf.agents.spec.prompts",

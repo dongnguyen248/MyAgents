@@ -174,7 +174,9 @@ def test_agents_config_and_metrics_normalization():
     config = service.get_agent_config("agent-spec")
     assert config is not None
     assert config["agentId"] == "agent-spec"
-    assert config["skills"] == ["write-spec", "revise-spec"]
+    # Config skills are the catalogue skills applying to the agent's
+    # type (previously this fell back to raw capability names).
+    assert config["skills"] == ["general", "security"]
     assert config["allowedProjectIds"] == ["proj-1", "proj-2"]
     assert config["timeoutSeconds"] == 1800
     assert config["retryPolicy"] == {

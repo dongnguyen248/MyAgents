@@ -29,6 +29,7 @@ export function AgentDetailPage() {
                   <Stat label="Type" value={titleCase(agent.type)} />
                   <Stat label="Version" value={agent.version} />
                   <Stat label="Model" value={agent.model} />
+                  <Stat label="Skills" value={agent.skills?.length ? agent.skills.join(', ') : '–'} />
                   <Stat label="Current project" value={agent.currentProjectId?.toUpperCase() ?? '–'} />
                   <Stat label="Started at" value={agent.startedAt ? clock(agent.startedAt) : '–'} />
                   <Stat label="Last activity" value={ago(agent.lastActivityAt)} />

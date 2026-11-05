@@ -110,6 +110,28 @@ class SpecAgentTests(unittest.TestCase):
             metadata=metadata if metadata is not None else {"attempt": 1},
         )
 
+    def test_enabled_skills_reach_the_system_prompt(self):
+        # Skills resolved into the project context are appended for
+        # the agents they apply to (general + security for spec) and
+        # withheld from the ones they do not (git).
+        agent, gateway = self._make_agent([self.valid_reply])
+        project = {
+            "name": "AuthService",
+            "description": "Handles authentication",
+            "technology": ["python", "fastapi"],
+            "skills": [
+                {"id": "general", "content": "GENERAL SKILL BODY"},
+                {"id": "security", "content": "SECURITY SKILL BODY"},
+                {"id": "git", "content": "GIT SKILL BODY"},
+            ],
+        }
+        res = agent.execute(self._make_request(project_context=project))
+        self.assertEqual(res.status, "SUCCESS")
+        system = gateway.requests[0].messages[0].content
+        self.assertIn("GENERAL SKILL BODY", system)
+        self.assertIn("SECURITY SKILL BODY", system)
+        self.assertNotIn("GIT SKILL BODY", system)
+
     def test_model_request_carries_the_runs_model_tier(self):
         # A complex run's tier (recorded in the run context by the
         # service) must reach the routing gateway via request metadata;
