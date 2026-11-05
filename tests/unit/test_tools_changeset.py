@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from asf.agents._shared.codegen import generate_changeset
 from asf.tools.changeset import ChangeSet, FileChange
@@ -163,11 +164,11 @@ def test_generate_changeset_mixed() -> None:
 
 def test_changeset_model_validate_empty_dict_raises() -> None:
     """ChangeSet.model_validate({}) raises because changes is required."""
-    with pytest.raises(Exception):  # Pydantic ValidationError
+    with pytest.raises(ValidationError):
         ChangeSet.model_validate({})
 
 
 def test_changeset_model_validate_empty_changes_raises() -> None:
     """ChangeSet.model_validate({'changes': []}) raises min_length violation."""
-    with pytest.raises(Exception):  # Pydantic ValidationError
+    with pytest.raises(ValidationError):
         ChangeSet.model_validate({"changes": []})

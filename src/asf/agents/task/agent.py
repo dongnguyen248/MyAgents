@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -500,7 +500,7 @@ class TaskAgent(BaseAgent):
             raise invalid_response(
                 "Model response is not valid task JSON",
                 details={"parseError": str(e)},
-            )
+            ) from None
 
         tasks = task_data.tasks
         task_issues: list[str] = []
@@ -617,10 +617,7 @@ class TaskAgent(BaseAgent):
             )
 
         # Determine version
-        if is_revision and prev_task_art:
-            version = str(int(prev_task_art.version) + 1)
-        else:
-            version = "1"
+        version = str(int(prev_task_art.version) + 1) if is_revision and prev_task_art else "1"
 
         # Render deterministic markdown text from validated tasks
         rendered_text = render_task_markdown(tasks, plan_milestones, spec_art.id, spec_art.version)
@@ -651,7 +648,7 @@ class TaskAgent(BaseAgent):
             art_metadata["language"] = language
 
         art_id = self._runtime.new_id()
-        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
         artifact = Artifact(
             id=art_id,
             type="TASK",

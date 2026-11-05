@@ -284,33 +284,34 @@ class Orchestrator:
                 raise InvalidTransition(run.state.stage, Trigger.COMPLETE.value)
             if kind == StageKind.REVIEW:
                 self._sync_approval(run)
-            elif kind != StageKind.ESCALATED:
-                if run.retry_at is None or self._now() >= run.retry_at:
-                    run.retry_at = None
-                    run.in_flight = self._new_id()
-                    token = run.in_flight
-                    # Record the step start before dispatching: the
-                    # claim is saved when the block exits, so the run's
-                    # log shows what the agent is doing while a long
-                    # step (e.g. a minutes-long model call) is still in
-                    # flight, not only after it finishes.
-                    step = self._step(run)
-                    attempt = run.attempts.get(step.id, 0) + 1
-                    message = f"{step.name} started"
-                    if step.agent_type == "implement" and run.task_order:
-                        message += f" · item {run.task_order[run.item_index]}"
-                    if attempt > 1:
-                        message += f" (attempt {attempt})"
-                    self._event(
-                        run,
-                        "STEP_STARTED",
-                        message,
-                        metadata={
-                            "stepId": step.id,
-                            "agentType": step.agent_type,
-                            "attempt": attempt,
-                        },
-                    )
+            elif kind != StageKind.ESCALATED and (
+                run.retry_at is None or self._now() >= run.retry_at
+            ):
+                run.retry_at = None
+                run.in_flight = self._new_id()
+                token = run.in_flight
+                # Record the step start before dispatching: the
+                # claim is saved when the block exits, so the run's
+                # log shows what the agent is doing while a long
+                # step (e.g. a minutes-long model call) is still in
+                # flight, not only after it finishes.
+                step = self._step(run)
+                attempt = run.attempts.get(step.id, 0) + 1
+                message = f"{step.name} started"
+                if step.agent_type == "implement" and run.task_order:
+                    message += f" · item {run.task_order[run.item_index]}"
+                if attempt > 1:
+                    message += f" (attempt {attempt})"
+                self._event(
+                    run,
+                    "STEP_STARTED",
+                    message,
+                    metadata={
+                        "stepId": step.id,
+                        "agentType": step.agent_type,
+                        "attempt": attempt,
+                    },
+                )
         if token is None:
             return self.get(run_id)
         # Phase 2 — execute with NO store transaction held. The agent
@@ -442,9 +443,12 @@ class Orchestrator:
         failure has already been recorded on it via _fail).
         """
         step = self._step(run)
-        if self._code_loop is not None and step.agent_type == "implement":
-            if not self._select_item(run, step):
-                return None
+        if (
+            self._code_loop is not None
+            and step.agent_type == "implement"
+            and not self._select_item(run, step)
+        ):
+            return None
         if step.action is not None and step.agent_type is None:
             execute = self._actions.get(step.action)
             if execute is None:
@@ -736,19 +740,22 @@ class Orchestrator:
         if any(artifact.metadata.get(key) != value for key, value in expected.items()):
             self._fail(run, "VALIDATION_FAILED", "Stale code-chain artifact links", "VALIDATION")
             return False
-        if step.agent_type == "fix" and code is not None:
-            if (
+        if (
+            step.agent_type == "fix"
+            and code is not None
+            and (
                 not code.version.isdecimal()
                 or artifact.version != str(int(code.version) + 1)
                 or artifact.metadata.get("revisionOf") != code.id
-            ):
-                self._fail(
-                    run,
-                    "VALIDATION_FAILED",
-                    "Invalid replacement CODE revision",
-                    "VALIDATION",
-                )
-                return False
+            )
+        ):
+            self._fail(
+                run,
+                "VALIDATION_FAILED",
+                "Invalid replacement CODE revision",
+                "VALIDATION",
+            )
+            return False
         return True
 
     def _request_fix(self, run: WorkflowExecution) -> None:
@@ -832,10 +839,13 @@ class Orchestrator:
             raise ValueError("Review stage is missing its approval request")
         request = service.get(run.approval_id)
         now = self._now()
-        if request.status == "PENDING" and request.expires_at is not None:
-            if request.expires_at <= now:
-                service.expire_due(now)
-                request = service.get(run.approval_id)
+        if (
+            request.status == "PENDING"
+            and request.expires_at is not None
+            and request.expires_at <= now
+        ):
+            service.expire_due(now)
+            request = service.get(run.approval_id)
         if request.status == "PENDING":
             return
         if request.status == "APPROVED":

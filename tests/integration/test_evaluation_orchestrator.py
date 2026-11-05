@@ -1,6 +1,6 @@
 """MetricsService wired as both orchestrator ports in a real run."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
 
@@ -18,7 +18,7 @@ from tests.integration.test_chain import make_spec_artifact
 
 
 def test_metrics_service_collects_metrics_and_events_from_orchestrator_run():
-    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 2, tzinfo=UTC)
     ids = count(1)
 
     def new_id():

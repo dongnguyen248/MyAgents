@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
 
@@ -42,7 +42,7 @@ __all__ = ["ConfigResult", "ExperimentResult", "run_fix_cycle_experiment"]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = REPO_ROOT / "templates"
-NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
 REVIEWER = "harness"
 TERMINAL_STAGES = {"COMPLETED", "FAILED", "CANCELLED", "CODE_FIX_ESCALATED"}
 MAX_TICKS = 50

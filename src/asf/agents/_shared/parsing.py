@@ -57,4 +57,6 @@ def parse_json(text: str) -> dict[str, Any]:
             raise ParseError("JSON root must be an object", raw=text)
         return result
     except json.JSONDecodeError as e:
-        raise ParseError(f"Invalid JSON: {e.msg} at line {e.lineno}, column {e.colno}", raw=text)
+        raise ParseError(
+            f"Invalid JSON: {e.msg} at line {e.lineno}, column {e.colno}", raw=text
+        ) from None

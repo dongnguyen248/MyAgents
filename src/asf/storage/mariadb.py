@@ -23,9 +23,9 @@ import os
 import re
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from asf.approval.models import ApprovalDecision, ApprovalRequest
@@ -160,15 +160,15 @@ class MariaDbConfig:
 
 def _as_utc_naive(value: datetime) -> datetime:
     """DATETIME columns hold UTC wall time (payloads stay the truth)."""
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _as_utc_iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _execution_columns(run: WorkflowExecution) -> tuple[Any, ...]:
@@ -333,10 +333,8 @@ class MariaDbExecutionStore:
             try:
                 connection.ping(reconnect=True)
             except Exception:
-                try:
+                with suppress(Exception):
                     connection.close()
-                except Exception:
-                    pass
                 connection = None
         if connection is None:
             connection = self._connect(database=self._config.database)

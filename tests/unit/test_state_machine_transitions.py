@@ -2,7 +2,7 @@ import json
 import subprocess
 import sys
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -172,7 +172,7 @@ else:
                 self.assertEqual(exc.stage, st.stage)
                 self.assertEqual(exc.trigger, str(trig))
 
-                fixed_now = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+                fixed_now = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
                 err_dict = exc.to_platform_error(now=fixed_now)
                 self.error_validator.validate(err_dict)
                 self.assertEqual(err_dict["code"], "WORKFLOW_INVALID_TRANSITION")
@@ -185,7 +185,7 @@ else:
         exc = InvalidTransition(
             stage="NEW", trigger="APPROVED", allowed=("START", "FAIL", "CANCEL")
         )
-        fixed_dt = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+        fixed_dt = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
         err_dict = exc.to_platform_error(now=fixed_dt)
         self.error_validator.validate(err_dict)
         self.assertEqual(err_dict["timestamp"], "2026-10-20T14:00:00+00:00")

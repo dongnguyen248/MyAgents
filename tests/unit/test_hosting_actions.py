@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -16,7 +16,7 @@ from asf.integrations.hosting.ports import (
     PushResult,
 )
 
-NOW = datetime(2026, 11, 4, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 4, tzinfo=UTC)
 
 PROFILES = {
     "proj": {"repository": {"provider": "gitlab", "url": "https://gitlab.com/g/proj"}},

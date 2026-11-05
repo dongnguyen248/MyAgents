@@ -356,7 +356,7 @@ class ImplementAgent(BaseAgent):
                         "maxBytes": MAX_FILE_SIZE_BYTES,
                         "actualBytes": e.max_bytes,
                     },
-                )
+                ) from None
 
         # Build messages (the output-format contract travels in the
         # user message: edit blocks by default, legacy JSON when the

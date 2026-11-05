@@ -5,7 +5,7 @@ import importlib.resources
 import itertools
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,7 @@ from asf.models.errors import ModelGatewayError
 from asf.models.fake import ScriptedModelGateway
 from tests.unit.contract_models import validator_for
 
-NOW = datetime(2026, 11, 2, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 2, tzinfo=UTC)
 APPROVE = '{"findings": [], "verdict": "APPROVE"}'
 
 

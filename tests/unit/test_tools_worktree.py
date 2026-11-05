@@ -12,7 +12,7 @@ import logging
 import subprocess
 import sys
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -29,7 +29,7 @@ from tests.unit.test_api_service import PROJECTS, FakeMetrics
 from tests.unit.test_workspace_concurrency import build_engine
 
 PYTHON = sys.executable
-NOW = datetime(2026, 11, 5, 15, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 5, 15, 0, tzinfo=UTC)
 
 
 def git(path: Path, *args: str) -> str:

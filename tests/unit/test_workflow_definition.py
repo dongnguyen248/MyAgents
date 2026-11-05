@@ -181,11 +181,10 @@ steps:
 
     def test_reserved_stage_name_rejected(self):
         for reserved in ["NEW", "COMPLETED", "FAILED", "CANCELLED"]:
-            with self.subTest(stage=reserved):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    wf_file = Path(tmp_dir) / "test-wf.yaml"
-                    wf_file.write_text(
-                        f"""
+            with self.subTest(stage=reserved), tempfile.TemporaryDirectory() as tmp_dir:
+                wf_file = Path(tmp_dir) / "test-wf.yaml"
+                wf_file.write_text(
+                    f"""
 id: test-wf
 name: Test
 version: "1"
@@ -197,16 +196,14 @@ steps:
     agentType: test
     requiresApproval: false
 """,
-                        encoding="utf-8",
-                    )
-                    with self.assertRaises(ConfigError) as ctx:
-                        load_workflow(wf_file)
-                    self.assertTrue(
-                        any("steps[0].stage" in iss.path for iss in ctx.exception.issues)
-                    )
-                    self.assertTrue(
-                        any("reserved" in iss.message.lower() for iss in ctx.exception.issues)
-                    )
+                    encoding="utf-8",
+                )
+                with self.assertRaises(ConfigError) as ctx:
+                    load_workflow(wf_file)
+                self.assertTrue(any("steps[0].stage" in iss.path for iss in ctx.exception.issues))
+                self.assertTrue(
+                    any("reserved" in iss.message.lower() for iss in ctx.exception.issues)
+                )
 
     def test_reserved_stage_with_approval_produces_single_issue(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -402,11 +399,10 @@ steps:
     def test_bad_stage_pattern_rejected(self):
         bad_stages = ["step_one", "1_STEP", "_STEP", "STEP-ONE", ""]
         for bad in bad_stages:
-            with self.subTest(stage=bad):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    wf_file = Path(tmp_dir) / "test-wf.yaml"
-                    wf_file.write_text(
-                        f"""
+            with self.subTest(stage=bad), tempfile.TemporaryDirectory() as tmp_dir:
+                wf_file = Path(tmp_dir) / "test-wf.yaml"
+                wf_file.write_text(
+                    f"""
 id: test-wf
 name: Test
 version: "1"
@@ -418,13 +414,11 @@ steps:
     agentType: test
     requiresApproval: false
 """,
-                        encoding="utf-8",
-                    )
-                    with self.assertRaises(ConfigError) as ctx:
-                        load_workflow(wf_file)
-                    self.assertTrue(
-                        any("steps[0].stage" in iss.path for iss in ctx.exception.issues)
-                    )
+                    encoding="utf-8",
+                )
+                with self.assertRaises(ConfigError) as ctx:
+                    load_workflow(wf_file)
+                self.assertTrue(any("steps[0].stage" in iss.path for iss in ctx.exception.issues))
 
     def test_step_with_neither_agent_type_nor_action_rejected(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -41,7 +41,7 @@ def test_store_in_memory_still_works():
 
 
 def _execution(run_id: str) -> WorkflowExecution:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return WorkflowExecution(
         id=run_id,
         task_id="task-1",

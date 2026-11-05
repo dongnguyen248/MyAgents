@@ -9,6 +9,7 @@ the timing assertions there.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 import time
@@ -225,10 +226,8 @@ def test_timeout_leaves_no_orphan_grandchild(tmp_path: Path):
     else:
         pytest.fail(f"grandchild {pid} survived the sandbox timeout")
     # It must also be reaped (a zombie still answers kill(pid, 0)).
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.kill(pid, 0)
-    except ProcessLookupError:
-        pass
 
 
 def test_normal_command_reports_exit_code_duration_and_streams(tmp_path: Path):

@@ -112,6 +112,8 @@ def test_workflow_view_exposes_artifact_contents(tmp_path: Path):
 # Per-project review rules (configuration.review -> run context)
 # ---------------------------------------------------------------------------
 
+from datetime import UTC  # noqa: E402
+
 from asf.api.demo import DemoFactoryService  # noqa: E402
 
 
@@ -489,7 +491,7 @@ def test_run_failing_in_code_fix_keeps_its_approval_gates_done(
     # showed every approval as Pending. The run ends in CODE_FIX, a
     # stage no workflow step generates, so the gates' trail lookup
     # found no position and fell back to pending.
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from asf.contracts.models import AgentResult, PlatformError, RunMetrics
 
@@ -539,7 +541,7 @@ def test_run_failing_in_code_fix_keeps_its_approval_gates_done(
                     message="Invalid replacement ChangeSet",
                     category="LLM",
                     retryable=False,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                     details={"cause": "Invalid JSON: Expecting value at line 1"},
                 )
             ],

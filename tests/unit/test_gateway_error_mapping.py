@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 
 import pytest
@@ -292,7 +292,7 @@ def test_gemini_retry_after_seconds_is_respected() -> None:
 
 
 def test_openai_retry_after_http_date_is_respected() -> None:
-    retry_at = datetime.now(timezone.utc) + timedelta(seconds=20)
+    retry_at = datetime.now(UTC) + timedelta(seconds=20)
     transport = OpenAiTransport(
         [
             (503, {"retry-after": format_datetime(retry_at)}, {}),

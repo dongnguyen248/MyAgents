@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from asf.agents._shared.model_call import call_model
@@ -288,7 +288,7 @@ class PlanAgent(BaseAgent):
             raise invalid_response(
                 "Model response has invalid milestone structure",
                 details={"milestoneIssues": e.issues},
-            )
+            ) from None
 
         # Validate "Linked SPEC" section matches the input SPEC artifact
         linked_spec_issues = self._validate_linked_spec_section(reply, spec_art)
@@ -299,10 +299,7 @@ class PlanAgent(BaseAgent):
             )
 
         # Determine version
-        if is_revision and prev_plan_art:
-            version = str(int(prev_plan_art.version) + 1)
-        else:
-            version = "1"
+        version = str(int(prev_plan_art.version) + 1) if is_revision and prev_plan_art else "1"
 
         # Build artifact metadata with traceability
         art_metadata: dict[str, Any] = {
@@ -321,7 +318,7 @@ class PlanAgent(BaseAgent):
             art_metadata["language"] = language
 
         art_id = self._runtime.new_id()
-        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
         artifact = Artifact(
             id=art_id,
             type="PLAN",
@@ -357,7 +354,7 @@ class PlanAgent(BaseAgent):
         found_id = None
         found_version = None
 
-        for i, line in enumerate(lines):
+        for _i, line in enumerate(lines):
             stripped = line.strip()
             if stripped == "## Linked SPEC":
                 in_linked_spec = True

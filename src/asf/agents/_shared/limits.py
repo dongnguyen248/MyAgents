@@ -62,7 +62,7 @@ def check_command_output_size(size: int, command: str) -> list[str]:
     return issues
 
 
-def check_changeset_limits(changeset: "ChangeSet") -> list[str]:
+def check_changeset_limits(changeset: ChangeSet) -> list[str]:
     """Check ChangeSet limits.
 
     Args:

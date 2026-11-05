@@ -71,7 +71,7 @@ def test_factory_requires_repository() -> None:
 
     try:
         build_implement_agent(runtime, platform, templates_dir)
-        assert False, "Should have raised TypeError"
+        raise AssertionError("Should have raised TypeError")
     except TypeError:
         pass
 

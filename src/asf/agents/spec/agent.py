@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from asf.agents._shared.model_call import call_model
@@ -219,10 +219,7 @@ class SpecAgent(BaseAgent):
                 details={"missingSections": missing_sections},
             )
 
-        if is_revision and prev_spec_art:
-            version = str(int(prev_spec_art.version) + 1)
-        else:
-            version = "1"
+        version = str(int(prev_spec_art.version) + 1) if is_revision and prev_spec_art else "1"
 
         art_metadata: dict[str, Any] = {
             "template": "spec",
@@ -238,7 +235,7 @@ class SpecAgent(BaseAgent):
             art_metadata["language"] = language
 
         art_id = self._runtime.new_id()
-        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
         artifact = Artifact(
             id=art_id,
             type="SPEC",

@@ -250,9 +250,11 @@ def test_router_logs_the_model_sent_on_provider_failure(
         RecordingGateway("scripted"),
         gateway_factory=lambda s, t: _FailingGateway(),
     )
-    with caplog.at_level(logging.WARNING, logger="asf.api.model_settings"):
-        with pytest.raises(ModelGatewayError):
-            router.complete(_request())
+    with (
+        caplog.at_level(logging.WARNING, logger="asf.api.model_settings"),
+        pytest.raises(ModelGatewayError),
+    ):
+        router.complete(_request())
     assert "gpt-real" in caplog.text
     assert "HTTP 400" in caplog.text
 

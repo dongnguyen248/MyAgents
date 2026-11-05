@@ -24,7 +24,7 @@ orchestrator's own retry policy owns longer waits.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
@@ -95,8 +95,8 @@ def parse_retry_after(
     except (TypeError, ValueError):
         return None
     if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    current = now or datetime.now(timezone.utc)
+        moment = moment.replace(tzinfo=UTC)
+    current = now or datetime.now(UTC)
     return max(0.0, (moment - current).total_seconds())
 
 

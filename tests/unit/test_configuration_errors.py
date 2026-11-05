@@ -1,6 +1,6 @@
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -32,7 +32,7 @@ class ConfigurationErrorsTests(unittest.TestCase):
             source="config/platform.yaml",
         )
 
-        fixed_time = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+        fixed_time = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
         platform_errors = err.to_platform_errors(now=fixed_time)
 
         self.assertEqual(len(platform_errors), 2)

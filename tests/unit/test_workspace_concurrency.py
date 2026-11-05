@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
 from typing import Any
@@ -45,7 +45,7 @@ from asf.tools.local import LocalWorkspace, WorkspaceRepository, WorkspaceSandbo
 from asf.tools.ports import CommandSpec
 from tests.unit.test_api_service import PROJECTS, FakeMetrics, RoutingGateway
 
-NOW = datetime(2026, 11, 3, 9, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 3, 9, 0, tzinfo=UTC)
 TEMPLATES = Path(__file__).resolve().parents[2] / "templates"
 PYTHON = sys.executable
 

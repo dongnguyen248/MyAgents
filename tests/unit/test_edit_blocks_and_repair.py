@@ -11,7 +11,7 @@ and the token-size win on a 3-line change in a 1000-line file.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -32,7 +32,7 @@ from asf.tools.edit_blocks import EditBlockError, parse_edit_blocks
 from asf.tools.fake import InMemoryRepository
 from tests.unit.implement_helpers import counter_id, make_implement_request
 
-T_AWARE = datetime(2026, 11, 5, 17, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 11, 5, 17, 0, tzinfo=UTC)
 CALC = "def add(a, b):\n    return a + b\n\n\ndef subtract(a, b):\n    return a - b\n"
 
 

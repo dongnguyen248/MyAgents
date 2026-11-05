@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from asf.contracts.models import ActivityEvent, AgentResult, Artifact, RunMetrics
 from asf.evaluation import MetricsService
 
-DAY1 = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc)
-DAY2 = datetime(2026, 11, 3, 9, 0, tzinfo=timezone.utc)
+DAY1 = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
+DAY2 = datetime(2026, 11, 3, 9, 0, tzinfo=UTC)
 
 
 class MutableClock:

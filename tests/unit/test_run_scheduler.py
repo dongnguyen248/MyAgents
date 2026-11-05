@@ -11,7 +11,7 @@ backoff expires.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from itertools import count
 
 import pytest
@@ -31,7 +31,7 @@ from asf.storage.memory import InMemoryApprovalRepository
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 from tests.unit.test_api_service import PROJECTS, TEMPLATES, RoutingGateway
 
-START = datetime(2026, 11, 5, 9, 0, tzinfo=timezone.utc)
+START = datetime(2026, 11, 5, 9, 0, tzinfo=UTC)
 
 
 class FakeClock:

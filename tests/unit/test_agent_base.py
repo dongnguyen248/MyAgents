@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -16,7 +16,7 @@ from asf.models.errors import ModelGatewayError
 from asf.models.fake import ScriptedModelGateway
 from tests.unit.contract_models import validator_for
 
-T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 T_NAIVE = datetime(2026, 10, 20, 14, 0, 0)
 
 

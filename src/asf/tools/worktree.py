@@ -36,6 +36,7 @@ line or a path.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import shutil
@@ -230,10 +231,8 @@ class GitWorktreeWorkspace:
                 run_git(project_root, "worktree", "remove", "--force", str(path))
             except WorktreeError:
                 shutil.rmtree(path, ignore_errors=True)
-                try:
+                with contextlib.suppress(WorktreeError):
                     run_git(project_root, "worktree", "prune")
-                except WorktreeError:
-                    pass
             removed = True
         branch = f"asf/{run_id}"
         if run_git(project_root, "branch", "--list", branch).strip():
@@ -275,10 +274,8 @@ class GitWorktreeWorkspace:
             base = self._root / project_id
             if not base.is_dir() or not self.is_git_repo(project_root):
                 continue
-            try:
+            with contextlib.suppress(WorktreeError):
                 run_git(project_root, "worktree", "prune")
-            except WorktreeError:
-                pass
             for child in sorted(base.iterdir()):
                 if not child.is_dir() or not _RUN_ID_PATTERN.match(child.name):
                     continue

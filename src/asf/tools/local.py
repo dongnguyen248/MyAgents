@@ -61,6 +61,7 @@ user's working tree with no isolation and no rollback.
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import logging
 import os
@@ -71,6 +72,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -288,10 +290,8 @@ class _CappedReader(threading.Thread):
         except OSError:
             pass
         finally:
-            try:
+            with suppress(Exception):
                 self._stream.close()  # type: ignore[attr-defined]
-            except Exception:
-                pass
 
 
 def _terminate_tree(process: subprocess.Popen) -> None:
@@ -321,20 +321,16 @@ def _terminate_tree(process: subprocess.Popen) -> None:
     except (ProcessLookupError, PermissionError):
         pgid = None
     if pgid is not None:
-        try:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(pgid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
     try:
         process.wait(timeout=_TERMINATE_GRACE_SECONDS)
         return
     except subprocess.TimeoutExpired:
         pass
     if pgid is not None:
-        try:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(pgid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
     try:
         process.wait(timeout=_TERMINATE_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
@@ -346,10 +342,9 @@ def _taskkill(pid: int, *, force: bool) -> None:
     args = ["taskkill", "/PID", str(pid), "/T"]
     if force:
         args.append("/F")
-    try:
+    # Already gone, or taskkill itself unavailable: wait() decides.
+    with suppress(OSError, subprocess.TimeoutExpired):
         subprocess.run(args, capture_output=True, timeout=10, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        pass  # already gone, or taskkill itself unavailable: wait() decides
 
 
 def _rlimit_preexec(limits: SandboxResourceLimits):  # noqa: ANN202
@@ -509,7 +504,8 @@ class LocalSandbox:
                 f"Could not run command {spec.argv!r}: {error}",
                 command=spec,
             ) from None
-        assert process.stdout is not None and process.stderr is not None
+        if process.stdout is None or process.stderr is None:
+            raise SandboxError(f"Could not capture output of {spec.argv!r}", command=spec)
         readers = [
             _CappedReader(process.stdout, spec.output_limit_bytes),
             _CappedReader(process.stderr, spec.output_limit_bytes),

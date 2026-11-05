@@ -57,7 +57,7 @@ See [`docs/architecture/README.md`](docs/architecture/README.md).
 Install the optional Teams SDK when running the complete test suite:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[dev,teams]"
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,api]"
 .\.venv\Scripts\python.exe -m pytest tests\ -x -q
 .\.venv\Scripts\python.exe -m mypy src\ --strict
 .\.venv\Scripts\python.exe -m ruff check src\ tests\

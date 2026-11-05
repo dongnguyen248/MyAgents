@@ -14,7 +14,7 @@ Mở PowerShell tại thư mục gốc project (nơi có `pyproject.toml`).
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev,teams]"
+python -m pip install -e ".[dev,api]"
 ```
 
 - `dev` = pytest/ruff/mypy/bandit. `teams` = fastapi/uvicorn/httpx (backend API cần).

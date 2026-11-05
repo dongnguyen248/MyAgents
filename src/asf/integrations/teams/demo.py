@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -87,7 +87,7 @@ def demo_engine(
     first_id = iter([execution_id] if execution_id is not None else [])
     runtime = AgentRuntime(
         models=models if models is not None else DemoModels(),
-        clock=lambda: datetime.now(timezone.utc),
+        clock=lambda: datetime.now(UTC),
         new_id=lambda: next(first_id, str(uuid4())),
     )
     registry = AgentRegistry()

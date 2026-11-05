@@ -12,7 +12,7 @@ gateway payloads, and the review fast path.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import count
 
 from asf.agents._shared.context_slicing import slice_plan, slice_spec
@@ -49,7 +49,7 @@ from tests.unit.implement_helpers import (
     make_task_artifact,
 )
 
-NOW = datetime(2026, 11, 5, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
 
 
 def _runtime(gateway) -> AgentRuntime:

@@ -24,7 +24,7 @@ import os
 import re
 import tempfile
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -278,7 +278,7 @@ def _load_metrics() -> Any:
             if cls is None:
                 continue
             instance = None
-            for kwargs in ({"clock": lambda: datetime.now(timezone.utc)}, {}):
+            for kwargs in ({"clock": lambda: datetime.now(UTC)}, {}):
                 try:
                     instance = cls(**kwargs)
                     break
@@ -738,7 +738,7 @@ def build_demo(
     definition = load_workflow(root / "workflow-definitions" / "software-development.yaml")
 
     def clock() -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     def new_id() -> str:
         return str(uuid4())

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from itertools import count
 
 import pytest
@@ -18,7 +18,7 @@ from asf.storage.memory import InMemoryApprovalRepository
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 from tests.unit.test_agent_base import DummyAgent
 
-NOW = datetime(2026, 11, 2, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 2, tzinfo=UTC)
 
 
 def step(name: str, *, approval: bool = False, revisions: int = 2) -> WorkflowStepDef:
@@ -172,7 +172,7 @@ def test_approval_pauses_dispatch_and_uses_trusted_clock():
     assert not plan.run_called
     with pytest.raises(ApprovalError) as exc:
         engine.decide(run.id, reviewer="outsider", decision="APPROVED")
-    assert getattr(exc.value, "code") == "APPROVAL_NOT_AUTHORIZED"
+    assert exc.value.code == "APPROVAL_NOT_AUTHORIZED"
     run = engine.decide(run.id, reviewer="reviewer", decision="APPROVED")
     assert run.state.stage == "PLAN"
     assert repo.list_decisions(repo.list_by_task("task-1")[0].id)[0].created_at == NOW

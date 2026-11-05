@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -85,10 +85,9 @@ def test_transaction_rolls_back_on_error(tmp_path: Path):
         # engine.start already persisted the run inside its own transaction;
         # a failing transaction must leave the stored payload untouched.
         before = store.get_execution(run.id).model_dump_json()
-        with pytest.raises(RuntimeError, match="boom"):
-            with store.transaction():
-                store.save_execution(run)
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError, match="boom"), store.transaction():
+            store.save_execution(run)
+            raise RuntimeError("boom")
         assert store.get_execution(run.id).model_dump_json() == before
     finally:
         store.close()
@@ -104,7 +103,7 @@ def test_store_supports_concurrent_threads():
     def worker(index: int) -> None:
         try:
             for number in range(5):
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 run = WorkflowExecution(
                     id=f"run-{index}-{number}-{uuid4().hex[:8]}",
                     task_id="task-1",
@@ -139,7 +138,7 @@ def test_version_guard_rejects_a_stale_save():
     from asf.orchestrator.ports import ConcurrentModificationError
 
     store = make_store()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     run = WorkflowExecution(
         id=f"versioned-{uuid4().hex[:8]}",
         task_id="task-1",
@@ -159,9 +158,8 @@ def test_version_guard_rejects_a_stale_save():
             store.save_execution(first)
         assert first.version == 1
         second.context["writer"] = "second"
-        with pytest.raises(ConcurrentModificationError):
-            with store.transaction():
-                store.save_execution(second)
+        with pytest.raises(ConcurrentModificationError), store.transaction():
+            store.save_execution(second)
         saved = store.get_execution(run.id)
         assert saved.version == 1
         assert saved.context["writer"] == "first"
@@ -197,7 +195,7 @@ def test_long_running_agent_holds_no_row_lock():
     from tests.unit.test_agent_base import DummyAgent
 
     store = make_store()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ids = count(1)
     runtime = AgentRuntime(
         models=ScriptedModelGateway([]),
@@ -326,8 +324,8 @@ def test_summaries_and_migration_v3_backfill():
             project_id=project_id,
             state=RunState(stage="COMPLETED"),
             definition={"id": "software-development"},
-            started_at=datetime(2026, 11, 5, 9, 0, tzinfo=timezone.utc),
-            updated_at=datetime(2026, 11, 5, 9, 30, tzinfo=timezone.utc),
+            started_at=datetime(2026, 11, 5, 9, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 11, 5, 9, 30, tzinfo=UTC),
         )
         store.create_execution(run)
         summaries = store.list_execution_summaries(project_id)

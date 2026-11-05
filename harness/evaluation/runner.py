@@ -7,7 +7,7 @@ format follows the templates the agents validate against.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from itertools import count
 from pathlib import Path
 
@@ -38,7 +38,7 @@ class _StepClock:
     """Deterministic clock: every call advances by one second."""
 
     def __init__(self) -> None:
-        self._now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self._now = datetime(2026, 1, 1, tzinfo=UTC)
 
     def __call__(self) -> datetime:
         current = self._now

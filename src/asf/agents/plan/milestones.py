@@ -83,10 +83,7 @@ def parse_milestones(plan_text: str) -> list[Milestone]:
             # Extract the content until next milestone or end
             start = match.end()
             idx = matches.index(match)
-            if idx + 1 < len(matches):
-                next_start = matches[idx + 1].start()
-            else:
-                next_start = len(plan_text)
+            next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(plan_text)
             content = plan_text[start:next_start].strip()
 
             # Parse fields

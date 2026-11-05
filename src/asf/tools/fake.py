@@ -60,7 +60,7 @@ class InMemoryRepository:
             return ()
         if not prefix:
             return tuple(sorted(tree.files.keys()))
-        return tuple(sorted(p for p in tree.files.keys() if p.startswith(prefix)))
+        return tuple(sorted(p for p in tree.files if p.startswith(prefix)))
 
     def read_file(self, path: str, ref: str, max_bytes: int = 256_000) -> str:
         tree = self._trees.get(ref)

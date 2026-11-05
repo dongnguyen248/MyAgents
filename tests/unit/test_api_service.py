@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
 
@@ -35,7 +35,7 @@ from asf.storage.sqlite import SQLiteExecutionStore
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 from tests.integration.test_chain import make_plan_artifact, make_spec_artifact
 
-NOW = datetime(2026, 11, 3, 9, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 3, 9, 0, tzinfo=UTC)
 TEMPLATES = Path(__file__).resolve().parents[2] / "templates"
 
 PROJECTS = {

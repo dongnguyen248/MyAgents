@@ -12,6 +12,7 @@ runs themselves or from the injected ``clock`` callable.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -21,7 +22,8 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta, timezone
+from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from pydantic import ValidationError
@@ -91,7 +93,7 @@ COMPLEX_REQUIREMENT_CHARS = 6000
 # exposed in the workflow view).
 SPLIT_REQUIREMENT_CHARS = 12_000
 
-_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 _AGENT_STATUS_MAP = {
     "RUNNING": "BUSY",
@@ -1657,7 +1659,7 @@ class FactoryService:
             return
         if self._metrics is None or not hasattr(self._metrics, "record_approval_decision"):
             return
-        record = getattr(self._metrics, "record_approval_decision")
+        record = self._metrics.record_approval_decision
         try:
             record(
                 project_id=run.project_id,
@@ -1667,15 +1669,13 @@ class FactoryService:
                 at=None,
             )
         except TypeError:
-            try:
+            with suppress(Exception):
                 record(
                     project_id=run.project_id,
                     task_id=run.task_id,
                     agent_id=agent_id,
                     decision=decision,
                 )
-            except Exception:  # nosec B110
-                pass
         except Exception:  # nosec B110
             pass
 
@@ -1885,14 +1885,12 @@ class FactoryService:
             worker.join(timeout=5)
 
     def _flush_observations_quietly(self, run_id: str) -> None:
-        try:
+        # RuntimeError: nothing to deliver to. ValueError: another
+        # thread is dispatching this run right now and the engine will
+        # not flush mid-dispatch. At-least-once delivery; a later
+        # flush retries.
+        with suppress(RuntimeError, ValueError):
             self._engine.flush_observations(run_id)
-        except (RuntimeError, ValueError):
-            # RuntimeError: nothing to deliver to. ValueError: another
-            # thread is dispatching this run right now and the engine
-            # will not flush mid-dispatch. At-least-once delivery; a
-            # later flush retries.
-            pass
 
     def _drive(self, run_id: str) -> None:
         """Advance a run automatically until it needs a human or stops.
@@ -1941,14 +1939,12 @@ class FactoryService:
             after = self._engine.get(run_id)
             if (after.state.stage, len(after.results)) == before:
                 break
-        try:
+        # ValueError: another thread is dispatching this run right
+        # now (a manual tick racing the drive) and the engine will
+        # not flush mid-dispatch. At-least-once delivery; retried on
+        # a later flush.
+        with suppress(RuntimeError, ValueError):
             self._engine.flush_observations(run_id)
-        except (RuntimeError, ValueError):
-            # ValueError: another thread is dispatching this run right
-            # now (a manual tick racing the drive) and the engine will
-            # not flush mid-dispatch. At-least-once delivery; retried
-            # on a later flush.
-            pass
         self._sync_retry_schedule(run_id)
         self._notify_run_terminal(run_id)
 
@@ -1982,7 +1978,7 @@ class FactoryService:
         clock = self._clock or getattr(self._engine, "_clock", None)
         if clock is not None:
             return clock()
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     def _sync_retry_schedule(self, run_id: str) -> None:
         """Registers a parked run's retry_at with the scheduler.
@@ -2286,15 +2282,13 @@ class FactoryService:
                 "requirement": nxt.get("requirement") or "",
             },
         }
-        try:
+        with contextlib.suppress(Exception):
             self._start_run_once(
                 str(nxt["taskId"]),
                 run.project_id,
                 child_inputs,
                 child_context,
             )
-        except Exception:
-            pass
 
     def tick_run(self, run_id: str) -> dict[str, Any] | None:
         self._invalidate_runs_cache()
@@ -2302,10 +2296,9 @@ class FactoryService:
         # for the drive to park the run, then tick (usually a no-op).
         self._wait_for_drive(run_id)
         self._engine.tick(run_id)
-        try:
+        # Observation delivery is at-least-once; a retry happens later.
+        with suppress(RuntimeError):
             self._engine.flush_observations(run_id)
-        except RuntimeError:
-            pass  # Observation delivery is at-least-once; a retry happens later.
         return self.get_workflow(run_id)
 
     def cancel_run(self, run_id: str) -> dict[str, Any] | None:

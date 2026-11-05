@@ -97,10 +97,7 @@ def build_user_message(
             for k in ("name", "description", "technology")
             if k in project_context
         }
-        if whitelisted:
-            proj_str = json.dumps(whitelisted, indent=2)
-        else:
-            proj_str = "none"
+        proj_str = json.dumps(whitelisted, indent=2) if whitelisted else "none"
     else:
         proj_str = "none"
     sections.append(f"## Project context\n{proj_str}")
@@ -131,10 +128,7 @@ def build_plan_messages(
 ) -> list[ModelMessage]:
     """Constructs the system and user messages for PlanAgent."""
     is_revision = previous_plan is not None
-    if is_revision:
-        system_content = f"{prompts.system}\n\n{prompts.revision}"
-    else:
-        system_content = prompts.system
+    system_content = f"{prompts.system}\n\n{prompts.revision}" if is_revision else prompts.system
     system_content += rules_section(
         project_context,
         "Project development rules — the standards this project's code"

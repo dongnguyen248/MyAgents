@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import get_args
 
@@ -22,7 +22,7 @@ SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "contracts.schema.json"
 with SCHEMA_PATH.open(encoding="utf-8") as schema_file:
     SCHEMA = json.load(schema_file)
 
-VALID_AWARE_TIME = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+VALID_AWARE_TIME = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 NAIVE_TIME = datetime(2026, 10, 20, 14, 0, 0)
 
 

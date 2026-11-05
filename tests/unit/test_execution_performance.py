@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +36,7 @@ from tests.unit.test_api_service import PROJECTS, FakeMetrics, RoutingGateway
 from tests.unit.test_orchestrator_concurrency import InMemoryExecutionStore
 from tests.unit.test_workspace_concurrency import build_engine
 
-NOW = datetime(2026, 11, 5, 16, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 5, 16, 0, tzinfo=UTC)
 
 
 # -- A: snapshots ---------------------------------------------------------

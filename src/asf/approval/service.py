@@ -198,10 +198,7 @@ class ApprovalService:
         elif decision.decision == "APPROVED":
             all_decisions = self._repository.list_decisions(req.id)
             distinct_approvers = {d.reviewer for d in all_decisions if d.decision == "APPROVED"}
-            if len(distinct_approvers) >= req.min_approvals:
-                new_status = "APPROVED"
-            else:
-                new_status = "PENDING"
+            new_status = "APPROVED" if len(distinct_approvers) >= req.min_approvals else "PENDING"
         else:
             new_status = req.status
 

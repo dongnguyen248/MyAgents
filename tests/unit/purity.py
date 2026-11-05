@@ -86,12 +86,14 @@ def assert_pure_package(
 
     py_files: list[Path] = []
     for f in all_py_files:
-        if include is not None:
-            if not (f.name in include or any(fnmatch.fnmatch(f.name, p) for p in include)):
-                continue
-        if exclude is not None:
-            if f.name in exclude or any(fnmatch.fnmatch(f.name, p) for p in exclude):
-                continue
+        if include is not None and not (
+            f.name in include or any(fnmatch.fnmatch(f.name, p) for p in include)
+        ):
+            continue
+        if exclude is not None and (
+            f.name in exclude or any(fnmatch.fnmatch(f.name, p) for p in exclude)
+        ):
+            continue
         py_files.append(f)
 
     test_case.assertTrue(

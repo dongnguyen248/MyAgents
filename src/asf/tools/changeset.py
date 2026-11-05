@@ -17,7 +17,7 @@ class FileChange(BaseModel):
     content: str | None = Field(default=None, alias="content")
 
     @model_validator(mode="after")
-    def validate_content_rules(self) -> "FileChange":
+    def validate_content_rules(self) -> FileChange:
         """Validate content rules per D12/D9:
         - create/modify require non-None content
         - delete forbids content
@@ -45,7 +45,7 @@ class ChangeSet(BaseModel):
     changes: list[FileChange] = Field(..., alias="changes", min_length=1, max_length=50)
 
     @model_validator(mode="after")
-    def validate_no_duplicate_paths(self) -> "ChangeSet":
+    def validate_no_duplicate_paths(self) -> ChangeSet:
         paths = [fc.path for fc in self.changes]
         if len(paths) != len(set(paths)):
             raise ValueError("ChangeSet contains duplicate paths")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from asf.agents.base import AgentRuntime
@@ -17,7 +17,7 @@ from asf.models.fake import ScriptedModelGateway
 from asf.tools.fake import InMemoryRepository
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 
 # Shared platform config and templates_dir for factory calls.
 # These chain suites script the legacy JSON code format end to end:

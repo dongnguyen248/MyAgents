@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from tests.integration.test_chain import make_plan_artifact, make_spec_artifact
 
 
 def test_actual_spec_and_plan_agents_are_sequenced_through_approval():
-    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 2, tzinfo=UTC)
     ids = count(1)
 
     def new_id():

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from asf.approval.models import ApprovalDecision, ApprovalRequest
 from asf.storage.memory import InMemoryApprovalRepository
 
-T1 = datetime(2026, 10, 20, 10, 0, 0, tzinfo=timezone.utc)
-T2 = datetime(2026, 10, 20, 11, 0, 0, tzinfo=timezone.utc)
-T3 = datetime(2026, 10, 20, 12, 0, 0, tzinfo=timezone.utc)
+T1 = datetime(2026, 10, 20, 10, 0, 0, tzinfo=UTC)
+T2 = datetime(2026, 10, 20, 11, 0, 0, tzinfo=UTC)
+T3 = datetime(2026, 10, 20, 12, 0, 0, tzinfo=UTC)
 
 
 def make_request(

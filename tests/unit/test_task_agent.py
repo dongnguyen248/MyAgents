@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,7 @@ from asf.models.fake import ScriptedModelGateway
 from tests.unit.contract_models import validator_for
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 
 
 def counter_id(prefix: str = "id-"):
@@ -2601,7 +2601,7 @@ class TaskAgentTests(unittest.TestCase):
         }
         self.assertEqual(set(task.keys()), expected_keys)
         # Ensure no snake_case keys
-        for key in task.keys():
+        for key in task:
             self.assertNotIn("_", key, f"Key '{key}' should not contain underscore (snake_case)")
 
     def test_output_metadata_language_stored(self):

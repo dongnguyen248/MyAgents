@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from asf.tools.changeset import ChangeSet
@@ -40,8 +40,8 @@ def build_metadata(
     """
     if generated_at.tzinfo is None:
         raise ValueError("generated_at must be timezone-aware")
-    if generated_at.tzinfo != timezone.utc:
-        generated_at = generated_at.astimezone(timezone.utc)
+    if generated_at.tzinfo != UTC:
+        generated_at = generated_at.astimezone(UTC)
 
     metadata: dict[str, Any] = {
         "artifactKind": kind,
