@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
@@ -75,6 +76,14 @@ _PROJECT_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]*")
 # what the economy per-agent models truncate or mis-format. Below the
 # threshold, runs route per agent as configured and stay cheap.
 COMPLEX_REQUIREMENT_CHARS = 6000
+
+# Automatic task splitting: a requirement beyond this size is first
+# decomposed into sub-tasks (child runs under the original task id,
+# executed one at a time in order) when a decomposer is configured.
+# A decomposition failure never blocks the task: it runs whole and
+# the failure is recorded on the run (context key splitError,
+# exposed in the workflow view).
+SPLIT_REQUIREMENT_CHARS = 12_000
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -201,6 +210,7 @@ class FactoryService:
         on_project_deleted: Callable[[str], None] | None = None,
         model_settings: Any = None,
         hosting_tokens: HostingTokens | None = None,
+        decomposer: Any = None,
     ) -> None:
         self._engine = engine
         self._metrics = metrics
@@ -211,6 +221,7 @@ class FactoryService:
         self._on_project_deleted = on_project_deleted
         self._model_settings = model_settings
         self._hosting_tokens = hosting_tokens
+        self._decomposer = decomposer
         # Raw profile payloads, kept so updates can merge over them and
         # preserve fields the caller did not resend (e.g. repository.url or
         # approval reviewers added by hand in the profile file).
@@ -592,19 +603,23 @@ class FactoryService:
             return str(kind)
         return "IMPLEMENTING"
 
+    @staticmethod
+    def _task_priority(run: WorkflowExecution) -> str:
+        priority = run.context.get("priority") if isinstance(run.context, Mapping) else None
+        if priority == "NORMAL" or priority not in _PRIORITIES:
+            return "MEDIUM"
+        return str(priority)
+
     def _task_view(self, run: WorkflowExecution) -> dict[str, Any]:
         step = self._step_for_stage(run, run.state.stage)
         assigned = self._agent_id_for_type(step.agent_type) if step is not None else None
-        priority = run.context.get("priority") if isinstance(run.context, Mapping) else None
-        if priority == "NORMAL" or priority not in _PRIORITIES:
-            priority = "MEDIUM"
         view: dict[str, Any] = {
             "id": run.task_id,
             "title": self._task_title(run),
             "projectId": run.project_id,
             "workflowType": self._workflow_type(run),
             "status": self._task_status(run),
-            "priority": priority,
+            "priority": self._task_priority(run),
             "createdAt": _iso(run.started_at),
             "updatedAt": _iso(run.updated_at),
             "revisions": sum(run.state.revisions.values()),
@@ -625,6 +640,10 @@ class FactoryService:
         for run in sorted(self._runs(), key=lambda item: item.updated_at):
             latest[run.task_id] = run
         views = [self._task_view(run) for run in latest.values()]
+        views.extend(
+            view for view in self._split_parent_views(latest)
+            if view["id"] not in {v["id"] for v in views}
+        )
         if criteria.get("projectId"):
             views = [v for v in views if v["projectId"] == criteria["projectId"]]
         if criteria.get("agentId"):
@@ -646,6 +665,69 @@ class FactoryService:
                     if datetime.fromisoformat(v["createdAt"]) >= cutoff
                 ]
         return sorted(views, key=lambda view: view["updatedAt"], reverse=True)
+
+    def _split_parent_views(
+        self, latest: Mapping[str, WorkflowExecution],
+    ) -> list[dict[str, Any]]:
+        """Synthesize task rows for auto-split parents.
+
+        A split parent has no run of its own — its child parts do —
+        so without this it would be invisible in the task list. The
+        row aggregates the latest run of each part: the status of
+        the part currently in flight; otherwise FAILED or CANCELLED
+        when a part ended that way, COMPLETED when every part has
+        completed, and IMPLEMENTING while the chain is between parts.
+        """
+        children_by_parent: dict[str, list[WorkflowExecution]] = {}
+        for run in latest.values():
+            split = run.context.get("split") if isinstance(run.context, Mapping) else None
+            if isinstance(split, Mapping) and isinstance(split.get("parentTaskId"), str):
+                children_by_parent.setdefault(split["parentTaskId"], []).append(run)
+
+        def split_of(run: WorkflowExecution) -> Mapping[str, Any]:
+            split = run.context.get("split") if isinstance(run.context, Mapping) else None
+            return split if isinstance(split, Mapping) else {}
+
+        views: list[dict[str, Any]] = []
+        for parent_id, children in children_by_parent.items():
+            if parent_id in latest:
+                continue
+            children.sort(key=lambda run: split_of(run).get("index") or 0)
+            first = children[0]
+            total_raw = split_of(first).get("total")
+            total = total_raw if isinstance(total_raw, int) and total_raw > 0 else len(children)
+            completed = sum(1 for run in children if run.state.stage == "COMPLETED")
+            active = next(
+                (run for run in reversed(children)
+                 if run.state.stage not in _TERMINAL_STAGES),
+                None,
+            )
+            if active is not None:
+                status = self._task_status(active)
+            elif any(run.state.stage == "FAILED" for run in children):
+                status = "FAILED"
+            elif any(run.state.stage == "CANCELLED" for run in children):
+                status = "CANCELLED"
+            elif completed >= total:
+                status = "COMPLETED"
+            else:
+                status = "IMPLEMENTING"
+            title = split_of(first).get("title")
+            views.append({
+                "id": parent_id,
+                "title": title if isinstance(title, str) and title else parent_id,
+                "projectId": first.project_id,
+                "workflowType": self._workflow_type(first),
+                "status": status,
+                "priority": self._task_priority(first),
+                "createdAt": _iso(min(run.started_at for run in children)),
+                "updatedAt": _iso(max(run.updated_at for run in children)),
+                "revisions": sum(sum(run.state.revisions.values()) for run in children),
+                "isSplitParent": True,
+                "splitTotal": total,
+                "splitCompleted": completed,
+            })
+        return views
 
     def get_task(self, task_id: str) -> dict[str, Any] | None:
         return next((v for v in self.list_tasks() if v["id"] == task_id), None)
@@ -919,6 +1001,12 @@ class FactoryService:
         definition = self._definition(run)
         status = self._workflow_status(run)
         steps = self._step_states(run, definition, status) if definition else []
+        split = run.context.get("split") if isinstance(run.context, Mapping) else None
+        if not isinstance(split, Mapping):
+            split = {}
+        split_error = (
+            run.context.get("splitError") if isinstance(run.context, Mapping) else None
+        )
         return {
             "id": run.id,
             "taskId": run.task_id,
@@ -927,6 +1015,13 @@ class FactoryService:
             "type": self._workflow_type(run),
             "status": status,
             "error": self._run_error(run, status),
+            # Split lineage: set on the child runs of an auto-split
+            # task; splitError is set instead when decomposition was
+            # attempted and failed (the run then proceeds whole).
+            "parentTaskId": split.get("parentTaskId"),
+            "splitIndex": split.get("index"),
+            "splitTotal": split.get("total"),
+            "splitError": split_error if isinstance(split_error, str) else None,
             # "complex" when the run's requirement was classified as
             # oversized at start: every agent call is upgraded to the
             # shared model (see COMPLEX_REQUIREMENT_CHARS).
@@ -1404,7 +1499,18 @@ class FactoryService:
         if criteria.get("agentId"):
             views = [v for v in views if v["sourceId"] == criteria["agentId"]]
         if criteria.get("taskId"):
-            views = [v for v in views if v.get("taskId") == criteria["taskId"]]
+            # A split parent's page shows its parts' activity too:
+            # the parts are separate runs whose events carry their
+            # own task ids, linked back via the split context.
+            wanted = {criteria["taskId"]}
+            for run in self._runs():
+                split = (
+                    run.context.get("split")
+                    if isinstance(run.context, Mapping) else None
+                )
+                if isinstance(split, Mapping) and split.get("parentTaskId") == criteria["taskId"]:
+                    wanted.add(run.task_id)
+            views = [v for v in views if v.get("taskId") in wanted]
         if criteria.get("projectId"):
             views = [v for v in views if v.get("projectId") == criteria["projectId"]]
         if criteria.get("limit") is not None:
@@ -1452,7 +1558,13 @@ class FactoryService:
                 name=f"asf-drive-{run_id[:8]}", daemon=True,
             )
             self._drive_threads[run_id] = thread
-        thread.start()
+            # Start while still holding the lock: publishing an
+            # unstarted thread lets a concurrent wait_for_drives pick
+            # it up and join() it, which raises "cannot join thread
+            # before it is started". Split-chain advancement spawns
+            # drives from inside other drive threads, which made
+            # that window easy to hit.
+            thread.start()
 
     def _drive_worker(self, run_id: str) -> None:
         try:
@@ -1465,6 +1577,9 @@ class FactoryService:
             # lost with the thread: nobody is dispatching now, so the
             # cancellation can be applied directly.
             self._apply_requested_cancel(run_id)
+            # If this run was a split part that just completed, its
+            # completion is what starts the next part.
+            self._advance_split_chain(run_id)
 
     def _wait_for_drive(self, run_id: str, timeout: float | None = None) -> None:
         """Join a run's drive thread if one is active."""
@@ -1571,6 +1686,23 @@ class FactoryService:
                 run = self._engine.get(run.id)
             if self._workflow_status(run) == "RUNNING":
                 self._drive_in_background(run.id)
+        # A split part that completed just before the previous backend
+        # stopped may never have started its successor; the chain
+        # state lives in the completed run's context, so re-checking
+        # every completed split part here restarts any stalled chain.
+        for run in self._runs():
+            if run.state.stage == "COMPLETED":
+                self._advance_split_chain(run.id)
+
+    @staticmethod
+    def _requirement_text(inputs: Mapping[str, Any] | None) -> str | None:
+        if not isinstance(inputs, Mapping):
+            return None
+        spec = inputs.get("spec")
+        if not isinstance(spec, Mapping):
+            return None
+        requirement = spec.get("requirement")
+        return requirement if isinstance(requirement, str) else None
 
     @staticmethod
     def _requirement_tier(inputs: Mapping[str, Any] | None) -> str | None:
@@ -1598,6 +1730,35 @@ class FactoryService:
         inputs: Mapping[str, Any] | None = None,
         context: Mapping[str, Any] | None = None,
     ) -> WorkflowExecution:
+        # Automatic splitting first: an oversized requirement is
+        # decomposed into sub-tasks whose runs execute in sequence
+        # under this task as parent. Child runs (context carries
+        # "split") and ordinary requirements start directly; every
+        # actual start classifies the run's complexity tier (see
+        # _start_run_once).
+        requirement = self._requirement_text(inputs)
+        if (
+            self._decomposer is not None
+            and not (isinstance(context, Mapping) and "split" in context)
+            and requirement is not None
+            and len(requirement) > SPLIT_REQUIREMENT_CHARS
+        ):
+            return self._start_split_run(
+                task_id, project_id, inputs, context, requirement,
+            )
+        return self._start_run_once(task_id, project_id, inputs, context)
+
+    def _start_run_once(
+        self,
+        task_id: str,
+        project_id: str,
+        inputs: Mapping[str, Any] | None = None,
+        context: Mapping[str, Any] | None = None,
+    ) -> WorkflowExecution:
+        # Automatic model routing: classify the run from its
+        # requirement and record the tier in its context; a
+        # caller-provided tier wins. Split parts start here too, so
+        # an oversized part is classified on its own text.
         merged_context = dict(context or {})
         tier = self._requirement_tier(inputs)
         if tier is not None:
@@ -1609,6 +1770,130 @@ class FactoryService:
         self.track(run.id)
         self._drive_in_background(run.id)
         return self._engine.get(run.id)
+
+    def _start_split_run(
+        self,
+        task_id: str,
+        project_id: str,
+        inputs: Mapping[str, Any] | None,
+        context: Mapping[str, Any] | None,
+        requirement: str,
+    ) -> WorkflowExecution:
+        """Decompose an oversized requirement and start its first part.
+
+        The remaining parts travel in the first part's run context
+        (split.queue); each part that completes starts the next (see
+        _advance_split_chain), so the chain needs no separate store
+        and survives restarts, Run again and Resume.
+        """
+        base_context = dict(context or {})
+        title = base_context.get("title")
+        if not isinstance(title, str) or not title:
+            title = task_id
+        try:
+            plan = self._decomposer.split(title=title, requirement=requirement)
+        except Exception as error:
+            # Never make a big task unstartable: run it whole and
+            # surface the failure on the run itself.
+            base_context["splitError"] = f"{type(error).__name__}: {error}"[:300]
+            return self._start_run_once(task_id, project_id, inputs, base_context)
+        parts = list(plan.parts)
+        queue = [
+            {
+                "taskId": f"{task_id}-part-{index}",
+                "title": part.title,
+                "requirement": plan.full_requirement(part),
+            }
+            for index, part in enumerate(parts, start=1)
+        ]
+        first = queue.pop(0)
+        child_context = {
+            **base_context,
+            "title": first["title"],
+            "split": {
+                "parentTaskId": task_id,
+                "title": title,
+                "index": 1,
+                "total": len(parts),
+                "batch": uuid.uuid4().hex,
+                "queue": queue,
+            },
+        }
+        spec = inputs.get("spec") if isinstance(inputs, Mapping) else None
+        child_inputs = {
+            **dict(inputs or {}),
+            "spec": {
+                **(dict(spec) if isinstance(spec, Mapping) else {}),
+                "requirement": first["requirement"],
+            },
+        }
+        return self._start_run_once(
+            str(first["taskId"]), project_id, child_inputs, child_context,
+        )
+
+    def _advance_split_chain(self, run_id: str) -> None:
+        """Start the next part of a split task when a part completes.
+
+        Called when a run's drive settles and at startup. Only a
+        COMPLETED part advances the chain — a failed or cancelled
+        part stops it, and a human continuing that part (Run again /
+        Resume, both of which preserve the split context) resumes
+        the chain when the part completes. Best-effort like the
+        drive itself: a start failure is retried at the next settle
+        or startup, never raised into the drive worker.
+        """
+        try:
+            run = self._engine.get(run_id)
+        except Exception:
+            return
+        if run.state.stage != "COMPLETED":
+            return
+        split = run.context.get("split") if isinstance(run.context, Mapping) else None
+        if not isinstance(split, Mapping):
+            return
+        queue = split.get("queue")
+        if not isinstance(queue, list) or not queue:
+            return
+        nxt = queue[0]
+        if not isinstance(nxt, Mapping) or not nxt.get("taskId"):
+            return
+        batch = split.get("batch")
+        already = any(
+            other.task_id == nxt["taskId"]
+            and isinstance(other.context, Mapping)
+            and isinstance(other.context.get("split"), Mapping)
+            and other.context["split"].get("batch") == batch
+            for other in self._runs()
+        )
+        if already:
+            return
+        index = split.get("index")
+        child_context = {
+            key: value for key, value in run.context.items() if key != "split"
+        }
+        child_context["title"] = nxt.get("title") or str(nxt["taskId"])
+        child_context["split"] = {
+            "parentTaskId": split.get("parentTaskId"),
+            "title": split.get("title"),
+            "index": index + 1 if isinstance(index, int) else None,
+            "total": split.get("total"),
+            "batch": batch,
+            "queue": queue[1:],
+        }
+        spec = run.inputs.get("spec") if isinstance(run.inputs, Mapping) else None
+        child_inputs = {
+            **dict(run.inputs or {}),
+            "spec": {
+                **(dict(spec) if isinstance(spec, Mapping) else {}),
+                "requirement": nxt.get("requirement") or "",
+            },
+        }
+        try:
+            self._start_run_once(
+                str(nxt["taskId"]), run.project_id, child_inputs, child_context,
+            )
+        except Exception:
+            pass
 
     def tick_run(self, run_id: str) -> dict[str, Any] | None:
         # A manual tick must not race the run's background drive: wait
@@ -1686,7 +1971,9 @@ class FactoryService:
             )
         context = {
             key: run.context[key]
-            for key in ("title", "priority", "workflowType")
+            # "split" rides along so a retried split part still
+            # advances its chain when it completes.
+            for key in ("title", "priority", "workflowType", "split")
             if isinstance(run.context, Mapping) and run.context.get(key) is not None
         }
         new_run = self.start_run(

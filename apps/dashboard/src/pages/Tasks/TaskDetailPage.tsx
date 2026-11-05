@@ -139,6 +139,34 @@ export function TaskDetailPage() {
               </Card>
             )}
             {workflow && <WorkflowErrorBanner workflow={workflow} />}
+            {task.isSplitParent && (
+              <Card>
+                <p className="muted">
+                  This task's requirement was too large for a single run, so ASF split it
+                  into {task.splitTotal} parts that run one at a time, in order.{' '}
+                  {task.splitCompleted} of {task.splitTotal} parts completed. The workflow
+                  shown is the latest part; all parts are listed under Run history.
+                </p>
+              </Card>
+            )}
+            {workflow?.parentTaskId && (
+              <Card>
+                <p className="muted">
+                  Part {workflow.splitIndex} of {workflow.splitTotal} of the split task{' '}
+                  <Link to={`/tasks/${workflow.parentTaskId}`}>{workflow.parentTaskId}</Link>.
+                  Parts run one at a time — the next part starts automatically when this
+                  one completes.
+                </p>
+              </Card>
+            )}
+            {workflow?.splitError && (
+              <Card>
+                <p className="muted">
+                  Auto-split could not decompose this task's requirement ({workflow.splitError}),
+                  so it is running as a single task.
+                </p>
+              </Card>
+            )}
             {workflow && <RunLiveActivity workflow={workflow} />}
             <div className="grid two-col">
               <Card title="Workflow timeline">{workflow ? <WorkflowStepper steps={workflow.steps} /> : <p className="muted">No workflow.</p>}</Card>
@@ -152,6 +180,12 @@ export function TaskDetailPage() {
                     <Stat label="Revisions" value={task.revisions} />
                     <Stat label="Created" value={dateTime(task.createdAt)} />
                     <Stat label="Duration" value={task.durationSec ? duration(task.durationSec) : 'In progress'} />
+                    {task.isSplitParent && (
+                      <Stat label="Split" value={`${task.splitCompleted}/${task.splitTotal} parts completed`} />
+                    )}
+                    {workflow?.parentTaskId && (
+                      <Stat label="Split" value={`Part ${workflow.splitIndex} of ${workflow.splitTotal}`} />
+                    )}
                     {workflow?.modelTier === 'complex' && (
                       <Stat label="Model routing" value="Complex requirement — all agents upgraded to the shared model" />
                     )}
@@ -164,13 +198,16 @@ export function TaskDetailPage() {
               </div>
             </div>
             <WorkflowArtifacts artifacts={workflow?.artifacts} />
-            {runs && runs.length > 1 && (
+            {runs && (runs.length > 1 || task.isSplitParent) && (
               <Card title="Run history">
                 <div className="stack">
                   {runs.map((run, index) => (
                     <p key={run.id}>
                       <WorkflowStatusBadge status={run.status} />{' '}
                       <Link to={`/workflows/${run.id}`}>Run · {dateTime(run.startedAt)}</Link>
+                      {run.splitIndex != null && (
+                        <span className="muted small"> (part {run.splitIndex} of {run.splitTotal})</span>
+                      )}
                       {index === 0 && <span className="muted small"> (latest — shown above)</span>}
                     </p>
                   ))}

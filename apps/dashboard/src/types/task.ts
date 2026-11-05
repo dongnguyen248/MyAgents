@@ -22,6 +22,10 @@ export interface Task {
   updatedAt: string;
   durationSec?: number; // set once finished
   revisions: number;
+  /** Auto-split parent: aggregated from its part runs by the backend. */
+  isSplitParent?: boolean;
+  splitTotal?: number;
+  splitCompleted?: number;
   ci?: CiStatus;
   mergeRequest?: string; // e.g. "!214"
 }

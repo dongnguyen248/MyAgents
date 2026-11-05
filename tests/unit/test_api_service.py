@@ -18,6 +18,7 @@ from asf.agents.spec.factory import build_spec_agent
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.service import (
     COMPLEX_REQUIREMENT_CHARS,
+    SPLIT_REQUIREMENT_CHARS,
     FactoryService,
     ProjectConflictError,
     ProjectExistsError,
@@ -674,6 +675,142 @@ def test_approval_step_state_for_ended_runs_uses_the_trail():
     assert state(step, "FAILED", failed_at, sequence, "FAILED", None) == "pending"
     assert state(step, "CANCELLED", None, sequence, "CANCELLED", died_writing) == "cancelled"
     assert state(step, "CANCELLED", None, sequence, "CANCELLED", passed_gate) == "done"
+
+
+class FakeDecomposer:
+    """Stands in for RequirementDecomposer with canned parts."""
+
+    def __init__(self, parts=None, error: Exception | None = None):
+        self.calls = 0
+        self._parts = parts
+        self._error = error
+
+    def split(self, *, title, requirement):  # noqa: ANN001, ANN202
+        self.calls += 1
+        if self._error is not None:
+            raise self._error
+        from asf.api.decomposer import SplitPlan
+
+        return SplitPlan(context="Shared context for all parts.", parts=self._parts)
+
+
+def _complete_run(service: FactoryService, run_id: str) -> dict:
+    """Approve every gate until the run reaches a terminal status."""
+    for _ in range(80):
+        service.wait_for_drives(timeout=10)
+        view = service.get_workflow(run_id)
+        assert view is not None
+        if view["status"] in ("COMPLETED", "FAILED", "CANCELLED"):
+            return view
+        pending = [
+            a for a in service.list_approvals() if a["taskId"] == view["taskId"]
+        ]
+        assert pending, f"run stuck at {view['status']} with no pending approval"
+        service.decide_approval(pending[0]["id"], decision="APPROVE")
+    raise AssertionError("run did not finish")
+
+
+def _split_service(decomposer) -> tuple[FactoryService, object]:
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        decomposer=decomposer,
+    )
+    return service, engine
+
+
+def test_oversized_requirement_splits_into_sequential_part_runs():
+    from asf.api.decomposer import SplitPart
+
+    decomposer = FakeDecomposer(parts=[
+        SplitPart("Foundation", "Build the foundation. " * 5),
+        SplitPart("Features", "Build the features. " * 5),
+    ])
+    service, engine = _split_service(decomposer)
+    run = service.start_run(
+        "big-task", "proj-1",
+        inputs={"spec": {"requirement": "x" * (SPLIT_REQUIREMENT_CHARS + 1)}},
+        context={"title": "Big task"},
+    )
+    assert decomposer.calls == 1
+    # The returned run is part 1; it carries the remaining plan and
+    # the shared context prepended to its own requirement.
+    assert run.task_id == "big-task-part-1"
+    first = engine.get(run.id)
+    assert first.inputs["spec"]["requirement"].startswith("Shared context")
+    split = first.context["split"]
+    assert split["parentTaskId"] == "big-task"
+    assert split["index"] == 1 and split["total"] == 2
+    assert [q["taskId"] for q in split["queue"]] == ["big-task-part-2"]
+    view = service.get_workflow(run.id)
+    assert view is not None
+    assert view["parentTaskId"] == "big-task"
+    assert view["splitIndex"] == 1 and view["splitTotal"] == 2
+
+    # The parent exists as an aggregated task row.
+    parent = service.get_task("big-task")
+    assert parent is not None and parent["isSplitParent"] is True
+    assert parent["title"] == "Big task"
+    assert parent["splitTotal"] == 2 and parent["splitCompleted"] == 0
+
+    # Completing part 1 starts part 2 on its own; completing part 2
+    # completes the parent.
+    assert _complete_run(service, run.id)["status"] == "COMPLETED"
+    part2 = [r for r in service._runs() if r.task_id == "big-task-part-2"]
+    assert len(part2) == 1
+    assert engine.get(part2[0].id).context["split"]["queue"] == []
+    assert _complete_run(service, part2[0].id)["status"] == "COMPLETED"
+    parent = service.get_task("big-task")
+    assert parent is not None
+    assert parent["status"] == "COMPLETED" and parent["splitCompleted"] == 2
+
+
+def test_failed_part_stops_the_chain_and_fails_the_parent():
+    from asf.agents.spec.agent import MAX_REQUIREMENT_CHARS
+    from asf.api.decomposer import SplitPart
+
+    decomposer = FakeDecomposer(parts=[
+        # Over the spec agent's own cap: part 1 fails at its first step.
+        SplitPart("Doomed", "z" * (MAX_REQUIREMENT_CHARS + 1)),
+        SplitPart("Never reached", "Build the rest. " * 5),
+    ])
+    service, _engine = _split_service(decomposer)
+    run = service.start_run(
+        "big-task", "proj-1",
+        inputs={"spec": {"requirement": "x" * (SPLIT_REQUIREMENT_CHARS + 1)}},
+        context={"title": "Big task"},
+    )
+    assert _complete_run(service, run.id)["status"] == "FAILED"
+    service.wait_for_drives(timeout=10)
+    assert [r for r in service._runs() if r.task_id == "big-task-part-2"] == []
+    parent = service.get_task("big-task")
+    assert parent is not None and parent["status"] == "FAILED"
+
+
+def test_split_failure_runs_the_task_whole_and_surfaces_it():
+    decomposer = FakeDecomposer(error=ValueError("response is not JSON"))
+    service, _engine = _split_service(decomposer)
+    run = service.start_run(
+        "big-task", "proj-1",
+        inputs={"spec": {"requirement": "x" * (SPLIT_REQUIREMENT_CHARS + 1)}},
+        context={"title": "Big task"},
+    )
+    assert run.task_id == "big-task"
+    view = service.get_workflow(run.id)
+    assert view is not None and "response is not JSON" in (view["splitError"] or "")
+    assert view["parentTaskId"] is None
+    task = service.get_task("big-task")
+    assert task is not None and "isSplitParent" not in task
+
+
+def test_requirement_below_the_threshold_never_splits():
+    decomposer = FakeDecomposer(parts=[])
+    service, _engine = _split_service(decomposer)
+    run = service.start_run(
+        "small-task", "proj-1", inputs={"spec": {"requirement": "Build a calculator"}},
+    )
+    assert decomposer.calls == 0
+    assert run.task_id == "small-task"
 
 
 def test_cancelled_run_steps_are_not_all_done():
