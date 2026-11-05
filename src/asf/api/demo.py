@@ -93,13 +93,22 @@ _TASK_REPLY = json.dumps({
     }],
 }, indent=2)
 
-_CODE_REPLY = json.dumps({
-    "changes": [{
-        "path": "calculator.py",
-        "operation": "create",
-        "content": "def add(a, b):\n    return a + b\n",
-    }],
-}, indent=2)
+_CODE_REPLY = """CREATE: calculator.py
+<<<<<<< FILE
+def add(a, b):
+    return a + b
+>>>>>>> FILE
+"""
+
+_FIX_REPLY = """FILE: calculator.py
+<<<<<<< SEARCH
+def add(a, b):
+    return a + b
+=======
+def add(a, b):
+    return a + b
+>>>>>>> REPLACE
+"""
 
 _REVIEW_REPLY = '{"findings": [], "verdict": "APPROVE"}'
 
@@ -126,7 +135,7 @@ class DemoRoutingGateway:
         elif "You review exactly one task" in system:
             reply = _REVIEW_REPLY
         elif "You fix one task item" in system:
-            reply = _CODE_REPLY
+            reply = _FIX_REPLY
         else:  # pragma: no cover - defensive: every demo agent is routed above
             raise RuntimeError(f"No demo reply routed for system prompt: {system[:60]}")
         return ScriptedModelGateway([reply]).complete(request)

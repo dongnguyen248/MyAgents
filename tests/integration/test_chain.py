@@ -11,7 +11,7 @@ from asf.agents.implement.factory import build_implement_agent
 from asf.agents.plan.factory import build_plan_agent
 from asf.agents.spec.factory import build_spec_agent
 from asf.agents.task.factory import build_task_agent
-from asf.configuration.platform import PlatformConfig
+from asf.configuration.platform import AgentSettings, PlatformConfig
 from asf.contracts.models import AgentRequest, Artifact
 from asf.models.fake import ScriptedModelGateway
 from asf.tools.fake import InMemoryRepository
@@ -19,8 +19,18 @@ from asf.tools.fake import InMemoryRepository
 REPO_ROOT = Path(__file__).resolve().parents[2]
 T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
 
-# Shared platform config and templates_dir for factory calls
-PLATFORM = PlatformConfig()
+# Shared platform config and templates_dir for factory calls.
+# These chain suites script the legacy JSON code format end to end:
+# pin it (and no in-agent repair loop) explicitly — the blocks
+# format and the repair loop have their own suites.
+PLATFORM = PlatformConfig(agents={
+    "implement": AgentSettings(
+        settings={"editFormat": "json", "repairAttempts": 0},
+    ),
+    "fix": AgentSettings(
+        settings={"editFormat": "json", "repairAttempts": 0},
+    ),
+})
 TEMPLATES_DIR = REPO_ROOT / "templates"
 
 

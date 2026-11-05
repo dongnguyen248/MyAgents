@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -479,7 +480,7 @@ class TaskAgent(BaseAgent):
             },
         )
 
-        response = self._runtime.models.complete(model_req)
+        response = call_model(self._runtime.models, model_req)
         reply = response.content.strip()
 
         # Unwrap single code fence if wrapped

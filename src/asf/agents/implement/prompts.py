@@ -8,6 +8,7 @@ from typing import Any
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
 from asf.contracts.models import ModelMessage
+from asf.tools.edit_blocks import BLOCKS_FORMAT_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ def build_implement_messages(
     existing_files: dict[str, str],
     language: str | None,
     project_context: str | dict[str, Any] | None,
+    edit_format: str = "blocks",
 ) -> list[ModelMessage]:
     """Build the message list for the ImplementAgent LLM call."""
     system_msg = prompts.system
@@ -128,29 +130,42 @@ def build_implement_messages(
 
     context_block = "\n\n".join(sections)
 
+    if edit_format == "blocks":
+        format_block = BLOCKS_FORMAT_INSTRUCTIONS + (
+            "\n- For modify/delete: the file must exist at the given ref\n"
+            "- For create: the file must not exist at the given ref\n"
+            "- No NUL bytes, valid UTF-8 only\n"
+            "- No secrets in generated content\n"
+            "- An empty reply is not allowed"
+        )
+    else:
+        format_block = (
+            "Return a JSON object with the following schema:\n"
+            "{\n"
+            '  "changes": [\n'
+            '    {\n'
+            '      "path": "string (relative POSIX path, no leading /)",\n'
+            '      "operation": "create|modify|delete",\n'
+            '      "content": "string (required for create/modify, omitted for delete)"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "Rules:\n"
+            "- Full file contents only\n"
+            "- No diffs\n"
+            "- Paths must be from the task item's Expected Files list\n"
+            "- For modify/delete: the file must exist at the given ref\n"
+            "- For create: the file must not exist at the given ref\n"
+            "- No NUL bytes, valid UTF-8 only\n"
+            "- No secrets in generated content\n"
+            "- Empty change set is not allowed\n"
+            "- Output valid JSON only, no extra text"
+        )
+
     user_msg = (
         f"Implement the task item {task_item_id} based on the SPEC, "
         f"PLAN, and TASK ITEM above.\n\n{context_block}\n\n"
-        "Return a JSON object with the following schema:\n"
-        "{\n"
-        '  "changes": [\n'
-        '    {\n'
-        '      "path": "string (relative POSIX path, no leading /)",\n'
-        '      "operation": "create|modify|delete",\n'
-        '      "content": "string (required for create/modify, omitted for delete)"\n'
-        "    }\n"
-        "  ]\n"
-        "}\n\n"
-        "Rules:\n"
-        "- Full file contents only\n"
-        "- No diffs\n"
-        "- Paths must be from the task item's Expected Files list\n"
-        "- For modify/delete: the file must exist at the given ref\n"
-        "- For create: the file must not exist at the given ref\n"
-        "- No NUL bytes, valid UTF-8 only\n"
-        "- No secrets in generated content\n"
-        "- Empty change set is not allowed\n"
-        "- Output valid JSON only, no extra text"
+        f"{format_block}"
     )
 
     return [

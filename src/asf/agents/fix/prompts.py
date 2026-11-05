@@ -8,6 +8,7 @@ from asf.agents._shared.codegen import FixContext
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
 from asf.contracts.models import AgentRequest, ModelMessage
+from asf.tools.edit_blocks import BLOCKS_FORMAT_INSTRUCTIONS
 
 
 @dataclass(frozen=True)
@@ -16,7 +17,11 @@ class FixPrompts:
 
 
 def build_fix_messages(
-    prompts: FixPrompts, request: AgentRequest, context: FixContext
+    prompts: FixPrompts,
+    request: AgentRequest,
+    context: FixContext,
+    *,
+    edit_format: str = "blocks",
 ) -> list[ModelMessage]:
     system = prompts.system
     project = request.context.get("project")
@@ -45,6 +50,18 @@ def build_fix_messages(
         # Why the previous fix attempt was rejected; the system prompt
         # tells the model to correct this specific failure.
         payload["previousAttemptError"] = context.previous_error
+    payload["outputFormat"] = edit_format
+    if edit_format == "blocks":
+        payload["formatInstructions"] = (
+            BLOCKS_FORMAT_INSTRUCTIONS
+            + "\n- Your blocks apply to the PREVIOUS GENERATED files"
+            " (the base files with the previous change set applied),"
+            " not to the raw base: SEARCH text must match the"
+            " previous generated content where a file was changed"
+            " before.\n"
+            "- Files you do not mention keep their previous generated"
+            " content — the replacement stays complete."
+        )
     return [
         ModelMessage(role="system", content=system),
         ModelMessage(role="user", content=json.dumps(payload, ensure_ascii=True)),

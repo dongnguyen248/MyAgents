@@ -105,6 +105,8 @@ def test_direct_constructor_accepts_prompts_model_params() -> None:
         prompts=prompts,
         model=model,
         parameters=parameters,
+        edit_format="json",  # the scripted reply below is the legacy JSON format
+        repair_attempts=0,
     )
 
     assert agent._model == model

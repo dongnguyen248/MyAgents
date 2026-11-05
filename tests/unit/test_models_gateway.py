@@ -136,6 +136,7 @@ class ModelsGatewayTests(unittest.TestCase):
             "LLM_AUTH_FAILED",
             "LLM_CONTEXT_TOO_LONG",
             "LLM_BAD_REQUEST",
+            "LLM_OUTPUT_TRUNCATED",
             "INTEGRATION_UNAVAILABLE",
         }
         self.assertEqual(set(ALLOWED_GATEWAY_ERROR_CODES.keys()), expected_codes)

@@ -32,10 +32,13 @@ def build_implement_agent(
             model = profile.model
             parameters = dict(profile.parameters)
 
+    settings = agent_cfg.settings if agent_cfg else {}
     return ImplementAgent(
         runtime,
         repository,
         prompts=prompts,
         model=model,
         parameters=parameters,
+        edit_format=settings.get("editFormat", "blocks"),
+        repair_attempts=settings.get("repairAttempts", 1),
     )

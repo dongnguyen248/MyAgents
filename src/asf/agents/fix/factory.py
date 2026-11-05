@@ -21,8 +21,11 @@ def build_fix_agent(
         platform.models.profiles.get(config.model_profile)
         if config is not None and config.model_profile else None
     )
+    settings = config.settings if config is not None else {}
     return FixAgent(
         runtime, repository, prompts=load_fix_prompts(),
         model=profile.model if profile else None,
         parameters=profile.parameters if profile else {},
+        edit_format=settings.get("editFormat", "blocks"),
+        repair_attempts=settings.get("repairAttempts", 1),
     )

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -197,7 +198,7 @@ class SpecAgent(BaseAgent):
             },
         )
 
-        response = self._runtime.models.complete(model_req)
+        response = call_model(self._runtime.models, model_req)
         reply = response.content.strip()
 
         # Unwrap single code fence if wrapped

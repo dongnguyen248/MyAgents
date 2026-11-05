@@ -24,12 +24,24 @@ from asf.agents._shared.codegen import (
 from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
 from asf.agents._shared.parsing import ParseError, parse_json
 from asf.agents._shared.paths import validate_relative_path
+from asf.agents._shared.repair import (
+    RepairableOutputError,
+    run_code_generation,
+    summarize_validation_issues,
+)
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import render_code_markdown
-from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
+from asf.contracts.models import (
+    AgentMetadata,
+    AgentRequest,
+    Artifact,
+    ModelRequest,
+    ModelResponse,
+)
 from asf.tools.changeset import ChangeSet
+from asf.tools.edit_blocks import EditBlockError, parse_edit_blocks
 from asf.tools.ports import (
     FileNotFoundInRepository,
     FileTooLargeError,
@@ -49,12 +61,24 @@ class FixAgent(BaseAgent):
         prompts: FixPrompts,
         model: str | None = None,
         parameters: Mapping[str, Any] | None = None,
+        edit_format: str = "blocks",
+        repair_attempts: int = 1,
     ) -> None:
         super().__init__(runtime)
+        if edit_format not in ("blocks", "json"):
+            raise ValueError(
+                f"edit_format must be 'blocks' or 'json', got {edit_format!r}",
+            )
+        if repair_attempts not in (0, 1):
+            raise ValueError(
+                f"repair_attempts must be 0 or 1, got {repair_attempts!r}",
+            )
         self._repository = repository
         self._prompts = prompts
         self._model = model
         self._parameters = dict(parameters or {})
+        self._edit_format = edit_format
+        self._repair_attempts = repair_attempts
 
     @property
     def metadata(self) -> AgentMetadata:
@@ -173,49 +197,119 @@ class FixAgent(BaseAgent):
             previous_changeset=code_changeset(code),
             previous_error=previous_error if isinstance(previous_error, str) else None,
         )
-        response = self._runtime.models.complete(
-            ModelRequest(
-                messages=build_fix_messages(self._prompts, request, context),
-                model=self._model, parameters=self._parameters,
-                metadata={
-                    "agentId": self.metadata.id, "requestId": request.request_id,
-                    **tier_metadata(request.context),
-                },
-            )
+        model_request = ModelRequest(            messages=build_fix_messages(
+                self._prompts, request, context, edit_format=self._edit_format,
+            ),
+            model=self._model, parameters=self._parameters,
+            metadata={
+                "agentId": self.metadata.id, "requestId": request.request_id,
+                **tier_metadata(request.context),
+            },
         )
-        if not response.content.strip() or len(response.content) > MAX_REPLY_CHARS:
-            raise invalid_response("Empty or oversized fix reply")
-        try:
-            changeset = ChangeSet.model_validate(parse_json(response.content))
-        except (ValueError, ValidationError, ParseError) as exc:
-            # Keep the underlying reason: "Invalid replacement
-            # ChangeSet" alone is undiagnosable (truncated JSON? an
-            # extra key? an empty change list?) and the next attempt
-            # is told this error verbatim, so it must say what to fix.
-            raise invalid_response(
-                "Invalid replacement ChangeSet",
-                details={
-                    "cause": str(exc)[:400],
-                    "replyChars": len(response.content),
-                    "finishReason": response.finish_reason,
-                },
-            ) from None
-        try:
-            changeset = normalize_changeset_operations(changeset, ref, self._repository)
-            issues = validate_changeset(changeset, expected, ref, self._repository)
-        except RepositoryError:
-            raise AgentExecutionError("REPOSITORY_ERROR", "Could not validate base files") from None
-        if issues:
-            raise invalid_response(
-                "Replacement violates scope or content constraints",
-                details=issues,
-            )
-        secret_issues = changeset_secret_issues(changeset)
-        if secret_issues:
-            raise invalid_response(
-                "Replacement contains secret patterns",
-                details={"secretIssues": secret_issues},
-            )
+
+        previous_changeset = code_changeset(code)
+        # Edit blocks are written against the state the model is
+        # revising: the base files with the previous changeset
+        # applied. Untouched previous changes carry over into the
+        # replacement (the prompt's "preserve all still-required
+        # previous changes" rule).
+        effective_existing = dict(existing)
+        for change in previous_changeset.changes:
+            if change.operation == "delete":
+                effective_existing.pop(change.path, None)
+            elif change.content is not None:
+                effective_existing[change.path] = change.content
+
+        def compose_replacement(edits: ChangeSet) -> ChangeSet:
+            merged: dict[str, Any] = {
+                change.path: change for change in previous_changeset.changes
+            }
+            for change in edits.changes:
+                if change.operation == "delete" and change.path not in existing:
+                    # Deleting a file the previous changeset created:
+                    # relative to the base it simply never exists.
+                    merged.pop(change.path, None)
+                else:
+                    merged[change.path] = change
+            return ChangeSet(changes=list(merged.values()))
+
+        def parse_reply(response: ModelResponse) -> ChangeSet:
+            reply = response.content
+            if not reply.strip() or len(reply) > MAX_REPLY_CHARS:
+                raise invalid_response("Empty or oversized fix reply")
+            if self._edit_format == "blocks":
+                try:
+                    edits = parse_edit_blocks(
+                        reply.strip(),
+                        existing_files=effective_existing,
+                        expected_files=expected,
+                    )
+                except EditBlockError as error:
+                    raise RepairableOutputError(
+                        str(error),
+                        details={
+                            "cause": str(error),
+                            "replyChars": len(reply),
+                            "finishReason": response.finish_reason,
+                        },
+                    ) from None
+                changeset = compose_replacement(edits)
+            else:
+                try:
+                    changeset = ChangeSet.model_validate(parse_json(reply))
+                except (ValueError, ValidationError, ParseError) as exc:
+                    # Keep the underlying reason: "Invalid replacement
+                    # ChangeSet" alone is undiagnosable (truncated
+                    # JSON? an extra key? an empty change list?) and
+                    # the repair prompt / next attempt is told it
+                    # verbatim, so it must say what to fix.
+                    cause = str(exc)[:400]
+                    raise RepairableOutputError(
+                        "Invalid replacement ChangeSet",
+                        model_message=(
+                            "The reply was not a valid replacement"
+                            f" ChangeSet: {cause}"
+                        ),
+                        details={
+                            "cause": cause,
+                            "replyChars": len(reply),
+                            "finishReason": response.finish_reason,
+                        },
+                    ) from None
+            try:
+                changeset = normalize_changeset_operations(
+                    changeset, ref, self._repository,
+                )
+                issues = validate_changeset(changeset, expected, ref, self._repository)
+            except RepositoryError:
+                raise AgentExecutionError(
+                    "REPOSITORY_ERROR", "Could not validate base files",
+                ) from None
+            if issues:
+                raise RepairableOutputError(
+                    "Replacement violates scope or content constraints",
+                    model_message=(
+                        "Replacement violates scope or content"
+                        " constraints: "
+                        + summarize_validation_issues(issues)
+                    ),
+                    details=issues,
+                )
+            secret_issues = changeset_secret_issues(changeset)
+            if secret_issues:
+                raise invalid_response(
+                    "Replacement contains secret patterns",
+                    details={"secretIssues": secret_issues},
+                )
+            return changeset
+
+        changeset, usage, repairs = run_code_generation(
+            gateway=self._runtime.models,
+            request=model_request,
+            parse=parse_reply,
+            repair_attempts=self._repair_attempts,
+            format_name="edit-block" if self._edit_format == "blocks" else "JSON",
+        )
         text = render_code_markdown(
             changeset.model_dump(by_alias=True)["changes"],
             spec.id, spec.version, plan.id, plan.version, item_id,
@@ -238,7 +332,13 @@ class FixAgent(BaseAgent):
             created_by=self.metadata.id, created_at=self._runtime.clock(), metadata=metadata,
         )
         return {
-            "summary": "Replacement code created", "artifactId": artifact.id, "version": version,
+            "summary": "Replacement code created", "artifactId": artifact.id,
+            "version": version,
+            "usage": {
+                "promptTokens": usage.prompt_tokens,
+                "completionTokens": usage.completion_tokens,
+            },
+            "repairs": repairs,
         }, [artifact]
 
     def _compute_revision_count(self, request: AgentRequest) -> int:
