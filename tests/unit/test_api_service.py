@@ -13,6 +13,7 @@ import pytest
 
 from asf.agents.base import AgentRuntime
 from asf.agents.plan.factory import build_plan_agent
+from asf.agents.spec.agent import MAX_REQUIREMENT_CHARS
 from asf.agents.spec.factory import build_spec_agent
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.service import (
@@ -597,6 +598,56 @@ def test_workflow_view_reports_current_activity_while_in_flight():
     assert activity["stepId"] == "spec"
     assert activity["stepLabel"] == "Spec"
     assert activity["since"] == NOW.isoformat()
+
+
+def test_failed_run_does_not_mark_approval_gates_done():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    # Dong's messenger case: the spec agent rejects an over-long
+    # requirement on the very first step, so no gate was ever reached —
+    # yet the timeline showed every approval as Done, because the
+    # FAILED stage sits past every step in the sequence and the
+    # approval fallthrough compared indexes against it.
+    run = service.start_run(
+        "task-1", "proj-1",
+        inputs={"spec": {"requirement": "A" * (MAX_REQUIREMENT_CHARS + 1)}},
+    )
+    # The background drive fails the run on its own; read the final view.
+    service.wait_for_drives(timeout=10)
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "FAILED"
+    states = {step["id"]: step["state"] for step in view["steps"]}
+    assert states == {
+        "spec": "failed",
+        "spec_approval": "pending",
+        "plan": "pending",
+        "plan_approval": "pending",
+    }
+
+
+def test_approval_step_state_for_ended_runs_uses_the_trail():
+    # Directly at the helper: a gate counts as done for a FAILED or
+    # CANCELLED run only when the stage the run ended from (per its
+    # event trail) is at or past that gate's _APPROVED stage.
+    from types import SimpleNamespace
+
+    step = SimpleNamespace(stage="SPEC")
+    sequence = [
+        "NEW", "SPEC_DRAFT", "SPEC_REVIEW", "SPEC_REJECTED",
+        "SPEC_APPROVED", "SPEC_ESCALATED", "PLAN_DRAFT", "COMPLETED",
+        "FAILED", "CANCELLED",
+    ]
+    failed_at = sequence.index("FAILED")
+    died_writing = sequence.index("SPEC_DRAFT")
+    passed_gate = sequence.index("SPEC_APPROVED")
+    state = FactoryService._approval_step_state
+    assert state(step, "FAILED", failed_at, sequence, "FAILED", died_writing) == "pending"
+    assert state(step, "FAILED", failed_at, sequence, "FAILED", passed_gate) == "done"
+    assert state(step, "FAILED", failed_at, sequence, "FAILED", None) == "pending"
+    assert state(step, "CANCELLED", None, sequence, "CANCELLED", died_writing) == "cancelled"
+    assert state(step, "CANCELLED", None, sequence, "CANCELLED", passed_gate) == "done"
 
 
 def test_cancelled_run_steps_are_not_all_done():
