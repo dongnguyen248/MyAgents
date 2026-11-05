@@ -26,3 +26,4 @@ configuration:
       - rules/vhpc/api-rules.md
       - rules/vhpc/security-rules.md
       - rules/vhpc/constants-rules.md
+      - rules/code-structure-rules.md
