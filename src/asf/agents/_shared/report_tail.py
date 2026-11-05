@@ -37,8 +37,7 @@ def tail_text(text: str, max_lines: int = DEFAULT_TAIL_LINES) -> str:
         return text
     tail_start = len(lines) - max_lines
     keep = [
-        index for index, line in enumerate(lines)
-        if index >= tail_start or _ERROR_LINE.search(line)
+        index for index, line in enumerate(lines) if index >= tail_start or _ERROR_LINE.search(line)
     ]
     if len(keep) == len(lines):
         return text
@@ -53,7 +52,8 @@ def tail_text(text: str, max_lines: int = DEFAULT_TAIL_LINES) -> str:
 
 
 def tail_artifact_for_prompt(
-    artifact: dict[str, Any], max_lines: int = DEFAULT_TAIL_LINES,
+    artifact: dict[str, Any],
+    max_lines: int = DEFAULT_TAIL_LINES,
 ) -> dict[str, Any]:
     """A prompt-sized copy of a TEST_REPORT artifact dict.
 

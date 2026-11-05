@@ -93,7 +93,8 @@ class Orchestrator:
     def _load(self, run_id: str, *, for_update: bool = False) -> WorkflowExecution:
         run = (
             self._store.get_execution(run_id, for_update=for_update)
-            if self._store else self._runs[run_id]
+            if self._store
+            else self._runs[run_id]
         )
         if run.definition != self._definition.to_contract() or run.settings != self._settings():
             raise ValueError("Stored workflow definition or execution policy differs")
@@ -102,7 +103,10 @@ class Orchestrator:
 
     @contextmanager
     def _edit(
-        self, run_id: str, *, lock: bool = False,
+        self,
+        run_id: str,
+        *,
+        lock: bool = False,
     ) -> Iterator[WorkflowExecution]:
         with self._store.transaction() if self._store else nullcontext():
             run = self._load(run_id, for_update=lock)
@@ -111,8 +115,11 @@ class Orchestrator:
                 yield run
                 if run.state.stage != before.state.stage:
                     self._event(
-                        run, "WORKFLOW_COMPLETED" if run.state.stage == "COMPLETED"
-                        else "WORKFLOW_STAGE_CHANGED", "Workflow stage changed",
+                        run,
+                        "WORKFLOW_COMPLETED"
+                        if run.state.stage == "COMPLETED"
+                        else "WORKFLOW_STAGE_CHANGED",
+                        "Workflow stage changed",
                     )
                 run.touch(self._now())
                 if self._store:
@@ -122,12 +129,20 @@ class Orchestrator:
                 raise
 
     def _event(
-        self, run: WorkflowExecution, event_type: str, message: str,
-        *, metadata: Mapping[str, Any] | None = None,
+        self,
+        run: WorkflowExecution,
+        event_type: str,
+        message: str,
+        *,
+        metadata: Mapping[str, Any] | None = None,
     ) -> None:
         event = ActivityEvent(
-            id=self._new_id(), timestamp=self._now(), project_id=run.project_id,
-            task_id=run.task_id, workflow_id=self._definition.id, event_type=event_type,
+            id=self._new_id(),
+            timestamp=self._now(),
+            project_id=run.project_id,
+            task_id=run.task_id,
+            workflow_id=self._definition.id,
+            event_type=event_type,
             message=message,
             metadata={"runId": run.id, "stage": run.state.stage, **(metadata or {})},
         )
@@ -140,7 +155,10 @@ class Orchestrator:
         return now
 
     def start(
-        self, *, task_id: str, project_id: str,
+        self,
+        *,
+        task_id: str,
+        project_id: str,
         inputs: Mapping[str, dict[str, Any]] | None = None,
         context: Mapping[str, Any] | None = None,
     ) -> WorkflowExecution:
@@ -161,11 +179,16 @@ class Orchestrator:
         if not run_id.strip() or run_id in self._runs:
             raise ValueError("Run ID must be nonblank and unique")
         run = WorkflowExecution(
-            id=run_id, task_id=task_id, project_id=project_id,
+            id=run_id,
+            task_id=task_id,
+            project_id=project_id,
             state=apply(self._graph, RunState.initial(), Trigger.START),
-            inputs=deepcopy(dict(inputs or {})), context=deepcopy(dict(context or {})),
-            definition=self._definition.to_contract(), settings=self._settings(),
-            started_at=now, updated_at=now,
+            inputs=deepcopy(dict(inputs or {})),
+            context=deepcopy(dict(context or {})),
+            definition=self._definition.to_contract(),
+            settings=self._settings(),
+            started_at=now,
+            updated_at=now,
         )
         self._event(run, "WORKFLOW_STARTED", "Workflow execution started")
         if self._store:
@@ -194,21 +217,32 @@ class Orchestrator:
     def task(self, run_id: str) -> dict[str, Any]:
         run = self.get(run_id, copy=False)
         return {
-            "id": run.task_id, "projectId": run.project_id, "workflowId": self._definition.id,
-            "title": run.task_id, "description": "", "priority": "NORMAL", "assignedAgent": None,
+            "id": run.task_id,
+            "projectId": run.project_id,
+            "workflowId": self._definition.id,
+            "title": run.task_id,
+            "description": "",
+            "priority": "NORMAL",
+            "assignedAgent": None,
             "status": "WAITING" if run.retry_at else task_status(self._graph, run.state.stage),
             "stage": run.state.stage,
             "artifacts": [artifact.to_contract() for artifact in run.artifact_history.values()],
-            "createdAt": run.started_at.isoformat(), "updatedAt": run.updated_at.isoformat(),
+            "createdAt": run.started_at.isoformat(),
+            "updatedAt": run.updated_at.isoformat(),
             "metadata": {"runId": run.id},
         }
 
     def _step(self, run: WorkflowExecution) -> WorkflowStepDef:
         if run.state.stage in (FIX_STAGE, ESCALATED_STAGE):
             return WorkflowStepDef(
-                id=FIX_STEP, name="Fix code", type="AGENT", stage=FIX_STAGE,
-                agent_type="fix", requires_approval=False,
-                consumes=["SPEC", "PLAN", "TASK", "CODE", "CODE_REVIEW"], produces=["CODE"],
+                id=FIX_STEP,
+                name="Fix code",
+                type="AGENT",
+                stage=FIX_STAGE,
+                agent_type="fix",
+                requires_approval=False,
+                consumes=["SPEC", "PLAN", "TASK", "CODE", "CODE_REVIEW"],
+                produces=["CODE"],
                 retry_policy=self._code_loop.fix_retry_policy if self._code_loop else None,
             )
         step_id = next(
@@ -217,12 +251,21 @@ class Orchestrator:
         return next(step for step in self._definition.steps if step.id == step_id)
 
     def _fail(
-        self, run: WorkflowExecution, code: str, message: str,
+        self,
+        run: WorkflowExecution,
+        code: str,
+        message: str,
         category: Literal["VALIDATION", "AGENT", "WORKFLOW", "APPROVAL", "INTEGRATION"],
     ) -> None:
-        run.errors.append(PlatformError(
-            code=code, message=message, category=category, retryable=False, timestamp=self._now(),
-        ))
+        run.errors.append(
+            PlatformError(
+                code=code,
+                message=message,
+                category=category,
+                retryable=False,
+                timestamp=self._now(),
+            )
+        )
         run.state = apply(self._graph, run.state, Trigger.FAIL)
         self._event(run, "WORKFLOW_FAILED", message)
 
@@ -241,30 +284,34 @@ class Orchestrator:
                 raise InvalidTransition(run.state.stage, Trigger.COMPLETE.value)
             if kind == StageKind.REVIEW:
                 self._sync_approval(run)
-            elif kind != StageKind.ESCALATED:
-                if run.retry_at is None or self._now() >= run.retry_at:
-                    run.retry_at = None
-                    run.in_flight = self._new_id()
-                    token = run.in_flight
-                    # Record the step start before dispatching: the
-                    # claim is saved when the block exits, so the run's
-                    # log shows what the agent is doing while a long
-                    # step (e.g. a minutes-long model call) is still in
-                    # flight, not only after it finishes.
-                    step = self._step(run)
-                    attempt = run.attempts.get(step.id, 0) + 1
-                    message = f"{step.name} started"
-                    if step.agent_type == "implement" and run.task_order:
-                        message += f" · item {run.task_order[run.item_index]}"
-                    if attempt > 1:
-                        message += f" (attempt {attempt})"
-                    self._event(
-                        run, "STEP_STARTED", message,
-                        metadata={
-                            "stepId": step.id, "agentType": step.agent_type,
-                            "attempt": attempt,
-                        },
-                    )
+            elif kind != StageKind.ESCALATED and (
+                run.retry_at is None or self._now() >= run.retry_at
+            ):
+                run.retry_at = None
+                run.in_flight = self._new_id()
+                token = run.in_flight
+                # Record the step start before dispatching: the
+                # claim is saved when the block exits, so the run's
+                # log shows what the agent is doing while a long
+                # step (e.g. a minutes-long model call) is still in
+                # flight, not only after it finishes.
+                step = self._step(run)
+                attempt = run.attempts.get(step.id, 0) + 1
+                message = f"{step.name} started"
+                if step.agent_type == "implement" and run.task_order:
+                    message += f" · item {run.task_order[run.item_index]}"
+                if attempt > 1:
+                    message += f" (attempt {attempt})"
+                self._event(
+                    run,
+                    "STEP_STARTED",
+                    message,
+                    metadata={
+                        "stepId": step.id,
+                        "agentType": step.agent_type,
+                        "attempt": attempt,
+                    },
+                )
         if token is None:
             return self.get(run_id)
         # Phase 2 — execute with NO store transaction held. The agent
@@ -275,8 +322,7 @@ class Orchestrator:
         claimed = run.snapshot()
         pre_dispatch = claimed.snapshot()
         exceeded = (
-            budget_exceeded_message(claimed, self._budget)
-            if self._budget is not None else None
+            budget_exceeded_message(claimed, self._budget) if self._budget is not None else None
         )
         if exceeded is not None:
             # The budget is checked BEFORE dispatch: an over-budget
@@ -306,15 +352,21 @@ class Orchestrator:
                 spec = claimed._pending_approval
                 claimed._pending_approval = None
                 service, policy = self._approval_dependencies()
-                failure: tuple[
-                    str, str, Literal["VALIDATION", "INTEGRATION"],
-                ] | None = None
+                failure: (
+                    tuple[
+                        str,
+                        str,
+                        Literal["VALIDATION", "INTEGRATION"],
+                    ]
+                    | None
+                ) = None
                 try:
                     approval = service.request(spec, policy, self._now())
                 except ApprovalError:
                     failure = (
                         "VALIDATION_FAILED",
-                        "Approval request could not be created", "VALIDATION",
+                        "Approval request could not be created",
+                        "VALIDATION",
                     )
                 except Exception:
                     failure = (
@@ -337,7 +389,8 @@ class Orchestrator:
             if claimed.state.stage != stored.state.stage:
                 self._event(
                     claimed,
-                    "WORKFLOW_COMPLETED" if claimed.state.stage == "COMPLETED"
+                    "WORKFLOW_COMPLETED"
+                    if claimed.state.stage == "COMPLETED"
                     else "WORKFLOW_STAGE_CHANGED",
                     "Workflow stage changed",
                 )
@@ -364,38 +417,56 @@ class Orchestrator:
             result = execute(request)
         except Exception:
             self._fail(
-                run, "AGENT_EXECUTION_FAILED", "Agent raised outside its result contract", "AGENT",
+                run,
+                "AGENT_EXECUTION_FAILED",
+                "Agent raised outside its result contract",
+                "AGENT",
             )
             return
         self._apply_result(run, step, agent_id, request, result)
 
     def _prepare_dispatch(
-        self, run: WorkflowExecution,
-    ) -> tuple[
-        WorkflowStepDef, str, Callable[[AgentRequest], AgentResult], AgentRequest,
-    ] | None:
+        self,
+        run: WorkflowExecution,
+    ) -> (
+        tuple[
+            WorkflowStepDef,
+            str,
+            Callable[[AgentRequest], AgentResult],
+            AgentRequest,
+        ]
+        | None
+    ):
         """Resolve the step's executor and build its AgentRequest.
 
         Returns None when preparation itself settles the run (the
         failure has already been recorded on it via _fail).
         """
         step = self._step(run)
-        if self._code_loop is not None and step.agent_type == "implement":
-            if not self._select_item(run, step):
-                return None
+        if (
+            self._code_loop is not None
+            and step.agent_type == "implement"
+            and not self._select_item(run, step)
+        ):
+            return None
         if step.action is not None and step.agent_type is None:
             execute = self._actions.get(step.action)
             if execute is None:
                 self._fail(
-                    run, "INTEGRATION_UNAVAILABLE", "Workflow action has no handler", "INTEGRATION",
+                    run,
+                    "INTEGRATION_UNAVAILABLE",
+                    "Workflow action has no handler",
+                    "INTEGRATION",
                 )
                 return None
             agent_id = "action:" + step.action
         else:
             if step.type != "AGENT" or step.agent_type is None or step.action is not None:
                 self._fail(
-                    run, "INTEGRATION_UNAVAILABLE",
-                    "Workflow step type is unsupported", "INTEGRATION",
+                    run,
+                    "INTEGRATION_UNAVAILABLE",
+                    "Workflow step type is unsupported",
+                    "INTEGRATION",
                 )
                 return None
             try:
@@ -411,7 +482,10 @@ class Orchestrator:
             execute = agent.execute
         if any(kind not in run.artifacts for kind in step.consumes):
             self._fail(
-                run, "VALIDATION_FAILED", "Required upstream artifact is missing", "VALIDATION",
+                run,
+                "VALIDATION_FAILED",
+                "Required upstream artifact is missing",
+                "VALIDATION",
             )
             return None
         types = list(step.consumes)
@@ -429,7 +503,10 @@ class Orchestrator:
         attempt = run.attempts.get(step.id, 0) + 1
         inputs = deepcopy(run.inputs.get(step.id, {}))
         if self._code_loop is not None and step.agent_type in (
-            "implement", "review", "test", "fix",
+            "implement",
+            "review",
+            "test",
+            "fix",
         ):
             base_inputs = run.inputs.get(code_steps(self._definition)["implement"].id, {})
             inputs["ref"] = base_inputs.get("ref")
@@ -447,19 +524,22 @@ class Orchestrator:
                 (r for r in reversed(run.results) if r.agent_id == agent_id),
                 None,
             )
-            if (
-                latest_fix is not None and latest_fix.status != "SUCCESS"
-                and latest_fix.errors
-            ):
+            if latest_fix is not None and latest_fix.status != "SUCCESS" and latest_fix.errors:
                 error = latest_fix.errors[0]
                 summary = f"{error.code}: {error.message}"
                 if error.details:
-                    summary += " — " + json.dumps(
-                        error.details, default=str,
-                    )[:500]
+                    summary += (
+                        " — "
+                        + json.dumps(
+                            error.details,
+                            default=str,
+                        )[:500]
+                    )
                 inputs["previousFixError"] = summary
         request_metadata: dict[str, Any] = {
-            "attempt": attempt, "runId": run.id, "stepId": step.id,
+            "attempt": attempt,
+            "runId": run.id,
+            "stepId": step.id,
         }
         if step.timeout is not None:
             # The step's configured timeout becomes a live deadline:
@@ -468,32 +548,45 @@ class Orchestrator:
             # the agent returns.
             request_metadata["stepTimeoutSeconds"] = step.timeout
         request = AgentRequest(
-            request_id=run.in_flight or self._new_id(), task_id=run.task_id,
-            project_id=run.project_id, workflow_id=self._definition.id, agent_id=agent_id,
-            input=inputs, context=deepcopy(run.context),
-            artifacts=deepcopy(artifacts), feedback=deepcopy(run.feedback),
+            request_id=run.in_flight or self._new_id(),
+            task_id=run.task_id,
+            project_id=run.project_id,
+            workflow_id=self._definition.id,
+            agent_id=agent_id,
+            input=inputs,
+            context=deepcopy(run.context),
+            artifacts=deepcopy(artifacts),
+            feedback=deepcopy(run.feedback),
             metadata=request_metadata,
         )
         run.attempts[step.id] = attempt
         return step, agent_id, execute, request
 
     def _apply_result(
-        self, run: WorkflowExecution, step: WorkflowStepDef, agent_id: str,
-        request: AgentRequest, result: AgentResult,
+        self,
+        run: WorkflowExecution,
+        step: WorkflowStepDef,
+        agent_id: str,
+        request: AgentRequest,
+        result: AgentResult,
     ) -> None:
         """Validate one execution result and apply it to the run."""
         if (
             not isinstance(result, AgentResult)
-            or result.request_id != request.request_id or result.agent_id != agent_id
+            or result.request_id != request.request_id
+            or result.agent_id != agent_id
         ):
             self._fail(run, "VALIDATION_FAILED", "Agent result identity is invalid", "VALIDATION")
             return
         run.results.append(result.model_copy(deep=True))
         for event in result.events:
             run.observations.append(Observation(id=event.id, event=event.model_copy(deep=True)))
-        run.observations.append(Observation(
-            id=result.request_id + ":metrics", result=result.model_copy(deep=True),
-        ))
+        run.observations.append(
+            Observation(
+                id=result.request_id + ":metrics",
+                result=result.model_copy(deep=True),
+            )
+        )
         if result.status == "CANCELLED":
             run.state = apply(self._graph, run.state, Trigger.CANCEL)
             return
@@ -520,8 +613,11 @@ class Orchestrator:
         verdict = result.output.get("verdict") if isinstance(result.output, dict) else None
         expected_verdict = {"review": "APPROVE", "test": "PASS"}.get(step.agent_type or "")
         if self._code_loop is not None and step.agent_type in ("review", "test"):
-            allowed = ("APPROVE", "CHANGES_REQUESTED") if step.agent_type == "review" \
+            allowed = (
+                ("APPROVE", "CHANGES_REQUESTED")
+                if step.agent_type == "review"
                 else ("PASS", "FAIL")
+            )
             if verdict not in allowed:
                 self._fail(run, "VALIDATION_FAILED", "Invalid quality verdict", "VALIDATION")
                 return
@@ -540,7 +636,8 @@ class Orchestrator:
             expected_verdict is not None and verdict != expected_verdict
         ):
             self._fail(
-                run, "VALIDATION_FAILED",
+                run,
+                "VALIDATION_FAILED",
                 "Quality verdict is not passing; automatic Fix routing is not implemented",
                 "VALIDATION",
             )
@@ -556,10 +653,12 @@ class Orchestrator:
             # the commit then failed. The commit creates it inside
             # its own transaction, atomically with the checkpoint.
             run._pending_approval = ApprovalSpec(
-                task_id=run.task_id, project_id=run.project_id,
+                task_id=run.task_id,
+                project_id=run.project_id,
                 workflow_id=self._definition.id,
                 artifact_id=result.artifacts[0].id,
-                type=step.produces[0], requested_by="orchestrator",
+                type=step.produces[0],
+                requested_by="orchestrator",
                 metadata={"runId": run.id, "stepId": step.id},
             )
         if self._code_loop is not None and step.agent_type in ("implement", "fix"):
@@ -578,7 +677,8 @@ class Orchestrator:
             run.state = apply(self._graph, run.state, Trigger.APPROVED)
             run.state = apply(self._graph, run.state, Trigger.ADVANCE)
             self._event(
-                run, "APPROVAL_SKIPPED",
+                run,
+                "APPROVAL_SKIPPED",
                 f"{step.name} approval skipped (task setting)",
                 metadata={"stepId": step.id},
             )
@@ -604,7 +704,9 @@ class Orchestrator:
                 raise ValueError("A base ref is required for code execution")
         except (KeyError, ValueError, TypeError):
             self._fail(
-                run, "VALIDATION_FAILED", "Invalid TASK dependency graph or code base ref",
+                run,
+                "VALIDATION_FAILED",
+                "Invalid TASK dependency graph or code base ref",
                 "VALIDATION",
             )
             return False
@@ -612,7 +714,10 @@ class Orchestrator:
         return True
 
     def _linked_output(
-        self, run: WorkflowExecution, step: WorkflowStepDef, result: AgentResult,
+        self,
+        run: WorkflowExecution,
+        step: WorkflowStepDef,
+        result: AgentResult,
     ) -> bool:
         artifact = result.artifacts[0]
         item_id = run.task_order[run.item_index]
@@ -635,23 +740,30 @@ class Orchestrator:
         if any(artifact.metadata.get(key) != value for key, value in expected.items()):
             self._fail(run, "VALIDATION_FAILED", "Stale code-chain artifact links", "VALIDATION")
             return False
-        if step.agent_type == "fix" and code is not None:
-            if (
-                not code.version.isdecimal() or artifact.version != str(int(code.version) + 1)
+        if (
+            step.agent_type == "fix"
+            and code is not None
+            and (
+                not code.version.isdecimal()
+                or artifact.version != str(int(code.version) + 1)
                 or artifact.metadata.get("revisionOf") != code.id
-            ):
-                self._fail(
-                    run, "VALIDATION_FAILED", "Invalid replacement CODE revision", "VALIDATION",
-                )
-                return False
+            )
+        ):
+            self._fail(
+                run,
+                "VALIDATION_FAILED",
+                "Invalid replacement CODE revision",
+                "VALIDATION",
+            )
+            return False
         return True
 
     def _request_fix(self, run: WorkflowExecution) -> None:
         run.state = apply(self._graph, run.state, Trigger.REQUEST_CHANGES)
         run.state = apply(self._graph, run.state, Trigger.REVISE)
         self._event(
-            run, "WORKFLOW_ESCALATED" if run.state.stage == ESCALATED_STAGE
-            else "CODE_FIX_REQUESTED",
+            run,
+            "WORKFLOW_ESCALATED" if run.state.stage == ESCALATED_STAGE else "CODE_FIX_REQUESTED",
             "Code needs correction; bounded rework policy applied",
         )
 
@@ -671,21 +783,30 @@ class Orchestrator:
         run.state = RunState(stage=run.state.stage, revisions=revisions)
         run.state = apply(self._graph, run.state, Trigger.ADVANCE)
         self._event(
-            run, "TASK_ITEM_ADVANCED", "Task item verified; next dependency-ready item selected",
+            run,
+            "TASK_ITEM_ADVANCED",
+            "Task item verified; next dependency-ready item selected",
         )
         return True
 
     def _retry(
-        self, run: WorkflowExecution, step: WorkflowStepDef, result: AgentResult,
+        self,
+        run: WorkflowExecution,
+        step: WorkflowStepDef,
+        result: AgentResult,
     ) -> bool:
         policy = step.retry_policy
         run.retry_attempts += 1
         if (
-            policy is None or result.status != "FAILED" or not result.errors
+            policy is None
+            or result.status != "FAILED"
+            or not result.errors
             or run.retry_attempts >= policy.max_attempts
             or any(not error.retryable for error in result.errors)
-            or (policy.retry_on is not None
-                and any(error.code not in policy.retry_on for error in result.errors))
+            or (
+                policy.retry_on is not None
+                and any(error.code not in policy.retry_on for error in result.errors)
+            )
         ):
             return False
         # Clock-driven scheduling: tick never sleeps or calls the provider before due time.
@@ -718,10 +839,13 @@ class Orchestrator:
             raise ValueError("Review stage is missing its approval request")
         request = service.get(run.approval_id)
         now = self._now()
-        if request.status == "PENDING" and request.expires_at is not None:
-            if request.expires_at <= now:
-                service.expire_due(now)
-                request = service.get(run.approval_id)
+        if (
+            request.status == "PENDING"
+            and request.expires_at is not None
+            and request.expires_at <= now
+        ):
+            service.expire_due(now)
+            request = service.get(run.approval_id)
         if request.status == "PENDING":
             return
         if request.status == "APPROVED":
@@ -752,8 +876,12 @@ class Orchestrator:
         return request
 
     def decide(
-        self, run_id: str, *, reviewer: str,
-        decision: Literal["APPROVED", "REJECTED", "REQUEST_CHANGES"], comment: str = "",
+        self,
+        run_id: str,
+        *,
+        reviewer: str,
+        decision: Literal["APPROVED", "REJECTED", "REQUEST_CHANGES"],
+        comment: str = "",
         expected_approval_id: str | None = None,
     ) -> WorkflowExecution:
         if run_id in self._active:
@@ -762,7 +890,8 @@ class Orchestrator:
         with self._edit(run_id) as run:
             if expected_approval_id is not None and run.approval_id != expected_approval_id:
                 raise ApprovalError(
-                    "APPROVAL_ALREADY_DECIDED", "Card does not refer to the current approval",
+                    "APPROVAL_ALREADY_DECIDED",
+                    "Card does not refer to the current approval",
                 )
             if run.in_flight is not None:
                 raise ValueError("Interrupted dispatch requires recovery")
@@ -778,16 +907,25 @@ class Orchestrator:
         return self.get(run_id)
 
     def _decide(
-        self, run: WorkflowExecution, *, reviewer: str,
-        decision: Literal["APPROVED", "REJECTED", "REQUEST_CHANGES"], comment: str,
+        self,
+        run: WorkflowExecution,
+        *,
+        reviewer: str,
+        decision: Literal["APPROVED", "REJECTED", "REQUEST_CHANGES"],
+        comment: str,
     ) -> None:
         if kind_of(self._graph, run.state.stage) != StageKind.REVIEW or run.approval_id is None:
             raise InvalidTransition(run.state.stage, decision)
         service, _ = self._approval_dependencies()
-        service.decide(ApprovalDecision(
-            approval_id=run.approval_id, reviewer=reviewer, decision=decision,
-            comment=comment, created_at=self._now(),
-        ))
+        service.decide(
+            ApprovalDecision(
+                approval_id=run.approval_id,
+                reviewer=reviewer,
+                decision=decision,
+                comment=comment,
+                created_at=self._now(),
+            )
+        )
         self._sync_approval(run)
         self._event(run, "APPROVAL_DECIDED", "Approval decision processed")
 
@@ -825,7 +963,8 @@ class Orchestrator:
                 if self._code_loop is None or self._code_loop.max_fixes == 0:
                     raise ValueError("A zero Fix budget cannot be resumed")
                 run.state = RunState(
-                    stage=run.state.stage, revisions={**run.state.revisions, FIX_STEP: 1},
+                    stage=run.state.stage,
+                    revisions={**run.state.revisions, FIX_STEP: 1},
                 )
             run.retry_attempts = 0
             run.recovery_notes.append(reason)
@@ -860,19 +999,26 @@ class Orchestrator:
         if not new_run_id.strip() or new_run_id in self._runs:
             raise ValueError("Run ID must be nonblank and unique")
         run = WorkflowExecution(
-            id=new_run_id, task_id=source.task_id, project_id=source.project_id,
+            id=new_run_id,
+            task_id=source.task_id,
+            project_id=source.project_id,
             state=RunState(stage=stage, revisions=dict(source.state.revisions)),
-            inputs=deepcopy(source.inputs), context=deepcopy(source.context),
+            inputs=deepcopy(source.inputs),
+            context=deepcopy(source.context),
             artifacts=deepcopy(source.artifacts),
-            results=deepcopy(source.results), errors=deepcopy(source.errors),
-            feedback=deepcopy(source.feedback), attempts=dict(source.attempts),
+            results=deepcopy(source.results),
+            errors=deepcopy(source.errors),
+            feedback=deepcopy(source.feedback),
+            attempts=dict(source.attempts),
             approval_id=(
-                source.approval_id
-                if kind_of(self._graph, stage) == StageKind.REVIEW else None
+                source.approval_id if kind_of(self._graph, stage) == StageKind.REVIEW else None
             ),
-            definition=self._definition.to_contract(), settings=self._settings(),
-            started_at=now, updated_at=now,
-            task_order=list(source.task_order), item_index=source.item_index,
+            definition=self._definition.to_contract(),
+            settings=self._settings(),
+            started_at=now,
+            updated_at=now,
+            task_order=list(source.task_order),
+            item_index=source.item_index,
             item_results=deepcopy(source.item_results),
             artifact_history=deepcopy(source.artifact_history),
             observations=deepcopy(source.observations),
@@ -897,18 +1043,22 @@ class Orchestrator:
         the dashboard uses to mark the failed step).
         """
         terminal = (
-            StageKind.FAILED, StageKind.COMPLETED,
-            StageKind.CANCELLED, StageKind.ESCALATED,
+            StageKind.FAILED,
+            StageKind.COMPLETED,
+            StageKind.CANCELLED,
+            StageKind.ESCALATED,
         )
         for observation in reversed(run.observations):
             event = observation.event
             if event is None or event.event_type not in (
-                "WORKFLOW_STARTED", "WORKFLOW_STAGE_CHANGED",
+                "WORKFLOW_STARTED",
+                "WORKFLOW_STAGE_CHANGED",
             ):
                 continue
             stage = event.metadata.get("stage")
             if (
-                isinstance(stage, str) and stage != run.state.stage
+                isinstance(stage, str)
+                and stage != run.state.stage
                 and kind_of(self._graph, stage) not in terminal
             ):
                 return stage
@@ -919,7 +1069,11 @@ class Orchestrator:
         return self._definition.steps[-1].generated_stages()[0]
 
     def recover(
-        self, run_id: str, *, reason: str, retry_interrupted: bool = False,
+        self,
+        run_id: str,
+        *,
+        reason: str,
+        retry_interrupted: bool = False,
     ) -> WorkflowExecution:
         if run_id in self._active or not reason.strip():
             raise ValueError("Recovery requires an inactive run and an operator reason")
@@ -930,12 +1084,16 @@ class Orchestrator:
             run.recovery_notes.append(reason)
             if retry_interrupted:
                 self._event(
-                    run, "WORKFLOW_RECOVERED",
+                    run,
+                    "WORKFLOW_RECOVERED",
                     "Operator accepted possible duplicate external execution",
                 )
             else:
                 self._fail(
-                    run, "AGENT_EXECUTION_FAILED", "Interrupted dispatch not replayed", "AGENT",
+                    run,
+                    "AGENT_EXECUTION_FAILED",
+                    "Interrupted dispatch not replayed",
+                    "AGENT",
                 )
         return self.get(run_id)
 
@@ -961,12 +1119,8 @@ class Orchestrator:
             observation
             for observation in self.get(run_id, copy=False).observations
             if not observation.delivered
-            and not (
-                observation.event is not None and self._events is None
-            )
-            and not (
-                observation.result is not None and self._metrics is None
-            )
+            and not (observation.event is not None and self._events is None)
+            and not (observation.result is not None and self._metrics is None)
         ]
         delivered: list[str] = []
         failed = False
@@ -976,7 +1130,8 @@ class Orchestrator:
                     self._events.publish(observation.event)
                 if observation.result is not None and self._metrics is not None:
                     self._metrics.record(
-                        observation.result.agent_id, observation.result,
+                        observation.result.agent_id,
+                        observation.result,
                         run_id=run_id,
                     )
             except Exception:

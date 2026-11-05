@@ -52,8 +52,7 @@ def test_happy_modify():
                 "path": "src/calculator.py",
                 "operation": "modify",
                 "content": (
-                    "def add(a, b):\n    return a + b\n\n"
-                    "def subtract(a, b):\n    return a - b\n"
+                    "def add(a, b):\n    return a + b\n\ndef subtract(a, b):\n    return a - b\n"
                 ),
             }
         ]
@@ -71,9 +70,7 @@ def test_happy_modify():
 def test_happy_delete():
     """Happy path: delete operation succeeds."""
     repo = InMemoryRepository({"main": {"src/old.py": "old content\n"}})
-    reply = make_valid_changeset_reply(
-        changes=[{"path": "src/old.py", "operation": "delete"}]
-    )
+    reply = make_valid_changeset_reply(changes=[{"path": "src/old.py", "operation": "delete"}])
     agent, gateway = make_agent_with_repo([reply], repo)
     req = make_implement_request(expected_files=["src/old.py"])
 

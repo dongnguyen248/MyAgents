@@ -57,7 +57,11 @@ class HostingError(Exception):
     """
 
     def __init__(
-        self, message: str, *, status: int | None = None, retryable: bool = False,
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        retryable: bool = False,
     ) -> None:
         super().__init__(message)
         self.status = status
@@ -68,14 +72,24 @@ class HostingProvider(Protocol):
     """The operations the CI / merge workflow steps need from a host."""
 
     def push_changeset(
-        self, *, branch: str, base_branch: str, changes: ChangeSet, message: str,
+        self,
+        *,
+        branch: str,
+        base_branch: str,
+        changes: ChangeSet,
+        message: str,
     ) -> PushResult:
         """Commit the change set onto ``branch`` (created from
         ``base_branch`` when missing; appended to when it exists)."""
         ...
 
     def open_change_request(
-        self, *, branch: str, base_branch: str, title: str, description: str,
+        self,
+        *,
+        branch: str,
+        base_branch: str,
+        title: str,
+        description: str,
     ) -> ChangeRequestRef:
         """Return the open change request for ``branch``, creating it
         against ``base_branch`` when none is open."""
@@ -86,7 +100,9 @@ class HostingProvider(Protocol):
         ...
 
     def pipeline_status(
-        self, *, branch: str,
+        self,
+        *,
+        branch: str,
     ) -> PipelineRef | None:
         """The latest CI pipeline for ``branch``; None when the project
         has no pipeline for it (e.g. no CI configured)."""

@@ -1,0 +1,23 @@
+# Bandit configuration. The skipped checks are by design and
+# reviewed: the sandbox's whole job is spawning the project's own
+# configured commands with shell=False and a validated argv
+# (B404/B603/B607 — PATH-resolved test commands are the feature);
+# SQL in the stores is parameterized, with only fixed internal
+# identifiers interpolated (B608); urllib opens go to configured
+# provider base URLs over http(s) only (B310); try/except/pass and
+# try/except/continue appear only in best-effort cleanup paths
+# (B110/B112); the single assert is an internal invariant in a
+# non-production helper (B101). Everything else bandit reports
+# fails CI.
+exclude_dirs:
+  - tests
+  - .venv
+skips:
+  - B101
+  - B110
+  - B112
+  - B310
+  - B404
+  - B603
+  - B607
+  - B608

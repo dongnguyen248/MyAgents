@@ -262,9 +262,7 @@ def test_modify_missing_file_treated_as_create() -> None:
 def test_delete_missing_file_rejected() -> None:
     """Delete on missing file -> FAILED/LLM_INVALID_RESPONSE with missingPaths."""
     repo = InMemoryRepository()  # Empty repo
-    reply = make_valid_changeset_reply(
-        changes=[{"path": "src/missing.py", "operation": "delete"}]
-    )
+    reply = make_valid_changeset_reply(changes=[{"path": "src/missing.py", "operation": "delete"}])
     agent, gateway = make_agent_with_repo([reply], repo)
     req = make_implement_request(expected_files=["src/missing.py"])
 

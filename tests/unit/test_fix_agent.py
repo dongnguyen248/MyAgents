@@ -34,12 +34,17 @@ def fix_request() -> AgentRequest:
         raise AssertionError("Implement fixture failed")
     code = result.artifacts[0]
     review = Artifact(
-        id="review-1", type="CODE_REVIEW", name="CODE_REVIEW.md", version="1",
+        id="review-1",
+        type="CODE_REVIEW",
+        name="CODE_REVIEW.md",
+        version="1",
         content={
-            "format": "json", "text": "Changes requested",
+            "format": "json",
+            "text": "Changes requested",
             "review": {"findings": [], "verdict": "CHANGES_REQUESTED"},
         },
-        created_by="agent-review", created_at=T_AWARE,
+        created_by="agent-review",
+        created_at=T_AWARE,
         metadata={"codeArtifactId": code.id, "codeVersion": code.version, "taskItemId": "T1"},
     )
     return request.model_copy(
@@ -83,9 +88,22 @@ def test_fix_creates_replacement_with_traceability_and_contract():
 
 @pytest.mark.parametrize(
     "change",
-    ["wrong-agent", "missing-code", "missing-task", "missing-report", "stale-id",
-     "stale-version", "wrong-task", "wrong-ref", "attempt", "unknown", "bad-code",
-     "bad-task", "bad-version", "duplicate-report"],
+    [
+        "wrong-agent",
+        "missing-code",
+        "missing-task",
+        "missing-report",
+        "stale-id",
+        "stale-version",
+        "wrong-task",
+        "wrong-ref",
+        "attempt",
+        "unknown",
+        "bad-code",
+        "bad-task",
+        "bad-version",
+        "duplicate-report",
+    ],
 )
 def test_fix_rejects_invalid_input_without_model_call(change: str):
     request = fix_request()
@@ -93,13 +111,17 @@ def test_fix_rejects_invalid_input_without_model_call(change: str):
     if change == "wrong-agent":
         request = request.model_copy(update={"agent_id": "wrong"})
     elif change.startswith("missing-"):
-        kind = {"missing-code": "CODE", "missing-task": "TASK",
-                "missing-report": "CODE_REVIEW"}[change]
+        kind = {"missing-code": "CODE", "missing-task": "TASK", "missing-report": "CODE_REVIEW"}[
+            change
+        ]
         artifacts = [a for a in artifacts if a.type != kind]
     elif change in {"stale-id", "stale-version", "wrong-task"}:
         report = artifacts[-1]
-        key = {"stale-id": "codeArtifactId", "stale-version": "codeVersion",
-               "wrong-task": "taskItemId"}[change]
+        key = {
+            "stale-id": "codeArtifactId",
+            "stale-version": "codeVersion",
+            "wrong-task": "taskItemId",
+        }[change]
         artifacts[-1] = report.model_copy(update={"metadata": {**report.metadata, key: "wrong"}})
     elif change == "wrong-ref":
         request = request.model_copy(update={"input": {**request.input, "ref": "other"}})
@@ -159,15 +181,17 @@ def test_fix_previous_attempt_error_reaches_the_prompt():
     # model can correct that specific failure instead of repeating it.
     agent, gateway = fix_agent([make_valid_changeset_reply()])
     base = fix_request()
-    request = base.model_copy(update={
-        "input": {
-            **base.input,
-            "previousFixError": (
-                "LLM_INVALID_RESPONSE: Invalid replacement ChangeSet"
-                ' — {"cause": "Invalid JSON"}'
-            ),
-        },
-    })
+    request = base.model_copy(
+        update={
+            "input": {
+                **base.input,
+                "previousFixError": (
+                    "LLM_INVALID_RESPONSE: Invalid replacement ChangeSet"
+                    ' — {"cause": "Invalid JSON"}'
+                ),
+            },
+        }
+    )
     result = agent.execute(request)
     assert result.status == "SUCCESS"
     payload = json.loads(gateway.requests[0].messages[1].content)
@@ -182,8 +206,7 @@ def test_fix_previous_attempt_error_reaches_the_prompt():
 
 @pytest.mark.parametrize(
     ("path", "operation"),
-    [("src/other.py", "create"), (".env", "create"),
-     ("src/calculator.py", "delete")],
+    [("src/other.py", "create"), (".env", "create"), ("src/calculator.py", "delete")],
 )
 def test_fix_enforces_scope_and_base_existence(path: str, operation: str):
     change: dict[str, Any] = {"path": path, "operation": operation}
@@ -267,19 +290,23 @@ def test_fix_complete_replacement_remains_relative_to_original_base():
     request = fix_request()
     code = next(a for a in request.artifacts if a.type == "CODE")
     updated = code.model_copy(
-        update={"content": {
-            "text": "Previous complete code",
-            "changeSet": {"changes": [
-                {"path": "src/calculator.py", "operation": "modify", "content": "value = 2"}
-            ]},
-        }}
+        update={
+            "content": {
+                "text": "Previous complete code",
+                "changeSet": {
+                    "changes": [
+                        {"path": "src/calculator.py", "operation": "modify", "content": "value = 2"}
+                    ]
+                },
+            }
+        }
     )
     request = request.model_copy(
         update={"artifacts": [updated if a.type == "CODE" else a for a in request.artifacts]}
     )
-    reply = make_valid_changeset_reply(changes=[
-        {"path": "src/calculator.py", "operation": "modify", "content": "value = 3"}
-    ])
+    reply = make_valid_changeset_reply(
+        changes=[{"path": "src/calculator.py", "operation": "modify", "content": "value = 3"}]
+    )
     agent, _ = fix_agent([reply], repo)
     result = agent.execute(request)
     assert result.status == "SUCCESS"
@@ -313,12 +340,12 @@ def test_fix_rejects_malformed_expected_files(files: Any):
     task = next(a for a in request.artifacts if a.type == "TASK")
     task_data = json.loads(task.content["text"])
     task_data["tasks"][0]["expectedFiles"] = files
-    replacement = task.model_copy(
-        update={"content": {"text": json.dumps(task_data)}}
+    replacement = task.model_copy(update={"content": {"text": json.dumps(task_data)}})
+    request = request.model_copy(
+        update={
+            "artifacts": [replacement if a.type == "TASK" else a for a in request.artifacts],
+        }
     )
-    request = request.model_copy(update={
-        "artifacts": [replacement if a.type == "TASK" else a for a in request.artifacts],
-    })
     agent, gateway = fix_agent([])
     result = agent.execute(request)
     assert result.status == "REJECTED"
@@ -326,9 +353,11 @@ def test_fix_rejects_malformed_expected_files(files: Any):
 
 
 def test_fix_uses_one_enabled_skills_line_and_no_skill_contents():
-    request = fix_request().model_copy(update={
-        "context": {"project": json.dumps({"enabledSkills": ["python", "testing"]})},
-    })
+    request = fix_request().model_copy(
+        update={
+            "context": {"project": json.dumps({"enabledSkills": ["python", "testing"]})},
+        }
+    )
     agent, gateway = fix_agent([make_valid_changeset_reply()])
     result = agent.execute(request)
     assert result.status == "SUCCESS"
@@ -375,12 +404,14 @@ def test_fix_handles_repository_failure_during_generated_validation():
 @pytest.mark.parametrize("text", ["[]", '{"tasks":null}', '{"tasks":[]}'])
 def test_fix_rejects_task_without_unique_item(text: str):
     request = fix_request()
-    request = request.model_copy(update={
-        "artifacts": [
-            a.model_copy(update={"content": {"text": text}}) if a.type == "TASK" else a
-            for a in request.artifacts
-        ],
-    })
+    request = request.model_copy(
+        update={
+            "artifacts": [
+                a.model_copy(update={"content": {"text": text}}) if a.type == "TASK" else a
+                for a in request.artifacts
+            ],
+        }
+    )
     agent, gateway = fix_agent([])
     result = agent.execute(request)
     assert result.status == "REJECTED"

@@ -28,9 +28,12 @@ class HttpResponse:
 
 class Transport(Protocol):
     def __call__(
-        self, method: str, url: str, headers: Mapping[str, str], body: bytes | None,
-    ) -> HttpResponse:
-        ...
+        self,
+        method: str,
+        url: str,
+        headers: Mapping[str, str],
+        body: bytes | None,
+    ) -> HttpResponse: ...
 
 
 class UrllibTransport:
@@ -41,10 +44,17 @@ class UrllibTransport:
         self._timeout = timeout_seconds
 
     def __call__(
-        self, method: str, url: str, headers: Mapping[str, str], body: bytes | None,
+        self,
+        method: str,
+        url: str,
+        headers: Mapping[str, str],
+        body: bytes | None,
     ) -> HttpResponse:
         request = Request(
-            url, data=body, method=method, headers=dict(headers),
+            url,
+            data=body,
+            method=method,
+            headers=dict(headers),
         )
         try:
             with urlopen(request, timeout=self._timeout) as response:
@@ -72,11 +82,12 @@ class JsonHttpClient:
         self._transport = transport or UrllibTransport()
 
     def request(
-        self, method: str, path: str, payload: Mapping[str, Any] | None = None,
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
     ) -> Any:
-        body = (
-            json.dumps(dict(payload)).encode("utf-8") if payload is not None else None
-        )
+        body = json.dumps(dict(payload)).encode("utf-8") if payload is not None else None
         headers = dict(self._headers)
         if body is not None:
             headers["Content-Type"] = "application/json"
@@ -119,8 +130,5 @@ def _error_message(response: HttpResponse) -> str:
         if isinstance(errors, list) and errors:
             first = errors[0]
             if isinstance(first, dict) and first.get("message"):
-                return (
-                    f"Hosting provider error (HTTP {response.status}): "
-                    f"{first['message']}"
-                )
+                return f"Hosting provider error (HTTP {response.status}): {first['message']}"
     return f"Hosting provider error (HTTP {response.status})"

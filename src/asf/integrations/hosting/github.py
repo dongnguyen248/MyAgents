@@ -47,22 +47,35 @@ class GitHubProvider:
 
     # -- writes ------------------------------------------------------------
     def push_changeset(
-        self, *, branch: str, base_branch: str, changes: ChangeSet, message: str,
+        self,
+        *,
+        branch: str,
+        base_branch: str,
+        changes: ChangeSet,
+        message: str,
     ) -> PushResult:
         base_sha = self._ref_sha(base_branch)
         commit = self._http.request("GET", f"{self._repo_path}/git/commits/{base_sha}")
         tree_items: list[dict[str, Any]] = []
         for change in changes.changes:
             if change.operation == "delete":
-                tree_items.append({
-                    "path": change.path, "mode": "100644",
-                    "type": "blob", "sha": None,
-                })
+                tree_items.append(
+                    {
+                        "path": change.path,
+                        "mode": "100644",
+                        "type": "blob",
+                        "sha": None,
+                    }
+                )
             else:
-                tree_items.append({
-                    "path": change.path, "mode": "100644",
-                    "type": "blob", "content": change.content or "",
-                })
+                tree_items.append(
+                    {
+                        "path": change.path,
+                        "mode": "100644",
+                        "type": "blob",
+                        "content": change.content or "",
+                    }
+                )
         tree = self._http.request(
             "POST",
             f"{self._repo_path}/git/trees",
@@ -93,7 +106,12 @@ class GitHubProvider:
         return PushResult(branch=branch, commit_sha=new_sha)
 
     def open_change_request(
-        self, *, branch: str, base_branch: str, title: str, description: str,
+        self,
+        *,
+        branch: str,
+        base_branch: str,
+        title: str,
+        description: str,
     ) -> ChangeRequestRef:
         existing = self._pull_requests(branch, state="open")
         if existing:
@@ -117,7 +135,8 @@ class GitHubProvider:
 
     def pipeline_status(self, *, branch: str) -> PipelineRef | None:
         data = self._http.request(
-            "GET", f"{self._repo_path}/commits/{branch}/check-runs?per_page=100",
+            "GET",
+            f"{self._repo_path}/commits/{branch}/check-runs?per_page=100",
         )
         runs = data.get("check_runs") if isinstance(data, dict) else None
         if isinstance(runs, list) and runs:
@@ -128,22 +147,29 @@ class GitHubProvider:
                 if conclusions <= {"success", "neutral", "skipped"}:
                     status = "PASS"
                 elif conclusions & {
-                    "failure", "timed_out", "action_required", "startup_failure",
+                    "failure",
+                    "timed_out",
+                    "action_required",
+                    "startup_failure",
                 }:
                     status = "FAIL"
                 else:
                     status = "UNKNOWN"
             return PipelineRef(id=f"check-runs:{branch}", status=status, url="")
         combined = self._http.request(
-            "GET", f"{self._repo_path}/commits/{branch}/status",
+            "GET",
+            f"{self._repo_path}/commits/{branch}/status",
         )
         if isinstance(combined, dict) and combined.get("total_count"):
             status = {
-                "success": "PASS", "pending": "RUNNING",
-                "failure": "FAIL", "error": "FAIL",
+                "success": "PASS",
+                "pending": "RUNNING",
+                "failure": "FAIL",
+                "error": "FAIL",
             }.get(str(combined.get("state")), "UNKNOWN")
             return PipelineRef(
-                id=f"status:{branch}", status=status,
+                id=f"status:{branch}",
+                status=status,
                 url=str(combined.get("target_url", "") or ""),
             )
         return None
@@ -151,18 +177,21 @@ class GitHubProvider:
     # -- helpers -------------------------------------------------------------
     def _ref_sha(self, branch: str) -> str:
         data = self._http.request(
-            "GET", f"{self._repo_path}/git/ref/heads/{branch}",
+            "GET",
+            f"{self._repo_path}/git/ref/heads/{branch}",
         )
         return str(data["object"]["sha"])
 
     def _pull_requests(self, branch: str, *, state: str) -> list[dict[str, Any]]:
-        query = urlencode({
-            "head": f"{self._owner}:{branch}",
-            "state": state,
-            "sort": "created",
-            "direction": "desc",
-            "per_page": 1,
-        })
+        query = urlencode(
+            {
+                "head": f"{self._owner}:{branch}",
+                "state": state,
+                "sort": "created",
+                "direction": "desc",
+                "per_page": 1,
+            }
+        )
         data = self._http.request("GET", f"{self._repo_path}/pulls?{query}")
         return data if isinstance(data, list) else []
 

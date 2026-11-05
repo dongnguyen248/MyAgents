@@ -56,7 +56,11 @@ DEFAULT_MAX_TOKENS = 16384
 
 class HttpTransport(Protocol):
     def post(
-        self, url: str, *, headers: dict[str, str], body: bytes,
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        body: bytes,
         timeout_seconds: float,
     ) -> tuple[int, Mapping[str, str], bytes]:
         """POSTs and returns (status, headers, body).
@@ -72,11 +76,18 @@ class UrlLibTransport:
     """Default transport (urllib)."""
 
     def post(
-        self, url: str, *, headers: dict[str, str], body: bytes,
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        body: bytes,
         timeout_seconds: float,
     ) -> tuple[int, Mapping[str, str], bytes]:
         request = urllib.request.Request(
-            url, data=body, headers=headers, method="POST",
+            url,
+            data=body,
+            headers=headers,
+            method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
@@ -89,13 +100,15 @@ class UrlLibTransport:
             return error.code, _lower_headers(error.headers), error.read()
         except TimeoutError as error:
             raise ModelGatewayError(
-                "LLM_TIMEOUT", f"Model provider timed out: {error}",
+                "LLM_TIMEOUT",
+                f"Model provider timed out: {error}",
             ) from None
         except (urllib.error.URLError, OSError) as error:
             reason = getattr(error, "reason", None)
             if isinstance(reason, TimeoutError):
                 raise ModelGatewayError(
-                    "LLM_TIMEOUT", f"Model provider timed out: {error}",
+                    "LLM_TIMEOUT",
+                    f"Model provider timed out: {error}",
                 ) from None
             raise ModelGatewayError(
                 "INTEGRATION_UNAVAILABLE",
@@ -159,11 +172,15 @@ class OpenAICompatibleGateway:
                 {
                     "role": message.role,
                     "content": (
-                        [{
-                            "type": "text", "text": message.content,
-                            "cache_control": {"type": "ephemeral"},
-                        }]
-                        if index < prefix else message.content
+                        [
+                            {
+                                "type": "text",
+                                "text": message.content,
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ]
+                        if index < prefix
+                        else message.content
                     ),
                 }
                 for index, message in enumerate(request.messages)
@@ -173,14 +190,12 @@ class OpenAICompatibleGateway:
         if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
             payload["temperature"] = temperature
         max_tokens = request.parameters.get("max_tokens")
-        if (
-            isinstance(max_tokens, bool) or not isinstance(max_tokens, int)
-            or max_tokens <= 0
-        ):
+        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0:
             max_tokens = DEFAULT_MAX_TOKENS
         payload["max_tokens"] = max_tokens
         status, _headers, raw = self._post_with_retries(
-            payload, timeout_seconds=effective_timeout(self._timeout, request),
+            payload,
+            timeout_seconds=effective_timeout(self._timeout, request),
         )
         if status >= 400:
             detail, provider_code = _provider_error(raw)
@@ -190,8 +205,7 @@ class OpenAICompatibleGateway:
             )
             raise ModelGatewayError(
                 code,
-                f"Model provider error (HTTP {status})"
-                + (f": {detail}" if detail else ""),
+                f"Model provider error (HTTP {status})" + (f": {detail}" if detail else ""),
                 details={"httpStatus": status},
             )
         try:
@@ -210,15 +224,24 @@ class OpenAICompatibleGateway:
                 ),
                 finish_reason=str(choice.get("finish_reason") or "stop"),
             )
-        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, IndexError,
-                TypeError, ValueError) as error:
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+        ) as error:
             raise ModelGatewayError(
                 "LLM_INVALID_RESPONSE",
                 f"Model provider returned an unexpected response: {error}",
             ) from None
 
     def _post_with_retries(
-        self, payload: dict[str, Any], *, timeout_seconds: float,
+        self,
+        payload: dict[str, Any],
+        *,
+        timeout_seconds: float,
     ) -> tuple[int, Mapping[str, str], bytes]:
         """POST, retrying transient failures with shared backoff.
 
@@ -246,17 +269,23 @@ class OpenAICompatibleGateway:
             except ModelGatewayError as error:
                 if not error.retryable or retries >= self._max_retries:
                     raise
-                self._sleep(backoff_delay(
-                    retries, retry_after=None, rand=self._rand,
-                ))
+                self._sleep(
+                    backoff_delay(
+                        retries,
+                        retry_after=None,
+                        rand=self._rand,
+                    )
+                )
                 retries += 1
                 continue
             if (status == 429 or status >= 500) and retries < self._max_retries:
-                self._sleep(backoff_delay(
-                    retries,
-                    retry_after=parse_retry_after(headers),
-                    rand=self._rand,
-                ))
+                self._sleep(
+                    backoff_delay(
+                        retries,
+                        retry_after=parse_retry_after(headers),
+                        rand=self._rand,
+                    )
+                )
                 retries += 1
                 continue
             return status, headers, raw

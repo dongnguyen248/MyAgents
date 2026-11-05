@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +36,7 @@ from tests.unit.test_api_service import PROJECTS, FakeMetrics, RoutingGateway
 from tests.unit.test_orchestrator_concurrency import InMemoryExecutionStore
 from tests.unit.test_workspace_concurrency import build_engine
 
-NOW = datetime(2026, 11, 5, 16, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 5, 16, 0, tzinfo=UTC)
 
 
 # -- A: snapshots ---------------------------------------------------------
@@ -49,9 +49,13 @@ def test_snapshot_is_an_independent_copy_and_run_state_deep_copies():
     assert cloned.revisions == {"spec": 2}
 
     run = WorkflowExecution(
-        id="run-1", task_id="t", project_id="p", state=state,
+        id="run-1",
+        task_id="t",
+        project_id="p",
+        state=state,
         definition={"id": "development"},
-        started_at=NOW, updated_at=NOW,
+        started_at=NOW,
+        updated_at=NOW,
         context={"nested": {"count": 1}},
     )
     snap = run.snapshot()
@@ -65,7 +69,8 @@ def test_engine_get_copy_semantics():
 
     engine, _spec, _plan, _repo = make_engine()
     started = engine.start(
-        task_id="task-1", project_id="project-1",
+        task_id="task-1",
+        project_id="project-1",
         inputs={"spec": {"requirement": "Add a feature"}},
     )
     live_a = engine.get(started.id, copy=False)
@@ -105,7 +110,11 @@ class _Metrics:
         self.recorded: list[str] = []
 
     def record(
-        self, agent_id: str, result: Any, *, run_id: str | None = None,
+        self,
+        agent_id: str,
+        result: Any,
+        *,
+        run_id: str | None = None,
     ) -> None:
         self.recorded.append(agent_id)
 
@@ -115,12 +124,18 @@ def _make_store_engine(store: _CountingStore, publisher: _Publisher):
 
     ids = iter(f"id-{n}" for n in range(1, 100_000))
     definition = WorkflowDefinition(
-        id="development", name="Development", version="1",
+        id="development",
+        name="Development",
+        version="1",
         steps=[step("spec")],
     )
     engine = Orchestrator(
-        definition, AgentRegistry(), clock=lambda: NOW,
-        new_id=lambda: next(ids), store=store, events=publisher,
+        definition,
+        AgentRegistry(),
+        clock=lambda: NOW,
+        new_id=lambda: next(ids),
+        store=store,
+        events=publisher,
         metrics=_Metrics(),
     )
     return engine
@@ -129,14 +144,20 @@ def _make_store_engine(store: _CountingStore, publisher: _Publisher):
 def _seed_observations(store: _CountingStore, run_id: str, count: int) -> None:
     stored = store.get_execution(run_id)
     for index in range(count):
-        stored.observations.append(Observation(
-            id=f"obs-{index}",
-            event=ActivityEvent(
-                id=f"evt-{index}", timestamp=NOW, project_id="project-1",
-                task_id="task-1", workflow_id="development",
-                event_type="TEST_EVENT", message=f"event {index}",
-            ),
-        ))
+        stored.observations.append(
+            Observation(
+                id=f"obs-{index}",
+                event=ActivityEvent(
+                    id=f"evt-{index}",
+                    timestamp=NOW,
+                    project_id="project-1",
+                    task_id="task-1",
+                    workflow_id="development",
+                    event_type="TEST_EVENT",
+                    message=f"event {index}",
+                ),
+            )
+        )
     store.save_execution(stored)
 
 
@@ -177,9 +198,13 @@ def test_failed_delivery_marks_only_the_successful_prefix():
 
 def _execution(run_id: str, task_id: str, stage: str) -> WorkflowExecution:
     return WorkflowExecution(
-        id=run_id, task_id=task_id, project_id="proj-1",
-        state=RunState(stage=stage), definition={"id": "software-development"},
-        started_at=NOW, updated_at=NOW,
+        id=run_id,
+        task_id=task_id,
+        project_id="proj-1",
+        state=RunState(stage=stage),
+        definition={"id": "software-development"},
+        started_at=NOW,
+        updated_at=NOW,
     )
 
 
@@ -238,19 +263,27 @@ class _CountingSQLiteStore:
 def _service_with_50_stored_runs(tmp_path: Path) -> tuple[FactoryService, _CountingSQLiteStore]:
     inner = SQLiteExecutionStore(tmp_path / "runs.sqlite")
     for index in range(50):
-        inner.create_execution(_execution(
-            f"run-{index:02d}", f"task-{index:02d}", "COMPLETED",
-        ))
+        inner.create_execution(
+            _execution(
+                f"run-{index:02d}",
+                f"task-{index:02d}",
+                "COMPLETED",
+            )
+        )
     store = _CountingSQLiteStore(inner)
     service = FactoryService(
-        build_engine(RoutingGateway()), projects=PROJECTS,
-        metrics=FakeMetrics(), clock=lambda: NOW, store=store,
+        build_engine(RoutingGateway()),
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
+        store=store,
     )
     return service, store
 
 
 def test_list_tasks_with_50_runs_loads_no_payloads_on_repeat_calls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     service, store = _service_with_50_stored_runs(tmp_path)
     try:
@@ -343,10 +376,18 @@ def test_mariadb_save_writes_metadata_columns_and_summaries_read_them():
     assert "updated_at = %s" in sql and "WHERE id = %s AND version = %s" in sql
     assert "task-a" in params and "COMPLETED" in params
 
-    connection.fetchall_result = [(
-        "run-1", "proj-1", "task-a", "software-development", "COMPLETED",
-        "COMPLETED", NOW, NOW,
-    )]
+    connection.fetchall_result = [
+        (
+            "run-1",
+            "proj-1",
+            "task-a",
+            "software-development",
+            "COMPLETED",
+            "COMPLETED",
+            NOW,
+            NOW,
+        )
+    ]
     summaries = store.list_execution_summaries("proj-1", status="COMPLETED")
     sql, params = connection.statements[-1]
     assert "payload" not in sql.split("FROM")[0]
@@ -376,10 +417,7 @@ def test_mariadb_payload_size_warning_fires_once_per_run(
     with caplog.at_level(logging.WARNING, logger="asf.storage.mariadb"):
         store.save_execution(run)
         store.save_execution(run)
-    warnings = [
-        record for record in caplog.records
-        if "max_allowed_packet" in record.getMessage()
-    ]
+    warnings = [record for record in caplog.records if "max_allowed_packet" in record.getMessage()]
     assert len(warnings) == 1
 
 

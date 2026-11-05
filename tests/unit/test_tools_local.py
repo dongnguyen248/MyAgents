@@ -121,10 +121,12 @@ def test_local_sandbox_timeout_and_missing_executable(tmp_path: Path):
     # CommandTimeoutError; the port contract now allows either
     # shape and this adapter returns the result.)
     result = sandbox.run(
-        [CommandSpec(
-            argv=(PYTHON, "-c", "import time; time.sleep(30)"),
-            timeout_seconds=1,
-        )],
+        [
+            CommandSpec(
+                argv=(PYTHON, "-c", "import time; time.sleep(30)"),
+                timeout_seconds=1,
+            )
+        ],
         changes,
         "main",
     )
@@ -144,9 +146,14 @@ def test_workspace_routing_falls_back_without_a_root(tmp_path: Path):
     repository = WorkspaceRepository(workspace, InMemoryRepository())
     sandbox = WorkspaceSandbox(
         workspace,
-        ScriptedSandbox(default_result=CommandResult(
-            exit_code=0, stdout="fake", stderr="", duration_ms=1,
-        )),
+        ScriptedSandbox(
+            default_result=CommandResult(
+                exit_code=0,
+                stdout="fake",
+                stderr="",
+                duration_ms=1,
+            )
+        ),
     )
     changes = _changeset(FileChange(path="new.py", operation="create", content="n\n"))
 

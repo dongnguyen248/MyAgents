@@ -115,10 +115,7 @@ def build_user_message(
             for k in ("name", "description", "technology")
             if k in project_context
         }
-        if whitelisted:
-            proj_str = json.dumps(whitelisted, indent=2)
-        else:
-            proj_str = "none"
+        proj_str = json.dumps(whitelisted, indent=2) if whitelisted else "none"
     else:
         proj_str = "none"
     sections.append(f"## Project context\n{proj_str}")
@@ -131,10 +128,7 @@ def build_user_message(
         prev_version, prev_text = previous_task
         sections.append(f"## Previous task (version {prev_version})\n{prev_text}")
 
-        feedback_lines = [
-            f"- [{fb.decision}] {fb.reviewer}: {fb.comment}"
-            for fb in feedback
-        ]
+        feedback_lines = [f"- [{fb.decision}] {fb.reviewer}: {fb.comment}" for fb in feedback]
         feedback_str = "\n".join(feedback_lines) if feedback_lines else "none"
         sections.append(f"## Reviewer feedback\n{feedback_str}")
 
@@ -153,10 +147,7 @@ def build_task_messages(
 ) -> list[ModelMessage]:
     """Constructs the system and user messages for TaskAgent."""
     is_revision = previous_task is not None
-    if is_revision:
-        system_content = f"{prompts.system}\n\n{prompts.revision}"
-    else:
-        system_content = prompts.system
+    system_content = f"{prompts.system}\n\n{prompts.revision}" if is_revision else prompts.system
     system_content += rules_section(
         project_context,
         "Project development rules — the standards this project's code"

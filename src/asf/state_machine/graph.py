@@ -49,9 +49,7 @@ def build_graph(definition: WorkflowDefinition) -> StageGraph:
     for step in definition.steps:
         if step.requires_approval:
             s_name = step.stage
-            stages.append(
-                StageInfo(name=f"{s_name}_DRAFT", kind=StageKind.DRAFT, step_id=step.id)
-            )
+            stages.append(StageInfo(name=f"{s_name}_DRAFT", kind=StageKind.DRAFT, step_id=step.id))
             stages.append(
                 StageInfo(name=f"{s_name}_REVIEW", kind=StageKind.REVIEW, step_id=step.id)
             )
@@ -65,9 +63,7 @@ def build_graph(definition: WorkflowDefinition) -> StageGraph:
                 StageInfo(name=f"{s_name}_ESCALATED", kind=StageKind.ESCALATED, step_id=step.id)
             )
             max_revisions[step.id] = (
-                step.max_revisions
-                if step.max_revisions is not None
-                else DEFAULT_MAX_REVISIONS
+                step.max_revisions if step.max_revisions is not None else DEFAULT_MAX_REVISIONS
             )
         else:
             stages.append(StageInfo(name=step.stage, kind=StageKind.STEP, step_id=step.id))
@@ -80,16 +76,12 @@ def build_graph(definition: WorkflowDefinition) -> StageGraph:
     steps = definition.steps
 
     # 1. NEW --START--> entry(first step)
-    edges.append(
-        Edge(source="NEW", trigger=Trigger.START, target=_entry_stage_name(steps[0]))
-    )
+    edges.append(Edge(source="NEW", trigger=Trigger.START, target=_entry_stage_name(steps[0])))
 
     # 2. Step transitions
     num_steps = len(steps)
     for i, step in enumerate(steps):
-        next_target = (
-            _entry_stage_name(steps[i + 1]) if i + 1 < num_steps else "COMPLETED"
-        )
+        next_target = _entry_stage_name(steps[i + 1]) if i + 1 < num_steps else "COMPLETED"
         if step.requires_approval:
             s_name = step.stage
             draft = f"{s_name}_DRAFT"
@@ -108,9 +100,7 @@ def build_graph(definition: WorkflowDefinition) -> StageGraph:
             edges.append(Edge(source=review, trigger=Trigger.REJECTED, target=rejected))
 
             # S_REVIEW --REQUEST_CHANGES--> S_REJECTED
-            edges.append(
-                Edge(source=review, trigger=Trigger.REQUEST_CHANGES, target=rejected)
-            )
+            edges.append(Edge(source=review, trigger=Trigger.REQUEST_CHANGES, target=rejected))
 
             # S_REJECTED --REVISE--> S_DRAFT (guard within_limit)
             edges.append(
@@ -139,20 +129,14 @@ def build_graph(definition: WorkflowDefinition) -> StageGraph:
             edges.append(Edge(source=approved, trigger=Trigger.ADVANCE, target=next_target))
         else:
             # plain step: S --COMPLETE--> entry(next step)
-            edges.append(
-                Edge(source=step.stage, trigger=Trigger.COMPLETE, target=next_target)
-            )
+            edges.append(Edge(source=step.stage, trigger=Trigger.COMPLETE, target=next_target))
 
     # 3. Every non-terminal stage --FAIL--> FAILED and --CANCEL--> CANCELLED
     terminal_stages = {"COMPLETED", "FAILED", "CANCELLED"}
     for stage_info in stages:
         if stage_info.name not in terminal_stages:
-            edges.append(
-                Edge(source=stage_info.name, trigger=Trigger.FAIL, target="FAILED")
-            )
-            edges.append(
-                Edge(source=stage_info.name, trigger=Trigger.CANCEL, target="CANCELLED")
-            )
+            edges.append(Edge(source=stage_info.name, trigger=Trigger.FAIL, target="FAILED"))
+            edges.append(Edge(source=stage_info.name, trigger=Trigger.CANCEL, target="CANCELLED"))
 
     return StageGraph(
         stages=tuple(stages),

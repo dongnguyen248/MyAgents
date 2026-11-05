@@ -33,9 +33,9 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse
 from asf.integrations.gemini import GeminiModelGateway
@@ -72,8 +72,9 @@ def agent_key(raw: Any) -> str | None:
         return None
     key = raw.strip()
     if key.startswith("agent-"):
-        key = key[len("agent-"):]
+        key = key[len("agent-") :]
     return key if key in MODEL_AGENTS else None
+
 
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
@@ -82,7 +83,10 @@ DEFAULT_BASE_URLS = {
 }
 
 _DEFAULTS: dict[str, str] = {
-    "provider": "scripted", "model": "", "baseUrl": "", "apiKey": "",
+    "provider": "scripted",
+    "model": "",
+    "baseUrl": "",
+    "apiKey": "",
 }
 
 
@@ -105,7 +109,8 @@ class ModelSettings:
                 if self._data["provider"] not in PROVIDERS:
                     self._data["provider"] = "scripted"
                 self._agent_models = self._clean_agent_models(
-                    stored.get("agentModels"), strict=False,
+                    stored.get("agentModels"),
+                    strict=False,
                 )
 
     @staticmethod
@@ -148,7 +153,9 @@ class ModelSettings:
         return dict(self._agent_models)
 
     def effective_model(
-        self, agent: str | None = None, tier: str | None = None,
+        self,
+        agent: str | None = None,
+        tier: str | None = None,
     ) -> str:
         """The model a call from `agent` will use.
 
@@ -183,8 +190,7 @@ class ModelSettings:
         provider = payload.get("provider", data["provider"])
         if provider not in PROVIDERS:
             raise ValueError(
-                f"Unknown model provider {provider!r}; "
-                f"expected one of {', '.join(PROVIDERS)}",
+                f"Unknown model provider {provider!r}; expected one of {', '.join(PROVIDERS)}",
             )
         data["provider"] = str(provider)
         for field in ("model", "baseUrl"):
@@ -196,7 +202,8 @@ class ModelSettings:
         agent_models = self._agent_models
         if "agentModels" in payload:
             agent_models = self._clean_agent_models(
-                payload["agentModels"], strict=True,
+                payload["agentModels"],
+                strict=True,
             )
         if payload.get("clearKey") is True:
             data["apiKey"] = ""
@@ -219,7 +226,9 @@ class ModelSettings:
         return self.public()
 
     def test(
-        self, transport: HttpTransport | None = None, agent: str | None = None,
+        self,
+        transport: HttpTransport | None = None,
+        agent: str | None = None,
     ) -> dict[str, Any]:
         """One tiny completion through the configured provider.
 
@@ -232,14 +241,13 @@ class ModelSettings:
         if agent is not None and agent_name is None:
             return {
                 "ok": False,
-                "message": f"Unknown agent {agent!r}; "
-                           f"expected one of {', '.join(MODEL_AGENTS)}",
+                "message": f"Unknown agent {agent!r}; expected one of {', '.join(MODEL_AGENTS)}",
             }
         if settings["provider"] == "scripted":
             return {
                 "ok": True,
                 "message": "Scripted demo provider: agents use canned "
-                           "replies, no network call to test.",
+                "replies, no network call to test.",
             }
         try:
             gateway = build_configured_gateway(settings, transport)
@@ -248,12 +256,17 @@ class ModelSettings:
         if gateway is None:
             return {"ok": False, "message": "No provider configured."}
         try:
-            response = gateway.complete(ModelRequest(
-                messages=[ModelMessage(
-                    role="user", content="Reply with the single word OK",
-                )],
-                model=self.effective_model(agent_name) or None,
-            ))
+            response = gateway.complete(
+                ModelRequest(
+                    messages=[
+                        ModelMessage(
+                            role="user",
+                            content="Reply with the single word OK",
+                        )
+                    ],
+                    model=self.effective_model(agent_name) or None,
+                )
+            )
         except ModelGatewayError as error:
             return {"ok": False, "message": error.message}
         except Exception as error:  # transport-level surprises
@@ -262,7 +275,7 @@ class ModelSettings:
             return {
                 "ok": True,
                 "message": f"Provider answered with model "
-                           f"'{response.model}': {response.content.strip()[:80]!r}",
+                f"'{response.model}': {response.content.strip()[:80]!r}",
             }
         return {"ok": False, "message": "Provider answered with empty content."}
 
@@ -273,12 +286,14 @@ class ModelSettings:
         record: dict[str, Any] = dict(self._data)
         record["agentModels"] = dict(self._agent_models)
         self._path.write_text(
-            json.dumps(record, indent=2), encoding="utf-8",
+            json.dumps(record, indent=2),
+            encoding="utf-8",
         )
 
 
 def build_configured_gateway(
-    settings: Mapping[str, str], transport: HttpTransport | None = None,
+    settings: Mapping[str, str],
+    transport: HttpTransport | None = None,
 ) -> ModelGateway | None:
     """The real provider gateway for the settings, or None for scripted."""
     provider = settings.get("provider", "scripted")
@@ -288,16 +303,19 @@ def build_configured_gateway(
     api_key = settings.get("apiKey") or ""
     if not api_key:
         raise ValueError(
-            f"No API key stored for provider '{provider}'. "
-            "Save a key in Settings first.",
+            f"No API key stored for provider '{provider}'. Save a key in Settings first.",
         )
     if provider == "gemini":
         return GeminiModelGateway(model=model, api_key=api_key)
     base_url = (settings.get("baseUrl") or "").strip() or DEFAULT_BASE_URLS.get(
-        provider, "",
+        provider,
+        "",
     )
     return OpenAICompatibleGateway(
-        base_url=base_url, model=model, api_key=api_key, transport=transport,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        transport=transport,
         # Anthropic's OpenAI-compatible endpoint understands
         # cache_control content parts; enable the agents' cache
         # prefix hint only there.
@@ -314,7 +332,8 @@ class SettingsRoutingGateway:
         fallback: ModelGateway,
         transport: HttpTransport | None = None,
         gateway_factory: Callable[
-            [Mapping[str, str], HttpTransport | None], ModelGateway | None,
+            [Mapping[str, str], HttpTransport | None],
+            ModelGateway | None,
         ] = build_configured_gateway,
     ) -> None:
         self._settings = settings
@@ -347,7 +366,8 @@ class SettingsRoutingGateway:
                 request.metadata.get("agentId"),
                 request.metadata.get("modelTier"),
                 model or "(gateway default)",
-                error.code, error.message,
+                error.code,
+                error.message,
             )
             raise
 

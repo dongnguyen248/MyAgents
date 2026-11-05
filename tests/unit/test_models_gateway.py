@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse, ModelUsage
@@ -12,7 +12,7 @@ from asf.models.ports import ModelGateway
 from tests.unit.contract_models import validator_for
 from tests.unit.purity import assert_pure_package
 
-T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 T_NAIVE = datetime(2026, 10, 20, 14, 0, 0)
 
 
@@ -198,10 +198,14 @@ class ModelsGatewayTests(unittest.TestCase):
                                 allowed_asf_modules,
                                 f"Forbidden import '{alias.name}' in {py_file.name}",
                             )
-                elif isinstance(node, ast.ImportFrom):
-                    if node.level == 0 and node.module and node.module.startswith("asf."):
-                        self.assertIn(
-                            node.module,
-                            allowed_asf_modules,
-                            f"Forbidden import from '{node.module}' in {py_file.name}",
-                        )
+                elif (
+                    isinstance(node, ast.ImportFrom)
+                    and node.level == 0
+                    and node.module
+                    and node.module.startswith("asf.")
+                ):
+                    self.assertIn(
+                        node.module,
+                        allowed_asf_modules,
+                        f"Forbidden import from '{node.module}' in {py_file.name}",
+                    )

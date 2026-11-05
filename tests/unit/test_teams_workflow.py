@@ -68,15 +68,18 @@ def payload(run, *, decision="APPROVED", comment=""):
     return {
         "actor": actor().model_dump(mode="json", by_alias=True),
         "action": {
-            "runId": run.id, "approvalId": run.approval_id,
-            "decision": decision, "comment": comment,
+            "runId": run.id,
+            "approvalId": run.approval_id,
+            "decision": decision,
+            "comment": comment,
         },
     }
 
 
 async def post(app, data, secret, *, raw=None):
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://local",
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://local",
     ) as client:
         return await client.post(
             "/api/teams/decisions",
@@ -95,8 +98,9 @@ def test_workflow_posts_full_spec_with_submit_and_required_reject_comment(creden
     assert size == 4096
     card = body["card"]
     assert card["version"] == "1.3"
-    assert card["body"][2]["text"] == (
-        flow.approvals.engine.get(run.id).artifacts["SPEC"].content["text"]
+    assert (
+        card["body"][2]["text"]
+        == (flow.approvals.engine.get(run.id).artifacts["SPEC"].content["text"])
     )
     assert card["actions"][0]["type"] == "Action.Submit"
     assert card["actions"][0]["data"]["decision"] == "APPROVED"
@@ -110,13 +114,16 @@ def test_workflow_posts_full_spec_with_submit_and_required_reject_comment(creden
     assert all("reviewer" not in action.get("data", {}) for action in card["actions"])
 
 
-@pytest.mark.parametrize("change", [
-    lambda url: url.replace("https:", "http:"),
-    lambda url: url.replace(config().workflow_host, "attacker.example"),
-    lambda url: url.replace("/trigger", ":444/trigger"),
-    lambda url: url + "#fragment",
-    lambda url: url.replace("https://", "https://user@"),
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda url: url.replace("https:", "http:"),
+        lambda url: url.replace(config().workflow_host, "attacker.example"),
+        lambda url: url.replace("/trigger", ":444/trigger"),
+        lambda url: url + "#fragment",
+        lambda url: url.replace("https://", "https://user@"),
+    ],
+)
 def test_workflow_url_rejects_untrusted_destination(credentials, monkeypatch, change):
     monkeypatch.setenv("ASF_TEAMS_WORKFLOW_URL", change(credentials[0]))
     with pytest.raises(ValueError) as caught:
@@ -163,11 +170,15 @@ def test_callback_rejects_missing_or_wrong_auth_without_decision(credentials, se
     assert repo.list_decisions(run.approval_id) == []
 
 
-@pytest.mark.parametrize("field,value", [
-    ("tenantId", "00000000-0000-0000-0000-000000000099"),
-    ("teamId", "00000000-0000-0000-0000-000000000099"),
-    ("channelId", "other"), ("objectId", "00000000-0000-0000-0000-000000000099"),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("tenantId", "00000000-0000-0000-0000-000000000099"),
+        ("teamId", "00000000-0000-0000-0000-000000000099"),
+        ("channelId", "other"),
+        ("objectId", "00000000-0000-0000-0000-000000000099"),
+    ],
+)
 def test_callback_rejects_wrong_actor_binding(credentials, field, value):
     flow, run, repo = managed(credentials)
     data = payload(run)
@@ -189,9 +200,13 @@ def test_callback_cannot_decide_another_managed_run(credentials):
 @pytest.mark.parametrize("decision", ["REJECTED", "REQUEST_CHANGES"])
 def test_callback_requires_negative_feedback(credentials, decision):
     flow, run, repo = managed(credentials)
-    response = asyncio.run(post(
-        create_app(flow, run.id), payload(run, decision=decision, comment=" "), credentials[1],
-    ))
+    response = asyncio.run(
+        post(
+            create_app(flow, run.id),
+            payload(run, decision=decision, comment=" "),
+            credentials[1],
+        )
+    )
     assert response.status_code == 422
     assert repo.list_decisions(run.approval_id) == []
 
@@ -209,10 +224,13 @@ def test_callback_rejects_echoed_secret_without_logging_or_returning_it(credenti
 
 def test_callback_never_persists_configured_secret_in_feedback(credentials, caplog):
     flow, run, repo = managed(credentials)
-    response = asyncio.run(post(
-        create_app(flow, run.id),
-        payload(run, decision="REJECTED", comment=credentials[1]), credentials[1],
-    ))
+    response = asyncio.run(
+        post(
+            create_app(flow, run.id),
+            payload(run, decision="REJECTED", comment=credentials[1]),
+            credentials[1],
+        )
+    )
     assert response.status_code == 422
     assert credentials[1] not in response.text
     assert credentials[1] not in caplog.text
@@ -255,9 +273,13 @@ def test_callback_approve_and_replay(credentials):
 def test_callback_expired_approval(credentials):
     flow, run, repo = managed(credentials)
     request = repo.get(run.approval_id)
-    repo.update(request.model_copy(update={
-        "expires_at": request.requested_at + timedelta(seconds=1),
-    }))
+    repo.update(
+        request.model_copy(
+            update={
+                "expires_at": request.requested_at + timedelta(seconds=1),
+            }
+        )
+    )
     flow.approvals.engine._clock = lambda: request.requested_at + timedelta(seconds=2)
     response = asyncio.run(post(create_app(flow, run.id), payload(run), credentials[1]))
     assert response.status_code == 410
@@ -308,9 +330,11 @@ def test_existing_revision_limit_escalates_without_more_agent_calls(credentials)
     flow, run, _ = managed(credentials)
     for _ in range(3):
         run = flow.approvals.engine.get(run.id)
-        flow.decide(WorkflowDecision.model_validate(
-            payload(run, decision="REJECTED", comment="Fix"),
-        ))
+        flow.decide(
+            WorkflowDecision.model_validate(
+                payload(run, decision="REJECTED", comment="Fix"),
+            )
+        )
         run = flow.advance(run.id)
     assert run.state.stage == "SPEC_ESCALATED"
     count = len(run.results)
@@ -319,7 +343,8 @@ def test_existing_revision_limit_escalates_without_more_agent_calls(credentials)
 
 
 def test_authenticated_reject_rewrites_spec_then_approve_automatically_runs_plan(
-    credentials, tmp_path,
+    credentials,
+    tmp_path,
 ):
     async def scenario():
         store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
@@ -327,7 +352,9 @@ def test_authenticated_reject_rewrites_spec_then_approve_automatically_runs_plan
             models = DemoModels()
             engine = demo_engine(config(), store, models=models)
             run = engine.start(
-                task_id="demo", project_id="demo", inputs={"spec": {"requirement": "Demo"}},
+                task_id="demo",
+                project_id="demo",
+                inputs={"spec": {"requirement": "Demo"}},
             )
             transport = FakeTransport()
             flow = TeamsWorkflow(config(), engine, transport=transport)
@@ -344,7 +371,8 @@ def test_authenticated_reject_rewrites_spec_then_approve_automatically_runs_plan
                 await wait_for(lambda: len(transport.calls) == 1)
                 first = engine.get(run.id)
                 response = await post(
-                    app, payload(first, decision="REJECTED", comment="Add retention policy"),
+                    app,
+                    payload(first, decision="REJECTED", comment="Add retention policy"),
                     credentials[1],
                 )
                 assert response.status_code == 200
@@ -375,7 +403,8 @@ def test_authenticated_reject_rewrites_spec_then_approve_automatically_runs_plan
 
 def test_driver_pauses_safely_on_delivery_failure(credentials, caplog):
     flow, run, repo = managed(
-        credentials, transport=FakeTransport(error=URLError(credentials[1])),
+        credentials,
+        transport=FakeTransport(error=URLError(credentials[1])),
     )
 
     async def scenario():
@@ -383,7 +412,8 @@ def test_driver_pauses_safely_on_delivery_failure(credentials, caplog):
         async with app.router.lifespan_context(app):
             await asyncio.sleep(0.01)
             async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url="http://local",
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://local",
             ) as client:
                 assert (await client.get("/health")).status_code == 503
             assert (await post(app, payload(run), credentials[1])).status_code == 503

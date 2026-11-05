@@ -13,15 +13,11 @@ def test_reject_whitespace_only_valid_string() -> None:
 
 
 def test_reject_whitespace_only_empty_string() -> None:
-    assert reject_whitespace_only("", "field") == [
-        "field: must not be empty or whitespace-only"
-    ]
+    assert reject_whitespace_only("", "field") == ["field: must not be empty or whitespace-only"]
 
 
 def test_reject_whitespace_only_whitespace_only() -> None:
-    assert reject_whitespace_only("   ", "field") == [
-        "field: must not be empty or whitespace-only"
-    ]
+    assert reject_whitespace_only("   ", "field") == ["field: must not be empty or whitespace-only"]
     assert reject_whitespace_only("\t\n", "field") == [
         "field: must not be empty or whitespace-only"
     ]

@@ -15,13 +15,11 @@ with SCHEMA_PATH.open(encoding="utf-8") as schema_file:
 class StateMachineStatusTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        wf_path = REPO_ROOT / "workflows" / "software-development.yaml"
+        wf_path = REPO_ROOT / "workflow-definitions" / "software-development.yaml"
         cls.workflow_def = load_workflow(wf_path)
         cls.graph = build_graph(cls.workflow_def)
         cls.task_status_enum = set(SCHEMA["$defs"]["Task"]["properties"]["status"]["enum"])
-        cls.run_status_enum = set(
-            SCHEMA["$defs"]["WorkflowRun"]["properties"]["status"]["enum"]
-        )
+        cls.run_status_enum = set(SCHEMA["$defs"]["WorkflowRun"]["properties"]["status"]["enum"])
 
     def test_every_stage_maps_to_valid_task_and_run_status(self):
         for stage in self.graph.stages:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,7 @@ from asf.models.fake import ScriptedModelGateway
 from tests.unit.contract_models import validator_for
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 
 
 def counter_id(prefix: str = "id-"):
@@ -138,9 +138,11 @@ class SpecAgentTests(unittest.TestCase):
         # a standard run carries no tier key at all.
         agent, gateway = self._make_agent([self.valid_reply])
         req = self._make_request()
-        req = req.model_copy(update={
-            "context": {**req.context, "modelTier": "complex"},
-        })
+        req = req.model_copy(
+            update={
+                "context": {**req.context, "modelTier": "complex"},
+            }
+        )
         res = agent.execute(req)
         self.assertEqual(res.status, "SUCCESS")
         self.assertEqual(gateway.requests[0].metadata.get("modelTier"), "complex")

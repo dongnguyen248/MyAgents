@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
 
@@ -42,7 +42,7 @@ __all__ = ["ConfigResult", "ExperimentResult", "run_fix_cycle_experiment"]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = REPO_ROOT / "templates"
-NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
 REVIEWER = "harness"
 TERMINAL_STAGES = {"COMPLETED", "FAILED", "CANCELLED", "CODE_FIX_ESCALATED"}
 MAX_TICKS = 50
@@ -58,34 +58,51 @@ _CASE = BenchmarkCase(
     must_complete=True,
 )
 
-_TASK_TEXT = json.dumps({
-    "tasks": [
-        {
-            "id": "T1",
-            "title": "Create calculator module",
-            "milestoneRef": "M1",
-            "description": "Implement add, subtract, multiply, divide in calculator.py",
-            "acceptanceCriteria": ["Function add(a, b) returns a + b"],
-            "dependsOn": [],
-            "expectedFiles": ["calculator.py"],
-            "verificationHint": "Run unit tests",
-        }
-    ]
-}, indent=2)
+_TASK_TEXT = json.dumps(
+    {
+        "tasks": [
+            {
+                "id": "T1",
+                "title": "Create calculator module",
+                "milestoneRef": "M1",
+                "description": "Implement add, subtract, multiply, divide in calculator.py",
+                "acceptanceCriteria": ["Function add(a, b) returns a + b"],
+                "dependsOn": [],
+                "expectedFiles": ["calculator.py"],
+                "verificationHint": "Run unit tests",
+            }
+        ]
+    },
+    indent=2,
+)
 
 
 def _change() -> str:
-    return json.dumps({"changes": [{
-        "path": "calculator.py", "operation": "create",
-        "content": "def add(a, b):\n    return a + b\n",
-    }]})
+    return json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": "def add(a, b):\n    return a + b\n",
+                }
+            ]
+        }
+    )
 
 
 def _review(verdict: str) -> str:
-    findings = [] if verdict == "APPROVE" else [{
-        "severity": "ERROR", "path": "calculator.py",
-        "description": "Correct the implementation",
-    }]
+    findings = (
+        []
+        if verdict == "APPROVE"
+        else [
+            {
+                "severity": "ERROR",
+                "path": "calculator.py",
+                "description": "Correct the implementation",
+            }
+        ]
+    )
     return json.dumps({"findings": findings, "verdict": verdict})
 
 
@@ -119,14 +136,16 @@ def _run_code_loop(max_fixes: int) -> ConfigResult:
     # format; the experiment varies the fix-cycle budget, not the
     # output format, so pin the format (and no repair loop, which
     # would consume scripted replies) explicitly.
-    platform = PlatformConfig(agents={
-        "implement": AgentSettings(
-            settings={"editFormat": "json", "repairAttempts": 0},
-        ),
-        "fix": AgentSettings(
-            settings={"editFormat": "json", "repairAttempts": 0},
-        ),
-    })
+    platform = PlatformConfig(
+        agents={
+            "implement": AgentSettings(
+                settings={"editFormat": "json", "repairAttempts": 0},
+            ),
+            "fix": AgentSettings(
+                settings={"editFormat": "json", "repairAttempts": 0},
+            ),
+        }
+    )
     registry = AgentRegistry()
     gateways: dict[str, ScriptedModelGateway] = {}
 
@@ -137,41 +156,59 @@ def _run_code_loop(max_fixes: int) -> ConfigResult:
         return AgentRuntime(gateway, clock, lambda: f"{kind}-{next(counter)}")
 
     repository = InMemoryRepository()
-    registry.register(build_spec_agent(
-        runtime("spec", [_spec_text(_CASE)]), platform, TEMPLATES_DIR))
-    registry.register(build_plan_agent(
-        runtime("plan", [_plan_text(_CASE)]), platform, TEMPLATES_DIR))
-    registry.register(build_task_agent(
-        runtime("task", [_TASK_TEXT]), platform, TEMPLATES_DIR))
-    registry.register(build_implement_agent(
-        runtime("implement", [_change()]), platform, TEMPLATES_DIR, repository))
-    registry.register(build_review_agent(
-        runtime("review", [_review("CHANGES_REQUESTED"), _review("APPROVE")]),
-        platform, TEMPLATES_DIR))
-    registry.register(build_test_agent(
-        runtime("test", []), platform, TEMPLATES_DIR, ScriptedSandbox()))
-    registry.register(build_fix_agent(
-        runtime("fix", [_change(), _change(), _change()]),
-        platform, TEMPLATES_DIR, repository))
+    registry.register(
+        build_spec_agent(runtime("spec", [_spec_text(_CASE)]), platform, TEMPLATES_DIR)
+    )
+    registry.register(
+        build_plan_agent(runtime("plan", [_plan_text(_CASE)]), platform, TEMPLATES_DIR)
+    )
+    registry.register(build_task_agent(runtime("task", [_TASK_TEXT]), platform, TEMPLATES_DIR))
+    registry.register(
+        build_implement_agent(
+            runtime("implement", [_change()]), platform, TEMPLATES_DIR, repository
+        )
+    )
+    registry.register(
+        build_review_agent(
+            runtime("review", [_review("CHANGES_REQUESTED"), _review("APPROVE")]),
+            platform,
+            TEMPLATES_DIR,
+        )
+    )
+    registry.register(
+        build_test_agent(runtime("test", []), platform, TEMPLATES_DIR, ScriptedSandbox())
+    )
+    registry.register(
+        build_fix_agent(
+            runtime("fix", [_change(), _change(), _change()]), platform, TEMPLATES_DIR, repository
+        )
+    )
 
-    definition = WorkflowDefinition.model_validate(yaml.safe_load(
-        (REPO_ROOT / "workflows" / "software-development.yaml").read_text(encoding="utf-8")
-    ))
+    definition = WorkflowDefinition.model_validate(
+        yaml.safe_load(
+            (REPO_ROOT / "workflow-definitions" / "software-development.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
     definition = definition.model_copy(update={"steps": definition.steps[:6]})
 
     with tempfile.TemporaryDirectory() as tmp:
         store = SQLiteExecutionStore(Path(tmp) / "experiment.sqlite")
         ids = count(1)
         engine = Orchestrator(
-            definition, registry, clock=clock,
+            definition,
+            registry,
+            clock=clock,
             new_id=lambda: f"orchestration-{next(ids)}",
-            store=store, approval_policy=ApprovalPolicy(reviewers=[REVIEWER]),
+            store=store,
+            approval_policy=ApprovalPolicy(reviewers=[REVIEWER]),
             code_loop=CodeLoopPolicy(max_fixes=max_fixes),
         )
         run = engine.start(
-            task_id="experiment-1", project_id="harness",
-            inputs={"spec": {"requirement": _CASE.requirement},
-                    "implement": {"ref": "main"}},
+            task_id="experiment-1",
+            project_id="harness",
+            inputs={"spec": {"requirement": _CASE.requirement}, "implement": {"ref": "main"}},
             context={"project": {"testCommands": [["pytest", "-q"]]}},
         )
         for _ in range(MAX_TICKS):

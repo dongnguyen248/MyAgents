@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -24,7 +24,8 @@ def test_store_creates_missing_parent_directories(tmp_path: Path):
 
 
 def test_store_accepts_bare_filename(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.chdir(tmp_path)
     store = SQLiteExecutionStore("asf.sqlite")
@@ -40,10 +41,14 @@ def test_store_in_memory_still_works():
 
 
 def _execution(run_id: str) -> WorkflowExecution:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return WorkflowExecution(
-        id=run_id, task_id="task-1", project_id="project-1",
-        state=RunState(stage="SPEC_DRAFT"), started_at=now, updated_at=now,
+        id=run_id,
+        task_id="task-1",
+        project_id="project-1",
+        state=RunState(stage="SPEC_DRAFT"),
+        started_at=now,
+        updated_at=now,
     )
 
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from asf.tools.changeset import ChangeSet
 
@@ -122,8 +123,12 @@ class SandboxPort(Protocol):
     """Port for running commands in an ephemeral sandbox with a change set applied."""
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
-        *, fail_fast: bool = True,
+        self,
+        commands: Sequence[CommandSpec],
+        changes: ChangeSet,
+        ref: str,
+        *,
+        fail_fast: bool = True,
     ) -> SandboxResult:
         """Create a workspace at ref, apply changes, run commands, return results.
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from asf.agents._shared.model_call import call_model
@@ -99,9 +99,7 @@ class SpecAgent(BaseAgent):
         # 4. At most one artifact of type SPEC
         spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
         if len(spec_arts) > 1:
-            issues.append(
-                Issue("artifacts", "At most one artifact of type SPEC is permitted")
-            )
+            issues.append(Issue("artifacts", "At most one artifact of type SPEC is permitted"))
 
         # 5. Revision mode iff a SPEC artifact is present
         if len(spec_arts) == 1:
@@ -147,14 +145,8 @@ class SpecAgent(BaseAgent):
         # 7. metadata.attempt, if present
         if "attempt" in request.metadata:
             attempt_val = request.metadata["attempt"]
-            if (
-                not isinstance(attempt_val, int)
-                or isinstance(attempt_val, bool)
-                or attempt_val < 1
-            ):
-                issues.append(
-                    Issue("metadata.attempt", "metadata.attempt must be an integer >= 1")
-                )
+            if not isinstance(attempt_val, int) or isinstance(attempt_val, bool) or attempt_val < 1:
+                issues.append(Issue("metadata.attempt", "metadata.attempt must be an integer >= 1"))
 
         return issues
 
@@ -193,7 +185,8 @@ class SpecAgent(BaseAgent):
             parameters=dict(self._parameters),
             model=self._model,
             metadata={
-                "agentId": self.metadata.id, "requestId": request.request_id,
+                "agentId": self.metadata.id,
+                "requestId": request.request_id,
                 "cachePrefixMessages": 1,
                 **tier_metadata(request.context),
             },
@@ -215,13 +208,10 @@ class SpecAgent(BaseAgent):
 
         # Validate required template sections
         reply_heading_lines = {
-            line.strip()
-            for line in reply.splitlines()
-            if line.strip().startswith("## ")
+            line.strip() for line in reply.splitlines() if line.strip().startswith("## ")
         }
         missing_sections = [
-            sec for sec in self._template.required_sections
-            if sec not in reply_heading_lines
+            sec for sec in self._template.required_sections if sec not in reply_heading_lines
         ]
         if missing_sections:
             raise invalid_response(
@@ -229,10 +219,7 @@ class SpecAgent(BaseAgent):
                 details={"missingSections": missing_sections},
             )
 
-        if is_revision and prev_spec_art:
-            version = str(int(prev_spec_art.version) + 1)
-        else:
-            version = "1"
+        version = str(int(prev_spec_art.version) + 1) if is_revision and prev_spec_art else "1"
 
         art_metadata: dict[str, Any] = {
             "template": "spec",
@@ -248,7 +235,7 @@ class SpecAgent(BaseAgent):
             art_metadata["language"] = language
 
         art_id = self._runtime.new_id()
-        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
         artifact = Artifact(
             id=art_id,
             type="SPEC",

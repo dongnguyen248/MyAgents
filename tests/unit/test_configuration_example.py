@@ -5,9 +5,7 @@ from pathlib import Path
 
 from asf.configuration.loader import load_platform_config
 
-EXAMPLE_PATH = (
-    Path(__file__).resolve().parents[2] / "config" / "platform.example.yaml"
-)
+EXAMPLE_PATH = Path(__file__).resolve().parents[2] / "config" / "platform.example.yaml"
 
 
 class ConfigurationExampleTests(unittest.TestCase):

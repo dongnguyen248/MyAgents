@@ -74,8 +74,13 @@ class ReviewAgent(BaseAgent):
         self._max_diff_lines = max_diff_lines
         self._report_tail_lines = report_tail_lines
         self._metadata = AgentMetadata(
-            id="agent-review", name="Review Agent", type="review", version="1.0.0",
-            status="IDLE", capabilities=["review-code"], configuration={},
+            id="agent-review",
+            name="Review Agent",
+            type="review",
+            version="1.0.0",
+            status="IDLE",
+            capabilities=["review-code"],
+            configuration={},
         )
 
     @property
@@ -84,12 +89,17 @@ class ReviewAgent(BaseAgent):
 
     def _check(self, request: AgentRequest) -> list[Issue]:
         return check_code_request(
-            request, self.metadata.id, required={"SPEC", "PLAN", "TASK", "CODE"},
+            request,
+            self.metadata.id,
+            required={"SPEC", "PLAN", "TASK", "CODE"},
             optional={"TEST_REPORT"},
         )
 
     def _skipped_review(
-        self, request: AgentRequest, code: Artifact, changes: Any,
+        self,
+        request: AgentRequest,
+        code: Artifact,
+        changes: Any,
     ) -> tuple[Any, list[Artifact]] | None:
         """The configured fast path: tests already passed on THIS
         code version and the change is small, so the LLM review is
@@ -100,7 +110,8 @@ class ReviewAgent(BaseAgent):
         which only makes the gate more conservative."""
         report = next(
             (
-                artifact for artifact in request.artifacts
+                artifact
+                for artifact in request.artifacts
                 if artifact.type == "TEST_REPORT"
                 and artifact.metadata.get("codeArtifactId") == code.id
                 and artifact.metadata.get("codeVersion") == code.version
@@ -123,14 +134,18 @@ class ReviewAgent(BaseAgent):
         text = render_review_markdown(review, code.id, code.version)
         payload = review.model_dump(mode="json", by_alias=True, exclude_none=True)
         artifact = Artifact(
-            id=self._runtime.new_id(), type="CODE_REVIEW", name="CODE_REVIEW.json",
+            id=self._runtime.new_id(),
+            type="CODE_REVIEW",
+            name="CODE_REVIEW.json",
             version="1",
             content={"format": "json", "review": payload, "text": text},
-            created_by=self.metadata.id, created_at=self._runtime.clock(),
+            created_by=self.metadata.id,
+            created_at=self._runtime.clock(),
             metadata=linked_metadata(request, code),
         )
         return {
-            "verdict": "APPROVE", "skipped": True,
+            "verdict": "APPROVE",
+            "skipped": True,
             "skipReason": (
                 f"tests passed for this code version and the change"
                 f" is small ({diff_lines} lines <= {self._max_diff_lines})"
@@ -145,21 +160,26 @@ class ReviewAgent(BaseAgent):
             if skipped is not None:
                 return skipped
         messages = build_review_messages(
-            prompts=self._prompts, request=request,
+            prompts=self._prompts,
+            request=request,
             report_tail_lines=self._report_tail_lines,
         )
         try:
-            response = call_model(self._runtime.models, ModelRequest(
-                messages=messages,
-                model=self._model,
-                parameters=dict(self._parameters),
-                metadata={
-                    "requestId": request.request_id, "agentId": self.metadata.id,
-                    "cachePrefixMessages": 1,
-                    "taskItemId": request.input["taskItemId"],
-                    **tier_metadata(request.context),
-                },
-            ))
+            response = call_model(
+                self._runtime.models,
+                ModelRequest(
+                    messages=messages,
+                    model=self._model,
+                    parameters=dict(self._parameters),
+                    metadata={
+                        "requestId": request.request_id,
+                        "agentId": self.metadata.id,
+                        "cachePrefixMessages": 1,
+                        "taskItemId": request.input["taskItemId"],
+                        **tier_metadata(request.context),
+                    },
+                ),
+            )
         except ModelGatewayError as exc:
             if exc.code == "LLM_INVALID_RESPONSE":
                 # Preserve the gateway's own message and details: the
@@ -181,14 +201,14 @@ class ReviewAgent(BaseAgent):
             # only, never input values.
             logger.warning(
                 "review reply rejected: %s (replyChars=%d finishReason=%s)",
-                _schema_problems(exc), len(raw), response.finish_reason,
+                _schema_problems(exc),
+                len(raw),
+                response.finish_reason,
             )
             raise invalid_response("Review response does not match the required schema") from None
         allowed_paths = {change.path for change in changes.changes}
         if any(finding.path not in allowed_paths for finding in review.findings):
-            outside = sorted(
-                {f.path for f in review.findings if f.path not in allowed_paths}
-            )
+            outside = sorted({f.path for f in review.findings if f.path not in allowed_paths})
             logger.warning("review findings reference paths outside CODE: %s", outside[:5])
             raise invalid_response("Review finding references a path outside CODE")
         text = render_review_markdown(review, code.id, code.version)
@@ -196,9 +216,13 @@ class ReviewAgent(BaseAgent):
             raise invalid_response("Rendered review exceeds the size limit")
         payload = review.model_dump(mode="json", by_alias=True, exclude_none=True)
         artifact = Artifact(
-            id=self._runtime.new_id(), type="CODE_REVIEW", name="CODE_REVIEW.json", version="1",
+            id=self._runtime.new_id(),
+            type="CODE_REVIEW",
+            name="CODE_REVIEW.json",
+            version="1",
             content={"format": "json", "review": payload, "text": text},
-            created_by=self.metadata.id, created_at=self._runtime.clock(),
+            created_by=self.metadata.id,
+            created_at=self._runtime.clock(),
             metadata=linked_metadata(request, code),
         )
         return {"verdict": review.verdict}, [artifact]

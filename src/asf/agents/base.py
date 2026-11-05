@@ -50,8 +50,12 @@ class AgentExecutionError(Exception):
 
     def to_platform_error(self, now: datetime) -> dict[str, Any]:
         return {
-            "code": self.code, "message": self.message, "category": self.category,
-            "retryable": self.retryable, "details": self.details, "timestamp": now,
+            "code": self.code,
+            "message": self.message,
+            "category": self.category,
+            "retryable": self.retryable,
+            "details": self.details,
+            "timestamp": now,
         }
 
 
@@ -138,9 +142,7 @@ class BaseAgent(ABC):
             revision_count=revision_count,
             attempt=attempt,
             prompt_tokens=tracker.prompt_tokens if tracker is not None else 0,
-            completion_tokens=(
-                tracker.completion_tokens if tracker is not None else 0
-            ),
+            completion_tokens=(tracker.completion_tokens if tracker is not None else 0),
             model_calls=tracker.calls if tracker is not None else 0,
         )
 
@@ -187,13 +189,88 @@ class BaseAgent(ABC):
             else None
         )
         with track_model_calls(
-            timeout_seconds=timeout, clock=self._runtime.clock,
+            timeout_seconds=timeout,
+            clock=self._runtime.clock,
             started_at=t_start,
         ) as tracker:
             return self._execute_tracked(request, tracker, t_start)
 
+    def _lifecycle_events(
+        self,
+        request: AgentRequest,
+        t_start: datetime,
+        t_end: datetime,
+        outcome: str,
+        artifacts: list[Artifact],
+    ) -> list[ActivityEvent]:
+        """The execution's activity trail, built in exactly one place.
+
+        Always AGENT_STARTED (at t_start), then one ARTIFACT_CREATED
+        per produced artifact (at t_end, only on the completed path —
+        error results carry no artifacts), then the terminal event:
+        AGENT_COMPLETED for outcome "COMPLETED", AGENT_FAILED for
+        "FAILED". Event ids are minted in that order.
+        """
+
+        def event(
+            timestamp: datetime,
+            event_type: str,
+            message: str,
+            metadata: dict[str, Any],
+        ) -> ActivityEvent:
+            return ActivityEvent(
+                id=self._runtime.new_id(),
+                timestamp=timestamp,
+                project_id=request.project_id,
+                task_id=request.task_id,
+                workflow_id=request.workflow_id,
+                agent_id=self.metadata.id,
+                event_type=event_type,
+                message=message,
+                metadata=metadata,
+            )
+
+        events = [
+            event(
+                t_start,
+                "AGENT_STARTED",
+                "Agent execution started",
+                {"requestId": request.request_id},
+            )
+        ]
+        if outcome == "COMPLETED":
+            for art in artifacts:
+                events.append(
+                    event(
+                        t_end,
+                        "ARTIFACT_CREATED",
+                        f"Artifact '{art.id}' created",
+                        {"requestId": request.request_id, "artifactId": art.id},
+                    )
+                )
+            events.append(
+                event(
+                    t_end,
+                    "AGENT_COMPLETED",
+                    "Agent execution completed",
+                    {"requestId": request.request_id},
+                )
+            )
+        else:
+            events.append(
+                event(
+                    t_end,
+                    "AGENT_FAILED",
+                    "Agent execution failed",
+                    {"requestId": request.request_id},
+                )
+            )
+        return events
+
     def _execute_tracked(
-        self, request: AgentRequest, tracker: ModelCallTracker,
+        self,
+        request: AgentRequest,
+        tracker: ModelCallTracker,
         t_start: datetime,
     ) -> AgentResult:
         issues = self._check(request)
@@ -229,48 +306,7 @@ class BaseAgent(ABC):
             t_end = self._runtime.clock()
             artifacts = [art.model_copy(update={"created_at": t_end}) for art in artifacts]
 
-            events = [
-                ActivityEvent(
-                    id=self._runtime.new_id(),
-                    timestamp=t_start,
-                    project_id=request.project_id,
-                    task_id=request.task_id,
-                    workflow_id=request.workflow_id,
-                    agent_id=self.metadata.id,
-                    event_type="AGENT_STARTED",
-                    message="Agent execution started",
-                    metadata={"requestId": request.request_id},
-                )
-            ]
-
-            for art in artifacts:
-                events.append(
-                    ActivityEvent(
-                        id=self._runtime.new_id(),
-                        timestamp=t_end,
-                        project_id=request.project_id,
-                        task_id=request.task_id,
-                        workflow_id=request.workflow_id,
-                        agent_id=self.metadata.id,
-                        event_type="ARTIFACT_CREATED",
-                        message=f"Artifact '{art.id}' created",
-                        metadata={"requestId": request.request_id, "artifactId": art.id},
-                    )
-                )
-
-            events.append(
-                ActivityEvent(
-                    id=self._runtime.new_id(),
-                    timestamp=t_end,
-                    project_id=request.project_id,
-                    task_id=request.task_id,
-                    workflow_id=request.workflow_id,
-                    agent_id=self.metadata.id,
-                    event_type="AGENT_COMPLETED",
-                    message="Agent execution completed",
-                    metadata={"requestId": request.request_id},
-                )
-            )
+            events = self._lifecycle_events(request, t_start, t_end, "COMPLETED", artifacts)
 
             duration = max(0.0, (t_end - t_start).total_seconds())
             metrics = self._compute_metrics(request, duration, tracker)
@@ -293,35 +329,15 @@ class BaseAgent(ABC):
             # backend terminal to be diagnosable at all.
             logger.warning(
                 "agent %s failed: task=%s request=%s code=%s message=%s details=%s",
-                self.metadata.id, request.task_id, request.request_id,
-                err.code, err.message,
+                self.metadata.id,
+                request.task_id,
+                request.request_id,
+                err.code,
+                err.message,
                 json.dumps(err.details, default=str)[:600] if err.details else "-",
             )
             p_err = PlatformError.model_validate(err.to_platform_error(t_end))
-            events = [
-                ActivityEvent(
-                    id=self._runtime.new_id(),
-                    timestamp=t_start,
-                    project_id=request.project_id,
-                    task_id=request.task_id,
-                    workflow_id=request.workflow_id,
-                    agent_id=self.metadata.id,
-                    event_type="AGENT_STARTED",
-                    message="Agent execution started",
-                    metadata={"requestId": request.request_id},
-                ),
-                ActivityEvent(
-                    id=self._runtime.new_id(),
-                    timestamp=t_end,
-                    project_id=request.project_id,
-                    task_id=request.task_id,
-                    workflow_id=request.workflow_id,
-                    agent_id=self.metadata.id,
-                    event_type="AGENT_FAILED",
-                    message="Agent execution failed",
-                    metadata={"requestId": request.request_id},
-                ),
-            ]
+            events = self._lifecycle_events(request, t_start, t_end, "FAILED", [])
             duration = max(0.0, (t_end - t_start).total_seconds())
             metrics = self._compute_metrics(request, duration, tracker)
             if isinstance(err, AgentExecutionError) and err.status == "REJECTED":
@@ -347,30 +363,7 @@ class BaseAgent(ABC):
                 retryable=True,
                 timestamp=t_end,
             )
-            events = [
-                ActivityEvent(
-                    id=self._runtime.new_id(),
-                    timestamp=t_start,
-                    project_id=request.project_id,
-                    task_id=request.task_id,
-                    workflow_id=request.workflow_id,
-                    agent_id=self.metadata.id,
-                    event_type="AGENT_STARTED",
-                    message="Agent execution started",
-                    metadata={"requestId": request.request_id},
-                ),
-                ActivityEvent(
-                    id=self._runtime.new_id(),
-                    timestamp=t_end,
-                    project_id=request.project_id,
-                    task_id=request.task_id,
-                    workflow_id=request.workflow_id,
-                    agent_id=self.metadata.id,
-                    event_type="AGENT_FAILED",
-                    message="Agent execution failed",
-                    metadata={"requestId": request.request_id},
-                ),
-            ]
+            events = self._lifecycle_events(request, t_start, t_end, "FAILED", [])
             duration = max(0.0, (t_end - t_start).total_seconds())
             metrics = self._compute_metrics(request, duration, tracker)
             return AgentResult(

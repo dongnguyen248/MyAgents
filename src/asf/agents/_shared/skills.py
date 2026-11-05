@@ -51,10 +51,7 @@ _SECTION_INTRO = (
 
 def agent_skill_ids(agent_type: str) -> list[str]:
     """Catalogue skill ids that apply to an agent type, sorted."""
-    return sorted(
-        skill_id for skill_id, agents in SKILL_AGENTS.items()
-        if agent_type in agents
-    )
+    return sorted(skill_id for skill_id, agents in SKILL_AGENTS.items() if agent_type in agents)
 
 
 def _project_mapping(project: Any) -> dict[str, Any]:
@@ -78,8 +75,10 @@ def skills_for_agent(project: Any, agent: str) -> list[tuple[str, str]]:
         skill_id = entry.get("id")
         content = entry.get("content")
         if (
-            isinstance(skill_id, str) and isinstance(content, str)
-            and content.strip() and agent in SKILL_AGENTS.get(skill_id, frozenset())
+            isinstance(skill_id, str)
+            and isinstance(content, str)
+            and content.strip()
+            and agent in SKILL_AGENTS.get(skill_id, frozenset())
         ):
             selected.append((skill_id, content.strip()))
     return selected
@@ -90,7 +89,5 @@ def skills_section(project: Any, agent: str) -> str:
     selected = skills_for_agent(project, agent)
     if not selected:
         return ""
-    blocks = "\n\n".join(
-        f"### Skill: {skill_id}\n{content}" for skill_id, content in selected
-    )
+    blocks = "\n\n".join(f"### Skill: {skill_id}\n{content}" for skill_id, content in selected)
     return f"\n\n{_SECTION_INTRO}\n{blocks}"

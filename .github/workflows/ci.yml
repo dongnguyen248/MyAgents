@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    name: Python 3.12
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (with dev extras)
+        run: pip install -e .[dev]
+      - name: Ruff lint
+        run: ruff check src tests harness
+      - name: Ruff format
+        run: ruff format --check src tests harness
+      - name: Mypy
+        run: mypy src
+      - name: Bandit
+        # The config file is passed explicitly: bandit's automatic
+        # discovery is unreliable across versions, and .bandit
+        # documents every by-design skip.
+        run: bandit -c .bandit -r src -q
+      - name: Tests with coverage
+        run: pytest -q --cov=asf --cov-report=term-missing
+
+  dashboard:
+    name: Dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/dashboard/package-lock.json
+      - name: Install
+        run: npm ci
+      # The build script runs `tsc --noEmit` first, so type-checking
+      # is covered; there is no separate lint script in this app.
+      - name: Build (type-check + bundle)
+        run: npm run build

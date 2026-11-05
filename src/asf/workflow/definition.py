@@ -62,9 +62,7 @@ class WorkflowStepDef(ConfigModel):
                     "loc": ("agentType",),
                     "input": None,
                     "ctx": {
-                        "error": ValueError(
-                            "Step must specify at least one of agentType or action"
-                        )
+                        "error": ValueError("Step must specify at least one of agentType or action")
                     },
                 }
             )
@@ -85,11 +83,7 @@ class WorkflowStepDef(ConfigModel):
                         "type": "value_error",
                         "loc": ("consumes",),
                         "input": self.consumes,
-                        "ctx": {
-                            "error": ValueError(
-                                "Items in consumes must be non-empty strings"
-                            )
-                        },
+                        "ctx": {"error": ValueError("Items in consumes must be non-empty strings")},
                     }
                 )
 
@@ -109,11 +103,7 @@ class WorkflowStepDef(ConfigModel):
                         "type": "value_error",
                         "loc": ("produces",),
                         "input": self.produces,
-                        "ctx": {
-                            "error": ValueError(
-                                "Items in produces must be non-empty strings"
-                            )
-                        },
+                        "ctx": {"error": ValueError("Items in produces must be non-empty strings")},
                     }
                 )
 
@@ -206,10 +196,7 @@ class WorkflowDefinition(ConfigModel):
         seen_stages: dict[str, int] = {}
         for idx, step in enumerate(self.steps):
             if step.stage in RESERVED_STAGES:
-                msg = (
-                    f"Step stage '{step.stage}' conflicts with "
-                    f"reserved stage name '{step.stage}'"
-                )
+                msg = f"Step stage '{step.stage}' conflicts with reserved stage name '{step.stage}'"
                 errs.append(
                     {
                         "type": "value_error",

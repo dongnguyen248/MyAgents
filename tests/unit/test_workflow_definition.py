@@ -35,7 +35,7 @@ class WorkflowDefinitionTests(unittest.TestCase):
         self.workflow_validator = validator_for("Workflow")
 
     def test_implement_consumes_spec_plan_task(self):
-        workflows_dir = REPO_ROOT / "workflows"
+        workflows_dir = REPO_ROOT / "workflow-definitions"
         workflows = load_workflows(workflows_dir)
         sd = workflows["software-development"]
         implement_step = next(s for s in sd.steps if s.id == "implement")
@@ -43,7 +43,7 @@ class WorkflowDefinitionTests(unittest.TestCase):
         self.assertEqual(implement_step.produces, ["CODE"])
 
     def test_review_consumes_spec_plan_task_code(self):
-        workflows_dir = REPO_ROOT / "workflows"
+        workflows_dir = REPO_ROOT / "workflow-definitions"
         workflows = load_workflows(workflows_dir)
         sd = workflows["software-development"]
         review_step = next(s for s in sd.steps if s.id == "review")
@@ -51,7 +51,7 @@ class WorkflowDefinitionTests(unittest.TestCase):
         self.assertEqual(review_step.produces, ["CODE_REVIEW"])
 
     def test_test_consumes_task_code(self):
-        workflows_dir = REPO_ROOT / "workflows"
+        workflows_dir = REPO_ROOT / "workflow-definitions"
         workflows = load_workflows(workflows_dir)
         sd = workflows["software-development"]
         test_step = next(s for s in sd.steps if s.id == "test")
@@ -59,7 +59,7 @@ class WorkflowDefinitionTests(unittest.TestCase):
         self.assertEqual(test_step.produces, ["TEST_REPORT"])
 
     def test_real_workflows_load_and_validate_against_schema(self):
-        workflows_dir = REPO_ROOT / "workflows"
+        workflows_dir = REPO_ROOT / "workflow-definitions"
         workflows = load_workflows(workflows_dir)
         self.assertIn("software-development", workflows)
 
@@ -90,7 +90,7 @@ class WorkflowDefinitionTests(unittest.TestCase):
 
     def test_all_project_workflows_exist(self):
         projects_dir = REPO_ROOT / "projects"
-        workflows_dir = REPO_ROOT / "workflows"
+        workflows_dir = REPO_ROOT / "workflow-definitions"
         projects = load_projects(projects_dir)
         workflows = load_workflows(workflows_dir)
 
@@ -181,11 +181,10 @@ steps:
 
     def test_reserved_stage_name_rejected(self):
         for reserved in ["NEW", "COMPLETED", "FAILED", "CANCELLED"]:
-            with self.subTest(stage=reserved):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    wf_file = Path(tmp_dir) / "test-wf.yaml"
-                    wf_file.write_text(
-                        f"""
+            with self.subTest(stage=reserved), tempfile.TemporaryDirectory() as tmp_dir:
+                wf_file = Path(tmp_dir) / "test-wf.yaml"
+                wf_file.write_text(
+                    f"""
 id: test-wf
 name: Test
 version: "1"
@@ -197,16 +196,14 @@ steps:
     agentType: test
     requiresApproval: false
 """,
-                        encoding="utf-8",
-                    )
-                    with self.assertRaises(ConfigError) as ctx:
-                        load_workflow(wf_file)
-                    self.assertTrue(
-                        any("steps[0].stage" in iss.path for iss in ctx.exception.issues)
-                    )
-                    self.assertTrue(
-                        any("reserved" in iss.message.lower() for iss in ctx.exception.issues)
-                    )
+                    encoding="utf-8",
+                )
+                with self.assertRaises(ConfigError) as ctx:
+                    load_workflow(wf_file)
+                self.assertTrue(any("steps[0].stage" in iss.path for iss in ctx.exception.issues))
+                self.assertTrue(
+                    any("reserved" in iss.message.lower() for iss in ctx.exception.issues)
+                )
 
     def test_reserved_stage_with_approval_produces_single_issue(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -229,9 +226,7 @@ steps:
             with self.assertRaises(ConfigError) as ctx:
                 load_workflow(wf_file)
 
-            stage_issues = [
-                iss for iss in ctx.exception.issues if iss.path == "steps[0].stage"
-            ]
+            stage_issues = [iss for iss in ctx.exception.issues if iss.path == "steps[0].stage"]
             self.assertEqual(
                 len(stage_issues),
                 1,
@@ -264,8 +259,7 @@ steps:
                 load_workflow(wf_file)
             self.assertTrue(any("steps[0].consumes" in iss.path for iss in ctx.exception.issues))
             msg_match = any(
-                "not produced by an earlier step" in iss.message
-                for iss in ctx.exception.issues
+                "not produced by an earlier step" in iss.message for iss in ctx.exception.issues
             )
             self.assertTrue(msg_match)
 
@@ -295,8 +289,7 @@ steps:
                 load_workflow(wf_file)
             self.assertTrue(any("steps[0].consumes" in iss.path for iss in ctx.exception.issues))
             msg_match = any(
-                "not produced by an earlier step" in iss.message
-                for iss in ctx.exception.issues
+                "not produced by an earlier step" in iss.message for iss in ctx.exception.issues
             )
             self.assertTrue(msg_match)
 
@@ -332,8 +325,7 @@ steps:
                 load_workflow(wf_file)
             self.assertTrue(any("steps[0].consumes" in iss.path for iss in ctx.exception.issues))
             msg_match = any(
-                "not produced by an earlier step" in iss.message
-                for iss in ctx.exception.issues
+                "not produced by an earlier step" in iss.message for iss in ctx.exception.issues
             )
             self.assertTrue(msg_match)
 
@@ -407,11 +399,10 @@ steps:
     def test_bad_stage_pattern_rejected(self):
         bad_stages = ["step_one", "1_STEP", "_STEP", "STEP-ONE", ""]
         for bad in bad_stages:
-            with self.subTest(stage=bad):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    wf_file = Path(tmp_dir) / "test-wf.yaml"
-                    wf_file.write_text(
-                        f"""
+            with self.subTest(stage=bad), tempfile.TemporaryDirectory() as tmp_dir:
+                wf_file = Path(tmp_dir) / "test-wf.yaml"
+                wf_file.write_text(
+                    f"""
 id: test-wf
 name: Test
 version: "1"
@@ -423,13 +414,11 @@ steps:
     agentType: test
     requiresApproval: false
 """,
-                        encoding="utf-8",
-                    )
-                    with self.assertRaises(ConfigError) as ctx:
-                        load_workflow(wf_file)
-                    self.assertTrue(
-                        any("steps[0].stage" in iss.path for iss in ctx.exception.issues)
-                    )
+                    encoding="utf-8",
+                )
+                with self.assertRaises(ConfigError) as ctx:
+                    load_workflow(wf_file)
+                self.assertTrue(any("steps[0].stage" in iss.path for iss in ctx.exception.issues))
 
     def test_step_with_neither_agent_type_nor_action_rejected(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -451,10 +440,7 @@ steps:
             with self.assertRaises(ConfigError) as ctx:
                 load_workflow(wf_file)
             self.assertTrue(
-                any(
-                    "agentType or action" in iss.message
-                    for iss in ctx.exception.issues
-                )
+                any("agentType or action" in iss.message for iss in ctx.exception.issues)
             )
 
     def test_duplicate_keys_in_yaml_rejected(self):
@@ -553,9 +539,7 @@ steps:
                 load_workflow(wf_file)
 
             err = ctx.exception
-            self.assertTrue(
-                any("steps[0].configuration.apiKey" in iss.path for iss in err.issues)
-            )
+            self.assertTrue(any("steps[0].configuration.apiKey" in iss.path for iss in err.issues))
             self.assertNotIn(sentinel, str(err))
             for iss in err.issues:
                 self.assertNotIn(sentinel, iss.message)
@@ -583,9 +567,7 @@ steps:
                 encoding="utf-8",
             )
             wf = load_workflow(wf_file)
-            self.assertEqual(
-                wf.steps[0].configuration["apiKey"], {"env": "MY_API_KEY"}
-            )
+            self.assertEqual(wf.steps[0].configuration["apiKey"], {"env": "MY_API_KEY"})
 
         # 3. null accepted
         with tempfile.TemporaryDirectory() as tmp_dir:

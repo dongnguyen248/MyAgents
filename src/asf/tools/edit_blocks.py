@@ -107,8 +107,7 @@ def _check_path(path: str, expected: Collection[str] | None) -> None:
         raise EditBlockError("Section header has an empty path")
     if path.startswith("/") or re.match(r"^[A-Za-z]:[/\\]", path):
         raise EditBlockError(
-            f"Invalid path {path!r}: path must be relative (no leading"
-            " '/', no drive letters)",
+            f"Invalid path {path!r}: path must be relative (no leading '/', no drive letters)",
         )
     if "\\" in path:
         raise EditBlockError(
@@ -135,12 +134,14 @@ def _detect_eol(content: str) -> str:
 
 
 def _apply_search_replace(
-    path: str, content: str, search: str, replacement: str,
+    path: str,
+    content: str,
+    search: str,
+    replacement: str,
 ) -> str:
     if not search:
         raise EditBlockError(
-            f"SEARCH block for {path!r} is empty; include the exact"
-            " lines to replace",
+            f"SEARCH block for {path!r} is empty; include the exact lines to replace",
         )
     eol = _detect_eol(content)
     needle = search.replace("\n", eol) if eol == "\r\n" else search
@@ -235,13 +236,11 @@ def parse_edit_blocks(
         if line == FILE_MARKER:
             if current is None or current.kind != "create":
                 raise fail(
-                    "FILE block outside a CREATE section; start it"
-                    " with 'CREATE: <path>' first",
+                    "FILE block outside a CREATE section; start it with 'CREATE: <path>' first",
                 )
             if current.file_content is not None:
                 raise fail(
-                    f"CREATE section for {current.path!r} has more"
-                    " than one FILE block",
+                    f"CREATE section for {current.path!r} has more than one FILE block",
                 )
             content_lines: list[str] = []
             while index < len(lines) and lines[index] != FILE_END_MARKER:
@@ -253,9 +252,7 @@ def parse_edit_blocks(
                     f" missing the '{FILE_END_MARKER}' end line",
                 )
             index += 1  # consume >>>>>>> FILE
-            current.file_content = (
-                "\n".join(content_lines) + ("\n" if content_lines else "")
-            )
+            current.file_content = "\n".join(content_lines) + ("\n" if content_lines else "")
             continue
         raise fail(
             f"Unexpected line outside any block: {line[:80]!r}; reply"
@@ -264,8 +261,7 @@ def parse_edit_blocks(
 
     if not sections:
         raise fail(
-            "No edit blocks found in the reply; use FILE:/CREATE:/"
-            "DELETE: sections as instructed",
+            "No edit blocks found in the reply; use FILE:/CREATE:/DELETE: sections as instructed",
         )
 
     changes: list[FileChange] = []
@@ -278,9 +274,13 @@ def parse_edit_blocks(
             )
         seen.add(section.path)
         if section.kind == "delete":
-            changes.append(FileChange(
-                path=section.path, operation="delete", content=None,
-            ))
+            changes.append(
+                FileChange(
+                    path=section.path,
+                    operation="delete",
+                    content=None,
+                )
+            )
         elif section.kind == "create":
             if section.file_content is None:
                 raise fail(
@@ -293,15 +293,17 @@ def parse_edit_blocks(
                     " exists; use a FILE section with SEARCH/REPLACE"
                     " blocks to modify it",
                 )
-            changes.append(FileChange(
-                path=section.path, operation="create",
-                content=section.file_content,
-            ))
+            changes.append(
+                FileChange(
+                    path=section.path,
+                    operation="create",
+                    content=section.file_content,
+                )
+            )
         else:
             if not section.blocks:
                 raise fail(
-                    f"FILE section for {section.path!r} contains no"
-                    " SEARCH/REPLACE blocks",
+                    f"FILE section for {section.path!r} contains no SEARCH/REPLACE blocks",
                 )
             if section.path not in existing_files:
                 raise fail(
@@ -311,11 +313,18 @@ def parse_edit_blocks(
             content = existing_files[section.path]
             for search, replacement in section.blocks:
                 content = _apply_search_replace(
-                    section.path, content, search, replacement,
+                    section.path,
+                    content,
+                    search,
+                    replacement,
                 )
-            changes.append(FileChange(
-                path=section.path, operation="modify", content=content,
-            ))
+            changes.append(
+                FileChange(
+                    path=section.path,
+                    operation="modify",
+                    content=content,
+                )
+            )
     try:
         return ChangeSet(changes=changes)
     except ValueError as error:

@@ -152,7 +152,9 @@ def generate_changeset(
 
 
 def normalize_changeset_operations(
-    changeset: ChangeSet, ref: str, repository: RepositoryPort,
+    changeset: ChangeSet,
+    ref: str,
+    repository: RepositoryPort,
 ) -> ChangeSet:
     """Align each change's operation with the repository's actual state.
 
@@ -186,7 +188,8 @@ def normalize_changeset_operations(
             continue
         operation = "modify" if exists else "create"
         changes.append(
-            change if change.operation == operation
+            change
+            if change.operation == operation
             else change.model_copy(update={"operation": operation})
         )
     # If every change dropped out (only deletes of missing files), keep
@@ -237,8 +240,11 @@ def validate_changeset(
         except FileNotFoundInRepository:
             if change.operation in ("modify", "delete"):
                 issues.setdefault("missingPaths", []).append(
-                    {"path": change.path, "operation": change.operation,
-                     "reason": "file does not exist at ref"}
+                    {
+                        "path": change.path,
+                        "operation": change.operation,
+                        "reason": "file does not exist at ref",
+                    }
                 )
         except FileTooLargeError:
             issues.setdefault("contentIssues", []).append(
@@ -247,8 +253,11 @@ def validate_changeset(
         else:
             if change.operation == "create":
                 issues.setdefault("existingPaths", []).append(
-                    {"path": change.path, "operation": "create",
-                     "reason": "file already exists at ref"}
+                    {
+                        "path": change.path,
+                        "operation": "create",
+                        "reason": "file already exists at ref",
+                    }
                 )
     limit_issues = check_changeset_limits(changeset)
     if limit_issues:
@@ -259,6 +268,7 @@ def validate_changeset(
 def changeset_secret_issues(changeset: ChangeSet) -> list[dict[str, Any]]:
     return [
         {"path": change.path, "pattern": match.pattern_name, "line": match.line_number}
-        for change in changeset.changes if change.content is not None
+        for change in changeset.changes
+        if change.content is not None
         for match in scan_secrets(change.content, change.path)
     ]

@@ -13,8 +13,12 @@ def test_dashboard_api_full_chain():
     client = TestClient(create_app(service))
 
     created = client.post(
-        "/runs", json={"taskId": "task-1", "projectId": "proj-1",
-                       "inputs": {"spec": {"requirement": "Build a calculator"}}},
+        "/runs",
+        json={
+            "taskId": "task-1",
+            "projectId": "proj-1",
+            "inputs": {"spec": {"requirement": "Build a calculator"}},
+        },
     )
     assert created.status_code == 201
     run_id = created.json()["id"]
@@ -40,7 +44,8 @@ def test_dashboard_api_full_chain():
     assert client.get("/tasks/task-1").json()["status"] == "SPEC_REVIEW"
 
     decided = client.post(
-        f"/approvals/{spec_approval['id']}/decision", json={"decision": "APPROVE"},
+        f"/approvals/{spec_approval['id']}/decision",
+        json={"decision": "APPROVE"},
     )
     assert decided.json()["status"] == "APPROVED"
 
@@ -54,7 +59,8 @@ def test_dashboard_api_full_chain():
     assert states["plan_approval"] == "active"
 
     decided = client.post(
-        f"/approvals/{plan_approval['id']}/decision", json={"decision": "APPROVE"},
+        f"/approvals/{plan_approval['id']}/decision",
+        json={"decision": "APPROVE"},
     )
     assert decided.json()["status"] == "APPROVED"
 
@@ -68,5 +74,6 @@ def test_dashboard_api_full_chain():
     assert client.get("/approvals").json() == []
     assert client.get("/activity").json()
     assert client.get(
-        "/activity", params={"taskId": "task-1"},
+        "/activity",
+        params={"taskId": "task-1"},
     ).json()

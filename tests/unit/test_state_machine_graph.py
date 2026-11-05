@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 class StateMachineGraphTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        wf_path = REPO_ROOT / "workflows" / "software-development.yaml"
+        wf_path = REPO_ROOT / "workflow-definitions" / "software-development.yaml"
         cls.workflow_def = load_workflow(wf_path)
         cls.graph = build_graph(cls.workflow_def)
 
@@ -87,9 +87,7 @@ class StateMachineGraphTests(unittest.TestCase):
                 adj.setdefault(edge.source, []).append(edge.target)
 
         non_terminal_stages = [
-            s.name
-            for s in self.graph.stages
-            if s.name not in {"COMPLETED", "FAILED", "CANCELLED"}
+            s.name for s in self.graph.stages if s.name not in {"COMPLETED", "FAILED", "CANCELLED"}
         ]
 
         for start in non_terminal_stages:
@@ -116,15 +114,11 @@ class StateMachineGraphTests(unittest.TestCase):
 
     def test_failed_and_cancelled_edges_from_every_non_terminal_stage(self):
         non_terminal_stages = {
-            s.name
-            for s in self.graph.stages
-            if s.name not in {"COMPLETED", "FAILED", "CANCELLED"}
+            s.name for s in self.graph.stages if s.name not in {"COMPLETED", "FAILED", "CANCELLED"}
         }
 
         fail_sources = {
-            e.source
-            for e in self.graph.edges
-            if e.trigger == Trigger.FAIL and e.target == "FAILED"
+            e.source for e in self.graph.edges if e.trigger == Trigger.FAIL and e.target == "FAILED"
         }
         cancel_sources = {
             e.source
@@ -137,9 +131,7 @@ class StateMachineGraphTests(unittest.TestCase):
 
     def test_terminal_stages_have_no_outgoing_edges(self):
         terminal_stages = {"COMPLETED", "FAILED", "CANCELLED"}
-        outgoing_from_terminals = [
-            e for e in self.graph.edges if e.source in terminal_stages
-        ]
+        outgoing_from_terminals = [e for e in self.graph.edges if e.source in terminal_stages]
         self.assertEqual(outgoing_from_terminals, [])
 
     def test_guards_appear_only_on_revise_edges(self):

@@ -89,7 +89,7 @@ def test_scan_secrets_gitlab_token_non_hit() -> None:
 
 def test_scan_secrets_slack_token() -> None:
     # xoxb- (bot token)
-    #content = "xoxb-123456789012-abcdefghijklmnop"
+    # content = "xoxb-123456789012-abcdefghijklmnop"
     FAKE_SLACK_TOKEN = "xoxb-FAKE-TEST-TOKEN-NOT-REAL"
     matches = scan_secrets(FAKE_SLACK_TOKEN, "config.py")
     assert len(matches) == 1

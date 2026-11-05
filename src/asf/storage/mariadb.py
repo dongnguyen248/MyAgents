@@ -23,9 +23,9 @@ import os
 import re
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from asf.approval.models import ApprovalDecision, ApprovalRequest
@@ -40,8 +40,10 @@ _DATABASE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 # the schema_migrations table. Statements stay idempotent (IF NOT EXISTS)
 # so a crash mid-migration can simply be retried on the next start.
 _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
-    (1, (
-        """
+    (
+        1,
+        (
+            """
         CREATE TABLE IF NOT EXISTS executions (
             id VARCHAR(64) PRIMARY KEY,
             project_id VARCHAR(191) NOT NULL,
@@ -49,13 +51,13 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             KEY idx_executions_project (project_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """,
-        """
+            """
         CREATE TABLE IF NOT EXISTS approvals (
             id VARCHAR(64) PRIMARY KEY,
             payload LONGTEXT NOT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """,
-        """
+            """
         CREATE TABLE IF NOT EXISTS decisions (
             sequence BIGINT PRIMARY KEY AUTO_INCREMENT,
             approval_id VARCHAR(64) NOT NULL,
@@ -65,30 +67,36 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
                 FOREIGN KEY (approval_id) REFERENCES approvals (id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """,
-    )),
-    (2, (
-        # Optimistic locking for executions: saves are guarded by the
-        # version the writer read, so concurrent writers cannot
-        # silently overwrite each other (lost update).
-        """
+        ),
+    ),
+    (
+        2,
+        (
+            # Optimistic locking for executions: saves are guarded by the
+            # version the writer read, so concurrent writers cannot
+            # silently overwrite each other (lost update).
+            """
         ALTER TABLE executions ADD COLUMN IF NOT EXISTS
             version INT NOT NULL DEFAULT 0
         """,
-    )),
-    (3, (
-        # Queryable metadata columns for executions: list views and
-        # store discovery read these instead of deserializing every
-        # run's payload. save/create keep them in step with the
-        # payload; the UPDATE below backfills rows written before
-        # this migration (payloads are JSON text, so the values are
-        # extracted from the payload itself).
-        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS task_id VARCHAR(191) NULL",
-        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS stage VARCHAR(64) NULL",
-        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS status VARCHAR(64) NULL",
-        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS workflow_id VARCHAR(191) NULL",
-        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS started_at DATETIME(6) NULL",
-        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS updated_at DATETIME(6) NULL",
-        """
+        ),
+    ),
+    (
+        3,
+        (
+            # Queryable metadata columns for executions: list views and
+            # store discovery read these instead of deserializing every
+            # run's payload. save/create keep them in step with the
+            # payload; the UPDATE below backfills rows written before
+            # this migration (payloads are JSON text, so the values are
+            # extracted from the payload itself).
+            "ALTER TABLE executions ADD COLUMN IF NOT EXISTS task_id VARCHAR(191) NULL",
+            "ALTER TABLE executions ADD COLUMN IF NOT EXISTS stage VARCHAR(64) NULL",
+            "ALTER TABLE executions ADD COLUMN IF NOT EXISTS status VARCHAR(64) NULL",
+            "ALTER TABLE executions ADD COLUMN IF NOT EXISTS workflow_id VARCHAR(191) NULL",
+            "ALTER TABLE executions ADD COLUMN IF NOT EXISTS started_at DATETIME(6) NULL",
+            "ALTER TABLE executions ADD COLUMN IF NOT EXISTS updated_at DATETIME(6) NULL",
+            """
         UPDATE executions SET
             task_id = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.task_id')),
             stage = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.state.stage')),
@@ -102,18 +110,18 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             ), 'T', ' ') AS DATETIME(6))
         WHERE task_id IS NULL
         """,
-        """
+            """
         ALTER TABLE executions ADD INDEX IF NOT EXISTS
             idx_executions_project_updated (project_id, updated_at)
         """,
-        "ALTER TABLE executions ADD INDEX IF NOT EXISTS idx_executions_status (status)",
-        # Approvals get the same treatment: list_pending/list_by_task
-        # become indexed WHERE queries instead of loading every
-        # approval payload and filtering in Python.
-        "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS status VARCHAR(32) NULL",
-        "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS task_id VARCHAR(191) NULL",
-        "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS requested_at DATETIME(6) NULL",
-        """
+            "ALTER TABLE executions ADD INDEX IF NOT EXISTS idx_executions_status (status)",
+            # Approvals get the same treatment: list_pending/list_by_task
+            # become indexed WHERE queries instead of loading every
+            # approval payload and filtering in Python.
+            "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS status VARCHAR(32) NULL",
+            "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS task_id VARCHAR(191) NULL",
+            "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS requested_at DATETIME(6) NULL",
+            """
         UPDATE approvals SET
             status = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.status')),
             task_id = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.task_id')),
@@ -122,9 +130,10 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             ), 'T', ' ') AS DATETIME(6))
         WHERE status IS NULL
         """,
-        "ALTER TABLE approvals ADD INDEX IF NOT EXISTS idx_approvals_status (status)",
-        "ALTER TABLE approvals ADD INDEX IF NOT EXISTS idx_approvals_task (task_id)",
-    )),
+            "ALTER TABLE approvals ADD INDEX IF NOT EXISTS idx_approvals_status (status)",
+            "ALTER TABLE approvals ADD INDEX IF NOT EXISTS idx_approvals_task (task_id)",
+        ),
+    ),
 )
 
 
@@ -151,15 +160,15 @@ class MariaDbConfig:
 
 def _as_utc_naive(value: datetime) -> datetime:
     """DATETIME columns hold UTC wall time (payloads stay the truth)."""
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _as_utc_iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _execution_columns(run: WorkflowExecution) -> tuple[Any, ...]:
@@ -185,8 +194,11 @@ class MariaDbApprovalRepository:
                 "INSERT INTO approvals(id, payload, status, task_id, requested_at)"
                 " VALUES (%s, %s, %s, %s, %s)",
                 (
-                    approval.id, approval.model_dump_json(), approval.status,
-                    approval.task_id, _as_utc_naive(approval.requested_at),
+                    approval.id,
+                    approval.model_dump_json(),
+                    approval.status,
+                    approval.task_id,
+                    _as_utc_naive(approval.requested_at),
                 ),
             )
         return approval.model_copy(deep=True)
@@ -194,7 +206,8 @@ class MariaDbApprovalRepository:
     def get(self, approval_id: str) -> ApprovalRequest | None:
         with self._connect().cursor() as cursor:
             cursor.execute(
-                "SELECT payload FROM approvals WHERE id = %s", (approval_id,),
+                "SELECT payload FROM approvals WHERE id = %s",
+                (approval_id,),
             )
             row = cursor.fetchone()
         return ApprovalRequest.model_validate_json(row[0]) if row else None
@@ -205,8 +218,10 @@ class MariaDbApprovalRepository:
                 "UPDATE approvals SET payload = %s, status = %s,"
                 " task_id = %s, requested_at = %s WHERE id = %s",
                 (
-                    approval.model_dump_json(), approval.status,
-                    approval.task_id, _as_utc_naive(approval.requested_at),
+                    approval.model_dump_json(),
+                    approval.status,
+                    approval.task_id,
+                    _as_utc_naive(approval.requested_at),
                     approval.id,
                 ),
             )
@@ -217,8 +232,7 @@ class MariaDbApprovalRepository:
     def _query(self, where: str, params: tuple[Any, ...]) -> list[ApprovalRequest]:
         with self._connect().cursor() as cursor:
             cursor.execute(
-                f"SELECT payload FROM approvals WHERE {where}"
-                " ORDER BY requested_at, id",
+                f"SELECT payload FROM approvals WHERE {where} ORDER BY requested_at, id",
                 params,
             )
             rows = cursor.fetchall()
@@ -240,8 +254,7 @@ class MariaDbApprovalRepository:
     def list_decisions(self, approval_id: str) -> list[ApprovalDecision]:
         with self._connect().cursor() as cursor:
             cursor.execute(
-                "SELECT payload FROM decisions WHERE approval_id = %s"
-                " ORDER BY sequence",
+                "SELECT payload FROM decisions WHERE approval_id = %s ORDER BY sequence",
                 (approval_id,),
             )
             rows = cursor.fetchall()
@@ -300,13 +313,17 @@ class MariaDbExecutionStore:
                 " server's max_allowed_packet (%d): saves will fail"
                 " outright at the cap. Consider splitting observations"
                 " and artifact history out of the payload.",
-                run_id, size, self._max_allowed_packet,
+                run_id,
+                size,
+                self._max_allowed_packet,
             )
 
     def _connection(self) -> Any:
         connection = getattr(self._local, "connection", None)
         if connection is not None and not getattr(
-            self._local, "in_transaction", False,
+            self._local,
+            "in_transaction",
+            False,
         ):
             # A cached per-thread connection can be silently dead by
             # the time it is reused (server restart, wait_timeout).
@@ -316,10 +333,8 @@ class MariaDbExecutionStore:
             try:
                 connection.ping(reconnect=True)
             except Exception:
-                try:
+                with suppress(Exception):
                     connection.close()
-                except Exception:
-                    pass
                 connection = None
         if connection is None:
             connection = self._connect(database=self._config.database)
@@ -428,7 +443,10 @@ class MariaDbExecutionStore:
                 " task_id, stage, status, workflow_id, started_at, updated_at)"
                 " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    run.id, run.project_id, payload, 0,
+                    run.id,
+                    run.project_id,
+                    payload,
+                    0,
                     *_execution_columns(run),
                 ),
             )
@@ -449,13 +467,17 @@ class MariaDbExecutionStore:
                     " workflow_id = %s, started_at = %s, updated_at = %s"
                     " WHERE id = %s AND version = %s",
                     (
-                        payload, run.version, *_execution_columns(run),
-                        run.id, expected,
+                        payload,
+                        run.version,
+                        *_execution_columns(run),
+                        run.id,
+                        expected,
                     ),
                 )
                 if cursor.rowcount != 1:
                     cursor.execute(
-                        "SELECT 1 FROM executions WHERE id = %s", (run.id,),
+                        "SELECT 1 FROM executions WHERE id = %s",
+                        (run.id,),
                     )
                     if cursor.fetchone() is None:
                         raise KeyError(run.id)
@@ -468,7 +490,10 @@ class MariaDbExecutionStore:
             raise
 
     def get_execution(
-        self, run_id: str, *, for_update: bool = False,
+        self,
+        run_id: str,
+        *,
+        for_update: bool = False,
     ) -> WorkflowExecution:
         # FOR UPDATE (used by the orchestrator's claim phase) locks the
         # row until the claim transaction ends, so two processes cannot
@@ -476,8 +501,7 @@ class MariaDbExecutionStore:
         suffix = " FOR UPDATE" if for_update else ""
         with self._connection().cursor() as cursor:
             cursor.execute(
-                "SELECT payload, version FROM executions"
-                f" WHERE id = %s{suffix}",
+                f"SELECT payload, version FROM executions WHERE id = %s{suffix}",
                 (run_id,),
             )
             row = cursor.fetchone()
@@ -490,8 +514,7 @@ class MariaDbExecutionStore:
     def list_executions(self, project_id: str) -> list[WorkflowExecution]:
         with self._connection().cursor() as cursor:
             cursor.execute(
-                "SELECT payload, version FROM executions WHERE project_id = %s"
-                " ORDER BY id",
+                "SELECT payload, version FROM executions WHERE project_id = %s ORDER BY id",
                 (project_id,),
             )
             rows = cursor.fetchall()
@@ -536,8 +559,12 @@ class MariaDbExecutionStore:
             rows = cursor.fetchall()
         return [
             {
-                "id": row[0], "projectId": row[1], "taskId": row[2],
-                "workflowId": row[3], "stage": row[4], "status": row[5],
+                "id": row[0],
+                "projectId": row[1],
+                "taskId": row[2],
+                "workflowId": row[3],
+                "stage": row[4],
+                "status": row[5],
                 "startedAt": _as_utc_iso(row[6]),
                 "updatedAt": _as_utc_iso(row[7]),
             }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -23,13 +23,13 @@ ERRORS_PATH = REPO_ROOT / "contracts" / "errors.md"
 with SCHEMA_PATH.open(encoding="utf-8") as f:
     SCHEMA = json.load(f)
 
-T0 = datetime(2026, 10, 20, 10, 0, 0, tzinfo=timezone.utc)
-T1 = datetime(2026, 10, 20, 10, 15, 0, tzinfo=timezone.utc)
-T2 = datetime(2026, 10, 20, 10, 30, 0, tzinfo=timezone.utc)
-T3 = datetime(2026, 10, 20, 10, 45, 0, tzinfo=timezone.utc)
-T_EXPIRE = datetime(2026, 10, 20, 11, 0, 0, tzinfo=timezone.utc)
-T_BEFORE_EXPIRE = datetime(2026, 10, 20, 10, 59, 59, tzinfo=timezone.utc)
-T_AFTER_EXPIRE = datetime(2026, 10, 20, 11, 0, 1, tzinfo=timezone.utc)
+T0 = datetime(2026, 10, 20, 10, 0, 0, tzinfo=UTC)
+T1 = datetime(2026, 10, 20, 10, 15, 0, tzinfo=UTC)
+T2 = datetime(2026, 10, 20, 10, 30, 0, tzinfo=UTC)
+T3 = datetime(2026, 10, 20, 10, 45, 0, tzinfo=UTC)
+T_EXPIRE = datetime(2026, 10, 20, 11, 0, 0, tzinfo=UTC)
+T_BEFORE_EXPIRE = datetime(2026, 10, 20, 10, 59, 59, tzinfo=UTC)
+T_AFTER_EXPIRE = datetime(2026, 10, 20, 11, 0, 1, tzinfo=UTC)
 NAIVE_TIME = datetime(2026, 10, 20, 10, 0, 0)
 
 
@@ -470,7 +470,6 @@ class ApprovalServiceTests(unittest.TestCase):
         self.assertEqual(cancelled.status, "CANCELLED")
         self.assertEqual(self.service.get(req.id).status, "CANCELLED")
 
-
     # (11) feedback_for returns only negative decisions in order, [] when none,
     # each item validates against $defs/ApprovalFeedback, and an AgentRequest dict
     # carrying that list validates against $defs/AgentRequest
@@ -696,4 +695,3 @@ class ApprovalServiceTests(unittest.TestCase):
         req.reviewers.append("r5")
         stored = self.service.get(req.id)
         self.assertEqual(stored.reviewers, ["r1", "r2"])
-

@@ -38,8 +38,7 @@ def check_file_size(size: int, path: str) -> list[str]:
     issues: list[str] = []
     if size > MAX_FILE_SIZE_BYTES:
         issues.append(
-            f"file '{path}' size {size} bytes "
-            f"exceeds limit of {MAX_FILE_SIZE_BYTES} bytes"
+            f"file '{path}' size {size} bytes exceeds limit of {MAX_FILE_SIZE_BYTES} bytes"
         )
     return issues
 
@@ -63,7 +62,7 @@ def check_command_output_size(size: int, command: str) -> list[str]:
     return issues
 
 
-def check_changeset_limits(changeset: "ChangeSet") -> list[str]:
+def check_changeset_limits(changeset: ChangeSet) -> list[str]:
     """Check ChangeSet limits.
 
     Args:

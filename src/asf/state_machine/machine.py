@@ -100,13 +100,11 @@ def apply(
             stage=state.stage,
             trigger=str(trigger),
             allowed=allowed_triggers(graph, state.stage),
-        )
+        ) from None
 
     # 3. Candidate edges from current stage for this trigger
     candidates = [
-        edge
-        for edge in graph.edges
-        if edge.source == state.stage and edge.trigger == trig
+        edge for edge in graph.edges if edge.source == state.stage and edge.trigger == trig
     ]
     if not candidates:
         raise InvalidTransition(

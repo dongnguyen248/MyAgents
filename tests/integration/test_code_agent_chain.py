@@ -58,9 +58,17 @@ def upstream_code() -> tuple[AgentRequest, Artifact, InMemoryRepository]:
     task_result = task_agent.execute(make_task_request(spec, plan))
     assert task_result.status == "SUCCESS"
     task = task_result.artifacts[0]
-    changes = json.dumps({"changes": [
-        {"path": "calculator.py", "operation": "create", "content": "def add(a, b): return a - b"}
-    ]})
+    changes = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": "def add(a, b): return a - b",
+                }
+            ]
+        }
+    )
     repository = InMemoryRepository()
     implement = build_implement_agent(
         runtime(changes, "code-"), PLATFORM, TEMPLATES_DIR, repository
@@ -77,18 +85,29 @@ def test_full_chain_with_fix_and_successful_recheck(failure_source: str):
     upstream = list(request.artifacts)
     review_reply = {
         "findings": (
-            [{"severity": "ERROR", "path": "calculator.py", "line": 1,
-              "description": "Addition subtracts", "suggestion": "Use addition"}]
-            if failure_source in {"review", "both"} else []
+            [
+                {
+                    "severity": "ERROR",
+                    "path": "calculator.py",
+                    "line": 1,
+                    "description": "Addition subtracts",
+                    "suggestion": "Use addition",
+                }
+            ]
+            if failure_source in {"review", "both"}
+            else []
         ),
         "verdict": "CHANGES_REQUESTED" if failure_source in {"review", "both"} else "APPROVE",
     }
     review = build_review_agent(
         runtime(json.dumps(review_reply), "review-"), PLATFORM, TEMPLATES_DIR
     )
-    review_request = request.model_copy(update={
-        "agent_id": "agent-review", "artifacts": [*upstream, code],
-    })
+    review_request = request.model_copy(
+        update={
+            "agent_id": "agent-review",
+            "artifacts": [*upstream, code],
+        }
+    )
     reviewed = review.execute(review_request)
     assert reviewed.status == "SUCCESS"
     assert reviewed.output["verdict"] == review_reply["verdict"]
@@ -96,29 +115,41 @@ def test_full_chain_with_fix_and_successful_recheck(failure_source: str):
     exit_code = 1 if failure_source in {"test", "both"} else 0
     test_runtime = runtime(None, "test-")
     tester = build_test_agent(
-        test_runtime, PLATFORM, TEMPLATES_DIR,
+        test_runtime,
+        PLATFORM,
+        TEMPLATES_DIR,
         ScriptedSandbox(default_result=CommandResult(exit_code, "result", "", 1)),
     )
-    test_request = request.model_copy(update={
-        "agent_id": "agent-test",
-        "artifacts": [next(a for a in upstream if a.type == "TASK"), code],
-        "context": {"project": {"testCommands": [["pytest", "-q"]]}},
-    })
+    test_request = request.model_copy(
+        update={
+            "agent_id": "agent-test",
+            "artifacts": [next(a for a in upstream if a.type == "TASK"), code],
+            "context": {"project": {"testCommands": [["pytest", "-q"]]}},
+        }
+    )
     tested = tester.execute(test_request)
     assert tested.status == "SUCCESS"
     assert tested.output["verdict"] == ("FAIL" if exit_code else "PASS")
     assert not test_runtime.models.requests
 
-    correction = json.dumps({"changes": [
-        {"path": "calculator.py", "operation": "create", "content": "def add(a, b): return a + b"}
-    ]})
-    fix = build_fix_agent(
-        runtime(correction, "fixed-"), PLATFORM, TEMPLATES_DIR, repository
+    correction = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": "def add(a, b): return a + b",
+                }
+            ]
+        }
     )
-    fix_request = request.model_copy(update={
-        "agent_id": "agent-fix",
-        "artifacts": [*upstream, code, *reviewed.artifacts, *tested.artifacts],
-    })
+    fix = build_fix_agent(runtime(correction, "fixed-"), PLATFORM, TEMPLATES_DIR, repository)
+    fix_request = request.model_copy(
+        update={
+            "agent_id": "agent-fix",
+            "artifacts": [*upstream, code, *reviewed.artifacts, *tested.artifacts],
+        }
+    )
     fixed = fix.execute(fix_request)
     assert fixed.status == "SUCCESS"
     replacement = fixed.artifacts[0]
@@ -130,19 +161,28 @@ def test_full_chain_with_fix_and_successful_recheck(failure_source: str):
 
     reviewer = build_review_agent(
         runtime('{"findings":[],"verdict":"APPROVE"}', "recheck-"),
-        PLATFORM, TEMPLATES_DIR,
+        PLATFORM,
+        TEMPLATES_DIR,
     )
-    rechecked = reviewer.execute(review_request.model_copy(update={
-        "artifacts": [*upstream, replacement],
-    }))
+    rechecked = reviewer.execute(
+        review_request.model_copy(
+            update={
+                "artifacts": [*upstream, replacement],
+            }
+        )
+    )
     assert rechecked.status == "SUCCESS"
     assert rechecked.output["verdict"] == "APPROVE"
     passing_tester = build_test_agent(
         runtime(None, "retest-"), PLATFORM, TEMPLATES_DIR, ScriptedSandbox()
     )
-    passed = passing_tester.execute(test_request.model_copy(update={
-        "artifacts": [next(a for a in upstream if a.type == "TASK"), replacement],
-    }))
+    passed = passing_tester.execute(
+        test_request.model_copy(
+            update={
+                "artifacts": [next(a for a in upstream if a.type == "TASK"), replacement],
+            }
+        )
+    )
     assert passed.status == "SUCCESS"
     assert passed.output["verdict"] == "PASS"
     assert passed.artifacts[0].metadata["codeVersion"] == "2"
@@ -152,7 +192,11 @@ def test_full_chain_with_fix_and_successful_recheck(failure_source: str):
         for artifact in result.artifacts:
             validator_for("Artifact").validate(artifact.to_contract())
 
-    stale = fix.execute(fix_request.model_copy(update={
-        "artifacts": [*upstream, replacement, *reviewed.artifacts, *tested.artifacts],
-    }))
+    stale = fix.execute(
+        fix_request.model_copy(
+            update={
+                "artifacts": [*upstream, replacement, *reviewed.artifacts, *tested.artifacts],
+            }
+        )
+    )
     assert stale.status == "REJECTED"

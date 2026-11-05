@@ -30,9 +30,7 @@ def test_build_implement_context() -> None:
 
 
 def test_build_fix_context() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="modify", content="new"),
-    ))
+    changeset = ChangeSet(changes=(FileChange(path="src/a.py", operation="modify", content="new"),))
     ctx = build_fix_context(
         task_id="task-123",
         spec_summary="Spec summary",
@@ -128,47 +126,50 @@ def test_generate_changeset_mixed_operations() -> None:
     assert ops["src/delete.py"] == "delete"
     assert ops["src/create.py"] == "create"
 
+
 def _repo(files: dict[str, str]) -> InMemoryRepository:
     return InMemoryRepository({"main": files})
 
 
 def test_normalize_create_for_existing_file_becomes_modify() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="create", content="new"),
-    ))
+    changeset = ChangeSet(changes=(FileChange(path="src/a.py", operation="create", content="new"),))
     result = normalize_changeset_operations(
-        changeset, "main", _repo({"src/a.py": "old"}),
+        changeset,
+        "main",
+        _repo({"src/a.py": "old"}),
     )
     assert result.changes[0].operation == "modify"
     assert result.changes[0].content == "new"
 
 
 def test_normalize_modify_for_missing_file_becomes_create() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="modify", content="new"),
-    ))
+    changeset = ChangeSet(changes=(FileChange(path="src/a.py", operation="modify", content="new"),))
     result = normalize_changeset_operations(changeset, "main", _repo({}))
     assert result.changes[0].operation == "create"
 
 
 def test_normalize_keeps_correct_labels_and_drops_satisfied_deletes() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="modify", content="new"),
-        FileChange(path="src/b.py", operation="create", content="new"),
-        FileChange(path="src/c.py", operation="delete"),  # missing: satisfied
-        FileChange(path="src/d.py", operation="delete"),  # exists: kept
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="src/a.py", operation="modify", content="new"),
+            FileChange(path="src/b.py", operation="create", content="new"),
+            FileChange(path="src/c.py", operation="delete"),  # missing: satisfied
+            FileChange(path="src/d.py", operation="delete"),  # exists: kept
+        )
+    )
     result = normalize_changeset_operations(
-        changeset, "main", _repo({"src/a.py": "old", "src/d.py": "old"}),
+        changeset,
+        "main",
+        _repo({"src/a.py": "old", "src/d.py": "old"}),
     )
     assert [(c.path, c.operation) for c in result.changes] == [
-        ("src/a.py", "modify"), ("src/b.py", "create"), ("src/d.py", "delete"),
+        ("src/a.py", "modify"),
+        ("src/b.py", "create"),
+        ("src/d.py", "delete"),
     ]
 
 
 def test_normalize_all_dropped_returns_original_for_validation() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/c.py", operation="delete"),
-    ))
+    changeset = ChangeSet(changes=(FileChange(path="src/c.py", operation="delete"),))
     result = normalize_changeset_operations(changeset, "main", _repo({}))
     assert result is changeset

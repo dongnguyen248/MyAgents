@@ -131,7 +131,7 @@ def check_denied_paths(path: str, allowed_paths: set[str] | None = None) -> list
     return issues
 
 
-def find_out_of_scope(changeset: "ChangeSet", allowed_paths: set[str]) -> list[str]:
+def find_out_of_scope(changeset: ChangeSet, allowed_paths: set[str]) -> list[str]:
     """Find paths in changeset that are not in allowed_paths.
 
     This is a structural helper that returns plain paths (no message parsing needed).
@@ -150,7 +150,7 @@ def find_out_of_scope(changeset: "ChangeSet", allowed_paths: set[str]) -> list[s
     return out_of_scope
 
 
-def check_scope(changeset: "ChangeSet", allowed_paths: set[str]) -> list[str]:
+def check_scope(changeset: ChangeSet, allowed_paths: set[str]) -> list[str]:
     """Check that all changes in a ChangeSet are within allowed paths.
 
     Per D9: Denied paths are reported separately from out-of-scope paths.

@@ -14,10 +14,15 @@ DEFAULT_CASES_DIR = Path(__file__).resolve().parent / "cases"
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run offline ASF benchmark cases.")
-    parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_DIR,
-                        help="Directory of benchmark case JSON files.")
-    parser.add_argument("--out", type=Path, default=None,
-                        help="Write the JSON report to this path.")
+    parser.add_argument(
+        "--cases",
+        type=Path,
+        default=DEFAULT_CASES_DIR,
+        help="Directory of benchmark case JSON files.",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=None, help="Write the JSON report to this path."
+    )
     args = parser.parse_args(argv)
 
     cases = load_cases(args.cases)

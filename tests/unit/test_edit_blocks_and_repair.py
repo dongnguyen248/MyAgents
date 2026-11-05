@@ -11,7 +11,7 @@ and the token-size win on a 3-line change in a 1000-line file.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -32,7 +32,7 @@ from asf.tools.edit_blocks import EditBlockError, parse_edit_blocks
 from asf.tools.fake import InMemoryRepository
 from tests.unit.implement_helpers import counter_id, make_implement_request
 
-T_AWARE = datetime(2026, 11, 5, 17, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 11, 5, 17, 0, tzinfo=UTC)
 CALC = "def add(a, b):\n    return a + b\n\n\ndef subtract(a, b):\n    return a - b\n"
 
 
@@ -53,10 +53,7 @@ def test_finish_reason_classification():
 
 def test_search_must_match_exactly_once():
     existing = {"src/calculator.py": CALC}
-    zero = (
-        "FILE: src/calculator.py\n<<<<<<< SEARCH\nnot in the file\n"
-        "=======\nx\n>>>>>>> REPLACE\n"
-    )
+    zero = "FILE: src/calculator.py\n<<<<<<< SEARCH\nnot in the file\n=======\nx\n>>>>>>> REPLACE\n"
     with pytest.raises(EditBlockError) as caught:
         parse_edit_blocks(zero, existing_files=existing)
     assert "matched 0 times" in str(caught.value)
@@ -117,7 +114,8 @@ def test_create_delete_and_scope_rules():
     with pytest.raises(EditBlockError, match="not in the expected files"):
         parse_edit_blocks(
             "DELETE: src/other.py\n",
-            existing_files={}, expected_files=["src/util.py"],
+            existing_files={},
+            expected_files=["src/util.py"],
         )
     with pytest.raises(EditBlockError, match="already exists"):
         parse_edit_blocks(
@@ -142,10 +140,15 @@ def test_create_delete_and_scope_rules():
 def _implement_agent(script, repo: InMemoryRepository, **kwargs):
     gateway = ScriptedModelGateway(script)
     runtime = AgentRuntime(
-        models=gateway, clock=lambda: T_AWARE, new_id=counter_id("gen-"),
+        models=gateway,
+        clock=lambda: T_AWARE,
+        new_id=counter_id("gen-"),
     )
     agent = ImplementAgent(
-        runtime, repo, prompts=load_implement_prompts(), **kwargs,
+        runtime,
+        repo,
+        prompts=load_implement_prompts(),
+        **kwargs,
     )
     return agent, gateway
 
@@ -162,7 +165,8 @@ GOOD_BLOCKS = (
 
 def _response(content: str, *, finish: str = "stop", usage=(10, 5)) -> ModelResponse:
     return ModelResponse(
-        content=content, model="test-model",
+        content=content,
+        model="test-model",
         usage=ModelUsage(prompt_tokens=usage[0], completion_tokens=usage[1]),
         finish_reason=finish,
     )
@@ -198,7 +202,11 @@ def test_repair_succeeds_on_the_second_call_and_sums_usage():
     # The original conversation (system + stable + per-item user
     # messages), then the bad reply echoed back, then the error.
     assert [m.role for m in repair_messages] == [
-        "system", "user", "user", "assistant", "user",
+        "system",
+        "user",
+        "user",
+        "assistant",
+        "user",
     ]
     assert "matched 0 times" in repair_messages[-1].content
     assert repair_messages[3].content == bad[:8000]
@@ -211,7 +219,8 @@ def test_secret_in_scope_is_not_repaired():
         "    return 'AKIAIOSFODNN7EXAMPLE'\n>>>>>>> REPLACE\n"
     )
     agent, gateway = _implement_agent(
-        [_response(secret_blocks)], _repo_with_calc(),
+        [_response(secret_blocks)],
+        _repo_with_calc(),
     )
     result = agent.execute(make_implement_request())
     assert result.status == "FAILED"
@@ -220,12 +229,21 @@ def test_secret_in_scope_is_not_repaired():
 
 
 def test_json_format_still_works_behind_the_flag():
-    reply = json.dumps({"changes": [{
-        "path": "src/calculator.py", "operation": "modify",
-        "content": CALC.replace("a + b", "a + b  # sum"),
-    }]})
+    reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "src/calculator.py",
+                    "operation": "modify",
+                    "content": CALC.replace("a + b", "a + b  # sum"),
+                }
+            ]
+        }
+    )
     agent, gateway = _implement_agent(
-        [_response(reply)], _repo_with_calc(), edit_format="json",
+        [_response(reply)],
+        _repo_with_calc(),
+        edit_format="json",
     )
     result = agent.execute(make_implement_request())
     assert result.status == "SUCCESS"
@@ -248,48 +266,71 @@ def _fix_request() -> AgentRequest:
         expected_files=["src/calculator.py", "src/util.py"],
     )
     code = Artifact(
-        id="code-1", type="CODE", name="CODE.json", version="1",
+        id="code-1",
+        type="CODE",
+        name="CODE.json",
+        version="1",
         content={
             "format": "json",
-            "changeSet": {"changes": [
-                {"path": "src/calculator.py", "operation": "create", "content": CALC},
-                {"path": "src/util.py", "operation": "create",
-                 "content": "def help():\n    return 1\n"},
-            ]},
+            "changeSet": {
+                "changes": [
+                    {"path": "src/calculator.py", "operation": "create", "content": CALC},
+                    {
+                        "path": "src/util.py",
+                        "operation": "create",
+                        "content": "def help():\n    return 1\n",
+                    },
+                ]
+            },
             "text": "code",
         },
-        created_by="agent-implement", created_at=T_AWARE,
+        created_by="agent-implement",
+        created_at=T_AWARE,
         metadata={
-            "baseRef": "main", "taskItemId": "T1",
-            "specArtifactId": "spec-1", "specVersion": "1",
-            "planArtifactId": "plan-1", "planVersion": "1",
-            "taskArtifactId": "task-1", "taskVersion": "1",
+            "baseRef": "main",
+            "taskItemId": "T1",
+            "specArtifactId": "spec-1",
+            "specVersion": "1",
+            "planArtifactId": "plan-1",
+            "planVersion": "1",
+            "taskArtifactId": "task-1",
+            "taskVersion": "1",
         },
     )
     review = Artifact(
-        id="review-1", type="CODE_REVIEW", name="CODE_REVIEW.md", version="1",
+        id="review-1",
+        type="CODE_REVIEW",
+        name="CODE_REVIEW.md",
+        version="1",
         content={
             "format": "json",
             "review": {"findings": [], "verdict": "CHANGES_REQUESTED"},
             "text": "# Review\nVerdict: CHANGES_REQUESTED",
         },
-        created_by="agent-review", created_at=T_AWARE,
+        created_by="agent-review",
+        created_at=T_AWARE,
         metadata={"codeArtifactId": "code-1", "codeVersion": "1", "taskItemId": "T1"},
     )
-    return base.model_copy(update={
-        "agent_id": "agent-fix",
-        "artifacts": [*base.artifacts, code, review],
-    })
+    return base.model_copy(
+        update={
+            "agent_id": "agent-fix",
+            "artifacts": [*base.artifacts, code, review],
+        }
+    )
 
 
 def _fix_agent(script, **kwargs):
     gateway = ScriptedModelGateway(script)
     runtime = AgentRuntime(
-        models=gateway, clock=lambda: T_AWARE, new_id=counter_id("fix-"),
+        models=gateway,
+        clock=lambda: T_AWARE,
+        new_id=counter_id("fix-"),
     )
     agent = FixAgent(
-        runtime, InMemoryRepository({"main": {}}),
-        prompts=FixPrompts("You fix one task item's CODE"), **kwargs,
+        runtime,
+        InMemoryRepository({"main": {}}),
+        prompts=FixPrompts("You fix one task item's CODE"),
+        **kwargs,
     )
     return agent, gateway
 
@@ -312,17 +353,17 @@ def test_fix_blocks_preserve_untouched_previous_changes():
 
 
 def test_fix_repair_loop_and_truncation():
-    bad = (
-        "FILE: src/calculator.py\n"
-        "<<<<<<< SEARCH\nnope\n=======\nx\n>>>>>>> REPLACE\n"
-    )
+    bad = "FILE: src/calculator.py\n<<<<<<< SEARCH\nnope\n=======\nx\n>>>>>>> REPLACE\n"
     good = (
         "FILE: src/calculator.py\n"
         "<<<<<<< SEARCH\n    return a - b\n=======\n    return a - b  # diff\n>>>>>>> REPLACE\n"
     )
-    agent, gateway = _fix_agent([
-        _response(bad, usage=(3, 2)), _response(good, usage=(4, 3)),
-    ])
+    agent, gateway = _fix_agent(
+        [
+            _response(bad, usage=(3, 2)),
+            _response(good, usage=(4, 3)),
+        ]
+    )
     result = agent.execute(_fix_request())
     assert result.status == "SUCCESS"
     assert result.output["repairs"] == 1
@@ -343,9 +384,17 @@ def test_blocks_completion_is_far_smaller_than_full_file_json():
     big_file = "\n\n".join(lines) + "\n"
     assert big_file.count("\n") >= 1000
     changed = big_file.replace("return x + 250", "return x + 250  # patched")
-    json_reply = json.dumps({"changes": [{
-        "path": "src/big.py", "operation": "modify", "content": changed,
-    }]})
+    json_reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "src/big.py",
+                    "operation": "modify",
+                    "content": changed,
+                }
+            ]
+        }
+    )
     blocks_reply = (
         "FILE: src/big.py\n<<<<<<< SEARCH\ndef fn_250(x):\n    return x + 250\n"
         "=======\ndef fn_250(x):\n    return x + 250  # patched\n>>>>>>> REPLACE\n"

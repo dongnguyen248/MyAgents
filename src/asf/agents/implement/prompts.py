@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from asf.agents._shared.code_agents import task_items_from_content
 from asf.agents._shared.context_slicing import slice_plan, slice_spec
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
@@ -76,22 +77,11 @@ def build_implement_messages(
     # the SPEC/PLAN slicing below.
     task_item: dict[str, Any] | None = None
     if isinstance(task_artifact, dict) and isinstance(task_artifact.get("content"), dict):
-        content = task_artifact["content"]
-        tasks = None
-        if isinstance(content.get("tasks"), list):
-            tasks = content["tasks"]
-        elif isinstance(content.get("text"), str):
-            try:
-                parsed = json.loads(content["text"])
-                if isinstance(parsed.get("tasks"), list):
-                    tasks = parsed["tasks"]
-            except json.JSONDecodeError:
-                pass
-        if tasks:
-            for task in tasks:
-                if task.get("id") == task_item_id:
-                    task_item = task
-                    break
+        try:
+            candidates = task_items_from_content(task_artifact["content"])
+        except (ValueError, TypeError):
+            candidates = []
+        task_item = next((task for task in candidates if task.get("id") == task_item_id), None)
 
     # Stable sections (identical for every item of the run): the
     # SPEC, sliced to what this item needs when long, and the PLAN
@@ -104,9 +94,7 @@ def build_implement_messages(
         spec_text = slice_spec(
             spec_text,
             task_title=str(task_item.get("title", "")) if task_item else "",
-            task_description=(
-                str(task_item.get("description", "")) if task_item else ""
-            ),
+            task_description=(str(task_item.get("description", "")) if task_item else ""),
         )
         stable_sections.append("<<<SPEC>>>\n" + spec_text + "\n<<<END SPEC>>>")
 
@@ -165,7 +153,7 @@ def build_implement_messages(
             "Return a JSON object with the following schema:\n"
             "{\n"
             '  "changes": [\n'
-            '    {\n'
+            "    {\n"
             '      "path": "string (relative POSIX path, no leading /)",\n'
             '      "operation": "create|modify|delete",\n'
             '      "content": "string (required for create/modify, omitted for delete)"\n'
@@ -197,9 +185,12 @@ def build_implement_messages(
     # the cachePrefixMessages request metadata.
     messages = [ModelMessage(role="system", content=system_msg)]
     if stable_sections:
-        messages.append(ModelMessage(
-            role="user", content="\n\n".join(stable_sections),
-        ))
+        messages.append(
+            ModelMessage(
+                role="user",
+                content="\n\n".join(stable_sections),
+            )
+        )
     messages.append(ModelMessage(role="user", content=user_msg))
     return messages
 

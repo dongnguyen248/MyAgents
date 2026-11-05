@@ -285,9 +285,13 @@ class GeminiModelGateway:
                     ) from None
                 except TimeoutError:
                     if retry_count < self._max_retries:
-                        self._sleep(backoff_delay(
-                            retry_count, retry_after=None, rand=self._rand,
-                        ))
+                        self._sleep(
+                            backoff_delay(
+                                retry_count,
+                                retry_after=None,
+                                rand=self._rand,
+                            )
+                        )
                         retry_count += 1
                         continue
                     raise ModelGatewayError(
@@ -296,12 +300,17 @@ class GeminiModelGateway:
                     ) from None
                 except (URLError, OSError) as error:
                     timed_out = isinstance(
-                        getattr(error, "reason", None), TimeoutError,
+                        getattr(error, "reason", None),
+                        TimeoutError,
                     )
                     if retry_count < self._max_retries:
-                        self._sleep(backoff_delay(
-                            retry_count, retry_after=None, rand=self._rand,
-                        ))
+                        self._sleep(
+                            backoff_delay(
+                                retry_count,
+                                retry_after=None,
+                                rand=self._rand,
+                            )
+                        )
                         retry_count += 1
                         continue
                     if timed_out:
@@ -329,11 +338,13 @@ class GeminiModelGateway:
                         )
                         retryable = ALLOWED_GATEWAY_ERROR_CODES[error_code][1]
                     if retryable and retry_count < self._max_retries:
-                        self._sleep(backoff_delay(
-                            retry_count,
-                            retry_after=parse_retry_after(headers),
-                            rand=self._rand,
-                        ))
+                        self._sleep(
+                            backoff_delay(
+                                retry_count,
+                                retry_after=parse_retry_after(headers),
+                                rand=self._rand,
+                            )
+                        )
                         retry_count += 1
                         continue
                     raise ModelGatewayError(

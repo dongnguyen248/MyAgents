@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -42,7 +42,9 @@ def test_store_round_trip_and_reopen(tmp_path: Path):
     store = make_store()
     service, engine, _ = build_demo(tmp_path / "anchor.sqlite", store=store)
     run = service.start_run(
-        "maria-task", project_id, inputs={"spec": {"requirement": "Persist me"}},
+        "maria-task",
+        project_id,
+        inputs={"spec": {"requirement": "Persist me"}},
     )
     engine.tick(run.id)  # SPEC -> SPEC_REVIEW (an approval row is written)
     pending = store.approvals.list_pending()
@@ -61,9 +63,11 @@ def test_store_round_trip_and_reopen(tmp_path: Path):
         with pytest.raises(KeyError):
             reopened.get_execution("no-such-run")
         with pytest.raises(KeyError):
-            reopened.save_execution(executions[0].model_copy(
-                update={"id": "no-such-run"},
-            ))
+            reopened.save_execution(
+                executions[0].model_copy(
+                    update={"id": "no-such-run"},
+                )
+            )
     finally:
         reopened.close()
 
@@ -74,16 +78,16 @@ def test_transaction_rolls_back_on_error(tmp_path: Path):
     try:
         _service, engine, _ = build_demo(tmp_path / "anchor.sqlite", store=store)
         run = engine.start(
-            task_id="tx-task", project_id=project_id,
+            task_id="tx-task",
+            project_id=project_id,
             inputs={"spec": {"requirement": "Roll me back"}},
         )
         # engine.start already persisted the run inside its own transaction;
         # a failing transaction must leave the stored payload untouched.
         before = store.get_execution(run.id).model_dump_json()
-        with pytest.raises(RuntimeError, match="boom"):
-            with store.transaction():
-                store.save_execution(run)
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError, match="boom"), store.transaction():
+            store.save_execution(run)
+            raise RuntimeError("boom")
         assert store.get_execution(run.id).model_dump_json() == before
     finally:
         store.close()
@@ -99,12 +103,14 @@ def test_store_supports_concurrent_threads():
     def worker(index: int) -> None:
         try:
             for number in range(5):
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 run = WorkflowExecution(
                     id=f"run-{index}-{number}-{uuid4().hex[:8]}",
-                    task_id="task-1", project_id=project_id,
+                    task_id="task-1",
+                    project_id=project_id,
                     state=RunState(stage="SPEC_DRAFT"),
-                    started_at=now, updated_at=now,
+                    started_at=now,
+                    updated_at=now,
                 )
                 with store.transaction():
                     store.create_execution(run)
@@ -112,9 +118,7 @@ def test_store_supports_concurrent_threads():
         except BaseException as error:  # noqa: BLE001 — collected + asserted
             errors.append(error)
 
-    threads = [
-        threading.Thread(target=worker, args=(index,)) for index in range(8)
-    ]
+    threads = [threading.Thread(target=worker, args=(index,)) for index in range(8)]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -134,11 +138,14 @@ def test_version_guard_rejects_a_stale_save():
     from asf.orchestrator.ports import ConcurrentModificationError
 
     store = make_store()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     run = WorkflowExecution(
-        id=f"versioned-{uuid4().hex[:8]}", task_id="task-1",
+        id=f"versioned-{uuid4().hex[:8]}",
+        task_id="task-1",
         project_id=f"itest-{uuid4().hex[:8]}",
-        state=RunState(stage="SPEC_DRAFT"), started_at=now, updated_at=now,
+        state=RunState(stage="SPEC_DRAFT"),
+        started_at=now,
+        updated_at=now,
     )
     try:
         with store.transaction():
@@ -151,9 +158,8 @@ def test_version_guard_rejects_a_stale_save():
             store.save_execution(first)
         assert first.version == 1
         second.context["writer"] = "second"
-        with pytest.raises(ConcurrentModificationError):
-            with store.transaction():
-                store.save_execution(second)
+        with pytest.raises(ConcurrentModificationError), store.transaction():
+            store.save_execution(second)
         saved = store.get_execution(run.id)
         assert saved.version == 1
         assert saved.context["writer"] == "first"
@@ -189,10 +195,11 @@ def test_long_running_agent_holds_no_row_lock():
     from tests.unit.test_agent_base import DummyAgent
 
     store = make_store()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ids = count(1)
     runtime = AgentRuntime(
-        models=ScriptedModelGateway([]), clock=lambda: now,
+        models=ScriptedModelGateway([]),
+        clock=lambda: now,
         new_id=lambda: f"id-{next(ids)}",
     )
     entered = threading.Event()
@@ -203,38 +210,60 @@ def test_long_running_agent_holds_no_row_lock():
         entered.set()
         time.sleep(3)
         artifact = Artifact(
-            id=f"art-{next(ids)}", type="SPEC", name="spec", version="1",
-            content={"text": "spec"}, created_by="agent-spec", created_at=now,
+            id=f"art-{next(ids)}",
+            type="SPEC",
+            name="spec",
+            version="1",
+            content={"text": "spec"},
+            created_by="agent-spec",
+            created_at=now,
         )
         return {"summary": "done"}, [artifact]
 
     agent = DummyAgent(
         runtime,
         metadata=AgentMetadata(
-            id="agent-spec", name="spec", type="spec", version="1", status="IDLE",
+            id="agent-spec",
+            name="spec",
+            type="spec",
+            version="1",
+            status="IDLE",
         ),
         run_behavior=slow_produce,
     )
     registry = AgentRegistry()
     registry.register(agent)
     definition = WorkflowDefinition(
-        id="development", name="Development", version="1",
-        steps=[WorkflowStepDef(
-            id="spec", name="spec", type="AGENT", stage="SPEC",
-            agent_type="spec", requires_approval=False,
-            consumes=[], produces=["SPEC"],
-        )],
+        id="development",
+        name="Development",
+        version="1",
+        steps=[
+            WorkflowStepDef(
+                id="spec",
+                name="spec",
+                type="AGENT",
+                stage="SPEC",
+                agent_type="spec",
+                requires_approval=False,
+                consumes=[],
+                produces=["SPEC"],
+            )
+        ],
     )
 
     def make_engine() -> Orchestrator:
         return Orchestrator(
-            definition, registry, clock=lambda: now,
-            new_id=lambda: f"run-{uuid4().hex[:8]}", store=store,
+            definition,
+            registry,
+            clock=lambda: now,
+            new_id=lambda: f"run-{uuid4().hex[:8]}",
+            store=store,
         )
 
     engine_a, engine_b = make_engine(), make_engine()
     run = engine_a.start(
-        task_id="lock-task", project_id=f"itest-{uuid4().hex[:8]}",
+        task_id="lock-task",
+        project_id=f"itest-{uuid4().hex[:8]}",
         inputs={"spec": {"requirement": "Slow"}},
     )
     errors: list[BaseException] = []
@@ -290,11 +319,13 @@ def test_summaries_and_migration_v3_backfill():
     store = make_store()
     try:
         run = WorkflowExecution(
-            id=f"run-{uuid4().hex[:8]}", task_id="backfill-task",
-            project_id=project_id, state=RunState(stage="COMPLETED"),
+            id=f"run-{uuid4().hex[:8]}",
+            task_id="backfill-task",
+            project_id=project_id,
+            state=RunState(stage="COMPLETED"),
             definition={"id": "software-development"},
-            started_at=datetime(2026, 11, 5, 9, 0, tzinfo=timezone.utc),
-            updated_at=datetime(2026, 11, 5, 9, 30, tzinfo=timezone.utc),
+            started_at=datetime(2026, 11, 5, 9, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 11, 5, 9, 30, tzinfo=UTC),
         )
         store.create_execution(run)
         summaries = store.list_execution_summaries(project_id)
@@ -313,7 +344,8 @@ def test_summaries_and_migration_v3_backfill():
                 (run.id,),
             )
         backfill = next(
-            statement for statement in dict(_MIGRATIONS)[3]
+            statement
+            for statement in dict(_MIGRATIONS)[3]
             if statement.strip().startswith("UPDATE executions")
         )
         with store._connection().cursor() as cursor:
@@ -324,13 +356,18 @@ def test_summaries_and_migration_v3_backfill():
         assert summaries[0]["startedAt"].startswith("2026-11-05T09:00:00")
         assert summaries[0]["updatedAt"].startswith("2026-11-05T09:30:00")
         # The status filter rides the indexed status column.
-        assert store.list_execution_summaries(
-            project_id, status="FAILED",
-        ) == []
+        assert (
+            store.list_execution_summaries(
+                project_id,
+                status="FAILED",
+            )
+            == []
+        )
         assert [
             row["id"]
             for row in store.list_execution_summaries(
-                project_id, status="COMPLETED",
+                project_id,
+                status="COMPLETED",
             )
         ] == [run.id]
     finally:
@@ -344,19 +381,19 @@ def test_approval_queries_use_their_indexes():
     try:
         checks = [
             (
-                "SELECT payload FROM approvals WHERE status = %s"
-                " ORDER BY requested_at, id",
-                ("PENDING",), "idx_approvals_status",
+                "SELECT payload FROM approvals WHERE status = %s ORDER BY requested_at, id",
+                ("PENDING",),
+                "idx_approvals_status",
             ),
             (
-                "SELECT payload FROM approvals WHERE task_id = %s"
-                " ORDER BY requested_at, id",
-                ("some-task",), "idx_approvals_task",
+                "SELECT payload FROM approvals WHERE task_id = %s ORDER BY requested_at, id",
+                ("some-task",),
+                "idx_approvals_task",
             ),
             (
-                "SELECT id FROM executions WHERE project_id = %s"
-                " ORDER BY updated_at, id",
-                ("some-project",), "idx_executions_project_updated",
+                "SELECT id FROM executions WHERE project_id = %s ORDER BY updated_at, id",
+                ("some-project",),
+                "idx_executions_project_updated",
             ),
         ]
         with store._connection().cursor() as cursor:

@@ -109,7 +109,6 @@ notifications:
             finally:
                 os.chdir(cwd_before)
 
-
     def test_duplicate_keys_rejected(self):
         yaml_content = """
 logLevel: INFO
@@ -148,8 +147,6 @@ logLevel: DEBUG
             platform_errors_json = json.dumps(err.to_platform_errors())
             self.assertNotIn("SENTINEL_B", platform_errors_json)
             self.assertRegex(err_str, r"\bline 1\b")
-
-
 
     def test_non_mapping_root_rejected(self):
         with self.assertRaises(ConfigError) as ctx:
@@ -233,4 +230,3 @@ logLevel: DEBUG
 
 if __name__ == "__main__":
     unittest.main()
-

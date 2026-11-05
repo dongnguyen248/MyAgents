@@ -45,10 +45,12 @@ def test_check_command_output_size_over_limit() -> None:
 
 
 def test_check_changeset_limits_within_limits() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="a.py", operation="create", content="a"),
-        FileChange(path="b.py", operation="create", content="b"),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="a.py", operation="create", content="a"),
+            FileChange(path="b.py", operation="create", content="b"),
+        )
+    )
     assert check_changeset_limits(changeset) == []
 
 
@@ -64,10 +66,12 @@ def test_check_changeset_limits_too_many_changes() -> None:
 
 def test_check_changeset_limits_total_content_over_limit() -> None:
     large_content = "x" * (MAX_TOTAL_CONTENT_BYTES // 2 + 1)
-    changeset = ChangeSet(changes=(
-        FileChange(path="a.py", operation="create", content=large_content),
-        FileChange(path="b.py", operation="create", content=large_content),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="a.py", operation="create", content=large_content),
+            FileChange(path="b.py", operation="create", content=large_content),
+        )
+    )
     issues = check_changeset_limits(changeset)
     assert len(issues) == 1
     assert "total content size" in issues[0]

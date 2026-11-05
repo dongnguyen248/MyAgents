@@ -60,7 +60,7 @@ class InMemoryRepository:
             return ()
         if not prefix:
             return tuple(sorted(tree.files.keys()))
-        return tuple(sorted(p for p in tree.files.keys() if p.startswith(prefix)))
+        return tuple(sorted(p for p in tree.files if p.startswith(prefix)))
 
     def read_file(self, path: str, ref: str, max_bytes: int = 256_000) -> str:
         tree = self._trees.get(ref)
@@ -91,17 +91,26 @@ class ScriptedSandbox:
         self._timeout_commands.add(tuple(argv))
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
-        *, fail_fast: bool = True,
+        self,
+        commands: Sequence[CommandSpec],
+        changes: ChangeSet,
+        ref: str,
+        *,
+        fail_fast: bool = True,
     ) -> SandboxResult:
         outcomes: list[CommandResult] = []
         failed = False
         for cmd in commands:
             if failed and fail_fast:
-                outcomes.append(CommandResult(
-                    exit_code=-1, stdout="", stderr="",
-                    duration_ms=0, skipped=True,
-                ))
+                outcomes.append(
+                    CommandResult(
+                        exit_code=-1,
+                        stdout="",
+                        stderr="",
+                        duration_ms=0,
+                        skipped=True,
+                    )
+                )
                 continue
             argv_key = tuple(cmd.argv)
             if argv_key in self._timeout_commands:
@@ -123,16 +132,18 @@ class InMemorySandbox:
     ) -> None:
         self._repository = repository
         self._command_results = dict(command_results or {})
-        self._default_result = CommandResult(
-            exit_code=0, stdout="", stderr="", duration_ms=1
-        )
+        self._default_result = CommandResult(exit_code=0, stdout="", stderr="", duration_ms=1)
 
     def set_command_result(self, argv: Sequence[str], result: CommandResult) -> None:
         self._command_results[tuple(argv)] = result
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
-        *, fail_fast: bool = True,
+        self,
+        commands: Sequence[CommandSpec],
+        changes: ChangeSet,
+        ref: str,
+        *,
+        fail_fast: bool = True,
     ) -> SandboxResult:
         # Copy the file tree at ref
         tree = self._repository._trees.get(ref)
@@ -165,10 +176,15 @@ class InMemorySandbox:
         failed = False
         for cmd in commands:
             if failed and fail_fast:
-                outcomes.append(CommandResult(
-                    exit_code=-1, stdout="", stderr="",
-                    duration_ms=0, skipped=True,
-                ))
+                outcomes.append(
+                    CommandResult(
+                        exit_code=-1,
+                        stdout="",
+                        stderr="",
+                        duration_ms=0,
+                        skipped=True,
+                    )
+                )
                 continue
             argv_key = tuple(cmd.argv)
             result = self._command_results.get(argv_key, self._default_result)

@@ -83,10 +83,7 @@ def parse_milestones(plan_text: str) -> list[Milestone]:
             # Extract the content until next milestone or end
             start = match.end()
             idx = matches.index(match)
-            if idx + 1 < len(matches):
-                next_start = matches[idx + 1].start()
-            else:
-                next_start = len(plan_text)
+            next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(plan_text)
             content = plan_text[start:next_start].strip()
 
             # Parse fields
@@ -97,11 +94,11 @@ def parse_milestones(plan_text: str) -> list[Milestone]:
             for line in content.splitlines():
                 line_stripped = line.strip()
                 if line_stripped.startswith("- Deliverables:"):
-                    deliverables = line_stripped[len("- Deliverables:"):].strip()
+                    deliverables = line_stripped[len("- Deliverables:") :].strip()
                 elif line_stripped.startswith("- Acceptance criteria:"):
-                    acceptance = line_stripped[len("- Acceptance criteria:"):].strip()
+                    acceptance = line_stripped[len("- Acceptance criteria:") :].strip()
                 elif line_stripped.startswith("- Depends on:"):
-                    depends_on_raw = line_stripped[len("- Depends on:"):].strip()
+                    depends_on_raw = line_stripped[len("- Depends on:") :].strip()
 
             if not deliverables:
                 issues.append(f"Milestone {mid}: missing 'Deliverables' field")
@@ -125,13 +122,15 @@ def parse_milestones(plan_text: str) -> list[Milestone]:
                         f"Milestone {mid}: depends on later or non-existent milestone '{dep}'"
                     )
 
-            milestones.append(Milestone(
-                id=mid,
-                name=mname,
-                deliverables=deliverables,
-                acceptance_criteria=acceptance,
-                depends_on=deps,
-            ))
+            milestones.append(
+                Milestone(
+                    id=mid,
+                    name=mname,
+                    deliverables=deliverables,
+                    acceptance_criteria=acceptance,
+                    depends_on=deps,
+                )
+            )
 
     if issues:
         raise MilestoneValidationError(issues)

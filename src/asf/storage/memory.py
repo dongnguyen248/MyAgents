@@ -37,16 +37,12 @@ class InMemoryApprovalRepository:
         return copy.deepcopy(approval)
 
     def list_by_task(self, task_id: str) -> list[ApprovalRequest]:
-        matching = [
-            req for req in self._approvals.values() if req.task_id == task_id
-        ]
+        matching = [req for req in self._approvals.values() if req.task_id == task_id]
         matching.sort(key=lambda r: (r.requested_at, r.id))
         return [copy.deepcopy(r) for r in matching]
 
     def list_pending(self) -> list[ApprovalRequest]:
-        matching = [
-            req for req in self._approvals.values() if req.status == "PENDING"
-        ]
+        matching = [req for req in self._approvals.values() if req.status == "PENDING"]
         matching.sort(key=lambda r: (r.requested_at, r.id))
         return [copy.deepcopy(r) for r in matching]
 

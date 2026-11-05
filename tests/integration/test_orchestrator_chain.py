@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from tests.integration.test_chain import make_plan_artifact, make_spec_artifact
 
 
 def test_actual_spec_and_plan_agents_are_sequenced_through_approval():
-    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 2, tzinfo=UTC)
     ids = count(1)
 
     def new_id():
@@ -26,34 +26,58 @@ def test_actual_spec_and_plan_agents_are_sequenced_through_approval():
     plan_gateway = ScriptedModelGateway([])
     templates = Path(__file__).resolve().parents[2] / "templates"
     registry = AgentRegistry()
-    registry.register(build_spec_agent(
-        AgentRuntime(models=spec_gateway, clock=lambda: now, new_id=new_id),
-        PlatformConfig(), templates,
-    ))
-    registry.register(build_plan_agent(
-        AgentRuntime(models=plan_gateway, clock=lambda: now, new_id=new_id),
-        PlatformConfig(), templates,
-    ))
+    registry.register(
+        build_spec_agent(
+            AgentRuntime(models=spec_gateway, clock=lambda: now, new_id=new_id),
+            PlatformConfig(),
+            templates,
+        )
+    )
+    registry.register(
+        build_plan_agent(
+            AgentRuntime(models=plan_gateway, clock=lambda: now, new_id=new_id),
+            PlatformConfig(),
+            templates,
+        )
+    )
     definition = WorkflowDefinition(
-        id="spec-plan", name="Spec and Plan", version="1", steps=[
+        id="spec-plan",
+        name="Spec and Plan",
+        version="1",
+        steps=[
             WorkflowStepDef(
-                id="spec", name="Spec", type="AGENT", stage="SPEC",
-                agent_type="spec", requires_approval=True, produces=["SPEC"],
+                id="spec",
+                name="Spec",
+                type="AGENT",
+                stage="SPEC",
+                agent_type="spec",
+                requires_approval=True,
+                produces=["SPEC"],
             ),
             WorkflowStepDef(
-                id="plan", name="Plan", type="AGENT", stage="PLAN",
-                agent_type="plan", requires_approval=True, consumes=["SPEC"], produces=["PLAN"],
+                id="plan",
+                name="Plan",
+                type="AGENT",
+                stage="PLAN",
+                agent_type="plan",
+                requires_approval=True,
+                consumes=["SPEC"],
+                produces=["PLAN"],
             ),
         ],
     )
     repo = InMemoryApprovalRepository()
     engine = Orchestrator(
-        definition, registry, clock=lambda: now, new_id=new_id,
+        definition,
+        registry,
+        clock=lambda: now,
+        new_id=new_id,
         approvals=ApprovalService(repo, id_factory=new_id),
         approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
     )
     run = engine.start(
-        task_id="task-1", project_id="project-1",
+        task_id="task-1",
+        project_id="project-1",
         inputs={"spec": {"requirement": "Implement a calculator"}},
     )
     run = engine.tick(run.id)
@@ -61,15 +85,23 @@ def test_actual_spec_and_plan_agents_are_sequenced_through_approval():
     assert len(spec_gateway.requests) == 1
     assert plan_gateway.requests == []
     spec_artifact = run.artifacts["SPEC"]
-    plan_reply = make_plan_artifact().content["text"].replace(
-        "ID: spec-1", f"ID: {spec_artifact.id}",
+    plan_reply = (
+        make_plan_artifact()
+        .content["text"]
+        .replace(
+            "ID: spec-1",
+            f"ID: {spec_artifact.id}",
+        )
     )
     plan_gateway = ScriptedModelGateway([plan_reply])
     registry.unregister("agent-plan")
-    registry.register(build_plan_agent(
-        AgentRuntime(models=plan_gateway, clock=lambda: now, new_id=new_id),
-        PlatformConfig(), templates,
-    ))
+    registry.register(
+        build_plan_agent(
+            AgentRuntime(models=plan_gateway, clock=lambda: now, new_id=new_id),
+            PlatformConfig(),
+            templates,
+        )
+    )
     run = engine.decide(run.id, reviewer="reviewer", decision="APPROVED")
     assert run.state.stage == "PLAN_DRAFT"
     run = engine.tick(run.id)

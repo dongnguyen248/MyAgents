@@ -24,7 +24,7 @@ import os
 import re
 import tempfile
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -81,18 +81,23 @@ from asf.workflow.loader import load_workflow
 
 logger = logging.getLogger(__name__)
 
-_TASK_REPLY = json.dumps({
-    "tasks": [{
-        "id": "T1",
-        "title": "Create the demo module",
-        "milestoneRef": "M1",
-        "description": "Implement the demo module described by the SPEC",
-        "acceptanceCriteria": ["The demo module exists and imports cleanly"],
-        "dependsOn": [],
-        "expectedFiles": ["calculator.py"],
-        "verificationHint": "Run the project test commands",
-    }],
-}, indent=2)
+_TASK_REPLY = json.dumps(
+    {
+        "tasks": [
+            {
+                "id": "T1",
+                "title": "Create the demo module",
+                "milestoneRef": "M1",
+                "description": "Implement the demo module described by the SPEC",
+                "acceptanceCriteria": ["The demo module exists and imports cleanly"],
+                "dependsOn": [],
+                "expectedFiles": ["calculator.py"],
+                "verificationHint": "Run the project test commands",
+            }
+        ],
+    },
+    indent=2,
+)
 
 _CODE_REPLY = """CREATE: calculator.py
 <<<<<<< FILE
@@ -179,7 +184,11 @@ class _FallbackMetrics:
         self._decisions: list[dict[str, Any]] = []
 
     def record(
-        self, agent_id: str, result: AgentResult, *, run_id: str | None = None,
+        self,
+        agent_id: str,
+        result: AgentResult,
+        *,
+        run_id: str | None = None,
     ) -> None:
         self._results.append(result)
 
@@ -194,13 +203,17 @@ class _FallbackMetrics:
         total = len(own)
         durations = [result.metrics.duration_seconds for result in own]
         return {
-            "total": total, "completed": completed,
+            "total": total,
+            "completed": completed,
             "running": total - completed - failed - cancelled,
-            "failed": failed, "cancelled": cancelled,
+            "failed": failed,
+            "cancelled": cancelled,
             "successRate": completed / total if total else 0.0,
             "avgDurationSec": sum(durations) / total if total else 0.0,
-            "avgRevisions": 0.0, "humanApprovalRate": 0.0,
-            "testPassRate": 0.0, "ciPassRate": 0.0,
+            "avgRevisions": 0.0,
+            "humanApprovalRate": 0.0,
+            "testPassRate": 0.0,
+            "ciPassRate": 0.0,
             "promptTokens": sum(r.metrics.prompt_tokens for r in own),
             "completionTokens": sum(r.metrics.completion_tokens for r in own),
             "modelCalls": sum(r.metrics.model_calls for r in own),
@@ -210,12 +223,18 @@ class _FallbackMetrics:
         return {
             "daily": [],
             "human": {
-                "approvalRate": 0.0, "rejectionRate": 0.0, "avgRevisions": 0.0,
-                "avgApprovalMinutes": 0.0, "daily": [],
+                "approvalRate": 0.0,
+                "rejectionRate": 0.0,
+                "avgRevisions": 0.0,
+                "avgApprovalMinutes": 0.0,
+                "daily": [],
             },
             "quality": {
-                "codeReviewRejectionRate": 0.0, "testPassRate": 0.0,
-                "ciPassRate": 0.0, "reworkRate": 0.0, "daily": [],
+                "codeReviewRejectionRate": 0.0,
+                "testPassRate": 0.0,
+                "ciPassRate": 0.0,
+                "reworkRate": 0.0,
+                "daily": [],
             },
             "agents": [],
         }
@@ -243,7 +262,7 @@ def _skill_body(text: str) -> str:
     lines = stripped.splitlines()
     for index in range(1, len(lines)):
         if lines[index].strip() == "---":
-            return "\n".join(lines[index + 1:]).strip()
+            return "\n".join(lines[index + 1 :]).strip()
     return text.strip()
 
 
@@ -259,7 +278,7 @@ def _load_metrics() -> Any:
             if cls is None:
                 continue
             instance = None
-            for kwargs in ({"clock": lambda: datetime.now(timezone.utc)}, {}):
+            for kwargs in ({"clock": lambda: datetime.now(UTC)}, {}):
                 try:
                     instance = cls(**kwargs)
                     break
@@ -292,16 +311,18 @@ class DemoFactoryService(FactoryService):
     }
 
     def __init__(
-        self, *args: Any, projects_dir: Path | None = None,
-        skills_dir: Path | None = None, **kwargs: Any,
+        self,
+        *args: Any,
+        projects_dir: Path | None = None,
+        skills_dir: Path | None = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._projects_dir = projects_dir
         # The skills catalogue lives at the repository root beside
         # projects/ and templates/; tests may point it elsewhere.
         self._skills_dir = (
-            skills_dir if skills_dir is not None
-            else Path(__file__).resolve().parents[3] / "skills"
+            skills_dir if skills_dir is not None else Path(__file__).resolve().parents[3] / "skills"
         )
 
     def _project_skills(self, project_id: str) -> list[dict[str, str]]:
@@ -346,14 +367,13 @@ class DemoFactoryService(FactoryService):
         """
         profile = self._project_profiles.get(project_id) or {}
         configuration = profile.get("configuration")
-        commands = (
-            configuration.get("testCommands")
-            if isinstance(configuration, dict) else None
-        )
+        commands = configuration.get("testCommands") if isinstance(configuration, dict) else None
         if (
-            isinstance(commands, list) and commands
+            isinstance(commands, list)
+            and commands
             and all(
-                isinstance(argv, list) and argv
+                isinstance(argv, list)
+                and argv
                 and all(isinstance(arg, str) and arg for arg in argv)
                 for argv in commands
             )
@@ -388,8 +408,7 @@ class DemoFactoryService(FactoryService):
         selected = {
             self._TECHNOLOGY_TO_PACK[token.strip().lower()]
             for token in technologies
-            if isinstance(token, str)
-            and token.strip().lower() in self._TECHNOLOGY_TO_PACK
+            if isinstance(token, str) and token.strip().lower() in self._TECHNOLOGY_TO_PACK
         }
         packs: list[str] = []
         for pack in self._LANGUAGE_PACK_ORDER:
@@ -419,10 +438,7 @@ class DemoFactoryService(FactoryService):
         parts: list[str] = self._language_rule_packs(project_id)
         profile = self._project_profiles.get(project_id) or {}
         configuration = profile.get("configuration")
-        review = (
-            configuration.get("review") if isinstance(configuration, dict)
-            else None
-        )
+        review = configuration.get("review") if isinstance(configuration, dict) else None
         if not isinstance(review, dict):
             return "\n\n".join(parts)
         files = review.get("rulesFiles")
@@ -476,21 +492,24 @@ class DemoFactoryService(FactoryService):
         skills = self._project_skills(project_id)
         if skills:
             merged_context["project"]["skills"] = skills
-            merged_context["project"]["enabledSkills"] = [
-                skill["id"] for skill in skills
-            ]
+            merged_context["project"]["enabledSkills"] = [skill["id"] for skill in skills]
         for key, value in dict(context or {}).items():
             if key == "project" and isinstance(value, dict):
                 merged_context["project"] = {**merged_context["project"], **value}
             else:
                 merged_context[key] = value
         return super().start_run(
-            task_id, project_id, inputs=merged_inputs, context=merged_context,
+            task_id,
+            project_id,
+            inputs=merged_inputs,
+            context=merged_context,
         )
 
 
 def _project_writer(
-    projects_dir: Path, *, overwrite: bool = False,
+    projects_dir: Path,
+    *,
+    overwrite: bool = False,
 ) -> Callable[[ProjectProfile], None]:
     """Persist dashboard-managed projects as ``projects/<id>.yaml``.
 
@@ -505,14 +524,14 @@ def _project_writer(
         data = profile.to_contract()
         if scan_secrets(data):
             raise ValueError(
-                "Project profile contains literal secrets; "
-                "use {env: VAR} references instead",
+                "Project profile contains literal secrets; use {env: VAR} references instead",
             )
         path = projects_dir / f"{profile.id}.yaml"
         if path.exists() and not overwrite:
             raise ValueError(f"Project file already exists: {path.name}")
         path.write_text(
-            yaml.safe_dump(data, sort_keys=False), encoding="utf-8",
+            yaml.safe_dump(data, sort_keys=False),
+            encoding="utf-8",
         )
 
     return write
@@ -547,7 +566,11 @@ class _WorkspaceBindingAgent:
     """
 
     def __init__(
-        self, inner: Any, workspace: LocalWorkspace, *, role: str = "code",
+        self,
+        inner: Any,
+        workspace: LocalWorkspace,
+        *,
+        role: str = "code",
     ) -> None:
         self._inner = inner
         self._workspace = workspace
@@ -576,12 +599,15 @@ class _WorkspaceBindingAgent:
             self._workspace.reset_binding(token)
 
     def _commit_after_passing_tests(
-        self, request: AgentRequest, result: AgentResult,
+        self,
+        request: AgentRequest,
+        result: AgentResult,
     ) -> None:
         if self._role != "test":
             return
         report = next(
-            (a for a in result.artifacts if a.type == "TEST_REPORT"), None,
+            (a for a in result.artifacts if a.type == "TEST_REPORT"),
+            None,
         )
         verdict = None
         if report is not None and isinstance(report.content, dict):
@@ -591,7 +617,8 @@ class _WorkspaceBindingAgent:
         if verdict != "PASS":
             return
         code = next(
-            (a for a in request.artifacts if a.type == "CODE"), None,
+            (a for a in request.artifacts if a.type == "CODE"),
+            None,
         )
         item = None
         if code is not None:
@@ -686,7 +713,9 @@ def _profile_sandbox_settings(profile: ProjectProfile) -> SandboxSettings | None
             max_processes=_limit("maxProcesses"),
         )
     return SandboxSettings(
-        env_allowlist=allowlist, env_extra=extra, resource_limits=limits,
+        env_allowlist=allowlist,
+        env_extra=extra,
+        resource_limits=limits,
     )
 
 
@@ -706,10 +735,10 @@ def build_demo(
     platform = load_platform_config(root / "config")
     projects_dir = root / "projects"
     projects = load_projects(projects_dir)
-    definition = load_workflow(root / "workflows" / "software-development.yaml")
+    definition = load_workflow(root / "workflow-definitions" / "software-development.yaml")
 
     def clock() -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     def new_id() -> str:
         return str(uuid4())
@@ -718,25 +747,25 @@ def build_demo(
     # so a provider/key configured in the dashboard survives restarts.
     settings_override = os.environ.get("ASF_MODEL_SETTINGS_FILE")
     settings_path = (
-        Path(settings_override) if settings_override
-        else db_path.parent / "model-settings.json"
+        Path(settings_override) if settings_override else db_path.parent / "model-settings.json"
     )
     model_settings = ModelSettings(settings_path)
     # Per-project hosting tokens entered in the dashboard, kept beside
     # the run DB like the model settings — never in the project YAML.
     tokens_override = os.environ.get("ASF_HOSTING_TOKENS_FILE")
     hosting_tokens = HostingTokens(
-        Path(tokens_override) if tokens_override
-        else db_path.parent / "hosting-tokens.json",
+        Path(tokens_override) if tokens_override else db_path.parent / "hosting-tokens.json",
     )
     runtime = AgentRuntime(
         models=ConcurrencyLimitedGateway(
             SettingsRoutingGateway(
-                model_settings, DemoRoutingGateway(templates_dir),
+                model_settings,
+                DemoRoutingGateway(templates_dir),
             ),
             max_concurrent=platform.execution.max_concurrent_model_calls,
         ),
-        clock=clock, new_id=new_id,
+        clock=clock,
+        new_id=new_id,
     )
     # Local workspace: projects whose profile carries repository.path get
     # real filesystem repository/sandbox adapters (agents read the actual
@@ -765,19 +794,28 @@ def build_demo(
     registry.register(build_spec_agent(runtime, platform, templates_dir))
     registry.register(build_plan_agent(runtime, platform, templates_dir))
     registry.register(build_task_agent(runtime, platform, templates_dir))
-    registry.register(_WorkspaceBindingAgent(
-        build_implement_agent(runtime, platform, templates_dir, repository),
-        workspace, role="implement",
-    ))
+    registry.register(
+        _WorkspaceBindingAgent(
+            build_implement_agent(runtime, platform, templates_dir, repository),
+            workspace,
+            role="implement",
+        )
+    )
     registry.register(build_review_agent(runtime, platform, templates_dir))
-    registry.register(_WorkspaceBindingAgent(
-        build_test_agent(runtime, platform, templates_dir, sandbox),
-        workspace, role="test",
-    ))
-    registry.register(_WorkspaceBindingAgent(
-        build_fix_agent(runtime, platform, templates_dir, repository),
-        workspace, role="fix",
-    ))
+    registry.register(
+        _WorkspaceBindingAgent(
+            build_test_agent(runtime, platform, templates_dir, sandbox),
+            workspace,
+            role="test",
+        )
+    )
+    registry.register(
+        _WorkspaceBindingAgent(
+            build_fix_agent(runtime, platform, templates_dir, repository),
+            workspace,
+            role="fix",
+        )
+    )
 
     store = store if store is not None else SQLiteExecutionStore(db_path)
     metrics = _load_metrics()
@@ -795,7 +833,11 @@ def build_demo(
         return service._project_profiles.get(project_id) if service else None
 
     engine = Orchestrator(
-        definition, registry, clock=clock, new_id=new_id, store=store,
+        definition,
+        registry,
+        clock=clock,
+        new_id=new_id,
+        store=store,
         approval_policy=ApprovalPolicy(reviewers=["dashboard"]),
         # Bounded rework: a CHANGES_REQUESTED review or a FAIL test verdict
         # routes the CODE (with the review / test report attached) to the
@@ -810,23 +852,28 @@ def build_demo(
             max_model_calls=platform.budget.max_model_calls,
         ),
         actions=build_hosting_actions(
-            profiles=profile_of, clock=clock, tokens=hosting_tokens.get,
+            profiles=profile_of,
+            clock=clock,
+            tokens=hosting_tokens.get,
         ),
         events=metrics if hasattr(metrics, "publish") else None,
         metrics=metrics if hasattr(metrics, "record") else None,
     )
+
     def on_created(profile: ProjectProfile) -> None:
         _project_writer(projects_dir)(profile)
         workspace.set_root(profile.id, _profile_root(profile))
         workspace.set_sandbox_settings(
-            profile.id, _profile_sandbox_settings(profile),
+            profile.id,
+            _profile_sandbox_settings(profile),
         )
 
     def on_updated(profile: ProjectProfile) -> None:
         _project_writer(projects_dir, overwrite=True)(profile)
         workspace.set_root(profile.id, _profile_root(profile))
         workspace.set_sandbox_settings(
-            profile.id, _profile_sandbox_settings(profile),
+            profile.id,
+            _profile_sandbox_settings(profile),
         )
 
     def on_deleted(project_id: str) -> None:
@@ -834,8 +881,13 @@ def build_demo(
         workspace.remove(project_id)
 
     service = DemoFactoryService(
-        engine, projects=projects, metrics=metrics, store=store,
-        reviewer="dashboard", clock=clock, projects_dir=projects_dir,
+        engine,
+        projects=projects,
+        metrics=metrics,
+        store=store,
+        reviewer="dashboard",
+        clock=clock,
+        projects_dir=projects_dir,
         on_project_created=on_created,
         on_project_updated=on_updated,
         on_project_deleted=on_deleted,
@@ -848,11 +900,12 @@ def build_demo(
         # whole (the failure is shown on the run).
         decomposer=RequirementDecomposer(runtime.models),
         max_concurrent_runs=platform.execution.max_concurrent_runs,
-        on_run_terminal=lambda run_id, project_id, stage: (
-            workspace.finish_run(project_id, run_id, stage)
+        on_run_terminal=lambda run_id, project_id, stage: workspace.finish_run(
+            project_id, run_id, stage
         ),
     )
     service_ref["service"] = service
+
     # Startup sweep: worktrees whose run ended FAILED/CANCELLED (or
     # whose run the store no longer knows) while the backend was down
     # are orphans — remove them before anything drives again.
@@ -877,7 +930,8 @@ def run_selftest(service: FactoryService, engine: Orchestrator) -> int:
     """Drive one run to completion, approving every artifact as 'dashboard'."""
     project_id = service.list_projects()[0]["id"]
     run = service.start_run(
-        "demo-task", project_id,
+        "demo-task",
+        project_id,
         inputs={
             "spec": {"requirement": "Demonstrate the dashboard backend end to end"},
             "implement": {"taskItemId": "T1", "ref": "main"},
@@ -962,9 +1016,7 @@ def configure_logging() -> None:
     if getattr(logger, "_asf_console_configured", False):
         return
     handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(os.environ.get("ASF_LOG_LEVEL", "INFO").upper())
     logger.propagate = False
@@ -980,11 +1032,13 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--db", type=Path, default=None, help="SQLite store path")
     parser.add_argument(
-        "--mariadb", action="store_true",
+        "--mariadb",
+        action="store_true",
         help="Store runs in MariaDB (ASF_MARIADB_* env vars) instead of SQLite",
     )
     parser.add_argument(
-        "--selftest", action="store_true",
+        "--selftest",
+        action="store_true",
         help="Run one headless end-to-end run instead of serving HTTP",
     )
     args = parser.parse_args()
@@ -994,11 +1048,10 @@ def main() -> None:
         # Runs live in MariaDB; the model-settings file still needs a home,
         # so anchor it at the usual data directory.
         service, engine, store = build_demo(
-            _resolve_db_path(None, selftest=False), store=maria_store,
+            _resolve_db_path(None, selftest=False),
+            store=maria_store,
         )
-        db_label = (
-            f"mariadb {config.user}@{config.host}:{config.port}/{config.database}"
-        )
+        db_label = f"mariadb {config.user}@{config.host}:{config.port}/{config.database}"
     else:
         db_path = _resolve_db_path(args.db, selftest=args.selftest)
         service, engine, store = build_demo(db_path)
@@ -1020,7 +1073,9 @@ def main() -> None:
         # remaining connections close and the process exits; run state
         # lives in the store and mid-flight runs heal on the next boot.
         uvicorn.run(
-            create_app(service), host="127.0.0.1", port=args.port,
+            create_app(service),
+            host="127.0.0.1",
+            port=args.port,
             timeout_graceful_shutdown=5,
         )
     finally:

@@ -90,14 +90,22 @@ class FixAgent(BaseAgent):
     @property
     def metadata(self) -> AgentMetadata:
         return AgentMetadata(
-            id="agent-fix", name="Fix Agent", type="fix", version="1.0.0",
-            status="IDLE", capabilities=["fix-code"], configuration={},
+            id="agent-fix",
+            name="Fix Agent",
+            type="fix",
+            version="1.0.0",
+            status="IDLE",
+            capabilities=["fix-code"],
+            configuration={},
         )
 
     def _check(self, request: AgentRequest) -> list[Issue]:
         issues = check_code_request(
-            request, self.metadata.id, {"SPEC", "PLAN", "TASK", "CODE"},
-            optional={"CODE_REVIEW", "TEST_REPORT"}, require_ref=True,
+            request,
+            self.metadata.id,
+            {"SPEC", "PLAN", "TASK", "CODE"},
+            optional={"CODE_REVIEW", "TEST_REPORT"},
+            require_ref=True,
             extra_input={"previousFixError"},
         )
         previous_error = request.input.get("previousFixError")
@@ -106,12 +114,15 @@ class FixAgent(BaseAgent):
             or not previous_error.strip()
             or len(previous_error) > 2000
         ):
-            issues.append(Issue(
-                "input.previousFixError",
-                "previousFixError must be a non-empty string of at most 2000 characters",
-            ))
+            issues.append(
+                Issue(
+                    "input.previousFixError",
+                    "previousFixError must be a non-empty string of at most 2000 characters",
+                )
+            )
         reports = [
-            artifact for artifact in request.artifacts
+            artifact
+            for artifact in request.artifacts
             if artifact.type in {"CODE_REVIEW", "TEST_REPORT"}
         ]
         if not reports:
@@ -149,11 +160,12 @@ class FixAgent(BaseAgent):
                     issues.append(Issue("context.project.enabledSkills", "Invalid enabled skills"))
         if not issues:
             try:
-                expected = task_item(
-                    artifact_of(request, "TASK"), request.input["taskItemId"]
-                ).get("expectedFiles")
+                expected = task_item(artifact_of(request, "TASK"), request.input["taskItemId"]).get(
+                    "expectedFiles"
+                )
                 if (
-                    not isinstance(expected, list) or not expected
+                    not isinstance(expected, list)
+                    or not expected
                     or any(
                         not isinstance(path, str) or validate_relative_path(path)
                         for path in expected
@@ -184,14 +196,19 @@ class FixAgent(BaseAgent):
                     continue
         except FileTooLargeError:
             raise AgentExecutionError(
-                "VALIDATION_FAILED", "Base file exceeds the read limit",
-                category="VALIDATION", retryable=False, status="REJECTED",
+                "VALIDATION_FAILED",
+                "Base file exceeds the read limit",
+                category="VALIDATION",
+                retryable=False,
+                status="REJECTED",
             ) from None
         except RepositoryError:
-            raise AgentExecutionError("REPOSITORY_ERROR", "Could not read the base repository") \
-                from None
+            raise AgentExecutionError(
+                "REPOSITORY_ERROR", "Could not read the base repository"
+            ) from None
         reports = [
-            artifact for artifact in request.artifacts
+            artifact
+            for artifact in request.artifacts
             if artifact.type in {"CODE_REVIEW", "TEST_REPORT"}
         ]
         previous_error = request.input.get("previousFixError")
@@ -210,26 +227,36 @@ class FixAgent(BaseAgent):
                 str(item["milestoneRef"]) if item.get("milestoneRef") else None,
             ),
             task_summary=task.to_contract()["content"]["text"],
-            expected_files=expected, existing_files=existing,
+            expected_files=expected,
+            existing_files=existing,
             review_findings=[
                 tail_artifact_for_prompt(
-                    artifact.to_contract(), self._report_tail_lines,
+                    artifact.to_contract(),
+                    self._report_tail_lines,
                 )
                 for artifact in reports
             ],
             previous_changeset=code_changeset(code),
             previous_error=previous_error if isinstance(previous_error, str) else None,
             repo_map=build_repo_map(
-                self._repository, ref=ref, expected_files=expected,
+                self._repository,
+                ref=ref,
+                expected_files=expected,
                 max_chars=self._repo_map_max_chars,
             ),
         )
-        model_request = ModelRequest(            messages=build_fix_messages(
-                self._prompts, request, context, edit_format=self._edit_format,
+        model_request = ModelRequest(
+            messages=build_fix_messages(
+                self._prompts,
+                request,
+                context,
+                edit_format=self._edit_format,
             ),
-            model=self._model, parameters=self._parameters,
+            model=self._model,
+            parameters=self._parameters,
             metadata={
-                "agentId": self.metadata.id, "requestId": request.request_id,
+                "agentId": self.metadata.id,
+                "requestId": request.request_id,
                 "cachePrefixMessages": 1,
                 **tier_metadata(request.context),
             },
@@ -249,9 +276,7 @@ class FixAgent(BaseAgent):
                 effective_existing[change.path] = change.content
 
         def compose_replacement(edits: ChangeSet) -> ChangeSet:
-            merged: dict[str, Any] = {
-                change.path: change for change in previous_changeset.changes
-            }
+            merged: dict[str, Any] = {change.path: change for change in previous_changeset.changes}
             for change in edits.changes:
                 if change.operation == "delete" and change.path not in existing:
                     # Deleting a file the previous changeset created:
@@ -294,10 +319,7 @@ class FixAgent(BaseAgent):
                     cause = str(exc)[:400]
                     raise RepairableOutputError(
                         "Invalid replacement ChangeSet",
-                        model_message=(
-                            "The reply was not a valid replacement"
-                            f" ChangeSet: {cause}"
-                        ),
+                        model_message=(f"The reply was not a valid replacement ChangeSet: {cause}"),
                         details={
                             "cause": cause,
                             "replyChars": len(reply),
@@ -306,20 +328,22 @@ class FixAgent(BaseAgent):
                     ) from None
             try:
                 changeset = normalize_changeset_operations(
-                    changeset, ref, self._repository,
+                    changeset,
+                    ref,
+                    self._repository,
                 )
                 issues = validate_changeset(changeset, expected, ref, self._repository)
             except RepositoryError:
                 raise AgentExecutionError(
-                    "REPOSITORY_ERROR", "Could not validate base files",
+                    "REPOSITORY_ERROR",
+                    "Could not validate base files",
                 ) from None
             if issues:
                 raise RepairableOutputError(
                     "Replacement violates scope or content constraints",
                     model_message=(
                         "Replacement violates scope or content"
-                        " constraints: "
-                        + summarize_validation_issues(issues)
+                        " constraints: " + summarize_validation_issues(issues)
                     ),
                     details=issues,
                 )
@@ -340,27 +364,45 @@ class FixAgent(BaseAgent):
         )
         text = render_code_markdown(
             changeset.model_dump(by_alias=True)["changes"],
-            spec.id, spec.version, plan.id, plan.version, item_id,
+            spec.id,
+            spec.version,
+            plan.id,
+            plan.version,
+            item_id,
         )
         if len(text) > MAX_TEXT_CHARS:
             raise invalid_response("Rendered CODE exceeds the size limit")
         version = str(int(code.version) + 1)
         metadata = {
-            "taskItemId": item_id, "specArtifactId": spec.id, "specVersion": spec.version,
-            "planArtifactId": plan.id, "planVersion": plan.version,
-            "taskArtifactId": task.id, "taskVersion": task.version,
-            "baseRef": ref, "revisionOf": code.id,
+            "taskItemId": item_id,
+            "specArtifactId": spec.id,
+            "specVersion": spec.version,
+            "planArtifactId": plan.id,
+            "planVersion": plan.version,
+            "taskArtifactId": task.id,
+            "taskVersion": task.version,
+            "baseRef": ref,
+            "revisionOf": code.id,
             "fixedReviewIds": [a.id for a in reports if a.type == "CODE_REVIEW"],
             "fixedTestReportIds": [a.id for a in reports if a.type == "TEST_REPORT"],
         }
         artifact = Artifact(
-            id=self._runtime.new_id(), type="CODE", name="CODE.json", version=version,
-            content={"format": "json", "changeSet": changeset.model_dump(by_alias=True),
-                     "text": text},
-            created_by=self.metadata.id, created_at=self._runtime.clock(), metadata=metadata,
+            id=self._runtime.new_id(),
+            type="CODE",
+            name="CODE.json",
+            version=version,
+            content={
+                "format": "json",
+                "changeSet": changeset.model_dump(by_alias=True),
+                "text": text,
+            },
+            created_by=self.metadata.id,
+            created_at=self._runtime.clock(),
+            metadata=metadata,
         )
         return {
-            "summary": "Replacement code created", "artifactId": artifact.id,
+            "summary": "Replacement code created",
+            "artifactId": artifact.id,
             "version": version,
             "usage": {
                 "promptTokens": usage.prompt_tokens,

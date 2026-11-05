@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -38,7 +38,7 @@ class ConfigError(Exception):
         super().__init__(message)
 
     def to_platform_errors(self, now: datetime | None = None) -> list[dict[str, Any]]:
-        ts = (now or datetime.now(timezone.utc)).isoformat()
+        ts = (now or datetime.now(UTC)).isoformat()
         errors: list[dict[str, Any]] = []
 
         if self.issues:
@@ -47,25 +47,29 @@ class ConfigError(Exception):
                 if self.source is not None:
                     details["source"] = self.source
                 msg = f"{issue.path}: {issue.message}" if issue.path else issue.message
-                errors.append({
-                    "code": "VALIDATION_FAILED",
-                    "message": msg,
-                    "category": "VALIDATION",
-                    "details": details,
-                    "retryable": False,
-                    "timestamp": ts,
-                })
+                errors.append(
+                    {
+                        "code": "VALIDATION_FAILED",
+                        "message": msg,
+                        "category": "VALIDATION",
+                        "details": details,
+                        "retryable": False,
+                        "timestamp": ts,
+                    }
+                )
 
         else:
             details = {}
             if self.source is not None:
                 details["source"] = self.source
-            errors.append({
-                "code": "VALIDATION_FAILED",
-                "message": str(self),
-                "category": "VALIDATION",
-                "details": details,
-                "retryable": False,
-                "timestamp": ts,
-            })
+            errors.append(
+                {
+                    "code": "VALIDATION_FAILED",
+                    "message": str(self),
+                    "category": "VALIDATION",
+                    "details": details,
+                    "retryable": False,
+                    "timestamp": ts,
+                }
+            )
         return errors

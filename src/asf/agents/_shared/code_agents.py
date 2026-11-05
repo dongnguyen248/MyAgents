@@ -20,8 +20,13 @@ def artifact_of(request: AgentRequest, kind: str) -> Artifact:
     return next(artifact for artifact in request.artifacts if artifact.type == kind)
 
 
-def task_item(task: Artifact, task_item_id: str) -> dict[str, Any]:
-    content = task.content
+def task_items_from_content(content: Any) -> list[dict[str, Any]]:
+    """The raw task-item dicts of a TASK artifact's content.
+
+    The one place that knows the two storage shapes: an inline
+    ``tasks`` list, or the rendered ``text`` carrying the same list
+    as JSON. Raises ValueError on malformed shapes.
+    """
     if not isinstance(content, dict):
         raise ValueError("TASK must contain an inline mapping")
     items = content.get("tasks")
@@ -32,10 +37,15 @@ def task_item(task: Artifact, task_item_id: str) -> dict[str, Any]:
         items = parsed.get("tasks")
     if not isinstance(items, list):
         raise ValueError("TASK must contain a tasks list")
-    matches = [
-        item for item in items
-        if isinstance(item, dict) and item.get("id") == task_item_id
-    ]
+    return [item for item in items if isinstance(item, dict)]
+
+
+def task_items(task: Artifact) -> list[dict[str, Any]]:
+    return task_items_from_content(task.content)
+
+
+def task_item(task: Artifact, task_item_id: str) -> dict[str, Any]:
+    matches = [item for item in task_items(task) if item.get("id") == task_item_id]
     if len(matches) != 1:
         raise ValueError("TASK must contain exactly one matching task item")
     return matches[0]
@@ -149,12 +159,19 @@ def check_code_request(
 
 def linked_metadata(request: AgentRequest, code: Artifact) -> dict[str, Any]:
     metadata = {
-        key: value for key, value in code.metadata.items()
-        if key in {
-            "specArtifactId", "specVersion", "planArtifactId", "planVersion",
-            "taskArtifactId", "taskVersion", "taskItemId", "baseRef",
+        key: value
+        for key, value in code.metadata.items()
+        if key
+        in {
+            "specArtifactId",
+            "specVersion",
+            "planArtifactId",
+            "planVersion",
+            "taskArtifactId",
+            "taskVersion",
+            "taskItemId",
+            "baseRef",
         }
     }
     metadata.update(codeArtifactId=code.id, codeVersion=code.version)
     return metadata
-

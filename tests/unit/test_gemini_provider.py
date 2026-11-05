@@ -178,9 +178,7 @@ def test_model_id_validation_and_normalization(model: str):
     if model.strip():
         model_gateway = gateway(transport, model=model)
         model_gateway.complete(request())
-        assert transport.calls[0]["url"].endswith(
-            "/models/gemini-3.8-flash:generateContent"
-        )
+        assert transport.calls[0]["url"].endswith("/models/gemini-3.8-flash:generateContent")
     else:
         with pytest.raises(ValueError, match="non-empty ID"):
             gateway(transport, model=model)

@@ -11,9 +11,7 @@ from yaml.constructor import ConstructorError
 from asf.configuration.errors import ConfigError, ConfigIssue
 from asf.configuration.secrets import ENV_VAR_PATTERN
 
-SECRET_KEY_REGEX = re.compile(
-    r"(?i)(?:secret|token|password|passwd|api[_-]?key|credentials?)$"
-)
+SECRET_KEY_REGEX = re.compile(r"(?i)(?:secret|token|password|passwd|api[_-]?key|credentials?)$")
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -96,7 +94,6 @@ def load_yaml_mapping(
     else:
         content = stream.read()
 
-
     try:
         # UniqueKeyLoader extends SafeLoader and only customizes duplicate-key handling.
         data = yaml.load(content, Loader=UniqueKeyLoader)  # nosec B506
@@ -107,7 +104,6 @@ def load_yaml_mapping(
             issues=[ConfigIssue(path="", message=msg)],
             source=src_name,
         ) from exc
-
 
     if data is None:
         return {}
@@ -140,14 +136,11 @@ def scan_secrets(data: Any, path: str = "") -> list[ConfigIssue]:
             child_path = f"{path}.{k_str}" if path else k_str
             if SECRET_KEY_REGEX.search(k_str):
                 # Must be null or {env: NAME}
-                is_valid_ref = (
-                    v is None
-                    or (
-                        isinstance(v, dict)
-                        and set(v.keys()) == {"env"}
-                        and isinstance(v.get("env"), str)
-                        and bool(ENV_VAR_PATTERN.match(v["env"]))
-                    )
+                is_valid_ref = v is None or (
+                    isinstance(v, dict)
+                    and set(v.keys()) == {"env"}
+                    and isinstance(v.get("env"), str)
+                    and bool(ENV_VAR_PATTERN.match(v["env"]))
                 )
                 if not is_valid_ref:
                     msg = (

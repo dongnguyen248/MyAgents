@@ -63,10 +63,7 @@ def test_split_rejects_wrong_part_counts():
         decomposer.split(title="T", requirement="x" * 20_000)
 
     seven = {
-        "parts": [
-            {"title": f"P{i}", "requirement": _PART + f"Part {i}."}
-            for i in range(7)
-        ],
+        "parts": [{"title": f"P{i}", "requirement": _PART + f"Part {i}."} for i in range(7)],
     }
     decomposer, _ = _decomposer(json.dumps(seven))
     with pytest.raises(ValueError, match="2..6 parts"):

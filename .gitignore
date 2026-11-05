@@ -26,10 +26,13 @@ dist/
 .coverage
 .coverage.*
 htmlcov/
-# Runtime artifacts
+# Runtime artifacts (repo root only: nested artifacts/ directories
+# inside src/ or tests/ are source, not output)
 /artifacts/
 .asf-evidence/
 *.log
+# Runtime data (the default SQLite run database lives in data/)
+data/
 
 # Node and editor
 node_modules/

@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 import copy
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -27,7 +27,7 @@ from asf.contracts.models import (
 from tests.unit.contract_models import assert_contract_binding, validator_for
 from tests.unit.purity import assert_pure_package
 
-T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 T_NAIVE = datetime(2026, 10, 20, 14, 0, 0)
 
 
@@ -396,13 +396,17 @@ class ContractBindingsTests(unittest.TestCase):
                                 allowed_asf_modules,
                                 f"Forbidden import '{alias.name}' in {py_file.name}",
                             )
-                elif isinstance(node, ast.ImportFrom):
-                    if node.level == 0 and node.module and node.module.startswith("asf."):
-                        self.assertIn(
-                            node.module,
-                            allowed_asf_modules,
-                            f"Forbidden import from '{node.module}' in {py_file.name}",
-                        )
+                elif (
+                    isinstance(node, ast.ImportFrom)
+                    and node.level == 0
+                    and node.module
+                    and node.module.startswith("asf.")
+                ):
+                    self.assertIn(
+                        node.module,
+                        allowed_asf_modules,
+                        f"Forbidden import from '{node.module}' in {py_file.name}",
+                    )
 
     def test_helper_self_test_fails_on_wrong_model(self):
         from asf.contracts.models import ContractModel
@@ -473,4 +477,3 @@ class ContractBindingsTests(unittest.TestCase):
                     retryable=False,
                 ),
             )
-

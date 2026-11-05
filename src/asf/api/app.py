@@ -103,11 +103,16 @@ def create_app(service: FactoryService) -> FastAPI:
         sinceHours: float | None = None,
     ) -> list[dict[str, Any]]:
         criteria = {
-            key: value for key, value in {
-                "projectId": projectId, "agentId": agentId, "status": status,
-                "workflowType": workflowType, "priority": priority,
+            key: value
+            for key, value in {
+                "projectId": projectId,
+                "agentId": agentId,
+                "status": status,
+                "workflowType": workflowType,
+                "priority": priority,
                 "sinceHours": sinceHours,
-            }.items() if value is not None
+            }.items()
+            if value is not None
         }
         return service.list_tasks(criteria)
 
@@ -142,7 +147,8 @@ def create_app(service: FactoryService) -> FastAPI:
 
     @app.put("/projects/{project_id}")
     async def update_project(
-        project_id: str, payload: dict[str, Any] = Body(...),
+        project_id: str,
+        payload: dict[str, Any] = Body(...),
     ) -> Any:
         try:
             return service.update_project(project_id, payload)
@@ -170,7 +176,9 @@ def create_app(service: FactoryService) -> FastAPI:
     async def decide_approval(approval_id: str, body: DecisionBody) -> Any:
         try:
             return service.decide_approval(
-                approval_id, decision=body.decision, comment=body.comment,
+                approval_id,
+                decision=body.decision,
+                comment=body.comment,
             )
         except ApprovalError as error:
             return JSONResponse(status_code=409, content={"detail": error.code})
@@ -186,10 +194,14 @@ def create_app(service: FactoryService) -> FastAPI:
         limit: int | None = Query(default=None, ge=1),
     ) -> list[dict[str, Any]]:
         criteria = {
-            key: value for key, value in {
-                "agentId": agentId, "taskId": taskId,
-                "projectId": projectId, "limit": limit,
-            }.items() if value is not None
+            key: value
+            for key, value in {
+                "agentId": agentId,
+                "taskId": taskId,
+                "projectId": projectId,
+                "limit": limit,
+            }.items()
+            if value is not None
         }
         return service.list_activity(criteria)
 
@@ -241,7 +253,8 @@ def create_app(service: FactoryService) -> FastAPI:
                 if await request.is_disconnected():
                     return
                 fresh = [
-                    event for event in service.list_activity({"limit": 500})
+                    event
+                    for event in service.list_activity({"limit": 500})
                     if event["id"] not in seen
                 ]
                 for event in reversed(fresh):  # emit chronologically
@@ -256,7 +269,10 @@ def create_app(service: FactoryService) -> FastAPI:
     async def start_run(body: RunBody) -> Any:
         try:
             run = service.start_run(
-                body.taskId, body.projectId, inputs=body.inputs, context=body.context,
+                body.taskId,
+                body.projectId,
+                inputs=body.inputs,
+                context=body.context,
             )
         except ValueError as error:
             return JSONResponse(status_code=422, content={"detail": str(error)})

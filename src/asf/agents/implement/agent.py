@@ -4,6 +4,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from asf.agents._shared.code_agents import task_item as find_task_item
 from asf.agents._shared.codegen import (
     changeset_secret_issues,
     normalize_changeset_operations,
@@ -152,9 +153,7 @@ class ImplementAgent(BaseAgent):
         spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
         spec_art_idx = -1
         if len(spec_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type SPEC is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type SPEC is required"))
         else:
             spec_art = spec_arts[0]
             spec_art_idx = request.artifacts.index(spec_art)
@@ -184,9 +183,7 @@ class ImplementAgent(BaseAgent):
         plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
         plan_art_idx = -1
         if len(plan_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type PLAN is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type PLAN is required"))
         else:
             plan_art = plan_arts[0]
             plan_art_idx = request.artifacts.index(plan_art)
@@ -216,9 +213,7 @@ class ImplementAgent(BaseAgent):
         task_arts = [a for a in request.artifacts if a.type == "TASK"]
         task_art_idx = -1
         if len(task_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type TASK is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type TASK is required"))
         else:
             task_art = task_arts[0]
             task_art_idx = request.artifacts.index(task_art)
@@ -244,7 +239,6 @@ class ImplementAgent(BaseAgent):
                     )
                 )
 
-
         # 9. No CODE artifacts present (no revision mode)
         code_arts = [a for a in request.artifacts if a.type == "CODE"]
         if code_arts:
@@ -266,14 +260,8 @@ class ImplementAgent(BaseAgent):
         # 11. metadata.attempt, if present
         if "attempt" in request.metadata:
             attempt_val = request.metadata["attempt"]
-            if (
-                not isinstance(attempt_val, int)
-                or isinstance(attempt_val, bool)
-                or attempt_val < 1
-            ):
-                issues.append(
-                    Issue("metadata.attempt", "metadata.attempt must be an integer >= 1")
-                )
+            if not isinstance(attempt_val, int) or isinstance(attempt_val, bool) or attempt_val < 1:
+                issues.append(Issue("metadata.attempt", "metadata.attempt must be an integer >= 1"))
 
         # 12. SPEC+PLAN+TASK content size limit
         total_chars = 0
@@ -309,34 +297,16 @@ class ImplementAgent(BaseAgent):
         language = request.input.get("language")
         project_context = request.context.get("project")
 
-        # Find the task item in the TASK artifact (validated in _check)
-        task_item = None
-        if isinstance(task_art.content, dict):
-            content = task_art.content
-            # Tasks may be in content["tasks"] directly or in content["text"] as JSON string
-            tasks = None
-            if isinstance(content.get("tasks"), list):
-                tasks = content["tasks"]
-            elif isinstance(content.get("text"), str):
-                try:
-                    import json as _json
-                    task_content = _json.loads(content["text"])
-                    if isinstance(task_content.get("tasks"), list):
-                        tasks = task_content["tasks"]
-                except _json.JSONDecodeError:
-                    pass
-            if tasks:
-                for task in tasks:
-                    if task.get("id") == task_item_id:
-                        task_item = task
-                        break
-
-        # task_item is guaranteed to exist due to _check validation
-        if task_item is None:
+        # Find the task item in the TASK artifact through the one
+        # shared lookup (its existence is validated in _check; the
+        # conversion below keeps the defensive path's error surface).
+        try:
+            task_item = find_task_item(task_art, task_item_id)
+        except ValueError:
             raise invalid_response(
                 f"Task item '{task_item_id}' not found in TASK artifact",
                 details={"taskItemId": task_item_id},
-            )
+            ) from None
         expected_files = task_item.get("expectedFiles", [])
 
         # Validate expected_files with shared path validator
@@ -368,13 +338,15 @@ class ImplementAgent(BaseAgent):
                         "maxBytes": MAX_FILE_SIZE_BYTES,
                         "actualBytes": e.max_bytes,
                     },
-                )
+                ) from None
 
         # Build messages (the output-format contract travels in the
         # user message: edit blocks by default, legacy JSON when the
         # agent is configured with edit_format="json").
         repo_map = build_repo_map(
-            self._repository, ref=ref, expected_files=expected_files,
+            self._repository,
+            ref=ref,
+            expected_files=expected_files,
             max_chars=self._repo_map_max_chars,
         )
         messages = build_implement_messages(
@@ -395,7 +367,8 @@ class ImplementAgent(BaseAgent):
             parameters=dict(self._parameters),
             model=self._model,
             metadata={
-                "agentId": self.metadata.id, "requestId": request.request_id,
+                "agentId": self.metadata.id,
+                "requestId": request.request_id,
                 # Stable prefix: system + the SPEC/PLAN message.
                 "cachePrefixMessages": 2 if len(messages) > 2 else 1,
                 **tier_metadata(request.context),
@@ -434,10 +407,16 @@ class ImplementAgent(BaseAgent):
             # "create" for a file that already exists is a "modify" in
             # effect), then validate the change set.
             changeset = normalize_changeset_operations(
-                changeset, ref, self._repository,
+                changeset,
+                ref,
+                self._repository,
             )
             validation_issues = self._validate_changeset(
-                changeset, expected_files, existing_files, ref, self._repository,
+                changeset,
+                expected_files,
+                existing_files,
+                ref,
+                self._repository,
             )
             if validation_issues:
                 raise RepairableOutputError(
@@ -559,8 +538,7 @@ class ImplementAgent(BaseAgent):
             raise RepairableOutputError(
                 "Model response does not match ChangeSet schema",
                 model_message=(
-                    "Model response does not match ChangeSet schema: "
-                    + str(details)[:300]
+                    "Model response does not match ChangeSet schema: " + str(details)[:300]
                 ),
                 details=details,
             ) from None

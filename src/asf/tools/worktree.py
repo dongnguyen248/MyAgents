@@ -36,6 +36,7 @@ line or a path.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import shutil
@@ -91,8 +92,11 @@ def run_git(repo: Path, *args: str) -> str:
     try:
         proc = subprocess.run(
             ["git", "-C", str(repo), *args],
-            capture_output=True, text=True, errors="replace",
-            timeout=_GIT_TIMEOUT_SECONDS, check=False,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=_GIT_TIMEOUT_SECONDS,
+            check=False,
         )
     except OSError as error:
         raise WorktreeError(f"Could not run git in {repo}: {error}") from None
@@ -103,8 +107,7 @@ def run_git(repo: Path, *args: str) -> str:
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip().splitlines()
         raise WorktreeError(
-            f"git {' '.join(args)} failed in {repo}: "
-            f"{detail[-1] if detail else 'unknown error'}",
+            f"git {' '.join(args)} failed in {repo}: {detail[-1] if detail else 'unknown error'}",
         )
     return proc.stdout
 
@@ -113,7 +116,10 @@ class GitWorktreeWorkspace:
     """Owns the worktree directories of every local git project."""
 
     def __init__(
-        self, worktrees_root: Path, *, cleanup_completed: bool = False,
+        self,
+        worktrees_root: Path,
+        *,
+        cleanup_completed: bool = False,
     ) -> None:
         self._root = Path(worktrees_root)
         self._cleanup_completed = cleanup_completed
@@ -154,7 +160,11 @@ class GitWorktreeWorkspace:
     # -- lifecycle --------------------------------------------------------
 
     def ensure(
-        self, project_root: Path, project_id: str, run_id: str, ref: str,
+        self,
+        project_root: Path,
+        project_id: str,
+        run_id: str,
+        ref: str,
     ) -> Path:
         """Creates the run's worktree if needed and returns its path."""
         path = self.worktree_path(project_id, run_id)
@@ -173,12 +183,20 @@ class GitWorktreeWorkspace:
                 run_git(project_root, "worktree", "add", str(path), branch)
             else:
                 run_git(
-                    project_root, "worktree", "add", "-b", branch,
-                    str(path), ref,
+                    project_root,
+                    "worktree",
+                    "add",
+                    "-b",
+                    branch,
+                    str(path),
+                    ref,
                 )
             logger.info(
                 "Created worktree for run %s of project %s at %s (branch %s)",
-                run_id, project_id, path, branch,
+                run_id,
+                project_id,
+                path,
+                branch,
             )
             return path
 
@@ -213,10 +231,8 @@ class GitWorktreeWorkspace:
                 run_git(project_root, "worktree", "remove", "--force", str(path))
             except WorktreeError:
                 shutil.rmtree(path, ignore_errors=True)
-                try:
+                with contextlib.suppress(WorktreeError):
                     run_git(project_root, "worktree", "prune")
-                except WorktreeError:
-                    pass
             removed = True
         branch = f"asf/{run_id}"
         if run_git(project_root, "branch", "--list", branch).strip():
@@ -225,7 +241,11 @@ class GitWorktreeWorkspace:
         return removed
 
     def finish(
-        self, project_root: Path, project_id: str, run_id: str, stage: str,
+        self,
+        project_root: Path,
+        project_id: str,
+        run_id: str,
+        stage: str,
     ) -> str:
         """Applies the end-of-run cleanup policy; returns the action."""
         if stage in {"FAILED", "CANCELLED"}:
@@ -254,10 +274,8 @@ class GitWorktreeWorkspace:
             base = self._root / project_id
             if not base.is_dir() or not self.is_git_repo(project_root):
                 continue
-            try:
+            with contextlib.suppress(WorktreeError):
                 run_git(project_root, "worktree", "prune")
-            except WorktreeError:
-                pass
             for child in sorted(base.iterdir()):
                 if not child.is_dir() or not _RUN_ID_PATTERN.match(child.name):
                     continue
@@ -274,6 +292,7 @@ class GitWorktreeWorkspace:
         if removed:
             logger.info(
                 "Startup sweep removed %d orphaned worktree(s): %s",
-                len(removed), ", ".join(removed),
+                len(removed),
+                ", ".join(removed),
             )
         return removed

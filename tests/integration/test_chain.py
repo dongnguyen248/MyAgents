@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from asf.agents.base import AgentRuntime
@@ -17,20 +17,22 @@ from asf.models.fake import ScriptedModelGateway
 from asf.tools.fake import InMemoryRepository
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 
 # Shared platform config and templates_dir for factory calls.
 # These chain suites script the legacy JSON code format end to end:
 # pin it (and no in-agent repair loop) explicitly — the blocks
 # format and the repair loop have their own suites.
-PLATFORM = PlatformConfig(agents={
-    "implement": AgentSettings(
-        settings={"editFormat": "json", "repairAttempts": 0},
-    ),
-    "fix": AgentSettings(
-        settings={"editFormat": "json", "repairAttempts": 0},
-    ),
-})
+PLATFORM = PlatformConfig(
+    agents={
+        "implement": AgentSettings(
+            settings={"editFormat": "json", "repairAttempts": 0},
+        ),
+        "fix": AgentSettings(
+            settings={"editFormat": "json", "repairAttempts": 0},
+        ),
+    }
+)
 TEMPLATES_DIR = REPO_ROOT / "templates"
 
 
@@ -144,28 +146,31 @@ None.
 
 def make_task_artifact() -> Artifact:
     """Create a sample TASK artifact."""
-    task_text = json.dumps({
-        "tasks": [
-            {
-                "id": "T1",
-                "title": "Create calculator module",
-                "milestoneRef": "M1",
-                "description": (
-                    "Implement add, subtract, multiply, divide "
-                    "functions in calculator.py"
-                ),
-                "acceptanceCriteria": [
-                    "Function add(a, b) returns a + b",
-                    "Function subtract(a, b) returns a - b",
-                    "Function multiply(a, b) returns a * b",
-                    "Function divide(a, b) returns a / b or raises ValueError for divide by zero",
-                ],
-                "dependsOn": [],
-                "expectedFiles": ["calculator.py"],
-                "verificationHint": "Run unit tests",
-            }
-        ]
-    }, indent=2)
+    task_text = json.dumps(
+        {
+            "tasks": [
+                {
+                    "id": "T1",
+                    "title": "Create calculator module",
+                    "milestoneRef": "M1",
+                    "description": (
+                        "Implement add, subtract, multiply, divide functions in calculator.py"
+                    ),
+                    "acceptanceCriteria": [
+                        "Function add(a, b) returns a + b",
+                        "Function subtract(a, b) returns a - b",
+                        "Function multiply(a, b) returns a * b",
+                        "Function divide(a, b) returns a / b or raises "
+                        "ValueError for divide by zero",
+                    ],
+                    "dependsOn": [],
+                    "expectedFiles": ["calculator.py"],
+                    "verificationHint": "Run unit tests",
+                }
+            ]
+        },
+        indent=2,
+    )
     return Artifact(
         id="task-1",
         type="TASK",
@@ -343,28 +348,31 @@ def test_task_agent_creates_valid_artifact():
     """TaskAgent creates a valid TASK artifact from SPEC and PLAN."""
     spec_art = make_spec_artifact()
     plan_art = make_plan_artifact()
-    task_reply = json.dumps({
-        "tasks": [
-            {
-                "id": "T1",
-                "title": "Create calculator module",
-                "milestoneRef": "M1",
-                "description": (
-                    "Implement add, subtract, multiply, divide "
-                    "functions in calculator.py"
-                ),
-                "acceptanceCriteria": [
-                    "Function add(a, b) returns a + b",
-                    "Function subtract(a, b) returns a - b",
-                    "Function multiply(a, b) returns a * b",
-                    "Function divide(a, b) returns a / b or raises ValueError for divide by zero",
-                ],
-                "dependsOn": [],
-                "expectedFiles": ["calculator.py"],
-                "verificationHint": "Run unit tests",
-            }
-        ]
-    }, indent=2)
+    task_reply = json.dumps(
+        {
+            "tasks": [
+                {
+                    "id": "T1",
+                    "title": "Create calculator module",
+                    "milestoneRef": "M1",
+                    "description": (
+                        "Implement add, subtract, multiply, divide functions in calculator.py"
+                    ),
+                    "acceptanceCriteria": [
+                        "Function add(a, b) returns a + b",
+                        "Function subtract(a, b) returns a - b",
+                        "Function multiply(a, b) returns a * b",
+                        "Function divide(a, b) returns a / b or raises "
+                        "ValueError for divide by zero",
+                    ],
+                    "dependsOn": [],
+                    "expectedFiles": ["calculator.py"],
+                    "verificationHint": "Run unit tests",
+                }
+            ]
+        },
+        indent=2,
+    )
     gateway = ScriptedModelGateway([task_reply])
     runtime = AgentRuntime(models=gateway, clock=lambda: T_AWARE, new_id=lambda: "id-1")
     agent = build_task_agent(runtime, PLATFORM, TEMPLATES_DIR)
@@ -386,23 +394,26 @@ def test_implement_agent_creates_valid_artifact():
     plan_art = make_plan_artifact()
     task_art = make_task_artifact()
 
-    implement_reply = json.dumps({
-        "changes": [
-            {
-                "path": "calculator.py",
-                "operation": "create",
-                "content": (
-                    "def add(a, b):\n    return a + b\n\n"
-                    "def subtract(a, b):\n    return a - b\n\n"
-                    "def multiply(a, b):\n    return a * b\n\n"
-                    "def divide(a, b):\n"
-                    "    if b == 0:\n"
-                    "        raise ValueError(\"Cannot divide by zero\")\n"
-                    "    return a / b\n"
-                ),
-            }
-        ]
-    }, indent=2)
+    implement_reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": (
+                        "def add(a, b):\n    return a + b\n\n"
+                        "def subtract(a, b):\n    return a - b\n\n"
+                        "def multiply(a, b):\n    return a * b\n\n"
+                        "def divide(a, b):\n"
+                        "    if b == 0:\n"
+                        '        raise ValueError("Cannot divide by zero")\n'
+                        "    return a / b\n"
+                    ),
+                }
+            ]
+        },
+        indent=2,
+    )
 
     gateway = ScriptedModelGateway([implement_reply])
     runtime = AgentRuntime(models=gateway, clock=lambda: T_AWARE, new_id=lambda: "id-1")
@@ -459,23 +470,26 @@ def test_full_chain_spec_to_implement():
     task_art = task_res.artifacts[0]
 
     # 4. ImplementAgent
-    implement_reply = json.dumps({
-        "changes": [
-            {
-                "path": "calculator.py",
-                "operation": "create",
-                "content": (
-                    "def add(a, b):\n    return a + b\n\n"
-                    "def subtract(a, b):\n    return a - b\n\n"
-                    "def multiply(a, b):\n    return a * b\n\n"
-                    "def divide(a, b):\n"
-                    "    if b == 0:\n"
-                    "        raise ValueError(\"Cannot divide by zero\")\n"
-                    "    return a / b\n"
-                ),
-            }
-        ]
-    }, indent=2)
+    implement_reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": (
+                        "def add(a, b):\n    return a + b\n\n"
+                        "def subtract(a, b):\n    return a - b\n\n"
+                        "def multiply(a, b):\n    return a * b\n\n"
+                        "def divide(a, b):\n"
+                        "    if b == 0:\n"
+                        '        raise ValueError("Cannot divide by zero")\n'
+                        "    return a / b\n"
+                    ),
+                }
+            ]
+        },
+        indent=2,
+    )
     implement_gateway = ScriptedModelGateway([implement_reply])
     implement_runtime = AgentRuntime(
         models=implement_gateway, clock=lambda: T_AWARE, new_id=lambda: "code-1"
@@ -505,15 +519,18 @@ def test_implement_chain_traceability_links():
     plan_art = make_plan_artifact()
     task_art = make_task_artifact()
 
-    implement_reply = json.dumps({
-        "changes": [
-            {
-                "path": "calculator.py",
-                "operation": "create",
-                "content": "def add(a, b):\n    return a + b\n"
-            }
-        ]
-    }, indent=2)
+    implement_reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": "def add(a, b):\n    return a + b\n",
+                }
+            ]
+        },
+        indent=2,
+    )
 
     gateway = ScriptedModelGateway([implement_reply])
     runtime = AgentRuntime(models=gateway, clock=lambda: T_AWARE, new_id=lambda: "id-1")
@@ -541,15 +558,18 @@ def test_implement_task_item_not_found():
     plan_art = make_plan_artifact()
     task_art = make_task_artifact()
 
-    implement_reply = json.dumps({
-        "changes": [
-            {
-                "path": "calculator.py",
-                "operation": "create",
-                "content": "def add(a, b):\n    return a + b\n"
-            }
-        ]
-    }, indent=2)
+    implement_reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": "def add(a, b):\n    return a + b\n",
+                }
+            ]
+        },
+        indent=2,
+    )
 
     gateway = ScriptedModelGateway([implement_reply])
     runtime = AgentRuntime(models=gateway, clock=lambda: T_AWARE, new_id=lambda: "id-1")
@@ -567,18 +587,21 @@ def test_implement_with_existing_repository_files():
     """ImplementAgent with existing files in repository."""
     repo = InMemoryRepository({"main": {"calculator.py": "def add(a, b):\n    return a + b\n"}})
 
-    implement_reply = json.dumps({
-        "changes": [
-            {
-                "path": "calculator.py",
-                "operation": "modify",
-                "content": (
-                    "def add(a, b):\n    return a + b\n\n"
-                    "def subtract(a, b):\n    return a - b\n"
-                ),
-            }
-        ]
-    }, indent=2)
+    implement_reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "modify",
+                    "content": (
+                        "def add(a, b):\n    return a + b\n\n"
+                        "def subtract(a, b):\n    return a - b\n"
+                    ),
+                }
+            ]
+        },
+        indent=2,
+    )
 
     gateway = ScriptedModelGateway([implement_reply])
     runtime = AgentRuntime(models=gateway, clock=lambda: T_AWARE, new_id=lambda: "id-1")
@@ -602,15 +625,18 @@ def test_chain_artifact_versions():
     plan_art = make_plan_artifact()
     task_art = make_task_artifact()
 
-    implement_reply = json.dumps({
-        "changes": [
-            {
-                "path": "calculator.py",
-                "operation": "create",
-                "content": "def add(a, b):\n    return a + b\n"
-            }
-        ]
-    }, indent=2)
+    implement_reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": "def add(a, b):\n    return a + b\n",
+                }
+            ]
+        },
+        indent=2,
+    )
 
     gateway = ScriptedModelGateway([implement_reply])
     runtime = AgentRuntime(models=gateway, clock=lambda: T_AWARE, new_id=lambda: "id-1")
@@ -638,59 +664,71 @@ def test_implement_multiple_task_items():
         type="TASK",
         name="TASK.md",
         version="1",
-        content={"format": "json", "text": json.dumps({
-            "tasks": [
+        content={
+            "format": "json",
+            "text": json.dumps(
                 {
-                    "id": "T1",
-                    "title": "Create calculator module",
-                    "milestoneRef": "M1",
-                    "description": "Implement add function",
-                    "acceptanceCriteria": ["Function add(a, b) returns a + b"],
-                    "dependsOn": [],
-                    "expectedFiles": ["calculator.py"],
-                    "verificationHint": "Run unit tests",
+                    "tasks": [
+                        {
+                            "id": "T1",
+                            "title": "Create calculator module",
+                            "milestoneRef": "M1",
+                            "description": "Implement add function",
+                            "acceptanceCriteria": ["Function add(a, b) returns a + b"],
+                            "dependsOn": [],
+                            "expectedFiles": ["calculator.py"],
+                            "verificationHint": "Run unit tests",
+                        },
+                        {
+                            "id": "T2",
+                            "title": "Create test module",
+                            "milestoneRef": "M1",
+                            "description": "Write unit tests",
+                            "acceptanceCriteria": ["Tests for add function"],
+                            "dependsOn": ["T1"],
+                            "expectedFiles": ["test_calculator.py"],
+                            "verificationHint": "Run pytest",
+                        },
+                    ]
                 },
-                {
-                    "id": "T2",
-                    "title": "Create test module",
-                    "milestoneRef": "M1",
-                    "description": "Write unit tests",
-                    "acceptanceCriteria": ["Tests for add function"],
-                    "dependsOn": ["T1"],
-                    "expectedFiles": ["test_calculator.py"],
-                    "verificationHint": "Run pytest",
-                },
-            ]
-        }, indent=2)},
+                indent=2,
+            ),
+        },
         created_by="agent-task",
         created_at=T_AWARE,
     )
 
-    implement_reply_t1 = json.dumps({
-        "changes": [
-            {
-                "path": "calculator.py",
-                "operation": "create",
-                "content": "def add(a, b):\n    return a + b\n"
-            }
-        ]
-    }, indent=2)
+    implement_reply_t1 = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": "def add(a, b):\n    return a + b\n",
+                }
+            ]
+        },
+        indent=2,
+    )
 
-    implement_reply_t2 = json.dumps({
-        "changes": [
-            {
-                "path": "test_calculator.py",
-                "operation": "create",
-                "content": (
-                    "import unittest\n"
-                    "from calculator import add\n\n"
-                    "class TestCalculator(unittest.TestCase):\n"
-                    "    def test_add(self):\n"
-                    "        self.assertEqual(add(1, 2), 3)\n"
-                ),
-            }
-        ]
-    }, indent=2)
+    implement_reply_t2 = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "test_calculator.py",
+                    "operation": "create",
+                    "content": (
+                        "import unittest\n"
+                        "from calculator import add\n\n"
+                        "class TestCalculator(unittest.TestCase):\n"
+                        "    def test_add(self):\n"
+                        "        self.assertEqual(add(1, 2), 3)\n"
+                    ),
+                }
+            ]
+        },
+        indent=2,
+    )
 
     gateway = ScriptedModelGateway([implement_reply_t1, implement_reply_t2])
     nid = counter_id("id-")
@@ -719,15 +757,18 @@ def test_implement_output_contains_rendered_text():
     plan_art = make_plan_artifact()
     task_art = make_task_artifact()
 
-    implement_reply = json.dumps({
-        "changes": [
-            {
-                "path": "calculator.py",
-                "operation": "create",
-                "content": "def add(a, b):\n    return a + b\n"
-            }
-        ]
-    }, indent=2)
+    implement_reply = json.dumps(
+        {
+            "changes": [
+                {
+                    "path": "calculator.py",
+                    "operation": "create",
+                    "content": "def add(a, b):\n    return a + b\n",
+                }
+            ]
+        },
+        indent=2,
+    )
 
     gateway = ScriptedModelGateway([implement_reply])
     runtime = AgentRuntime(models=gateway, clock=lambda: T_AWARE, new_id=lambda: "id-1")

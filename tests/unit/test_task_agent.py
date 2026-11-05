@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,7 @@ from asf.models.fake import ScriptedModelGateway
 from tests.unit.contract_models import validator_for
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=timezone.utc)
+T_AWARE = datetime(2026, 10, 20, 14, 0, 0, tzinfo=UTC)
 
 
 def counter_id(prefix: str = "id-"):
@@ -905,9 +905,7 @@ class TaskAgentTests(unittest.TestCase):
         agent, gateway = self._make_agent([])
         valid_spec = self._make_spec_artifact()
         valid_plan = self._make_plan_artifact()
-        req = self._make_request(
-            spec_artifact=valid_spec, plan_artifact=valid_plan, language=""
-        )
+        req = self._make_request(spec_artifact=valid_spec, plan_artifact=valid_plan, language="")
         val_res = agent.validate(req)
         self.assertFalse(val_res.valid)
         paths = [err.details.get("path") for err in val_res.errors]
@@ -920,9 +918,7 @@ class TaskAgentTests(unittest.TestCase):
         agent, gateway = self._make_agent([])
         valid_spec = self._make_spec_artifact()
         valid_plan = self._make_plan_artifact()
-        req = self._make_request(
-            spec_artifact=valid_spec, plan_artifact=valid_plan, language="   "
-        )
+        req = self._make_request(spec_artifact=valid_spec, plan_artifact=valid_plan, language="   ")
         val_res = agent.validate(req)
         self.assertFalse(val_res.valid)
         paths = [err.details.get("path") for err in val_res.errors]
@@ -1121,10 +1117,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res_missing.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res_missing.errors[0].details)
         self.assertTrue(
-            any(
-                "tasks" in str(res_missing.errors[0].details["parseError"])
-                for _ in [0]
-            )
+            any("tasks" in str(res_missing.errors[0].details["parseError"]) for _ in [0])
         )
 
     def test_reply_tasks_not_a_list_returns_parse_error(self):
@@ -1134,10 +1127,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res_not_list.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res_not_list.errors[0].details)
         self.assertTrue(
-            any(
-                "tasks" in str(res_not_list.errors[0].details["parseError"])
-                for _ in [0]
-            )
+            any("tasks" in str(res_not_list.errors[0].details["parseError"]) for _ in [0])
         )
 
     def test_reply_wrapped_in_code_fence_unwrapped_and_accepted(self):
@@ -1156,10 +1146,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res_bad_id.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res_bad_id.errors[0].details)
         self.assertTrue(
-            any(
-                "Task ID" in str(res_bad_id.errors[0].details["parseError"])
-                for _ in [0]
-            )
+            any("Task ID" in str(res_bad_id.errors[0].details["parseError"]) for _ in [0])
         )
 
     # === Batch 2: Strict parsing tests ===
@@ -1176,6 +1163,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_duplicate_depends_on(self):
         """Duplicate entries in dependsOn should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][1]["dependsOn"] = ["T1", "T1"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1188,6 +1176,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_duplicate_expected_files(self):
         """Duplicate entries in expectedFiles should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["expectedFiles"] = ["src/M1/task1.py", "src/M1/task1.py"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1308,6 +1297,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_empty_string_in_depends_on(self):
         """Empty string in dependsOn list should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][1]["dependsOn"] = [""]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1320,6 +1310,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_whitespace_string_in_depends_on(self):
         """Whitespace-only string in dependsOn list should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][1]["dependsOn"] = ["   "]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1350,6 +1341,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_id_number(self):
         """Number type for id field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["id"] = 123
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1362,6 +1354,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_id_bool(self):
         """Boolean type for id field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["id"] = True
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1374,6 +1367,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_id_null(self):
         """Null type for id field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["id"] = None
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1386,6 +1380,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_title_number(self):
         """Number type for title field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["title"] = 123
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1398,6 +1393,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_milestone_ref_number(self):
         """Number type for milestoneRef field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["milestoneRef"] = 123
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1410,6 +1406,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_description_number(self):
         """Number type for description field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["description"] = 123
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1422,6 +1419,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_verification_hint_number(self):
         """Number type for verificationHint field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["verificationHint"] = 123
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1434,6 +1432,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_acceptance_criteria_not_list(self):
         """Non-list type for acceptanceCriteria should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["acceptanceCriteria"] = "not a list"
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1446,6 +1445,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_depends_on_not_list(self):
         """Non-list type for dependsOn should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["dependsOn"] = "not a list"
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1458,6 +1458,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_wrong_type_expected_files_not_list(self):
         """Non-list type for expectedFiles should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["expectedFiles"] = "not a list"
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1470,6 +1471,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_extra_field_in_task(self):
         """Extra field in task object should be rejected (extra='forbid')."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["tasks"][0]["extraField"] = "not allowed"
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1482,6 +1484,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_missing_id_field(self):
         """Missing id field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         del data["tasks"][0]["id"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1494,6 +1497,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_missing_title_field(self):
         """Missing title field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         del data["tasks"][0]["title"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1506,6 +1510,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_missing_milestone_ref_field(self):
         """Missing milestoneRef field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         del data["tasks"][0]["milestoneRef"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1518,6 +1523,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_missing_description_field(self):
         """Missing description field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         del data["tasks"][0]["description"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1530,6 +1536,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_missing_acceptance_criteria_field(self):
         """Missing acceptanceCriteria field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         del data["tasks"][0]["acceptanceCriteria"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1542,6 +1549,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_missing_depends_on_field(self):
         """Missing dependsOn field should be accepted (has default_factory=list)."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         del data["tasks"][0]["dependsOn"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1552,6 +1560,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_missing_expected_files_field(self):
         """Missing expectedFiles field should be accepted (has default_factory=list)."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         del data["tasks"][0]["expectedFiles"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1562,6 +1571,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_missing_verification_hint_field(self):
         """Missing verificationHint field should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         del data["tasks"][0]["verificationHint"]
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1590,6 +1600,7 @@ class TaskAgentTests(unittest.TestCase):
     def test_strict_envelope_extra_top_level_key(self):
         """Extra top-level key should be rejected."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         data["extraKey"] = "not allowed"
         bad_reply = json_lib.dumps(data, indent=2)
@@ -1652,9 +1663,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res.status, "FAILED")
         self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("taskIssues", res.errors[0].details)
-        self.assertTrue(
-            any("sequential" in issue for issue in res.errors[0].details["taskIssues"])
-        )
+        self.assertTrue(any("sequential" in issue for issue in res.errors[0].details["taskIssues"]))
 
     def test_task_id_duplicate_rejected(self):
         """Test that duplicate task IDs are rejected."""
@@ -1679,10 +1688,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("taskIssues", res.errors[0].details)
         self.assertTrue(
-            any(
-                "not found in PLAN" in issue
-                for issue in res.errors[0].details["taskIssues"]
-            )
+            any("not found in PLAN" in issue for issue in res.errors[0].details["taskIssues"])
         )
 
     def test_milestone_ref_non_decreasing(self):
@@ -1752,6 +1758,7 @@ class TaskAgentTests(unittest.TestCase):
         )
         # Modify: T3 (in M3) depends on T1 (in M1) - should be valid since M1 is ancestor of M3
         import json as json_lib
+
         data = json_lib.loads(reply_valid)
         data["tasks"][2]["dependsOn"] = ["T1"]
         reply_valid = json_lib.dumps(data, indent=2)
@@ -1775,10 +1782,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res2.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("taskIssues", res2.errors[0].details)
         self.assertTrue(
-            any(
-                "not an ancestor" in issue
-                for issue in res2.errors[0].details["taskIssues"]
-            )
+            any("not an ancestor" in issue for issue in res2.errors[0].details["taskIssues"])
         )
 
     # === Batch 3: Ordering and dependencies tests ===
@@ -1786,17 +1790,14 @@ class TaskAgentTests(unittest.TestCase):
     def test_task_ordering_numeric_not_lexical_t10_after_t9(self):
         """Task IDs must be ordered numerically (T10 after T9), not lexically."""
         # Create a plan with many milestones
-        plan_text = (
-            "# PLAN: Test Plan\n## Linked SPEC\n...\n## Milestones\n"
-            + "\n".join(
-                [
-                    (
-                        f"### M{i}: Milestone {i}\n- Deliverables: X\n"
-                        f"- Acceptance criteria: Y\n- Depends on: {f'M{i-1}' if i > 1 else 'none'}"
-                    )
-                    for i in range(1, 13)
-                ]
-            )
+        plan_text = "# PLAN: Test Plan\n## Linked SPEC\n...\n## Milestones\n" + "\n".join(
+            [
+                (
+                    f"### M{i}: Milestone {i}\n- Deliverables: X\n"
+                    f"- Acceptance criteria: Y\n- Depends on: {f'M{i - 1}' if i > 1 else 'none'}"
+                )
+                for i in range(1, 13)
+            ]
         )
         plan_art = self._make_plan_artifact(text=plan_text)
 
@@ -1819,17 +1820,14 @@ class TaskAgentTests(unittest.TestCase):
     def test_milestone_ordering_numeric_not_lexical_m10_after_m9(self):
         """Milestone refs must be ordered numerically (M10 after M9), not lexically."""
         # Same plan with 12 milestones
-        plan_text = (
-            "# PLAN: Test Plan\n## Linked SPEC\n...\n## Milestones\n"
-            + "\n".join(
-                [
-                    (
-                        f"### M{i}: Milestone {i}\n- Deliverables: X\n"
-                        f"- Acceptance criteria: Y\n- Depends on: {f'M{i-1}' if i > 1 else 'none'}"
-                    )
-                    for i in range(1, 13)
-                ]
-            )
+        plan_text = "# PLAN: Test Plan\n## Linked SPEC\n...\n## Milestones\n" + "\n".join(
+            [
+                (
+                    f"### M{i}: Milestone {i}\n- Deliverables: X\n"
+                    f"- Acceptance criteria: Y\n- Depends on: {f'M{i - 1}' if i > 1 else 'none'}"
+                )
+                for i in range(1, 13)
+            ]
         )
         plan_art = self._make_plan_artifact(text=plan_text)
 
@@ -1868,30 +1866,34 @@ class TaskAgentTests(unittest.TestCase):
         # Task in M2 depending on task in M1 - INVALID since M1 is not ancestor
         # of M2 (they're independent)
         import json as json_lib
-        reply_invalid = json_lib.dumps({
-            "tasks": [
-                {
-                    "id": "T1",
-                    "title": "Task 1: Setup",
-                    "milestoneRef": "M1",
-                    "description": "Setup task",
-                    "acceptanceCriteria": ["AC1"],
-                    "dependsOn": [],
-                    "expectedFiles": ["src/m1/task1.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T2",
-                    "title": "Task 2: Core",
-                    "milestoneRef": "M2",
-                    "description": "Core task",
-                    "acceptanceCriteria": ["AC2"],
-                    "dependsOn": ["T1"],  # T2 (in M2) depends on T1 (in M1) - INVALID
-                    "expectedFiles": ["src/m2/task2.py"],
-                    "verificationHint": "Run tests for M2",
-                },
-            ]
-        }, indent=2)
+
+        reply_invalid = json_lib.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "T1",
+                        "title": "Task 1: Setup",
+                        "milestoneRef": "M1",
+                        "description": "Setup task",
+                        "acceptanceCriteria": ["AC1"],
+                        "dependsOn": [],
+                        "expectedFiles": ["src/m1/task1.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T2",
+                        "title": "Task 2: Core",
+                        "milestoneRef": "M2",
+                        "description": "Core task",
+                        "acceptanceCriteria": ["AC2"],
+                        "dependsOn": ["T1"],  # T2 (in M2) depends on T1 (in M1) - INVALID
+                        "expectedFiles": ["src/m2/task2.py"],
+                        "verificationHint": "Run tests for M2",
+                    },
+                ]
+            },
+            indent=2,
+        )
 
         agent, _ = self._make_agent([reply_invalid])
         res = agent.execute(self._make_request(plan_artifact=plan_art))
@@ -1903,40 +1905,43 @@ class TaskAgentTests(unittest.TestCase):
         )
 
         # Valid: Task in M3 depending on task in M1 - M1 is ancestor of M3
-        reply_valid = json_lib.dumps({
-            "tasks": [
-                {
-                    "id": "T1",
-                    "title": "Task 1: Setup",
-                    "milestoneRef": "M1",
-                    "description": "Setup task",
-                    "acceptanceCriteria": ["AC1"],
-                    "dependsOn": [],
-                    "expectedFiles": ["src/m1/task1.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T2",
-                    "title": "Task 2: Core",
-                    "milestoneRef": "M2",
-                    "description": "Core task",
-                    "acceptanceCriteria": ["AC2"],
-                    "dependsOn": [],
-                    "expectedFiles": ["src/m2/task2.py"],
-                    "verificationHint": "Run tests for M2",
-                },
-                {
-                    "id": "T3",
-                    "title": "Task 3: Integration",
-                    "milestoneRef": "M3",
-                    "description": "Integration task",
-                    "acceptanceCriteria": ["AC3"],
-                    "dependsOn": ["T1"],  # T3 (in M3) depends on T1 (in M1) - VALID
-                    "expectedFiles": ["src/m3/task3.py"],
-                    "verificationHint": "Run tests for M3",
-                },
-            ]
-        }, indent=2)
+        reply_valid = json_lib.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "T1",
+                        "title": "Task 1: Setup",
+                        "milestoneRef": "M1",
+                        "description": "Setup task",
+                        "acceptanceCriteria": ["AC1"],
+                        "dependsOn": [],
+                        "expectedFiles": ["src/m1/task1.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T2",
+                        "title": "Task 2: Core",
+                        "milestoneRef": "M2",
+                        "description": "Core task",
+                        "acceptanceCriteria": ["AC2"],
+                        "dependsOn": [],
+                        "expectedFiles": ["src/m2/task2.py"],
+                        "verificationHint": "Run tests for M2",
+                    },
+                    {
+                        "id": "T3",
+                        "title": "Task 3: Integration",
+                        "milestoneRef": "M3",
+                        "description": "Integration task",
+                        "acceptanceCriteria": ["AC3"],
+                        "dependsOn": ["T1"],  # T3 (in M3) depends on T1 (in M1) - VALID
+                        "expectedFiles": ["src/m3/task3.py"],
+                        "verificationHint": "Run tests for M3",
+                    },
+                ]
+            },
+            indent=2,
+        )
 
         agent2, _ = self._make_agent([reply_valid])
         res2 = agent2.execute(self._make_request(plan_artifact=plan_art))
@@ -1960,6 +1965,7 @@ class TaskAgentTests(unittest.TestCase):
             milestones=[("M1", "Setup"), ("M2", "Core"), ("M3", "Integration")],
         )
         import json as json_lib
+
         data = json_lib.loads(reply)
         data["tasks"][1]["dependsOn"] = ["T1"]
         data["tasks"][2]["dependsOn"] = ["T2"]
@@ -1996,41 +2002,45 @@ class TaskAgentTests(unittest.TestCase):
         # Task in M2 depending on task in M1 (same or ancestor milestone) - VALID
         # Need tasks for all 3 milestones (M1, M2, M3)
         import json as json_lib
-        reply = json_lib.dumps({
-            "tasks": [
-                {
-                    "id": "T1",
-                    "title": "Task 1: Setup",
-                    "milestoneRef": "M1",
-                    "description": "Setup task",
-                    "acceptanceCriteria": ["AC1"],
-                    "dependsOn": [],
-                    "expectedFiles": ["src/m1/task1.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T2",
-                    "title": "Task 2: Core",
-                    "milestoneRef": "M2",
-                    "description": "Core task",
-                    "acceptanceCriteria": ["AC2"],
-                    # T2 (in M2) depends on T1 (in M1) - VALID (M1 is ancestor of M2)
-                    "dependsOn": ["T1"],
-                    "expectedFiles": ["src/m2/task2.py"],
-                    "verificationHint": "Run tests for M2",
-                },
-                {
-                    "id": "T3",
-                    "title": "Task 3: Integration",
-                    "milestoneRef": "M3",
-                    "description": "Integration task",
-                    "acceptanceCriteria": ["AC3"],
-                    "dependsOn": ["T2"],
-                    "expectedFiles": ["src/m3/task3.py"],
-                    "verificationHint": "Run tests for M3",
-                },
-            ]
-        }, indent=2)
+
+        reply = json_lib.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "T1",
+                        "title": "Task 1: Setup",
+                        "milestoneRef": "M1",
+                        "description": "Setup task",
+                        "acceptanceCriteria": ["AC1"],
+                        "dependsOn": [],
+                        "expectedFiles": ["src/m1/task1.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T2",
+                        "title": "Task 2: Core",
+                        "milestoneRef": "M2",
+                        "description": "Core task",
+                        "acceptanceCriteria": ["AC2"],
+                        # T2 (in M2) depends on T1 (in M1) - VALID (M1 is ancestor of M2)
+                        "dependsOn": ["T1"],
+                        "expectedFiles": ["src/m2/task2.py"],
+                        "verificationHint": "Run tests for M2",
+                    },
+                    {
+                        "id": "T3",
+                        "title": "Task 3: Integration",
+                        "milestoneRef": "M3",
+                        "description": "Integration task",
+                        "acceptanceCriteria": ["AC3"],
+                        "dependsOn": ["T2"],
+                        "expectedFiles": ["src/m3/task3.py"],
+                        "verificationHint": "Run tests for M3",
+                    },
+                ]
+            },
+            indent=2,
+        )
 
         agent, _ = self._make_agent([reply])
         res = agent.execute(self._make_request(plan_artifact=plan_art))
@@ -2048,40 +2058,44 @@ class TaskAgentTests(unittest.TestCase):
         plan_art = self._make_plan_artifact(text=plan_text)
 
         import json as json_lib
-        reply = json_lib.dumps({
-            "tasks": [
-                {
-                    "id": "T1",
-                    "title": "Task 1: Setup",
-                    "milestoneRef": "M1",
-                    "description": "Setup task",
-                    "acceptanceCriteria": ["AC1"],
-                    "dependsOn": [],
-                    "expectedFiles": ["src/m1/task1.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T2",
-                    "title": "Task 2: Core",
-                    "milestoneRef": "M2",
-                    "description": "Core task",
-                    "acceptanceCriteria": ["AC2"],
-                    "dependsOn": ["T1"],
-                    "expectedFiles": ["src/m2/task2.py"],
-                    "verificationHint": "Run tests for M2",
-                },
-                {
-                    "id": "T3",
-                    "title": "Task 3: Integration",
-                    "milestoneRef": "M3",
-                    "description": "Integration task",
-                    "acceptanceCriteria": ["AC3"],
-                    "dependsOn": ["T1"],  # T3 in M3 depends on T1 in M1 (transitive ancestor)
-                    "expectedFiles": ["src/m3/task3.py"],
-                    "verificationHint": "Run tests for M3",
-                },
-            ]
-        }, indent=2)
+
+        reply = json_lib.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "T1",
+                        "title": "Task 1: Setup",
+                        "milestoneRef": "M1",
+                        "description": "Setup task",
+                        "acceptanceCriteria": ["AC1"],
+                        "dependsOn": [],
+                        "expectedFiles": ["src/m1/task1.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T2",
+                        "title": "Task 2: Core",
+                        "milestoneRef": "M2",
+                        "description": "Core task",
+                        "acceptanceCriteria": ["AC2"],
+                        "dependsOn": ["T1"],
+                        "expectedFiles": ["src/m2/task2.py"],
+                        "verificationHint": "Run tests for M2",
+                    },
+                    {
+                        "id": "T3",
+                        "title": "Task 3: Integration",
+                        "milestoneRef": "M3",
+                        "description": "Integration task",
+                        "acceptanceCriteria": ["AC3"],
+                        "dependsOn": ["T1"],  # T3 in M3 depends on T1 in M1 (transitive ancestor)
+                        "expectedFiles": ["src/m3/task3.py"],
+                        "verificationHint": "Run tests for M3",
+                    },
+                ]
+            },
+            indent=2,
+        )
 
         agent, _ = self._make_agent([reply])
         res = agent.execute(self._make_request(plan_artifact=plan_art))
@@ -2097,30 +2111,34 @@ class TaskAgentTests(unittest.TestCase):
         plan_art = self._make_plan_artifact(text=plan_text)
 
         import json as json_lib
-        reply = json_lib.dumps({
-            "tasks": [
-                {
-                    "id": "T1",
-                    "title": "Task 1: Setup",
-                    "milestoneRef": "M1",
-                    "description": "Setup task",
-                    "acceptanceCriteria": ["AC1"],
-                    "dependsOn": [],
-                    "expectedFiles": ["src/m1/task1.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T2",
-                    "title": "Task 2: Core",
-                    "milestoneRef": "M2",
-                    "description": "Core task",
-                    "acceptanceCriteria": ["AC2"],
-                    "dependsOn": ["T1"],  # T2 in M2 depends on T1 in M1 - INVALID (unrelated)
-                    "expectedFiles": ["src/m2/task2.py"],
-                    "verificationHint": "Run tests for M2",
-                },
-            ]
-        }, indent=2)
+
+        reply = json_lib.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "T1",
+                        "title": "Task 1: Setup",
+                        "milestoneRef": "M1",
+                        "description": "Setup task",
+                        "acceptanceCriteria": ["AC1"],
+                        "dependsOn": [],
+                        "expectedFiles": ["src/m1/task1.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T2",
+                        "title": "Task 2: Core",
+                        "milestoneRef": "M2",
+                        "description": "Core task",
+                        "acceptanceCriteria": ["AC2"],
+                        "dependsOn": ["T1"],  # T2 in M2 depends on T1 in M1 - INVALID (unrelated)
+                        "expectedFiles": ["src/m2/task2.py"],
+                        "verificationHint": "Run tests for M2",
+                    },
+                ]
+            },
+            indent=2,
+        )
 
         agent, _ = self._make_agent([reply])
         res = agent.execute(self._make_request(plan_artifact=plan_art))
@@ -2138,40 +2156,44 @@ class TaskAgentTests(unittest.TestCase):
         plan_art = self._make_plan_artifact(text=plan_text)
 
         import json as json_lib
-        reply = json_lib.dumps({
-            "tasks": [
-                {
-                    "id": "T1",
-                    "title": "Task 1: Setup",
-                    "milestoneRef": "M1",
-                    "description": "Setup task",
-                    "acceptanceCriteria": ["AC1"],
-                    "dependsOn": [],
-                    "expectedFiles": ["src/m1/task1.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T2",
-                    "title": "Task 2: Core",
-                    "milestoneRef": "M2",
-                    "description": "Core task",
-                    "acceptanceCriteria": ["AC2"],
-                    "dependsOn": ["T1"],  # Valid - M1 is ancestor of M2
-                    "expectedFiles": ["src/m2/task2.py"],
-                    "verificationHint": "Run tests for M2",
-                },
-                {
-                    "id": "T3",
-                    "title": "Task 3: Integration",
-                    "milestoneRef": "M1",  # Back to M1
-                    "description": "Integration task",
-                    "acceptanceCriteria": ["AC3"],
-                    "dependsOn": ["T2"],  # T3 in M1 depends on T2 in M2 - INVALID (M2 is later)
-                    "expectedFiles": ["src/m1/task3.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-            ]
-        }, indent=2)
+
+        reply = json_lib.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "T1",
+                        "title": "Task 1: Setup",
+                        "milestoneRef": "M1",
+                        "description": "Setup task",
+                        "acceptanceCriteria": ["AC1"],
+                        "dependsOn": [],
+                        "expectedFiles": ["src/m1/task1.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T2",
+                        "title": "Task 2: Core",
+                        "milestoneRef": "M2",
+                        "description": "Core task",
+                        "acceptanceCriteria": ["AC2"],
+                        "dependsOn": ["T1"],  # Valid - M1 is ancestor of M2
+                        "expectedFiles": ["src/m2/task2.py"],
+                        "verificationHint": "Run tests for M2",
+                    },
+                    {
+                        "id": "T3",
+                        "title": "Task 3: Integration",
+                        "milestoneRef": "M1",  # Back to M1
+                        "description": "Integration task",
+                        "acceptanceCriteria": ["AC3"],
+                        "dependsOn": ["T2"],  # T3 in M1 depends on T2 in M2 - INVALID (M2 is later)
+                        "expectedFiles": ["src/m1/task3.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                ]
+            },
+            indent=2,
+        )
 
         agent, _ = self._make_agent([reply])
         res = agent.execute(self._make_request(plan_artifact=plan_art))
@@ -2182,76 +2204,78 @@ class TaskAgentTests(unittest.TestCase):
     def test_depends_on_later_task_same_milestone_rejected(self):
         """Dependency on later task number in same milestone rejected."""
         # Plan with M1
-        plan_text = (
-            "### M1: Setup\n- Deliverables: X\n- Acceptance criteria: Y\n- Depends on: none"
-        )
+        plan_text = "### M1: Setup\n- Deliverables: X\n- Acceptance criteria: Y\n- Depends on: none"
         plan_art = self._make_plan_artifact(text=plan_text)
 
         import json as json_lib
-        reply = json_lib.dumps({
-            "tasks": [
-                {
-                    "id": "T1",
-                    "title": "Task 1",
-                    "milestoneRef": "M1",
-                    "description": "Task 1",
-                    "acceptanceCriteria": ["AC1"],
-                    "dependsOn": [],
-                    "expectedFiles": ["src/m1/task1.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T2",
-                    "title": "Task 2",
-                    "milestoneRef": "M1",
-                    "description": "Task 2",
-                    "acceptanceCriteria": ["AC2"],
-                    "dependsOn": ["T1"],
-                    "expectedFiles": ["src/m1/task2.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T3",
-                    "title": "Task 3",
-                    "milestoneRef": "M1",
-                    "description": "Task 3",
-                    "acceptanceCriteria": ["AC3"],
-                    "dependsOn": ["T2"],  # Valid - T2 is earlier
-                    "expectedFiles": ["src/m1/task3.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T4",
-                    "title": "Task 4",
-                    "milestoneRef": "M1",
-                    "description": "Task 4",
-                    "acceptanceCriteria": ["AC4"],
-                    "dependsOn": ["T3"],  # Valid - T3 is earlier
-                    "expectedFiles": ["src/m1/task4.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T5",
-                    "title": "Task 5",
-                    "milestoneRef": "M1",
-                    "description": "Task 5",
-                    "acceptanceCriteria": ["AC5"],
-                    "dependsOn": ["T4"],  # Valid - T4 is earlier
-                    "expectedFiles": ["src/m1/task5.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-                {
-                    "id": "T6",
-                    "title": "Task 6",
-                    "milestoneRef": "M1",
-                    "description": "Task 6",
-                    "acceptanceCriteria": ["AC6"],
-                    "dependsOn": ["T5"],  # Valid - T5 is earlier
-                    "expectedFiles": ["src/m1/task6.py"],
-                    "verificationHint": "Run tests for M1",
-                },
-            ]
-        }, indent=2)
+
+        reply = json_lib.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "T1",
+                        "title": "Task 1",
+                        "milestoneRef": "M1",
+                        "description": "Task 1",
+                        "acceptanceCriteria": ["AC1"],
+                        "dependsOn": [],
+                        "expectedFiles": ["src/m1/task1.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T2",
+                        "title": "Task 2",
+                        "milestoneRef": "M1",
+                        "description": "Task 2",
+                        "acceptanceCriteria": ["AC2"],
+                        "dependsOn": ["T1"],
+                        "expectedFiles": ["src/m1/task2.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T3",
+                        "title": "Task 3",
+                        "milestoneRef": "M1",
+                        "description": "Task 3",
+                        "acceptanceCriteria": ["AC3"],
+                        "dependsOn": ["T2"],  # Valid - T2 is earlier
+                        "expectedFiles": ["src/m1/task3.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T4",
+                        "title": "Task 4",
+                        "milestoneRef": "M1",
+                        "description": "Task 4",
+                        "acceptanceCriteria": ["AC4"],
+                        "dependsOn": ["T3"],  # Valid - T3 is earlier
+                        "expectedFiles": ["src/m1/task4.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T5",
+                        "title": "Task 5",
+                        "milestoneRef": "M1",
+                        "description": "Task 5",
+                        "acceptanceCriteria": ["AC5"],
+                        "dependsOn": ["T4"],  # Valid - T4 is earlier
+                        "expectedFiles": ["src/m1/task5.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                    {
+                        "id": "T6",
+                        "title": "Task 6",
+                        "milestoneRef": "M1",
+                        "description": "Task 6",
+                        "acceptanceCriteria": ["AC6"],
+                        "dependsOn": ["T5"],  # Valid - T5 is earlier
+                        "expectedFiles": ["src/m1/task6.py"],
+                        "verificationHint": "Run tests for M1",
+                    },
+                ]
+            },
+            indent=2,
+        )
 
         agent, _ = self._make_agent([reply])
         res = agent.execute(self._make_request(plan_artifact=plan_art))
@@ -2260,17 +2284,14 @@ class TaskAgentTests(unittest.TestCase):
     def test_every_milestone_has_task_12_milestones(self):
         """Every PLAN milestone must have at least one task - test with 12 milestones."""
         # Plan with 12 milestones
-        plan_text = (
-            "# PLAN: Test Plan\n## Linked SPEC\n...\n## Milestones\n"
-            + "\n".join(
-                [
-                    (
-                        f"### M{i}: Milestone {i}\n- Deliverables: X\n"
-                        f"- Acceptance criteria: Y\n- Depends on: {f'M{i-1}' if i > 1 else 'none'}"
-                    )
-                    for i in range(1, 13)
-                ]
-            )
+        plan_text = "# PLAN: Test Plan\n## Linked SPEC\n...\n## Milestones\n" + "\n".join(
+            [
+                (
+                    f"### M{i}: Milestone {i}\n- Deliverables: X\n"
+                    f"- Acceptance criteria: Y\n- Depends on: {f'M{i - 1}' if i > 1 else 'none'}"
+                )
+                for i in range(1, 13)
+            ]
         )
         plan_art = self._make_plan_artifact(text=plan_text)
 
@@ -2291,17 +2312,14 @@ class TaskAgentTests(unittest.TestCase):
 
     def test_every_milestone_has_task_all_12_covered(self):
         """All 12 milestones covered by at least one task - should succeed."""
-        plan_text = (
-            "# PLAN: Test Plan\n## Linked SPEC\n...\n## Milestones\n"
-            + "\n".join(
-                [
-                    (
-                        f"### M{i}: Milestone {i}\n- Deliverables: X\n"
-                        f"- Acceptance criteria: Y\n- Depends on: {f'M{i-1}' if i > 1 else 'none'}"
-                    )
-                    for i in range(1, 13)
-                ]
-            )
+        plan_text = "# PLAN: Test Plan\n## Linked SPEC\n...\n## Milestones\n" + "\n".join(
+            [
+                (
+                    f"### M{i}: Milestone {i}\n- Deliverables: X\n"
+                    f"- Acceptance criteria: Y\n- Depends on: {f'M{i - 1}' if i > 1 else 'none'}"
+                )
+                for i in range(1, 13)
+            ]
         )
         plan_art = self._make_plan_artifact(text=plan_text)
 
@@ -2361,7 +2379,7 @@ class TaskAgentTests(unittest.TestCase):
                         f"AC{i}.4",
                         f"AC{i}.5",
                     ],  # Unique per task
-                    "dependsOn": [f"T{i-1}"] if i > 1 else [],
+                    "dependsOn": [f"T{i - 1}"] if i > 1 else [],
                     "expectedFiles": [f"src/task{i}.py"],
                     "verificationHint": "z" * 2000,
                 }
@@ -2370,10 +2388,12 @@ class TaskAgentTests(unittest.TestCase):
 
         # Use a PLAN with only M1 to avoid "milestone has no tasks" error
         spec_art = self._make_spec_artifact()
-        plan_art = self._make_plan_artifact(text=(
-            "# PLAN: Test Plan\n## Linked SPEC\nID: spec-123\nVersion: 1\n## Milestones\n"
-            "### M1: Setup\n- Deliverables: X\n- Acceptance criteria: Y\n- Depends on: none"
-        ))
+        plan_art = self._make_plan_artifact(
+            text=(
+                "# PLAN: Test Plan\n## Linked SPEC\nID: spec-123\nVersion: 1\n## Milestones\n"
+                "### M1: Setup\n- Deliverables: X\n- Acceptance criteria: Y\n- Depends on: none"
+            )
+        )
         req = self._make_request(spec_artifact=spec_art, plan_artifact=plan_art)
 
         agent, _ = self._make_agent([bad_reply])
@@ -2385,6 +2405,7 @@ class TaskAgentTests(unittest.TestCase):
     def _make_bad_reply(self, modifications: dict) -> str:
         """Create a bad reply by modifying the valid reply JSON."""
         import json as json_lib
+
         data = json_lib.loads(self.valid_reply)
         for path, value in modifications.items():
             # path is like "tasks[0].expectedFiles" or "tasks[0].acceptanceCriteria[0]"
@@ -2569,12 +2590,18 @@ class TaskAgentTests(unittest.TestCase):
 
         # Check all keys are camelCase (no snake_case)
         expected_keys = {
-            "id", "title", "milestoneRef", "description",
-            "acceptanceCriteria", "dependsOn", "expectedFiles", "verificationHint"
+            "id",
+            "title",
+            "milestoneRef",
+            "description",
+            "acceptanceCriteria",
+            "dependsOn",
+            "expectedFiles",
+            "verificationHint",
         }
         self.assertEqual(set(task.keys()), expected_keys)
         # Ensure no snake_case keys
-        for key in task.keys():
+        for key in task:
             self.assertNotIn("_", key, f"Key '{key}' should not contain underscore (snake_case)")
 
     def test_output_metadata_language_stored(self):
@@ -2720,9 +2747,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertFalse(val_res.valid)
         paths = [err.details.get("path") for err in val_res.errors]
         self.assertIn("artifacts", paths)
-        self.assertTrue(
-            any("exceeds" in err.message for err in val_res.errors)
-        )
+        self.assertTrue(any("exceeds" in err.message for err in val_res.errors))
 
         # Execute should also be REJECTED
         exec_res = agent.execute(req)
@@ -2757,10 +2782,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res.errors[0].details)
         self.assertTrue(
-            any(
-                "verificationHint" in str(res.errors[0].details["parseError"])
-                for _ in [0]
-            )
+            any("verificationHint" in str(res.errors[0].details["parseError"]) for _ in [0])
         )
 
     # === Batch 5: Revision prompts tests ===
@@ -3218,7 +3240,8 @@ class TaskAgentTests(unittest.TestCase):
         remaining = MAX_TASK_CHARS - len(spec_text) - len(plan_header)
         # Each milestone needs some content - use one milestone with large content
         milestone_content = (
-            "### M1: Setup\n- Deliverables: " + "d" * max(0, remaining - 100)
+            "### M1: Setup\n- Deliverables: "
+            + "d" * max(0, remaining - 100)
             + "\n- Acceptance criteria: OK\n- Depends on: none"
         )
         plan_text = plan_header + milestone_content
@@ -3262,7 +3285,7 @@ class TaskAgentTests(unittest.TestCase):
         # Extract the JSON from the worked example (there are two ```json blocks:
         # 1. A placeholder with { ...task object... }
         # 2. The actual worked example)
-        matches = re.findall(r'```json\n(.*?)\n```', template_text, re.DOTALL)
+        matches = re.findall(r"```json\n(.*?)\n```", template_text, re.DOTALL)
         self.assertGreaterEqual(len(matches), 2, "Expected at least two JSON blocks in template")
 
         # The second block should be the actual worked example
@@ -3332,6 +3355,7 @@ class TaskAgentTests(unittest.TestCase):
         ]
 
         from asf.agents.plan.milestones import Milestone
+
         plan_milestones = [
             Milestone(
                 id="M1",
@@ -3404,9 +3428,7 @@ class TaskAgentTests(unittest.TestCase):
                     )
                 }
             ),
-            agents={
-                "task": AgentSettings(model_profile="test-profile")
-            }
+            agents={"task": AgentSettings(model_profile="test-profile")},
         )
         templates_dir = REPO_ROOT / "templates"
 
@@ -3445,9 +3467,7 @@ class TaskAgentTests(unittest.TestCase):
                         )
                     }
                 ),
-                agents={
-                    "task": AgentSettings(model_profile="non-existent-profile")
-                }
+                agents={"task": AgentSettings(model_profile="non-existent-profile")},
             )
             build_task_agent(runtime, platform, REPO_ROOT / "templates")
         self.assertIn("unknown modelProfile", str(cm.exception))
@@ -3529,9 +3549,7 @@ class TaskAgentTests(unittest.TestCase):
                     )
                 }
             ),
-            agents={
-                "plan": AgentSettings(model_profile="plan-profile")
-            }
+            agents={"plan": AgentSettings(model_profile="plan-profile")},
         )
         templates_dir = REPO_ROOT / "templates"
 
@@ -3621,10 +3639,7 @@ class TaskAgentTests(unittest.TestCase):
 
         # PLAN with no milestones - should fail validation with parse error
         plan_art = self._make_plan_artifact(
-            text=(
-                "# PLAN: No Milestones\n## Linked SPEC\n...\n## Description\n"
-                "No milestones here"
-            )
+            text=("# PLAN: No Milestones\n## Linked SPEC\n...\n## Description\nNo milestones here")
         )
 
         req = self._make_request(plan_artifact=plan_art)
@@ -3632,9 +3647,7 @@ class TaskAgentTests(unittest.TestCase):
 
         self.assertFalse(val_res.valid)
         # The exception handler catches the MilestoneValidationError
-        self.assertTrue(
-            any("failed to parse milestones" in err.message for err in val_res.errors)
-        )
+        self.assertTrue(any("failed to parse milestones" in err.message for err in val_res.errors))
 
         # Execute should also be REJECTED
         res = agent.execute(req)
@@ -3647,41 +3660,45 @@ class TaskAgentTests(unittest.TestCase):
         E.g., task list order: T1, T3, T2 where T2 depends on T3.
         """
         import json as json_lib
+
         # T1, T3, T2 - T2 is last but depends on T3 (already seen, higher number)
-        bad_reply = json_lib.dumps({
-            "tasks": [
-                {
-                    "id": "T1",
-                    "title": "Task 1",
-                    "milestoneRef": "M1",
-                    "description": "Task 1 desc",
-                    "acceptanceCriteria": ["AC1"],
-                    "dependsOn": [],
-                    "expectedFiles": [],
-                    "verificationHint": "hint1",
-                },
-                {
-                    "id": "T3",
-                    "title": "Task 3",
-                    "milestoneRef": "M1",
-                    "description": "Task 3 desc",
-                    "acceptanceCriteria": ["AC3"],
-                    "dependsOn": [],
-                    "expectedFiles": [],
-                    "verificationHint": "hint3",
-                },
-                {
-                    "id": "T2",
-                    "title": "Task 2",
-                    "milestoneRef": "M1",
-                    "description": "Task 2 desc",
-                    "acceptanceCriteria": ["AC2"],
-                    "dependsOn": ["T3"],  # Depends on T3 which is already seen, but T3 > T2
-                    "expectedFiles": [],
-                    "verificationHint": "hint2",
-                },
-            ]
-        }, indent=2)
+        bad_reply = json_lib.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "T1",
+                        "title": "Task 1",
+                        "milestoneRef": "M1",
+                        "description": "Task 1 desc",
+                        "acceptanceCriteria": ["AC1"],
+                        "dependsOn": [],
+                        "expectedFiles": [],
+                        "verificationHint": "hint1",
+                    },
+                    {
+                        "id": "T3",
+                        "title": "Task 3",
+                        "milestoneRef": "M1",
+                        "description": "Task 3 desc",
+                        "acceptanceCriteria": ["AC3"],
+                        "dependsOn": [],
+                        "expectedFiles": [],
+                        "verificationHint": "hint3",
+                    },
+                    {
+                        "id": "T2",
+                        "title": "Task 2",
+                        "milestoneRef": "M1",
+                        "description": "Task 2 desc",
+                        "acceptanceCriteria": ["AC2"],
+                        "dependsOn": ["T3"],  # Depends on T3 which is already seen, but T3 > T2
+                        "expectedFiles": [],
+                        "verificationHint": "hint2",
+                    },
+                ]
+            },
+            indent=2,
+        )
 
         agent, _ = self._make_agent([bad_reply])
         res = agent.execute(self._make_request())
