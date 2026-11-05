@@ -745,6 +745,7 @@ class FactoryService:
                     break
         steps: list[dict[str, Any]] = []
         failure_marked = False
+        skip_ids = set(self._skip_approvals_of(run))
         for step in definition.steps:
             main_id = _STEP_ID_BY_STEP_ID.get(step.id) or _STEP_ID_BY_STAGE.get(step.stage)
             if main_id is None or main_id not in _DASHBOARD_STEP_IDS:
@@ -787,13 +788,19 @@ class FactoryService:
             steps.append({"id": main_id, "label": step.name, "state": main_state})
             approval_id = _APPROVAL_STEP_IDS.get(main_id)
             if step.requires_approval and approval_id is not None:
+                approval_state = self._approval_step_state(
+                    step, stage, current_index, sequence, status,
+                    terminal_from_index,
+                )
+                if approval_state == "done" and main_id in skip_ids:
+                    # The run passed this gate because the task asked
+                    # to skip it — say so instead of implying a human
+                    # approved it.
+                    approval_state = "skipped"
                 steps.append({
                     "id": approval_id,
                     "label": f"{step.name} approval",
-                    "state": self._approval_step_state(
-                        step, stage, current_index, sequence, status,
-                        terminal_from_index,
-                    ),
+                    "state": approval_state,
                 })
         return steps
 
@@ -898,6 +905,9 @@ class FactoryService:
             # oversized at start: every agent call is upgraded to the
             # shared model (see COMPLEX_REQUIREMENT_CHARS).
             "modelTier": run.context.get("modelTier"),
+            # Approval gates this task asked to skip at creation; the
+            # matching approval steps render as "skipped" once passed.
+            "skippedApprovals": self._skip_approvals_of(run),
             "currentActivity": self._current_activity(run, steps),
             "steps": steps,
             "startedAt": _iso(run.started_at),
@@ -1539,6 +1549,39 @@ class FactoryService:
             if self._workflow_status(run) == "RUNNING":
                 self._drive_in_background(run.id)
 
+    def _validated_skip_approvals(self, value: Any) -> list[str]:
+        """Normalize the create-task approval-skip list.
+
+        Only steps that actually have an approval gate may be named;
+        anything else is a client error worth failing loudly on (the
+        API maps it to 422) rather than a silently ignored checkbox.
+        """
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) or not item for item in value
+        ):
+            raise ValueError("skipApprovals must be a list of approval step ids")
+        definition = self._definition()
+        valid = (
+            {step.id for step in definition.steps if step.requires_approval}
+            if definition is not None
+            else set(value)
+        )
+        unknown = sorted({item for item in value if item not in valid})
+        if unknown:
+            raise ValueError(
+                "skipApprovals names steps without an approval gate: "
+                + ", ".join(unknown)
+                + f" (approval steps: {', '.join(sorted(valid))})"
+            )
+        return list(dict.fromkeys(value))
+
+    @staticmethod
+    def _skip_approvals_of(run: WorkflowExecution) -> list[str]:
+        raw = run.context.get("skipApprovals")
+        if isinstance(raw, list):
+            return [item for item in raw if isinstance(item, str)]
+        return []
+
     @staticmethod
     def _requirement_tier(inputs: Mapping[str, Any] | None) -> str | None:
         """Classify a run from its requirement: "complex" or None.
@@ -1566,6 +1609,10 @@ class FactoryService:
         context: Mapping[str, Any] | None = None,
     ) -> WorkflowExecution:
         merged_context = dict(context or {})
+        if merged_context.get("skipApprovals") is not None:
+            merged_context["skipApprovals"] = self._validated_skip_approvals(
+                merged_context["skipApprovals"],
+            )
         tier = self._requirement_tier(inputs)
         if tier is not None:
             merged_context.setdefault("modelTier", tier)
@@ -1656,6 +1703,14 @@ class FactoryService:
             for key in ("title", "priority", "workflowType")
             if isinstance(run.context, Mapping) and run.context.get(key) is not None
         }
+        # The task's approval skips are part of how it was created:
+        # running it again keeps the same gates skipped.
+        if isinstance(run.context, Mapping):
+            skip = run.context.get("skipApprovals")
+            if isinstance(skip, list):
+                context["skipApprovals"] = [
+                    item for item in skip if isinstance(item, str)
+                ]
         new_run = self.start_run(
             run.task_id, run.project_id,
             inputs=dict(run.inputs), context=context or None,

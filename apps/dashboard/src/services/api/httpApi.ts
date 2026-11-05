@@ -53,6 +53,7 @@ export function createHttpApi(baseUrl: string): FactoryApi {
           ...(input.title ? { title: input.title } : {}),
           ...(input.priority ? { priority: input.priority } : {}),
           ...(input.workflowType ? { workflowType: input.workflowType } : {}),
+          ...(input.skipApprovals?.length ? { skipApprovals: input.skipApprovals } : {}),
         },
       }),
 

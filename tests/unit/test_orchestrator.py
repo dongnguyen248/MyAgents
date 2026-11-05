@@ -179,6 +179,27 @@ def test_rejection_routes_feedback_and_previous_output_to_same_agent(decision):
     assert not plan.run_called
 
 
+def test_skip_approval_advances_without_a_request():
+    engine, spec, plan, repo = make_engine(approval=True)
+    run = engine.start(
+        task_id="task-1", project_id="project-1",
+        inputs={"spec": {"requirement": "Add a feature"}},
+        context={"project": {"name": "example"}, "skipApprovals": ["spec"]},
+    )
+    run = engine.tick(run.id)
+    # The spec gate was never requested: the run went straight to the
+    # plan step, with an audit event instead of an approval record.
+    assert run.state.stage == "PLAN"
+    assert run.approval_id is None
+    assert repo.list_by_task("task-1") == []
+    assert any(
+        obs.event is not None and obs.event.event_type == "APPROVAL_SKIPPED"
+        for obs in run.observations
+    )
+    run = engine.tick(run.id)
+    assert run.state.stage == "COMPLETED"
+
+
 def test_revision_limit_escalates_without_another_execution():
     engine, _, _, _ = make_engine(approval=True, revisions=0)
     run = engine.tick(start(engine).id)

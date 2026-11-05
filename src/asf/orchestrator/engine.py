@@ -382,7 +382,11 @@ class Orchestrator:
                 "VALIDATION",
             )
             return
-        if step.requires_approval:
+        # Per-task approval skips (context key skipApprovals, chosen
+        # when the task was created): a skipped gate is not requested
+        # at all and the run advances straight through it below.
+        skipped = step.requires_approval and step.id in self._skip_approvals(run)
+        if step.requires_approval and not skipped:
             service, policy = self._approval_dependencies()
             spec = ApprovalSpec(
                 task_id=run.task_id, project_id=run.project_id,
@@ -414,6 +418,17 @@ class Orchestrator:
         run.feedback = []
         run.retry_attempts = 0
         run.state = apply(self._graph, run.state, Trigger.COMPLETE)
+        if skipped:
+            # Advance through the gate exactly as an approval would
+            # (REVIEW -> APPROVED -> next step), leaving an audit
+            # event instead of an approval record.
+            run.state = apply(self._graph, run.state, Trigger.APPROVED)
+            run.state = apply(self._graph, run.state, Trigger.ADVANCE)
+            self._event(
+                run, "APPROVAL_SKIPPED",
+                f"{step.name} approval skipped (task setting)",
+                metadata={"stepId": step.id},
+            )
         self._event(run, "WORKFLOW_ADVANCED", "Workflow step completed")
 
     def _publish_artifacts(self, run: WorkflowExecution, result: AgentResult) -> None:
@@ -525,6 +540,19 @@ class Orchestrator:
         run.retry_at = self._now() + timedelta(seconds=delay)
         self._event(run, "WORKFLOW_RETRY_SCHEDULED", "Retryable step failure scheduled")
         return True
+
+    @staticmethod
+    def _skip_approvals(run: WorkflowExecution) -> set[str]:
+        """Approval steps this run skips, from its context.
+
+        Set at task creation (context key ``skipApprovals``: step ids
+        such as "spec"/"plan"/"task"); validated against the workflow
+        definition by the API service before the run starts.
+        """
+        raw = run.context.get("skipApprovals")
+        if isinstance(raw, list):
+            return {item for item in raw if isinstance(item, str)}
+        return set()
 
     def _approval_dependencies(self) -> tuple[ApprovalService, ApprovalPolicy]:
         if self._approvals is None or self._approval_policy is None:

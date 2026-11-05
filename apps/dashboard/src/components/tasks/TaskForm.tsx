@@ -19,7 +19,8 @@ interface Props {
 /**
  * Starts a task: creates a workflow run on the chosen project with the
  * given requirement. The run then advances step by step (Workflows page)
- * and pauses for approval on the Approvals page.
+ * and pauses for approval on the Approvals page — except at any gate
+ * whose approval is skipped below.
  */
 export function TaskForm({ projects, onCreate, onCancel }: Props) {
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
@@ -29,6 +30,7 @@ export function TaskForm({ projects, onCreate, onCancel }: Props) {
   const [requirement, setRequirement] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
   const [workflowType, setWorkflowType] = useState<WorkflowType>('feature-development');
+  const [skip, setSkip] = useState({ spec: false, plan: false, task: false });
   const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
 
@@ -49,6 +51,7 @@ export function TaskForm({ projects, onCreate, onCancel }: Props) {
         requirement: requirement.trim(),
         priority,
         workflowType,
+        skipApprovals: (['spec', 'plan', 'task'] as const).filter((id) => skip[id]),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create task');
@@ -116,6 +119,23 @@ export function TaskForm({ projects, onCreate, onCancel }: Props) {
             placeholder="Build a small calculator module with add and subtract, plus unit tests."
           />
         </label>
+        <div className="field block">
+          <span>Skip approvals — for simple tasks, run straight through these gates without waiting for approval</span>
+          <div>
+            <label className="check">
+              <input type="checkbox" checked={skip.spec} onChange={(e) => setSkip({ ...skip, spec: e.target.checked })} />
+              Spec
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={skip.plan} onChange={(e) => setSkip({ ...skip, plan: e.target.checked })} />
+              Plan
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={skip.task} onChange={(e) => setSkip({ ...skip, task: e.target.checked })} />
+              Task breakdown
+            </label>
+          </div>
+        </div>
         {error && (
           <p className="alert" role="alert">
             {error}

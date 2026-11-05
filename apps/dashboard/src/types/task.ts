@@ -34,6 +34,8 @@ export interface StartRunInput {
   requirement: string;
   priority?: TaskPriority;
   workflowType?: WorkflowType;
+  /** Approval steps to skip for this task: 'spec' | 'plan' | 'task'. */
+  skipApprovals?: string[];
 }
 
 export interface TaskFilter {

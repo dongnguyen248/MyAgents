@@ -377,6 +377,26 @@ def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
     assert engine.get(run.id).state.stage == "COMPLETED"
 
 
+def test_run_with_all_approvals_skipped_needs_no_approvals(tmp_path: Path):
+    # Dong's simple-task case: every gate skipped at creation — the
+    # run drives itself to completion and no approval is ever created.
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    run = service.start_run(
+        "hands-free-skip", "vhpc",
+        inputs={"spec": {"requirement": "Simple task"}},
+        context={"skipApprovals": ["spec", "plan", "task"]},
+    )
+    service.wait_for_drives()
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "COMPLETED"
+    assert engine.get(run.id).state.stage == "COMPLETED"
+    assert service.list_approvals() == []
+    states = {step["id"]: step["state"] for step in view["steps"]}
+    assert states["spec_approval"] == "skipped"
+    assert states["plan_approval"] == "skipped"
+    assert states["task_approval"] == "skipped"
+
+
 def test_workflow_view_exposes_the_failure_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
