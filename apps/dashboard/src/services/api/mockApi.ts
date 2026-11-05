@@ -307,6 +307,68 @@ export const mockApi: FactoryApi = {
     return delay(workflow);
   },
 
+  resumeEscalation: (runId, reason) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return Promise.reject(new Error(`Run '${runId}' not found`));
+    if (!reason.trim()) return Promise.reject(new Error('reason is required'));
+    if (workflow.status !== 'ESCALATED') {
+      return Promise.reject(new Error('Only an escalated run can be resumed with a new fix budget'));
+    }
+    workflow.status = 'RUNNING';
+    workflow.waiting = { kind: 'STEP_RUNNING', since: new Date().toISOString(), reason: null, retryAt: null, budget: null, suggestedActions: [] };
+    const fix = workflow.steps.find((s) => s.id === 'fix');
+    if (fix) { fix.state = 'active'; fix.label = 'Fix code · fix 1/3'; }
+    workflow.updatedAt = new Date().toISOString();
+    return delay(workflow);
+  },
+
+  recoverRun: (runId, reason, retryInterrupted) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return Promise.reject(new Error(`Run '${runId}' not found`));
+    if (!reason.trim()) return Promise.reject(new Error('reason is required'));
+    workflow.status = retryInterrupted ? 'RUNNING' : 'FAILED';
+    if (!retryInterrupted) {
+      workflow.error = { code: 'AGENT_EXECUTION_FAILED', message: 'Interrupted dispatch not replayed', category: 'AGENT' };
+    }
+    workflow.updatedAt = new Date().toISOString();
+    return delay(workflow);
+  },
+
+  driveRun: (runId) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return Promise.reject(new Error(`Run '${runId}' not found`));
+    workflow.driver = { alive: true, lastTickAt: new Date().toISOString(), lastStopReason: null };
+    return delay(workflow);
+  },
+
+  failRun: (runId, reason) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return Promise.reject(new Error(`Run '${runId}' not found`));
+    if (!reason.trim()) return Promise.reject(new Error('reason is required'));
+    workflow.status = 'FAILED';
+    workflow.error = { code: 'OPERATOR_FAILED', message: `Failed by operator: ${reason}`, category: 'WORKFLOW' };
+    workflow.updatedAt = new Date().toISOString();
+    return delay(workflow);
+  },
+
+  pauseRun: (runId) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return Promise.reject(new Error(`Run '${runId}' not found`));
+    workflow.status = 'PAUSED';
+    workflow.waiting = { kind: 'PAUSED', since: new Date().toISOString(), reason: 'Paused by operator — no step will start until continued', retryAt: null, budget: null, suggestedActions: ['continue', 'cancel'] };
+    workflow.updatedAt = new Date().toISOString();
+    return delay(workflow);
+  },
+
+  continueRun: (runId) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return Promise.reject(new Error(`Run '${runId}' not found`));
+    workflow.status = 'RUNNING';
+    workflow.waiting = { kind: 'STEP_RUNNING', since: new Date().toISOString(), reason: null, retryAt: null, budget: null, suggestedActions: [] };
+    workflow.updatedAt = new Date().toISOString();
+    return delay(workflow);
+  },
+
   listProjects: () => delay(projectStore),
   createProject: (input) => {
     if (projectStore.some((p) => p.id === input.id)) {

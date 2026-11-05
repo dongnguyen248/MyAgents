@@ -49,3 +49,6 @@ jobs:
       # is covered; there is no separate lint script in this app.
       - name: Build (type-check + bundle)
         run: npm run build
+      - name: Dashboard unit tests
+        working-directory: apps/dashboard
+        run: npm test

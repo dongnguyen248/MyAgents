@@ -142,12 +142,19 @@ class RunBudgetSettings(ConfigModel):
     max_model_calls: int | None = Field(default=None, ge=1)
 
 
+class CodeLoopSettings(ConfigModel):
+    """The review/test/fix loop's per-item budget of fix attempts."""
+
+    max_fixes: int = Field(default=3, ge=0, le=20)
+
+
 class PlatformConfig(ConfigModel):
     version: Literal[1] = 1
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     paths: PathsConfig = Field(default_factory=PathsConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    code_loop: CodeLoopSettings = Field(default_factory=CodeLoopSettings)
     budget: RunBudgetSettings = Field(default_factory=RunBudgetSettings)
     source_control: ServiceConfig | None = None
     ci: ServiceConfig | None = None

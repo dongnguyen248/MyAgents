@@ -6,6 +6,7 @@ import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkflowDiagnostics } from '../../components/workflows/WorkflowDiagnostics';
+import { OperatorControls } from '../../components/workflows/OperatorControls';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
@@ -22,7 +23,6 @@ export function WorkflowDetailPage() {
   const [resumeError, setResumeError] = useState<string | undefined>();
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | undefined>();
-  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
 
   // While a run is live, keep the page fresh: refetch when the
@@ -66,7 +66,6 @@ export function WorkflowDetailPage() {
     setCancelling(true);
     try {
       const updated = await cancelWorkflow(workflowId);
-      setConfirmingCancel(false);
       // A run mid-step cannot stop instantly: the backend records the
       // request and the run flips to Cancelled when the step returns.
       if (updated.status !== 'CANCELLED') setCancelRequested(true);
@@ -92,26 +91,19 @@ export function WorkflowDetailPage() {
               actions={<><WorkflowStatusBadge status={workflow.status} /><Link className="btn" to={`/tasks/${workflow.taskId}`}>Open task</Link></>}
             />
             <WorkflowErrorBanner workflow={workflow} />
-            {['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
+            {['CANCELLED', 'COMPLETED'].includes(workflow.status) && (
               <Card>
                 <div className="filters">
-                  {workflow.status === 'FAILED' && (
-                    <button type="button" className="btn btn-primary" onClick={resume} disabled={resuming || retrying}>
-                      {resuming ? 'Resuming…' : 'Resume from failure'}
-                    </button>
-                  )}
-                  <button type="button" className={workflow.status === 'FAILED' ? 'btn' : 'btn btn-primary'} onClick={runAgain} disabled={retrying || resuming}>
+                  <button type="button" className="btn btn-primary" onClick={runAgain} disabled={retrying}>
                     {retrying ? 'Starting…' : 'Run again'}
                   </button>
                   <span className="muted small">
-                    {workflow.status === 'FAILED'
-                      ? 'Resume keeps the approved spec, plan and task breakdown and re-runs only the failed step. Run again starts over from the spec; either way this failed run stays as the record.'
-                      : 'Starts a fresh run of this task with its original requirement; this finished run stays as the record.'}
+                    Starts a fresh run of this task with its original requirement; this finished run stays as the record.
                   </span>
                 </div>
-                {(retryError || resumeError) && (
+                {retryError && (
                   <p className="alert" role="alert">
-                    {resumeError ?? retryError}
+                    {retryError}
                   </p>
                 )}
               </Card>
@@ -126,43 +118,35 @@ export function WorkflowDetailPage() {
               </Card>
             )}
             <RunLiveActivity workflow={workflow} />
-            {!['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
+            {cancelRequested && (
               <Card>
-                {cancelRequested ? (
-                  <p className="muted">
-                    Cancellation requested — the run stops as soon as its current step
-                    finishes and then shows as Cancelled. A step already calling the
-                    model cannot be interrupted mid-call.
-                  </p>
-                ) : confirmingCancel ? (
-                  <div className="filters">
-                    <span className="muted small">
-                      Cancel this run? It cannot be resumed afterwards — you can Run again
-                      from scratch, and this run stays as the record. A step already in
-                      progress finishes first.
-                    </span>
-                    <button type="button" className="btn btn-danger" onClick={cancel} disabled={cancelling}>
-                      {cancelling ? 'Cancelling…' : 'Yes, cancel run'}
-                    </button>
-                    <button type="button" className="btn" onClick={() => setConfirmingCancel(false)} disabled={cancelling}>
-                      Keep running
-                    </button>
-                  </div>
-                ) : (
-                  <div className="filters">
-                    <button type="button" className="btn btn-danger" onClick={() => setConfirmingCancel(true)}>
-                      Cancel run
-                    </button>
-                    <span className="muted small">Stops this run for good — it cannot be resumed.</span>
-                  </div>
-                )}
-                {cancelError && (
-                  <p className="alert" role="alert">
-                    {cancelError}
-                  </p>
-                )}
+                <p className="muted">
+                  Cancellation requested — the run stops as soon as its current step
+                  finishes and then shows as Cancelled. A step already calling the
+                  model cannot be interrupted mid-call.
+                </p>
               </Card>
             )}
+            {cancelError && (
+              <p className="alert" role="alert">
+                {cancelError}
+              </p>
+            )}
+            {(resumeError || retryError) && workflow.status === 'FAILED' && (
+              <p className="alert" role="alert">
+                {resumeError ?? retryError}
+              </p>
+            )}
+            <OperatorControls
+              workflow={workflow}
+              onChanged={detail.reload}
+              onResumeFailed={resume}
+              onRunAgain={runAgain}
+              resumeBusy={resuming}
+              runAgainBusy={retrying}
+              onCancel={cancel}
+              cancelBusy={cancelling}
+            />
             <div className="grid two-col">
               <Card title="Steps"><WorkflowStepper steps={workflow.steps} /></Card>
               <Card title="Execution history"><ActivityFeed events={events} showTask={false} /></Card>

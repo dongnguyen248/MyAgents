@@ -16,6 +16,7 @@ from asf.orchestrator.code_loop import (
     ESCALATED_STAGE,
     FIX_STAGE,
     FIX_STEP,
+    REWORK_STAGE,
     CodeLoopPolicy,
     code_steps,
     loop_graph,
@@ -34,6 +35,25 @@ from asf.state_machine.machine import InvalidTransition, RunState, allowed_trigg
 from asf.state_machine.status import kind_of, run_status, task_status
 from asf.state_machine.triggers import StageKind, Trigger
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
+
+_LOOP_STAGES = {FIX_STAGE, REWORK_STAGE, ESCALATED_STAGE}
+
+
+def _comparable_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    """Settings as compared at load time.
+
+    The code loop's ``max_fixes`` is masked out: it is an operator
+    budget, not a structural policy — raising it in the platform
+    config and restarting must not orphan every stored run (the
+    supported way out of an escalation is exactly that: raise the
+    budget, restart, resume). Every other field, including the
+    loop's structural options, still compares strictly.
+    """
+    comparable = dict(settings)
+    code_loop = comparable.get("codeLoop")
+    if isinstance(code_loop, dict):
+        comparable["codeLoop"] = {**code_loop, "max_fixes": 0}
+    return comparable
 
 
 class Orchestrator:
@@ -83,6 +103,7 @@ class Orchestrator:
         self._metrics = metrics
 
     def _settings(self) -> dict[str, Any]:
+        # (see _comparable_settings for the load-time comparison)
         return {
             "approvalPolicy": (
                 self._approval_policy.to_contract() if self._approval_policy else None
@@ -96,7 +117,9 @@ class Orchestrator:
             if self._store
             else self._runs[run_id]
         )
-        if run.definition != self._definition.to_contract() or run.settings != self._settings():
+        if run.definition != self._definition.to_contract() or (
+            _comparable_settings(run.settings) != _comparable_settings(self._settings())
+        ):
             raise ValueError("Stored workflow definition or execution policy differs")
         self._runs[run_id] = run
         return run
@@ -295,6 +318,8 @@ class Orchestrator:
         # The store's write lock is released when this block exits.
         token: str | None = None
         with self._edit(run_id, lock=True) as run:
+            if run.paused:
+                return self.get(run_id)
             if run.in_flight is not None:
                 raise ValueError("Interrupted dispatch requires explicit recover() before retry")
             kind = kind_of(self._graph, run.state.stage)
@@ -976,7 +1001,7 @@ class Orchestrator:
         run.retry_at = None
         self._event(run, "WORKFLOW_CANCELLED", "Workflow execution cancelled")
 
-    def resume(self, run_id: str, *, reason: str) -> WorkflowExecution:
+    def resume(self, run_id: str, *, reason: str, operator: str = "operator") -> WorkflowExecution:
         if not reason.strip():
             raise ValueError("An explicit operator reason is required")
         if run_id in self._active:
@@ -995,7 +1020,12 @@ class Orchestrator:
                 )
             run.retry_attempts = 0
             run.recovery_notes.append(reason)
-            self._event(run, "WORKFLOW_RESUMED", "Operator resumed an escalated execution")
+            self._event(
+                run,
+                "WORKFLOW_RESUMED",
+                "Operator resumed an escalated execution",
+                metadata={"reason": reason, "operator": operator},
+            )
         return self.get(run_id)
 
     def resume_failed(self, run_id: str) -> WorkflowExecution:
@@ -1021,6 +1051,27 @@ class Orchestrator:
                 "Interrupted dispatch requires explicit recover() before resume",
             )
         stage = self._failed_stage(source)
+        # An operator resuming a run that died in the code loop is
+        # explicitly granting it another round: the fix budget
+        # starts over (the spent FIX_STEP counter is dropped, like
+        # _next_item does between items) while the spec/plan/task
+        # revision counters are kept — those approvals are reused,
+        # not re-earned. retry_attempts is not carried over either
+        # (the fork constructor leaves it at 0).
+        revisions = dict(source.state.revisions)
+        fix_budget_reset = revisions.pop(FIX_STEP, None) is not None
+        # The failed step's dispatch-attempt counter also starts
+        # over, so its next STEP_STARTED reads "attempt 1", not a
+        # number accumulated across every fork of this run.
+        attempts = dict(source.attempts)
+        failed_step_id = FIX_STEP if stage in _LOOP_STAGES else None
+        if failed_step_id is None:
+            for step in self._definition.steps:
+                if stage in step.generated_stages():
+                    failed_step_id = step.id
+                    break
+        if failed_step_id is not None:
+            attempts.pop(failed_step_id, None)
         now = self._now()
         new_run_id = self._new_id()
         if not new_run_id.strip() or new_run_id in self._runs:
@@ -1029,14 +1080,14 @@ class Orchestrator:
             id=new_run_id,
             task_id=source.task_id,
             project_id=source.project_id,
-            state=RunState(stage=stage, revisions=dict(source.state.revisions)),
+            state=RunState(stage=stage, revisions=revisions),
             inputs=deepcopy(source.inputs),
             context=deepcopy(source.context),
             artifacts=deepcopy(source.artifacts),
             results=deepcopy(source.results),
             errors=deepcopy(source.errors),
             feedback=deepcopy(source.feedback),
-            attempts=dict(source.attempts),
+            attempts=attempts,
             approval_id=(
                 source.approval_id if kind_of(self._graph, stage) == StageKind.REVIEW else None
             ),
@@ -1053,6 +1104,11 @@ class Orchestrator:
                 *source.recovery_notes,
                 f"Resumed from failed run {source.id}: "
                 f"re-running the step that failed at stage {stage}",
+                *(
+                    ["Fix budget reset by operator resume: FIX_STEP counter back to 0"]
+                    if fix_budget_reset
+                    else []
+                ),
             ],
         )
         self._event(run, "WORKFLOW_RESUMED", f"Resumed from failed run {source.id}")
@@ -1101,6 +1157,7 @@ class Orchestrator:
         *,
         reason: str,
         retry_interrupted: bool = False,
+        operator: str = "operator",
     ) -> WorkflowExecution:
         if run_id in self._active or not reason.strip():
             raise ValueError("Recovery requires an inactive run and an operator reason")
@@ -1114,6 +1171,7 @@ class Orchestrator:
                     run,
                     "WORKFLOW_RECOVERED",
                     "Operator accepted possible duplicate external execution",
+                    metadata={"reason": reason, "operator": operator},
                 )
             else:
                 self._fail(
@@ -1122,6 +1180,64 @@ class Orchestrator:
                     "Interrupted dispatch not replayed",
                     "AGENT",
                 )
+        return self.get(run_id)
+
+    def fail_run(
+        self, run_id: str, *, reason: str, operator: str = "operator"
+    ) -> WorkflowExecution:
+        """Fail a live run under operator control.
+
+        For runs that will never move again on their own — an
+        escalation the operator gives up on, a stalled run whose
+        step is lost — so the failure is recorded (and resumable
+        via resume_failed) instead of the run lingering forever.
+        Terminal runs refuse. An interrupted dispatch marker is
+        cleared first: the operator's decision supersedes it.
+        """
+        if not reason.strip():
+            raise ValueError("An explicit operator reason is required")
+        if run_id in self._active:
+            raise ValueError("A running dispatch cannot be failed by an operator")
+        with self._edit(run_id) as run:
+            kind = kind_of(self._graph, run.state.stage)
+            if kind in (StageKind.COMPLETED, StageKind.FAILED, StageKind.CANCELLED):
+                raise InvalidTransition(run.state.stage, Trigger.FAIL.value)
+            run.in_flight = None
+            run.recovery_notes.append(reason)
+            self._event(
+                run,
+                "RUN_FAILED_BY_OPERATOR",
+                f"Operator failed the run: {reason}",
+                metadata={"reason": reason, "operator": operator},
+            )
+            self._fail(run, "OPERATOR_FAILED", f"Failed by operator: {reason}", "WORKFLOW")
+        return self.get(run_id)
+
+    def set_paused(
+        self, run_id: str, paused: bool, *, reason: str = "", operator: str = "operator"
+    ) -> WorkflowExecution:
+        """Set or clear the operator pause flag, with an audit event.
+
+        Pausing never interrupts a step mid-flight: tick() stops
+        claiming new steps, so the run parks at the next step
+        boundary. Terminal runs refuse a pause (nothing to pause);
+        clearing a pause is always allowed on a live run.
+        """
+        if run_id in self._active:
+            raise ValueError("A running dispatch cannot be (un)paused")
+        with self._edit(run_id) as run:
+            kind = kind_of(self._graph, run.state.stage)
+            if kind in (StageKind.COMPLETED, StageKind.FAILED, StageKind.CANCELLED):
+                raise InvalidTransition(run.state.stage, "PAUSE")
+            if run.paused == paused:
+                return self.get(run_id)
+            run.paused = paused
+            self._event(
+                run,
+                "RUN_PAUSED" if paused else "RUN_CONTINUED",
+                "Operator paused the run" if paused else "Operator continued the run",
+                metadata={"reason": reason, "operator": operator},
+            )
         return self.get(run_id)
 
     def flush_observations(self, run_id: str) -> WorkflowExecution:

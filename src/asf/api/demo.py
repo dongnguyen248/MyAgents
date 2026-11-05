@@ -854,7 +854,7 @@ def build_demo(
         # beyond that the run escalates for a human instead of dying at the
         # quality gate. Without this policy the engine stops the run on the
         # first failing verdict.
-        code_loop=CodeLoopPolicy(max_fixes=3),
+        code_loop=CodeLoopPolicy(max_fixes=platform.code_loop.max_fixes),
         budget=RunBudget(
             max_prompt_tokens=platform.budget.max_prompt_tokens,
             max_completion_tokens=platform.budget.max_completion_tokens,

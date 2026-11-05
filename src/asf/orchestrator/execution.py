@@ -50,6 +50,10 @@ class WorkflowExecution(BaseModel):
     updated_at: AwareDatetime
     retry_at: AwareDatetime | None = None
     retry_attempts: int = 0
+    # Operator pause: while set, tick() never claims a step. A step
+    # already dispatched when the pause lands finishes normally —
+    # the pause takes effect at the next step boundary.
+    paused: bool = False
     in_flight: str | None = None
     task_order: list[str] = Field(default_factory=list)
     item_index: int = 0

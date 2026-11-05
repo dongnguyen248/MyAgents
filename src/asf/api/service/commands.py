@@ -40,6 +40,8 @@ from asf.configuration.yamlio import deep_merge
 from asf.integrations.hosting.factory import DEFAULT_TOKEN_ENVS
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
+from asf.orchestrator.ports import ConcurrentModificationError
+from asf.state_machine.machine import InvalidTransition
 from asf.workflow.definition import WorkflowDefinition
 
 
@@ -57,6 +59,11 @@ class CommandsMixin:
     _drive_lock: threading.Lock
     _drive_active: set[str]
     _cancel_requested: set[str]
+    _stall_seconds: float
+    _stage_kind: Callable[[WorkflowExecution, str], str | None]
+    _workflow_status: Callable[[WorkflowExecution], str]
+    _is_stalled: Callable[[WorkflowExecution, str], bool]
+    _service_now: Callable[[WorkflowExecution], Any]
     _approval_view: Callable[[WorkflowExecution, Any], dict[str, Any]]
     _definition: Callable[..., WorkflowDefinition | None]
     _drive_in_background: Callable[[str], None]
@@ -575,6 +582,135 @@ class CommandsMixin:
                 child_inputs,
                 child_context,
             )
+
+    # ------------------------------------------------------------------
+    # operator run controls
+    # ------------------------------------------------------------------
+
+    def _operator_target(self, run_id: str) -> WorkflowExecution:
+        run = next((item for item in self._runs() if item.id == run_id), None)
+        if run is None:
+            raise KeyError(run_id)
+        return run
+
+    def _operator_call(self, action: str, call: Any) -> dict[str, Any] | None:
+        """Run one engine operator action with uniform conflict mapping.
+
+        A lost version race (Prompt 1) or a state the action does
+        not allow is a 409 for the API layer, never a silent
+        overwrite; the engine's own event (with reason + operator)
+        is the audit record.
+        """
+        try:
+            result = call()
+        except ConcurrentModificationError as error:
+            raise ValueError(f"Run changed concurrently; {action} was not applied") from error
+        except InvalidTransition as error:
+            raise ValueError(str(error)) from error
+        run_id = result.id
+        self._invalidate_runs_cache()
+        with suppress(RuntimeError):
+            self._engine.flush_observations(run_id)
+        return self.get_workflow(run_id)
+
+    def resume_escalation(
+        self, run_id: str, *, reason: str, operator: str = "operator"
+    ) -> dict[str, Any] | None:
+        """Grant an escalated run a fresh fix budget and drive it on.
+
+        Only a run whose stage kind is ESCALATED qualifies — the
+        engine enforces the same rule; the service check exists to
+        answer with a clear operator-facing message.
+        """
+        run = self._operator_target(run_id)
+        if self._stage_kind(run, run.state.stage) != "ESCALATED":
+            raise ValueError(
+                f"Run '{run_id}' is not escalated (stage {run.state.stage}); "
+                "only an escalated run can be resumed with a new fix budget"
+            )
+        view = self._operator_call(
+            "escalation resume",
+            lambda: self._engine.resume(run_id, reason=reason, operator=operator),
+        )
+        self._drive_in_background(run_id)
+        return view
+
+    def recover_run(
+        self,
+        run_id: str,
+        *,
+        reason: str,
+        retry_interrupted: bool,
+        operator: str = "operator",
+    ) -> dict[str, Any] | None:
+        """Recover a run whose dispatch was interrupted mid-step.
+
+        Refused while a drive thread is genuinely working the run
+        and the step is within the watchdog limit — that run is
+        running, not stuck. Past the limit (or with no live drive)
+        the operator's call wins.
+        """
+        run = self._operator_target(run_id)
+        if run.in_flight is None:
+            raise ValueError(f"Run '{run_id}' has no interrupted dispatch to recover")
+        age = (self._service_now(run) - run.updated_at).total_seconds()
+        if run_id in self._drive_active and age <= self._stall_seconds:
+            raise ValueError(
+                f"Run '{run_id}' is actively being driven "
+                f"(step in flight for {int(age)}s, watchdog {int(self._stall_seconds)}s); "
+                "recovery refused"
+            )
+        return self._operator_call(
+            "recover",
+            lambda: self._engine.recover(
+                run_id,
+                reason=reason,
+                retry_interrupted=retry_interrupted,
+                operator=operator,
+            ),
+        )
+
+    def drive_run(self, run_id: str) -> dict[str, Any] | None:
+        """(Re)start the background drive — idempotent by design."""
+        self._operator_target(run_id)
+        self._drive_in_background(run_id)
+        return self.get_workflow(run_id)
+
+    def fail_run(
+        self, run_id: str, *, reason: str, operator: str = "operator"
+    ) -> dict[str, Any] | None:
+        """Fail an escalated or stalled run under operator control."""
+        run = self._operator_target(run_id)
+        status = self._workflow_status(run)
+        if status != "ESCALATED" and not self._is_stalled(run, status):
+            raise ValueError(
+                f"Run '{run_id}' is {status}; only an escalated or stalled "
+                "run can be failed by an operator"
+            )
+        return self._operator_call(
+            "fail",
+            lambda: self._engine.fail_run(run_id, reason=reason, operator=operator),
+        )
+
+    def pause_run(
+        self, run_id: str, *, reason: str = "", operator: str = "operator"
+    ) -> dict[str, Any] | None:
+        self._operator_target(run_id)
+        return self._operator_call(
+            "pause",
+            lambda: self._engine.set_paused(run_id, True, reason=reason, operator=operator),
+        )
+
+    def continue_run(
+        self, run_id: str, *, reason: str = "", operator: str = "operator"
+    ) -> dict[str, Any] | None:
+        self._operator_target(run_id)
+        view = self._operator_call(
+            "continue",
+            lambda: self._engine.set_paused(run_id, False, reason=reason, operator=operator),
+        )
+        self._drive_in_background(run_id)
+        return view
 
     def tick_run(self, run_id: str) -> dict[str, Any] | None:
         self._invalidate_runs_cache()

@@ -7,6 +7,12 @@ logLevel: INFO
 # Concurrency bounds: how many runs may be driven at once, and how
 # many model calls may be in flight at once (protects provider quotas
 # from a burst of parallel runs).
+# Review/test/fix loop: how many fix attempts each task item gets
+# before the run escalates to an operator (raise it, restart, then
+# resume the escalated run to grant a fresh budget).
+codeLoop:
+  maxFixes: 3
+
 execution:
   maxConcurrentRuns: 2
   maxConcurrentModelCalls: 2
