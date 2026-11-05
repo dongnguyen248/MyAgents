@@ -51,16 +51,21 @@ def build_hosting_actions(
     clock: Callable[[], datetime],
     environ: Mapping[str, str] | None = None,
     transport: Transport | None = None,
+    tokens: Callable[[str], str | None] | None = None,
 ) -> dict[str, Callable[[AgentRequest], AgentResult]]:
     """Build the ``run-pipeline`` / ``await-merge`` action handlers."""
 
     def provider_for(request: AgentRequest) -> HostingProvider | None:
         profile = profiles(request.project_id) or {}
         repository = profile.get("repository")
+        repo = repository if isinstance(repository, Mapping) else None
+        if tokens is None:
+            return build_provider(repo, environ=environ, transport=transport)
         return build_provider(
-            repository if isinstance(repository, Mapping) else None,
+            repo,
             environ=environ,
             transport=transport,
+            stored_token=tokens(request.project_id),
         )
 
     def run_pipeline(request: AgentRequest) -> AgentResult:

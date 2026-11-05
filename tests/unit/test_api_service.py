@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ import pytest
 from asf.agents.base import AgentRuntime
 from asf.agents.plan.factory import build_plan_agent
 from asf.agents.spec.factory import build_spec_agent
+from asf.api.hosting_tokens import HostingTokens
 from asf.api.service import (
     FactoryService,
     ProjectConflictError,
@@ -138,11 +140,11 @@ def build_engine(store=None) -> Orchestrator:
     )
 
 
-def build_service(store=None) -> tuple[FactoryService, FakeMetrics]:
+def build_service(store=None, hosting_tokens=None) -> tuple[FactoryService, FakeMetrics]:
     metrics = FakeMetrics()
     service = FactoryService(
         build_engine(store), projects=PROJECTS, metrics=metrics,
-        store=store, clock=lambda: NOW,
+        store=store, clock=lambda: NOW, hosting_tokens=hosting_tokens,
     )
     return service, metrics
 
@@ -373,6 +375,55 @@ def test_update_project_unknown_and_id_change():
         service.update_project("nope", NEW_PROJECT)
     with pytest.raises(ValueError):
         service.update_project("proj-1", {**NEW_PROJECT, "id": "proj-9"})
+
+
+def test_project_hosting_token_lifecycle():
+    tokens = HostingTokens()
+    service, _metrics = build_service(hosting_tokens=tokens)
+
+    # Create with a token: stored apart from the profile, view shows
+    # only configured + last-4 hint, token appears nowhere else.
+    view = service.create_project(
+        {**NEW_PROJECT, "hostingToken": "glpat-secret-1234"},
+    )
+    assert view["hostingTokenConfigured"] is True
+    assert view["hostingTokenHint"] == "…1234"
+    assert "glpat-secret-1234" not in json.dumps(view)
+    assert "glpat-secret-1234" not in json.dumps(
+        service._project_profiles["proj-3"],
+    )
+    assert tokens.get("proj-3") == "glpat-secret-1234"
+
+    # An update without a token keeps the stored one.
+    view = service.update_project("proj-3", {"name": "Project Three"})
+    assert view["hostingTokenHint"] == "…1234"
+
+    # A new token replaces it.
+    view = service.update_project(
+        "proj-3", {"hostingToken": "glpat-other-9876"},
+    )
+    assert view["hostingTokenHint"] == "…9876"
+    assert tokens.get("proj-3") == "glpat-other-9876"
+
+    # The clear flag removes it (no URL on this project, so the env
+    # fallback reports not-configured).
+    view = service.update_project("proj-3", {"clearHostingToken": True})
+    assert view["hostingTokenConfigured"] is False
+    assert view["hostingTokenHint"] is None
+    assert tokens.get("proj-3") is None
+
+    # Deleting the project removes any stored token too.
+    service.update_project("proj-3", {"hostingToken": "glpat-secret-1234"})
+    service.delete_project("proj-3")
+    assert tokens.get("proj-3") is None
+
+
+def test_project_hosting_token_requires_a_store():
+    service, _metrics = build_service()
+    with pytest.raises(ValueError, match="no hosting-token store"):
+        service.create_project(
+            {**NEW_PROJECT, "hostingToken": "glpat-secret-1234"},
+        )
 
 
 def test_delete_project_rules():

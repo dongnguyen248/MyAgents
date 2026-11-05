@@ -41,6 +41,7 @@ from asf.agents.spec.factory import build_spec_agent
 from asf.agents.task.factory import build_task_agent
 from asf.agents.test.factory import build_test_agent
 from asf.api.app import create_app
+from asf.api.hosting_tokens import HostingTokens
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
 from asf.api.service import FactoryService
 from asf.approval.models import ApprovalPolicy
@@ -498,6 +499,13 @@ def build_demo(
         else db_path.parent / "model-settings.json"
     )
     model_settings = ModelSettings(settings_path)
+    # Per-project hosting tokens entered in the dashboard, kept beside
+    # the run DB like the model settings — never in the project YAML.
+    tokens_override = os.environ.get("ASF_HOSTING_TOKENS_FILE")
+    hosting_tokens = HostingTokens(
+        Path(tokens_override) if tokens_override
+        else db_path.parent / "hosting-tokens.json",
+    )
     runtime = AgentRuntime(
         models=SettingsRoutingGateway(
             model_settings, DemoRoutingGateway(templates_dir),
@@ -558,7 +566,9 @@ def build_demo(
         # quality gate. Without this policy the engine stops the run on the
         # first failing verdict.
         code_loop=CodeLoopPolicy(max_fixes=3),
-        actions=build_hosting_actions(profiles=profile_of, clock=clock),
+        actions=build_hosting_actions(
+            profiles=profile_of, clock=clock, tokens=hosting_tokens.get,
+        ),
         events=metrics if hasattr(metrics, "publish") else None,
         metrics=metrics if hasattr(metrics, "record") else None,
     )
@@ -581,6 +591,7 @@ def build_demo(
         on_project_updated=on_updated,
         on_project_deleted=on_deleted,
         model_settings=model_settings,
+        hosting_tokens=hosting_tokens,
     )
     service_ref["service"] = service
     return service, engine, store

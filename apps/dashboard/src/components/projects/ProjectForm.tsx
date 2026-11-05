@@ -41,6 +41,8 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
   const [workflow, setWorkflow] = useState(initial?.workflow ?? 'software-development');
   const [skills, setSkills] = useState((initial?.enabledSkills ?? []).join(', '));
   const [repoUrl, setRepoUrl] = useState(initial?.repository.url ?? '');
+  const [hostingToken, setHostingToken] = useState('');
+  const [clearToken, setClearToken] = useState(false);
   const [workspacePath, setWorkspacePath] = useState(initial?.repository.path ?? '');
   const [testCommand, setTestCommand] = useState(
     (initial?.configuration.testCommands?.[0] ?? []).join(' '),
@@ -93,6 +95,10 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
           // In edit mode an empty test command clears the stored one.
           ...(testCommands.length || editing ? { testCommands } : {}),
         },
+        // Write-only: a typed token replaces the stored one; the clear
+        // checkbox removes it. Blank + unchecked leaves it untouched.
+        ...(hostingToken.trim() ? { hostingToken: hostingToken.trim() } : {}),
+        ...(clearToken && !hostingToken.trim() ? { clearHostingToken: true } : {}),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project');
@@ -170,6 +176,34 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
             placeholder="https://github.com/owner/repo or https://gitlab.com/group/project"
           />
         </label>
+        <label className="field block">
+          <span>
+            Access token (optional, for the repository above)
+            {initial?.hostingTokenConfigured && (
+              <> — stored{initial.hostingTokenHint ? ` (${initial.hostingTokenHint})` : ' via the backend environment'}; leave blank to keep it</>
+            )}
+          </span>
+          <input
+            type="password"
+            value={hostingToken}
+            onChange={(e) => setHostingToken(e.target.value)}
+            placeholder={initial?.hostingTokenConfigured ? 'Paste a new token to replace the stored one' : 'Paste this project’s GitLab/GitHub token'}
+            autoComplete="off"
+          />
+        </label>
+        {initial?.hostingTokenConfigured && initial.hostingTokenHint && (
+          <label className="field block">
+            <span>
+              <input
+                type="checkbox"
+                checked={clearToken}
+                onChange={(e) => setClearToken(e.target.checked)}
+                disabled={Boolean(hostingToken.trim())}
+              />{' '}
+              Remove the stored token on save
+            </span>
+          </label>
+        )}
         <div className="form-grid">
           <label className="field">
             <span>Local folder path (optional)</span>
@@ -192,8 +226,10 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
           With a local folder set, agents read the project's real files, generated code is written into
           that folder, and the test command runs there for real. Without it, runs use the in-memory demo
           workspace. With a repository URL set, the CI step pushes the generated code to a branch on
-          GitLab/GitHub, opens a merge/pull request, and the run waits for it to merge — the access token
-          comes from the backend's environment (ASF_GITLAB_TOKEN / ASF_GITHUB_TOKEN), never from this form.
+          GitLab/GitHub, opens a merge/pull request, and the run waits for it to merge. The access token
+          is per project: paste it here and it is stored on the backend only — never in the project file
+          and never shown again (only its last 4 characters). Without one, the backend falls back to its
+          ASF_GITLAB_TOKEN / ASF_GITHUB_TOKEN environment variable.
         </p>
         {error && (
           <p className="alert" role="alert">

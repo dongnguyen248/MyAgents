@@ -44,6 +44,31 @@ def test_gitlab_nested_groups_and_dot_git_suffix():
     )
 
 
+def test_stored_token_wins_over_environment():
+    transport = FakeTransport()
+    transport.add("GET", "/pipelines", [])
+    provider = build_provider(
+        {"provider": "gitlab", "url": "https://gitlab.example.com/g/p"},
+        environ={"ASF_GITLAB_TOKEN": "env-token"},
+        transport=transport,
+        stored_token="stored-token",
+    )
+    assert isinstance(provider, GitLabProvider)
+    assert provider.pipeline_status(branch="asf/t1") is None
+    (call,) = transport.calls
+    assert call["headers"]["PRIVATE-TOKEN"] == "stored-token"
+
+
+def test_stored_token_alone_satisfies_the_token_requirement():
+    provider = build_provider(
+        {"provider": "gitlab", "url": "https://gitlab.example.com/g/p"},
+        environ={},
+        transport=FakeTransport(),
+        stored_token="stored-token",
+    )
+    assert isinstance(provider, GitLabProvider)
+
+
 def test_github_com_and_enterprise_api_bases():
     transport = FakeTransport()
     transport.add("GET", "/check-runs", {"total_count": 0, "check_runs": []})
