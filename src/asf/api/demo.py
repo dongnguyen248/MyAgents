@@ -75,7 +75,10 @@ from asf.tools.local import (
     WorkspaceRepository,
     WorkspaceSandbox,
 )
+from asf.tools.worktree import GitWorktreeWorkspace
 from asf.workflow.loader import load_workflow
+
+logger = logging.getLogger(__name__)
 
 _TASK_REPLY = json.dumps({
     "tasks": [{
@@ -514,18 +517,26 @@ class _WorkspaceBindingAgent:
 
     The repository/sandbox ports carry no project id, so before the code
     agents (implement, test, fix) execute, the workspace is bound to the
-    request's project; the routed ports then resolve that project's
-    ``repository.path`` folder, if it has one. The binding is a
+    request's project AND run; the routed ports then resolve that
+    project's ``repository.path`` folder — or, for a git project, the
+    run's own worktree — for the duration of the step. The binding is a
     ContextVar scoped to this execution (set here, reset in a finally),
     so runs of different projects driven in parallel stay isolated.
     For a project WITH a local folder, the whole execution also holds
     that project's lock: two runs of the same project never apply
     change sets or run commands against one working tree at once.
+
+    The test wrapper additionally commits the run's worktree when the
+    step's TEST_REPORT verdict is PASS, so the next item and the fix
+    loop build on the last green state (see asf.tools.worktree).
     """
 
-    def __init__(self, inner: Any, workspace: LocalWorkspace) -> None:
+    def __init__(
+        self, inner: Any, workspace: LocalWorkspace, *, role: str = "code",
+    ) -> None:
         self._inner = inner
         self._workspace = workspace
+        self._role = role
 
     def get_metadata(self) -> AgentMetadata:
         return self._inner.get_metadata()
@@ -534,14 +545,59 @@ class _WorkspaceBindingAgent:
         return self._inner.validate(request)
 
     def execute(self, request: AgentRequest) -> AgentResult:
-        token = self._workspace.bind(request.project_id)
+        run_id = request.metadata.get("runId")
+        token = self._workspace.bind(
+            request.project_id,
+            run_id if isinstance(run_id, str) and run_id else None,
+        )
         try:
             if self._workspace.has_local_root(request.project_id):
                 with self._workspace.project_lock(request.project_id):
-                    return self._inner.execute(request)
+                    result = self._inner.execute(request)
+                    self._commit_after_passing_tests(request, result)
+                    return result
             return self._inner.execute(request)
         finally:
             self._workspace.reset_binding(token)
+
+    def _commit_after_passing_tests(
+        self, request: AgentRequest, result: AgentResult,
+    ) -> None:
+        if self._role != "test":
+            return
+        report = next(
+            (a for a in result.artifacts if a.type == "TEST_REPORT"), None,
+        )
+        verdict = None
+        if report is not None and isinstance(report.content, dict):
+            structured = report.content.get("report")
+            if isinstance(structured, dict):
+                verdict = structured.get("verdict")
+        if verdict != "PASS":
+            return
+        code = next(
+            (a for a in request.artifacts if a.type == "CODE"), None,
+        )
+        item = None
+        if code is not None:
+            item = code.metadata.get("taskItemId")
+        item = item or request.input.get("taskItemId") or "?"
+        message = (
+            f"asf: task item {item} — code "
+            f"{code.id if code is not None else '?'} "
+            f"v{code.version if code is not None else '?'} (tests passed)"
+        )
+        try:
+            self._workspace.commit_current_worktree(message)
+        except Exception:
+            # The tests passed; losing the green-state commit must not
+            # fail the step — but it must be loud: the fix loop's
+            # baseline guarantee degrades without it.
+            logger.exception(
+                "Could not commit the worktree of project %s after "
+                "passing tests; the passing state is uncommitted",
+                request.project_id,
+            )
 
 
 def _profile_root(profile: ProjectProfile) -> str | None:
@@ -671,6 +727,10 @@ def build_demo(
     # real filesystem repository/sandbox adapters (agents read the actual
     # files, change sets land in the folder, test commands really run);
     # every other project keeps the in-memory/scripted fakes.
+    # Git projects get a per-run worktree under the data directory
+    # (beside the run database) instead of writes into the user's own
+    # working tree; see asf.tools.worktree for the state convention.
+    worktrees = GitWorktreeWorkspace(Path(db_path).parent / "worktrees")
     workspace = LocalWorkspace(
         {
             profile.id: root_path
@@ -682,6 +742,7 @@ def build_demo(
             for profile in projects.values()
             if (settings := _profile_sandbox_settings(profile)) is not None
         },
+        worktrees=worktrees,
     )
     repository = WorkspaceRepository(workspace, InMemoryRepository())
     sandbox = WorkspaceSandbox(workspace, ScriptedSandbox())
@@ -691,16 +752,16 @@ def build_demo(
     registry.register(build_task_agent(runtime, platform, templates_dir))
     registry.register(_WorkspaceBindingAgent(
         build_implement_agent(runtime, platform, templates_dir, repository),
-        workspace,
+        workspace, role="implement",
     ))
     registry.register(build_review_agent(runtime, platform, templates_dir))
     registry.register(_WorkspaceBindingAgent(
         build_test_agent(runtime, platform, templates_dir, sandbox),
-        workspace,
+        workspace, role="test",
     ))
     registry.register(_WorkspaceBindingAgent(
         build_fix_agent(runtime, platform, templates_dir, repository),
-        workspace,
+        workspace, role="fix",
     ))
 
     store = store if store is not None else SQLiteExecutionStore(db_path)
@@ -767,8 +828,28 @@ def build_demo(
         # whole (the failure is shown on the run).
         decomposer=RequirementDecomposer(runtime.models),
         max_concurrent_runs=platform.execution.max_concurrent_runs,
+        on_run_terminal=lambda run_id, project_id, stage: (
+            workspace.finish_run(project_id, run_id, stage)
+        ),
     )
     service_ref["service"] = service
+    # Startup sweep: worktrees whose run ended FAILED/CANCELLED (or
+    # whose run the store no longer knows) while the backend was down
+    # are orphans — remove them before anything drives again.
+    def _stage_of(run_id: str) -> str | None:
+        try:
+            execution = store.get_execution(run_id)
+        except Exception:
+            return "ACTIVE"  # cannot tell: never delete on doubt
+        if execution is None:
+            return None
+        stage = execution.state.stage
+        return stage if stage in {"COMPLETED", "FAILED", "CANCELLED"} else "ACTIVE"
+
+    try:
+        workspace.sweep_orphans(_stage_of)
+    except Exception:
+        logger.exception("Worktree orphan sweep failed at startup")
     return service, engine, store
 
 

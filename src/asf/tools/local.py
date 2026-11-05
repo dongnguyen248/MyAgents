@@ -47,11 +47,22 @@ code agents against its folder at the same time), and
 :class:`WorkspaceRepository` / :class:`WorkspaceSandbox`
 route each port call to the bound project's folder, delegating to a
 fallback implementation for projects without one.
+
+When the assembly attaches a
+:class:`~asf.tools.worktree.GitWorktreeWorkspace`, a bound run of a
+git project works in its own git worktree instead of the project
+folder itself — see ``asf.tools.worktree`` for the full state
+convention (commit on test PASS, reset before a replacement change
+set, cleanup at run end, orphan sweep at startup). A project whose
+folder is NOT a git repository keeps the direct behaviour and gets a
+loud one-time warning in the backend log: its runs write into the
+user's working tree with no isolation and no rollback.
 """
 
 from __future__ import annotations
 
 import contextvars
+import logging
 import os
 import re
 import signal
@@ -59,7 +70,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -75,6 +86,9 @@ from asf.tools.ports import (
     SandboxPort,
     SandboxResult,
 )
+from asf.tools.worktree import GitWorktreeWorkspace
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "LocalRepository",
@@ -500,29 +514,44 @@ class LocalSandbox:
         return kwargs
 
 
+@dataclass(frozen=True)
+class _Binding:
+    project_id: str
+    run_id: str | None = None
+
+
 class LocalWorkspace:
     """Project-id → folder mapping plus the per-execution binding.
 
     The port calls carry no project id, so the assembly binds the
-    workspace to the project of the step being executed. The binding
-    lives in a :class:`contextvars.ContextVar`: each drive — whatever
-    thread or context runs it — sees only its own binding, so two
-    runs of different projects executing in parallel can never read
-    or write each other's folders. (The binding used to be one shared
-    attribute; with one drive thread per run that was a cross-project
-    data-corruption race.) Callers must reset the token returned by
-    :meth:`bind` when the step finishes.
+    workspace to the project (and run) of the step being executed.
+    The binding lives in a :class:`contextvars.ContextVar`: each
+    drive — whatever thread or context runs it — sees only its own
+    binding, so two runs of different projects executing in parallel
+    can never read or write each other's folders. (The binding used
+    to be one shared attribute; with one drive thread per run that
+    was a cross-project data-corruption race.) Callers must reset
+    the token returned by :meth:`bind` when the step finishes.
 
     A per-project lock additionally serializes code-agent execution
     for projects that share one folder: two runs of the same project
     must never apply change sets or run test commands against the
     same working tree at the same time.
+
+    When a :class:`~asf.tools.worktree.GitWorktreeWorkspace` is
+    attached and the bound project is a git repository with a bound
+    run id, the effective root is the run's own git worktree (see
+    that module for the state convention). Non-git projects keep the
+    direct working-tree behaviour, with a loud one-time warning:
+    their runs share the user's folder with no isolation and no
+    rollback.
     """
 
     def __init__(
         self,
         roots: Mapping[str, str | Path] | None = None,
         sandbox_settings: Mapping[str, SandboxSettings] | None = None,
+        worktrees: GitWorktreeWorkspace | None = None,
     ) -> None:
         self._roots: dict[str, Path] = {}
         for project_id, path in (roots or {}).items():
@@ -530,11 +559,18 @@ class LocalWorkspace:
         self._sandbox_settings: dict[str, SandboxSettings] = dict(
             sandbox_settings or {},
         )
-        self._bound: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-            "asf-local-workspace-project", default=None,
+        self._worktrees = worktrees
+        self._bound: contextvars.ContextVar[_Binding | None] = (
+            contextvars.ContextVar("asf-local-workspace-binding", default=None)
         )
         self._locks_guard = threading.Lock()
         self._project_locks: dict[str, threading.Lock] = {}
+        self._managed_worktrees: set[Path] = set()
+        self._warned_non_git: set[str] = set()
+
+    @property
+    def worktrees(self) -> GitWorktreeWorkspace | None:
+        return self._worktrees
 
     def set_sandbox_settings(
         self, project_id: str, settings: SandboxSettings | None,
@@ -545,10 +581,10 @@ class LocalWorkspace:
             self._sandbox_settings[project_id] = settings
 
     def current_sandbox_settings(self) -> SandboxSettings | None:
-        project_id = self._bound.get()
-        if project_id is None:
+        binding = self._bound.get()
+        if binding is None:
             return None
-        return self._sandbox_settings.get(project_id)
+        return self._sandbox_settings.get(binding.project_id)
 
     def set_root(self, project_id: str, path: str | Path | None) -> None:
         if path is None or (isinstance(path, str) and not path.strip()):
@@ -565,21 +601,101 @@ class LocalWorkspace:
     def has_local_root(self, project_id: str) -> bool:
         return project_id in self._roots
 
-    def bind(self, project_id: str) -> contextvars.Token[str | None]:
-        """Binds this execution context to a project; reset the token."""
-        return self._bound.set(project_id)
+    def plain_root(self, project_id: str) -> Path | None:
+        """The project's own folder, ignoring any worktree routing."""
+        return self._roots.get(project_id)
 
-    def reset_binding(self, token: contextvars.Token[str | None]) -> None:
+    def bind(
+        self, project_id: str, run_id: str | None = None,
+    ) -> contextvars.Token[_Binding | None]:
+        """Binds this execution context to a project/run; reset the token."""
+        return self._bound.set(_Binding(project_id, run_id))
+
+    def reset_binding(self, token: contextvars.Token[_Binding | None]) -> None:
         self._bound.reset(token)
 
     def bound_project(self) -> str | None:
-        return self._bound.get()
+        binding = self._bound.get()
+        return binding.project_id if binding is not None else None
 
-    def current_root(self) -> Path | None:
-        project_id = self._bound.get()
-        if project_id is None:
+    def bound_run(self) -> str | None:
+        binding = self._bound.get()
+        return binding.run_id if binding is not None else None
+
+    def current_root(self, ref: str | None = None) -> Path | None:
+        """The folder the bound step must work in.
+
+        For a git project with a bound run, that is the run's
+        worktree (created on first use from ``ref``); otherwise the
+        project's own folder.
+        """
+        binding = self._bound.get()
+        if binding is None:
             return None
-        return self._roots.get(project_id)
+        plain = self._roots.get(binding.project_id)
+        if plain is None:
+            return None
+        if self._worktrees is None or binding.run_id is None:
+            return plain
+        if not self._worktrees.is_git_repo(plain):
+            self._warn_non_git(binding.project_id, plain)
+            return plain
+        path = self._worktrees.ensure(
+            plain, binding.project_id, binding.run_id, ref or "HEAD",
+        )
+        self._managed_worktrees.add(path)
+        return path
+
+    def _warn_non_git(self, project_id: str, root: Path) -> None:
+        if project_id in self._warned_non_git:
+            return
+        self._warned_non_git.add(project_id)
+        logger.warning(
+            "Project %s folder %s is not a git repository: runs write "
+            "directly into the working tree (no per-run worktree, no "
+            "isolation between runs, no rollback). Initialize git in "
+            "the folder to get worktree isolation.",
+            project_id, root,
+        )
+
+    def is_managed_worktree(self, path: Path) -> bool:
+        return path in self._managed_worktrees
+
+    def prepare_worktree_for_changes(self, root: Path) -> None:
+        """Resets a managed worktree to HEAD before a new change set.
+
+        A dirty worktree holds the previous, unpassed change set; the
+        replacement must land on the last committed (passing) state.
+        """
+        if self._worktrees is not None and self.is_managed_worktree(root):
+            self._worktrees.reset_if_dirty(root)
+
+    def commit_current_worktree(self, message: str) -> str | None:
+        """Commits the bound run's worktree (test PASS hook)."""
+        binding = self._bound.get()
+        if binding is None or binding.run_id is None or self._worktrees is None:
+            return None
+        if not self._worktrees.has_worktree(binding.project_id, binding.run_id):
+            return None
+        path = self._worktrees.worktree_path(binding.project_id, binding.run_id)
+        return self._worktrees.commit_all(path, message)
+
+    def finish_run(self, project_id: str, run_id: str, stage: str) -> None:
+        """Applies the end-of-run worktree cleanup policy, if any."""
+        if self._worktrees is None:
+            return
+        plain = self._roots.get(project_id)
+        if plain is None or not self._worktrees.has_worktree(project_id, run_id):
+            return
+        self._worktrees.finish(plain, project_id, run_id, stage)
+
+    def sweep_orphans(
+        self, stage_of: Callable[[str], str | None],
+    ) -> list[str]:
+        """Startup cleanup of orphaned worktrees (see GitWorktreeWorkspace)."""
+        if self._worktrees is None:
+            return []
+        return self._worktrees.sweep(dict(self._roots), stage_of)
 
     def project_lock(self, project_id: str) -> threading.Lock:
         """The lock serializing code-agent work for one project."""
@@ -602,15 +718,15 @@ class WorkspaceRepository:
         self._workspace = workspace
         self._fallback = fallback
 
-    def _delegate(self) -> RepositoryPort:
-        root = self._workspace.current_root()
+    def _delegate(self, ref: str) -> RepositoryPort:
+        root = self._workspace.current_root(ref)
         return LocalRepository(root) if root is not None else self._fallback
 
     def list_tree(self, ref: str, prefix: str = "") -> tuple[str, ...]:
-        return self._delegate().list_tree(ref, prefix)
+        return self._delegate(ref).list_tree(ref, prefix)
 
     def read_file(self, path: str, ref: str, max_bytes: int = 256_000) -> str:
-        return self._delegate().read_file(path, ref, max_bytes)
+        return self._delegate(ref).read_file(path, ref, max_bytes)
 
 
 class WorkspaceSandbox:
@@ -623,11 +739,13 @@ class WorkspaceSandbox:
     def run(
         self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str
     ) -> SandboxResult:
-        root = self._workspace.current_root()
-        delegate: SandboxPort = (
-            LocalSandbox(
-                root, settings=self._workspace.current_sandbox_settings(),
-            )
-            if root is not None else self._fallback
-        )
-        return delegate.run(commands, changes, ref)
+        root = self._workspace.current_root(ref)
+        if root is None:
+            return self._fallback.run(commands, changes, ref)
+        # In a managed worktree, a dirty tree holds the previous
+        # unpassed change set: reset to the last passing commit
+        # before applying the replacement.
+        self._workspace.prepare_worktree_for_changes(root)
+        return LocalSandbox(
+            root, settings=self._workspace.current_sandbox_settings(),
+        ).run(commands, changes, ref)

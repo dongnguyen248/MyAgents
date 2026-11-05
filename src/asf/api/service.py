@@ -218,9 +218,15 @@ class FactoryService:
         hosting_tokens: HostingTokens | None = None,
         decomposer: Any = None,
         max_concurrent_runs: int = 2,
+        on_run_terminal: Callable[[str, str, str], None] | None = None,
     ) -> None:
         if max_concurrent_runs < 1:
             raise ValueError("max_concurrent_runs must be at least 1")
+        # Optional assembly hook fired when a run reaches a terminal
+        # stage (run_id, project_id, stage) — the demo uses it to
+        # clean up the run's git worktree. Best-effort: failures are
+        # logged, never allowed to break a drive.
+        self._on_run_terminal = on_run_terminal
         self._engine = engine
         self._metrics = metrics
         self._store = store
@@ -1785,6 +1791,30 @@ class FactoryService:
             # on a later flush.
             pass
         self._sync_retry_schedule(run_id)
+        self._notify_run_terminal(run_id)
+
+    def _notify_run_terminal(self, run_id: str) -> None:
+        """Fires the assembly's terminal hook when the run is finished.
+
+        Idempotent on the receiver's side: drives can observe the
+        same terminal run more than once (e.g. a startup re-drive of
+        an already finished run), and the hook must tolerate that.
+        """
+        if self._on_run_terminal is None:
+            return
+        try:
+            run = self._engine.get(run_id)
+        except Exception:
+            return
+        if run.state.stage not in _TERMINAL_STAGES:
+            return
+        try:
+            self._on_run_terminal(run.id, run.project_id, run.state.stage)
+        except Exception:
+            logger.exception(
+                "Terminal hook failed for run %s (stage %s)",
+                run_id, run.state.stage,
+            )
 
     def _scheduler_clock(self) -> datetime:
         """Clock for the retry scheduler: the service's injected
@@ -2133,6 +2163,7 @@ class FactoryService:
         if driving:
             return self.get_workflow(run_id)
         self._engine.cancel(run_id)
+        self._notify_run_terminal(run_id)
         return self.get_workflow(run_id)
 
     def _apply_requested_cancel(self, run_id: str) -> bool:
@@ -2150,6 +2181,7 @@ class FactoryService:
             self._engine.cancel(run_id)
         except Exception:
             return False
+        self._notify_run_terminal(run_id)
         return True
 
     def retry_run(self, run_id: str) -> dict[str, Any] | None:
