@@ -82,6 +82,12 @@ def test_workflow_view_exposes_artifact_contents(tmp_path: Path):
             "test": {"taskItemId": "T1", "ref": "main"},
         },
     )
+    # start_run also spawns the service's background drive; the manual
+    # loop below must be the only driver (the engine refuses a second
+    # concurrent dispatcher), so wait for the drive to park first.
+    # Without this the two drivers race and the test flakes.
+    service.wait_for_drives()
+    run = engine.get(run.id)
     for _ in range(40):
         if run.state.stage in ("COMPLETED", "FAILED", "CANCELLED"):
             break
