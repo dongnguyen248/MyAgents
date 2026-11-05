@@ -217,6 +217,11 @@ class FactoryService:
         # Background drive threads, by run id (see _drive_in_background).
         self._drive_lock = threading.Lock()
         self._drive_threads: dict[str, threading.Thread] = {}
+        # Cooperative cancellation: runs whose drive thread is mid-dispatch
+        # cannot be cancelled synchronously (the engine refuses to mutate a
+        # run while a step is in flight), so a cancel request is recorded
+        # here and the drive itself applies it between steps.
+        self._cancel_requested: set[str] = set()
 
     # ------------------------------------------------------------------
     # model provider settings (optional; injected by the assembly)
@@ -1262,6 +1267,11 @@ class FactoryService:
         finally:
             with self._drive_lock:
                 self._drive_threads.pop(run_id, None)
+            # A cancel requested just as the drive parked (e.g. the run
+            # reached an approval gate in the same moment) must not be
+            # lost with the thread: nobody is dispatching now, so the
+            # cancellation can be applied directly.
+            self._apply_requested_cancel(run_id)
 
     def _wait_for_drive(self, run_id: str, timeout: float | None = None) -> None:
         """Join a run's drive thread if one is active."""
@@ -1301,6 +1311,8 @@ class FactoryService:
         manual handling instead of failing the request that triggered it.
         """
         for _ in range(self._DRIVE_LIMIT):
+            if self._apply_requested_cancel(run_id):
+                break
             run = self._engine.get(run_id)
             if self._workflow_status(run) != "RUNNING":
                 break
@@ -1308,6 +1320,8 @@ class FactoryService:
             try:
                 self._engine.tick(run_id)
             except Exception:
+                break
+            if self._apply_requested_cancel(run_id):
                 break
             after = self._engine.get(run_id)
             if (after.state.stage, len(after.results)) == before:
@@ -1377,8 +1391,50 @@ class FactoryService:
         return self.get_workflow(run_id)
 
     def cancel_run(self, run_id: str) -> dict[str, Any] | None:
+        """Cancel an active run; a cancelled run is terminal.
+
+        A run parked at an approval gate (or otherwise not being driven)
+        is cancelled immediately, including its pending approval. A run
+        whose background drive is mid-step cannot be mutated safely —
+        the engine refuses — so the request is recorded and the drive
+        applies the cancellation as soon as the current step returns;
+        the returned view then still shows the run as active, with the
+        cancellation taking effect moments later. Cancelling a run that
+        already finished raises ``ValueError`` (the API maps it to 409).
+        """
+        run = self._engine.get(run_id)
+        if run.state.stage in _TERMINAL_STAGES:
+            raise ValueError(
+                f"Run '{run_id}' is already {run.state.stage.lower()}; "
+                "only an active run can be cancelled",
+            )
+        with self._drive_lock:
+            driving = run_id in self._drive_threads
+            if driving:
+                self._cancel_requested.add(run_id)
+            else:
+                self._cancel_requested.discard(run_id)
+        if driving:
+            return self.get_workflow(run_id)
         self._engine.cancel(run_id)
         return self.get_workflow(run_id)
+
+    def _apply_requested_cancel(self, run_id: str) -> bool:
+        """Cancel ``run_id`` if a cancel was requested for it.
+
+        Called by the drive between steps, when no dispatch is in
+        flight. Returns True when the run was cancelled.
+        """
+        with self._drive_lock:
+            requested = run_id in self._cancel_requested
+            self._cancel_requested.discard(run_id)
+        if not requested:
+            return False
+        try:
+            self._engine.cancel(run_id)
+        except Exception:
+            return False
+        return True
 
     def retry_run(self, run_id: str) -> dict[str, Any] | None:
         """Start a fresh run of a finished run's task, with its original inputs.

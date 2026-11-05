@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from datetime import datetime, timezone
 from itertools import count
 from pathlib import Path
@@ -442,3 +443,51 @@ def test_artifact_text_renders_structured_content_as_json():
     assert rendered is not None
     assert '"path": "a.py"' in rendered
     assert FactoryService._artifact_text(None) is None
+
+
+def test_cancel_run_at_approval_gate_cancels_immediately():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    run_id = start_at_spec_review(service)
+    assert len(service.list_approvals()) == 1
+
+    view = service.cancel_run(run_id)
+
+    assert view is not None and view["status"] == "CANCELLED"
+    assert engine.get(run_id).state.stage == "CANCELLED"
+    # The pending approval is cancelled with the run, not left decidable.
+    assert service.list_approvals() == []
+    with pytest.raises(ValueError, match="already cancelled"):
+        service.cancel_run(run_id)
+    with pytest.raises(KeyError):
+        service.cancel_run("run-missing")
+
+
+def test_cancel_run_while_driving_is_applied_between_steps():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    run = engine.start(
+        task_id="task-1", project_id="proj-1",
+        inputs={"spec": {"requirement": "Build a calculator"}},
+    )
+    service.track(run.id)
+    # Pretend a background drive is mid-dispatch for this run: the
+    # engine cannot be mutated safely right now, so the service must
+    # record the request instead of cancelling synchronously.
+    service._drive_threads[run.id] = threading.Thread()
+    try:
+        view = service.cancel_run(run.id)
+        assert view is not None and view["status"] != "CANCELLED"
+        assert engine.get(run.id).state.stage != "CANCELLED"
+        assert run.id in service._cancel_requested
+
+        # The drive applies the recorded request before its next step.
+        service._drive(run.id)
+        assert engine.get(run.id).state.stage == "CANCELLED"
+        assert run.id not in service._cancel_requested
+    finally:
+        service._drive_threads.pop(run.id, None)
