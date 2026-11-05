@@ -122,8 +122,12 @@ class SandboxPort(Protocol):
     """Port for running commands in an ephemeral sandbox with a change set applied."""
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
-        *, fail_fast: bool = True,
+        self,
+        commands: Sequence[CommandSpec],
+        changes: ChangeSet,
+        ref: str,
+        *,
+        fail_fast: bool = True,
     ) -> SandboxResult:
         """Create a workspace at ref, apply changes, run commands, return results.
 

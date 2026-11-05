@@ -62,8 +62,16 @@ def test_every_skill_follows_the_agent_skills_format():
 def test_agent_skill_ids_reflect_the_map():
     assert agent_skill_ids("spec") == ["general", "security"]
     assert agent_skill_ids("review") == [
-        "code-review", "database", "general", "java", "python",
-        "react", "security", "software-development", "spring", "testing",
+        "code-review",
+        "database",
+        "general",
+        "java",
+        "python",
+        "react",
+        "security",
+        "software-development",
+        "spring",
+        "testing",
     ]
     assert agent_skill_ids("test") == ["testing"]
     assert agent_skill_ids("unknown-agent") == []

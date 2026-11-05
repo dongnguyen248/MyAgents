@@ -28,10 +28,15 @@ __all__ = ["invalid_response"]
 
 
 def invalid_response(
-    message: str, *, details: dict[str, Any] | None = None,
+    message: str,
+    *,
+    details: dict[str, Any] | None = None,
 ) -> AgentExecutionError:
     """Builds the standard 'model reply unusable' agent error."""
     return AgentExecutionError(
-        "LLM_INVALID_RESPONSE", message,
-        category="LLM", retryable=True, details=details,
+        "LLM_INVALID_RESPONSE",
+        message,
+        category="LLM",
+        retryable=True,
+        details=details,
     )

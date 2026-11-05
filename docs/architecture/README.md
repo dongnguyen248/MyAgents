@@ -54,7 +54,7 @@ Project profiles (`ProjectProfile`) in `projects/<id>.yaml` map 1:1 to the `Proj
 Agent requests and results do not expose a specific LLM provider. Model selection and provider-specific request/response translation belong behind future integration ports and adapters. Likewise, repository, CI, and approval providers are not embedded in core contracts; new providers implement the relevant port without requiring project-specific agents or workflows.
 
 ## 10. Platform design rules
-1. `src/asf/`, `contracts/`, `skills/` and `workflows/` never reference a specific project.
+1. `src/asf/`, `contracts/`, `skills/` and `workflow-definitions/` never reference a specific project.
 2. Agents never call each other; the orchestrator mediates via artifacts + approvals.
 3. Human approval is a platform capability, not part of any agent.
 4. External services live in `src/asf/integrations/` and `src/asf/models/providers/` behind interfaces.
@@ -93,7 +93,7 @@ ai-software-agents/
 │   └── README.md
 ├── apps/dashboard/             # Control Tower frontend (React + TypeScript + Vite)
 ├── skills/                     # Reusable knowledge packages
-├── workflows/                  # Declarative workflow definitions (YAML)
+├── workflow-definitions/       # Declarative workflow definitions (YAML)
 ├── templates/                  # Artifact templates (SPEC, PLAN, TASK, etc.)
 ├── projects/                   # Project profiles (YAML)
 ├── config/                     # Configuration definitions

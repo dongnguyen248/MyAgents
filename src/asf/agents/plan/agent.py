@@ -95,9 +95,7 @@ class PlanAgent(BaseAgent):
         # 4. Exactly one SPEC artifact required
         spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
         if len(spec_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type SPEC is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type SPEC is required"))
         else:
             spec_art = spec_arts[0]
             art_idx = request.artifacts.index(spec_art)
@@ -130,9 +128,7 @@ class PlanAgent(BaseAgent):
         # 5. At most one PLAN artifact (for revision mode)
         plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
         if len(plan_arts) > 1:
-            issues.append(
-                Issue("artifacts", "At most one artifact of type PLAN is permitted")
-            )
+            issues.append(Issue("artifacts", "At most one artifact of type PLAN is permitted"))
 
         is_revision = len(plan_arts) == 1
 
@@ -191,14 +187,8 @@ class PlanAgent(BaseAgent):
         # 9. metadata.attempt, if present
         if "attempt" in request.metadata:
             attempt_val = request.metadata["attempt"]
-            if (
-                not isinstance(attempt_val, int)
-                or isinstance(attempt_val, bool)
-                or attempt_val < 1
-            ):
-                issues.append(
-                    Issue("metadata.attempt", "metadata.attempt must be an integer >= 1")
-                )
+            if not isinstance(attempt_val, int) or isinstance(attempt_val, bool) or attempt_val < 1:
+                issues.append(Issue("metadata.attempt", "metadata.attempt must be an integer >= 1"))
 
         # 10. SPEC + PLAN content size limit
         spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
@@ -257,7 +247,8 @@ class PlanAgent(BaseAgent):
             parameters=dict(self._parameters),
             model=self._model,
             metadata={
-                "agentId": self.metadata.id, "requestId": request.request_id,
+                "agentId": self.metadata.id,
+                "requestId": request.request_id,
                 "cachePrefixMessages": 1,
                 **tier_metadata(request.context),
             },
@@ -279,13 +270,10 @@ class PlanAgent(BaseAgent):
 
         # Validate required template sections
         reply_heading_lines = {
-            line.strip()
-            for line in reply.splitlines()
-            if line.strip().startswith("## ")
+            line.strip() for line in reply.splitlines() if line.strip().startswith("## ")
         }
         missing_sections = [
-            sec for sec in self._template.required_sections
-            if sec not in reply_heading_lines
+            sec for sec in self._template.required_sections if sec not in reply_heading_lines
         ]
         if missing_sections:
             raise invalid_response(

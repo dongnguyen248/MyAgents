@@ -109,6 +109,7 @@ def render_task_markdown(
 
 class TaskItem(BaseModel):
     """A single task item in the task list."""
+
     model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
 
     id: str = Field(..., min_length=1, alias="id")
@@ -154,6 +155,7 @@ class TaskItem(BaseModel):
 
 class TaskContent(BaseModel):
     """Full task output content."""
+
     model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
 
     tasks: list[TaskItem] = Field(..., min_length=1, alias="tasks")
@@ -233,9 +235,7 @@ class TaskAgent(BaseAgent):
         spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
         spec_art_idx = -1
         if len(spec_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type SPEC is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type SPEC is required"))
         else:
             spec_art = spec_arts[0]
             spec_art_idx = request.artifacts.index(spec_art)
@@ -266,9 +266,7 @@ class TaskAgent(BaseAgent):
         plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
         plan_art_idx = -1
         if len(plan_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type PLAN is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type PLAN is required"))
         else:
             plan_art = plan_arts[0]
             plan_art_idx = request.artifacts.index(plan_art)
@@ -310,9 +308,7 @@ class TaskAgent(BaseAgent):
         # 6. At most one TASK artifact (for revision mode)
         task_arts = [a for a in request.artifacts if a.type == "TASK"]
         if len(task_arts) > 1:
-            issues.append(
-                Issue("artifacts", "At most one artifact of type TASK is permitted")
-            )
+            issues.append(Issue("artifacts", "At most one artifact of type TASK is permitted"))
 
         is_revision = len(task_arts) == 1
 
@@ -373,14 +369,8 @@ class TaskAgent(BaseAgent):
         # 10. metadata.attempt, if present
         if "attempt" in request.metadata:
             attempt_val = request.metadata["attempt"]
-            if (
-                not isinstance(attempt_val, int)
-                or isinstance(attempt_val, bool)
-                or attempt_val < 1
-            ):
-                issues.append(
-                    Issue("metadata.attempt", "metadata.attempt must be an integer >= 1")
-                )
+            if not isinstance(attempt_val, int) or isinstance(attempt_val, bool) or attempt_val < 1:
+                issues.append(Issue("metadata.attempt", "metadata.attempt must be an integer >= 1"))
 
         # 11. PLAN traceability must match SPEC
         spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
@@ -475,7 +465,8 @@ class TaskAgent(BaseAgent):
             parameters=dict(self._parameters),
             model=self._model,
             metadata={
-                "agentId": self.metadata.id, "requestId": request.request_id,
+                "agentId": self.metadata.id,
+                "requestId": request.request_id,
                 "cachePrefixMessages": 1,
                 **tier_metadata(request.context),
             },
@@ -583,9 +574,7 @@ class TaskAgent(BaseAgent):
         # Every PLAN milestone must have >= 1 task
         for milestone in plan_milestones:
             if not any(t.milestone_ref == milestone.id for t in tasks):
-                task_issues.append(
-                    f"Milestone {milestone.id} has no tasks assigned"
-                )
+                task_issues.append(f"Milestone {milestone.id} has no tasks assigned")
 
         # Max tasks
         if len(tasks) > MAX_TASKS:
@@ -634,9 +623,7 @@ class TaskAgent(BaseAgent):
             version = "1"
 
         # Render deterministic markdown text from validated tasks
-        rendered_text = render_task_markdown(
-            tasks, plan_milestones, spec_art.id, spec_art.version
-        )
+        rendered_text = render_task_markdown(tasks, plan_milestones, spec_art.id, spec_art.version)
 
         # Output size limit
         if len(rendered_text) > MAX_TASK_TEXT_CHARS:

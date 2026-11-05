@@ -143,8 +143,7 @@ def assert_pure_package(
                     )
                     for forbidden in forbidden_modules:
                         if target_module and (
-                            target_module == forbidden
-                            or target_module.startswith(f"{forbidden}.")
+                            target_module == forbidden or target_module.startswith(f"{forbidden}.")
                         ):
                             test_case.fail(
                                 f"Forbidden relative import resolving to '{target_module}' "

@@ -50,8 +50,12 @@ class AgentExecutionError(Exception):
 
     def to_platform_error(self, now: datetime) -> dict[str, Any]:
         return {
-            "code": self.code, "message": self.message, "category": self.category,
-            "retryable": self.retryable, "details": self.details, "timestamp": now,
+            "code": self.code,
+            "message": self.message,
+            "category": self.category,
+            "retryable": self.retryable,
+            "details": self.details,
+            "timestamp": now,
         }
 
 
@@ -138,9 +142,7 @@ class BaseAgent(ABC):
             revision_count=revision_count,
             attempt=attempt,
             prompt_tokens=tracker.prompt_tokens if tracker is not None else 0,
-            completion_tokens=(
-                tracker.completion_tokens if tracker is not None else 0
-            ),
+            completion_tokens=(tracker.completion_tokens if tracker is not None else 0),
             model_calls=tracker.calls if tracker is not None else 0,
         )
 
@@ -187,13 +189,16 @@ class BaseAgent(ABC):
             else None
         )
         with track_model_calls(
-            timeout_seconds=timeout, clock=self._runtime.clock,
+            timeout_seconds=timeout,
+            clock=self._runtime.clock,
             started_at=t_start,
         ) as tracker:
             return self._execute_tracked(request, tracker, t_start)
 
     def _execute_tracked(
-        self, request: AgentRequest, tracker: ModelCallTracker,
+        self,
+        request: AgentRequest,
+        tracker: ModelCallTracker,
         t_start: datetime,
     ) -> AgentResult:
         issues = self._check(request)
@@ -293,8 +298,11 @@ class BaseAgent(ABC):
             # backend terminal to be diagnosable at all.
             logger.warning(
                 "agent %s failed: task=%s request=%s code=%s message=%s details=%s",
-                self.metadata.id, request.task_id, request.request_id,
-                err.code, err.message,
+                self.metadata.id,
+                request.task_id,
+                request.request_id,
+                err.code,
+                err.message,
                 json.dumps(err.details, default=str)[:600] if err.details else "-",
             )
             p_err = PlatformError.model_validate(err.to_platform_error(t_end))

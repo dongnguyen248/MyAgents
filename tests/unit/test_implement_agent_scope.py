@@ -119,9 +119,7 @@ def test_denied_github_workflows():
     """.github/ paths always denied."""
     repo = InMemoryRepository()
     reply = make_valid_changeset_reply(
-        changes=[
-            {"path": ".github/workflows/ci.yml", "operation": "create", "content": "x\n"}
-        ]
+        changes=[{"path": ".github/workflows/ci.yml", "operation": "create", "content": "x\n"}]
     )
     agent, gateway = make_agent_with_repo([reply], repo)
     req = make_implement_request(expected_files=[".github/workflows/ci.yml"])

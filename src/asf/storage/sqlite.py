@@ -13,7 +13,9 @@ from asf.orchestrator.execution import WorkflowExecution
 
 class SQLiteApprovalRepository:
     def __init__(
-        self, connect: Callable[[], sqlite3.Connection], lock: threading.RLock | None,
+        self,
+        connect: Callable[[], sqlite3.Connection],
+        lock: threading.RLock | None,
     ) -> None:
         self._connect = connect
         self._lock = lock
@@ -35,9 +37,14 @@ class SQLiteApprovalRepository:
 
     def get(self, approval_id: str) -> ApprovalRequest | None:
         with self._guard():
-            row = self._connect().execute(
-                "SELECT payload FROM approvals WHERE id = ?", (approval_id,),
-            ).fetchone()
+            row = (
+                self._connect()
+                .execute(
+                    "SELECT payload FROM approvals WHERE id = ?",
+                    (approval_id,),
+                )
+                .fetchone()
+            )
         return ApprovalRequest.model_validate_json(row[0]) if row else None
 
     def update(self, approval: ApprovalRequest) -> ApprovalRequest:
@@ -73,10 +80,14 @@ class SQLiteApprovalRepository:
 
     def list_decisions(self, approval_id: str) -> list[ApprovalDecision]:
         with self._guard():
-            rows = self._connect().execute(
-                "SELECT payload FROM decisions WHERE approval_id = ? ORDER BY sequence",
-                (approval_id,),
-            ).fetchall()
+            rows = (
+                self._connect()
+                .execute(
+                    "SELECT payload FROM decisions WHERE approval_id = ? ORDER BY sequence",
+                    (approval_id,),
+                )
+                .fetchall()
+            )
         return [ApprovalDecision.model_validate_json(row[0]) for row in rows]
 
 
@@ -103,7 +114,9 @@ class SQLiteExecutionStore:
         self._local = threading.local()
         if self._shared:
             self._shared_connection = sqlite3.connect(
-                ":memory:", isolation_level=None, check_same_thread=False,
+                ":memory:",
+                isolation_level=None,
+                check_same_thread=False,
             )
             self._configure(self._shared_connection)
         self._connection().executescript(
@@ -172,25 +185,37 @@ class SQLiteExecutionStore:
                 raise KeyError(run.id)
 
     def get_execution(
-        self, run_id: str, *, for_update: bool = False,
+        self,
+        run_id: str,
+        *,
+        for_update: bool = False,
     ) -> WorkflowExecution:
         # for_update is accepted for ExecutionStore compatibility and
         # ignored: locking reads are a MariaDB-store concern; this
         # store's transaction() already serializes writers.
         with self._guard():
-            row = self._connection().execute(
-                "SELECT payload FROM executions WHERE id = ?", (run_id,),
-            ).fetchone()
+            row = (
+                self._connection()
+                .execute(
+                    "SELECT payload FROM executions WHERE id = ?",
+                    (run_id,),
+                )
+                .fetchone()
+            )
         if row is None:
             raise KeyError(run_id)
         return WorkflowExecution.model_validate_json(row[0])
 
     def list_executions(self, project_id: str) -> list[WorkflowExecution]:
         with self._guard():
-            rows = self._connection().execute(
-                "SELECT payload FROM executions WHERE project_id = ? ORDER BY id",
-                (project_id,),
-            ).fetchall()
+            rows = (
+                self._connection()
+                .execute(
+                    "SELECT payload FROM executions WHERE project_id = ? ORDER BY id",
+                    (project_id,),
+                )
+                .fetchall()
+            )
         return [WorkflowExecution.model_validate_json(row[0]) for row in rows]
 
     def list_execution_summaries(
@@ -236,9 +261,14 @@ class SQLiteExecutionStore:
             rows = self._connection().execute(sql, params).fetchall()
         return [
             {
-                "id": row[0], "projectId": row[1], "taskId": row[2],
-                "workflowId": row[3], "stage": row[4], "status": row[4],
-                "startedAt": row[5], "updatedAt": row[6],
+                "id": row[0],
+                "projectId": row[1],
+                "taskId": row[2],
+                "workflowId": row[3],
+                "stage": row[4],
+                "status": row[4],
+                "startedAt": row[5],
+                "updatedAt": row[6],
             }
             for row in rows
         ]

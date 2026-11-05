@@ -37,8 +37,14 @@ FinishKind = Literal["ok", "truncated", "blocked"]
 
 _TRUNCATED = {"length", "max_tokens", "MAX_TOKENS"}
 _BLOCKED = {
-    "content_filter", "safety", "SAFETY", "RECITATION",
-    "BLOCKLIST", "PROHIBITED_CONTENT", "SPAM", "IMAGE_SAFETY",
+    "content_filter",
+    "safety",
+    "SAFETY",
+    "RECITATION",
+    "BLOCKLIST",
+    "PROHIBITED_CONTENT",
+    "SPAM",
+    "IMAGE_SAFETY",
     "MALFORMED_FUNCTION_CALL",
 }
 

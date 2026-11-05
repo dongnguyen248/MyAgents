@@ -104,9 +104,7 @@ def build_implement_messages(
         spec_text = slice_spec(
             spec_text,
             task_title=str(task_item.get("title", "")) if task_item else "",
-            task_description=(
-                str(task_item.get("description", "")) if task_item else ""
-            ),
+            task_description=(str(task_item.get("description", "")) if task_item else ""),
         )
         stable_sections.append("<<<SPEC>>>\n" + spec_text + "\n<<<END SPEC>>>")
 
@@ -165,7 +163,7 @@ def build_implement_messages(
             "Return a JSON object with the following schema:\n"
             "{\n"
             '  "changes": [\n'
-            '    {\n'
+            "    {\n"
             '      "path": "string (relative POSIX path, no leading /)",\n'
             '      "operation": "create|modify|delete",\n'
             '      "content": "string (required for create/modify, omitted for delete)"\n'
@@ -197,9 +195,12 @@ def build_implement_messages(
     # the cachePrefixMessages request metadata.
     messages = [ModelMessage(role="system", content=system_msg)]
     if stable_sections:
-        messages.append(ModelMessage(
-            role="user", content="\n\n".join(stable_sections),
-        ))
+        messages.append(
+            ModelMessage(
+                role="user",
+                content="\n\n".join(stable_sections),
+            )
+        )
     messages.append(ModelMessage(role="user", content=user_msg))
     return messages
 

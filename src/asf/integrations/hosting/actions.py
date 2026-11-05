@@ -79,14 +79,20 @@ def build_hosting_actions(
         code = next((a for a in request.artifacts if a.type == "CODE"), None)
         if code is None or not isinstance(code.content, dict):
             return _fail(
-                request, started, clock, "VALIDATION_FAILED",
+                request,
+                started,
+                clock,
+                "VALIDATION_FAILED",
                 "The CI step needs the CODE artifact to push",
             )
         try:
             changes = ChangeSet.model_validate(code.content.get("changeSet"))
         except Exception:
             return _fail(
-                request, started, clock, "VALIDATION_FAILED",
+                request,
+                started,
+                clock,
+                "VALIDATION_FAILED",
                 "The CODE artifact does not carry a valid change set",
             )
         branch = branch_for_task(request.task_id)
@@ -94,11 +100,15 @@ def build_hosting_actions(
         title = _title(request)
         try:
             push = provider.push_changeset(
-                branch=branch, base_branch=base_branch, changes=changes,
+                branch=branch,
+                base_branch=base_branch,
+                changes=changes,
                 message=f"{title} (task {request.task_id})",
             )
             change_request = provider.open_change_request(
-                branch=branch, base_branch=base_branch, title=title,
+                branch=branch,
+                base_branch=base_branch,
+                title=title,
                 description=(
                     f"Opened by AI Software Agents for task "
                     f"{request.task_id} (run {request.metadata.get('runId', '')})."
@@ -107,7 +117,11 @@ def build_hosting_actions(
             pipeline = provider.pipeline_status(branch=branch)
         except HostingError as error:
             return _fail(
-                request, started, clock, "HOSTING_ERROR", str(error),
+                request,
+                started,
+                clock,
+                "HOSTING_ERROR",
+                str(error),
                 retryable=error.retryable,
                 details={"httpStatus": error.status} if error.status else {},
             )
@@ -122,17 +136,25 @@ def build_hosting_actions(
             },
             "pipeline": (
                 {"id": pipeline.id, "status": pipeline.status, "url": pipeline.url}
-                if pipeline is not None else None
+                if pipeline is not None
+                else None
             ),
         }
         if pipeline is not None and pipeline.status == "RUNNING":
             return _fail(
-                request, started, clock, "PIPELINE_RUNNING",
-                f"CI pipeline {pipeline.id} is still running", retryable=True,
+                request,
+                started,
+                clock,
+                "PIPELINE_RUNNING",
+                f"CI pipeline {pipeline.id} is still running",
+                retryable=True,
             )
         if pipeline is not None and pipeline.status == "FAIL":
             return _fail(
-                request, started, clock, "PIPELINE_FAILED",
+                request,
+                started,
+                clock,
+                "PIPELINE_FAILED",
                 f"CI pipeline {pipeline.id} failed",
             )
         return _succeed(request, started, clock, output)
@@ -150,13 +172,20 @@ def build_hosting_actions(
             change_request = provider.change_request(branch=branch)
         except HostingError as error:
             return _fail(
-                request, started, clock, "HOSTING_ERROR", str(error),
+                request,
+                started,
+                clock,
+                "HOSTING_ERROR",
+                str(error),
                 retryable=error.retryable,
                 details={"httpStatus": error.status} if error.status else {},
             )
         if change_request is None:
             return _fail(
-                request, started, clock, "NO_CHANGE_REQUEST",
+                request,
+                started,
+                clock,
+                "NO_CHANGE_REQUEST",
                 f"No merge/pull request found for branch {branch}; "
                 "the CI step must push and open one first",
             )
@@ -173,13 +202,18 @@ def build_hosting_actions(
             return _succeed(request, started, clock, output)
         if change_request.state == "open":
             return _fail(
-                request, started, clock, "MERGE_PENDING",
-                f"Change request {change_request.id} is still open: "
-                f"{change_request.url}",
+                request,
+                started,
+                clock,
+                "MERGE_PENDING",
+                f"Change request {change_request.id} is still open: {change_request.url}",
                 retryable=True,
             )
         return _fail(
-            request, started, clock, "CHANGE_REQUEST_CLOSED",
+            request,
+            started,
+            clock,
+            "CHANGE_REQUEST_CLOSED",
             f"Change request {change_request.id} was closed without merging",
         )
 
@@ -201,27 +235,48 @@ def _metrics(request: AgentRequest, started: datetime, clock: Callable[[], datet
 
 
 def _succeed(
-    request: AgentRequest, started: datetime,
-    clock: Callable[[], datetime], output: dict[str, Any],
+    request: AgentRequest,
+    started: datetime,
+    clock: Callable[[], datetime],
+    output: dict[str, Any],
 ) -> AgentResult:
     return AgentResult(
-        request_id=request.request_id, agent_id=request.agent_id,
-        status="SUCCESS", output=output, artifacts=[], events=[],
-        metrics=_metrics(request, started, clock), errors=[],
+        request_id=request.request_id,
+        agent_id=request.agent_id,
+        status="SUCCESS",
+        output=output,
+        artifacts=[],
+        events=[],
+        metrics=_metrics(request, started, clock),
+        errors=[],
     )
 
 
 def _fail(
-    request: AgentRequest, started: datetime, clock: Callable[[], datetime],
-    code: str, message: str, *, retryable: bool = False,
+    request: AgentRequest,
+    started: datetime,
+    clock: Callable[[], datetime],
+    code: str,
+    message: str,
+    *,
+    retryable: bool = False,
     details: dict[str, Any] | None = None,
 ) -> AgentResult:
     error = PlatformError(
-        code=code, message=message, category="INTEGRATION",
-        details=details or {}, retryable=retryable, timestamp=clock(),
+        code=code,
+        message=message,
+        category="INTEGRATION",
+        details=details or {},
+        retryable=retryable,
+        timestamp=clock(),
     )
     return AgentResult(
-        request_id=request.request_id, agent_id=request.agent_id,
-        status="FAILED", output=None, artifacts=[], events=[],
-        metrics=_metrics(request, started, clock), errors=[error],
+        request_id=request.request_id,
+        agent_id=request.agent_id,
+        status="FAILED",
+        output=None,
+        artifacts=[],
+        events=[],
+        metrics=_metrics(request, started, clock),
+        errors=[error],
     )

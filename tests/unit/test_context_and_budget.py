@@ -59,13 +59,15 @@ def _runtime(gateway) -> AgentRuntime:
 
 def _response(text: str, usage: tuple[int, int], finish: str = "stop") -> ModelResponse:
     return ModelResponse(
-        content=text, model="test-model",
+        content=text,
+        model="test-model",
         usage=ModelUsage(prompt_tokens=usage[0], completion_tokens=usage[1]),
         finish_reason=finish,
     )
 
 
 # ---------------------------------------------------------------- repo map
+
 
 class _SpyRepository(InMemoryRepository):
     def __init__(self) -> None:
@@ -79,26 +81,31 @@ class _SpyRepository(InMemoryRepository):
 
 def _repo() -> _SpyRepository:
     repo = _SpyRepository()
-    repo.add_tree("main", {
-        "src/calculator.py": (
-            "from src.util import helper\n\n"
-            "def add(a, b):\n    return helper(a + b)\n"
-        ),
-        "src/util.py": (
-            "def helper(x):\n    secret_body_line = 'BODY-SECRET'\n"
-            "    return x * 2\n\n"
-            "class Greeter:\n    def greet(self):\n        return 'hi'\n"
-        ),
-        "src/other.py": "def unrelated():\n    return 0\n",
-        "README.md": "# hi\n",
-    })
+    repo.add_tree(
+        "main",
+        {
+            "src/calculator.py": (
+                "from src.util import helper\n\ndef add(a, b):\n    return helper(a + b)\n"
+            ),
+            "src/util.py": (
+                "def helper(x):\n    secret_body_line = 'BODY-SECRET'\n"
+                "    return x * 2\n\n"
+                "class Greeter:\n    def greet(self):\n        return 'hi'\n"
+            ),
+            "src/other.py": "def unrelated():\n    return 0\n",
+            "README.md": "# hi\n",
+        },
+    )
     return repo
 
 
 def test_repo_map_outlines_neighbours_and_imports_without_bodies():
     repo = _repo()
     text = build_repo_map(
-        repo, ref="main", expected_files=["src/calculator.py"], max_chars=6000,
+        repo,
+        ref="main",
+        expected_files=["src/calculator.py"],
+        max_chars=6000,
     )
     assert "src/calculator.py" in text
     assert "src/util.py" in text
@@ -113,7 +120,10 @@ def test_repo_map_outlines_neighbours_and_imports_without_bodies():
 def test_repo_map_respects_the_character_limit():
     repo = _repo()
     text = build_repo_map(
-        repo, ref="main", expected_files=["src/calculator.py"], max_chars=120,
+        repo,
+        ref="main",
+        expected_files=["src/calculator.py"],
+        max_chars=120,
     )
     assert len(text) <= 160  # limit + the truncation marker line
     assert "truncated" in text
@@ -159,14 +169,20 @@ def test_slice_plan_keeps_only_the_items_milestone():
 
 
 SPEC_HEAD = "# SPEC: Demo\n## Background\n"
-LONG_SPEC = SPEC_HEAD + "word " * 100 + "\n## Billing rules\n" + (
-    "invoice totals must match the ledger. " * 200
-) + "\n## Weather module\n" + ("sunshine and rain forecasts. " * 200)
+LONG_SPEC = (
+    SPEC_HEAD
+    + "word " * 100
+    + "\n## Billing rules\n"
+    + ("invoice totals must match the ledger. " * 200)
+    + "\n## Weather module\n"
+    + ("sunshine and rain forecasts. " * 200)
+)
 
 
 def test_slice_spec_long_keeps_relevant_sections_only():
     sliced = slice_spec(
-        LONG_SPEC, task_title="Billing invoices",
+        LONG_SPEC,
+        task_title="Billing invoices",
         task_description="Compute invoice totals for the ledger",
     )
     assert "## Billing rules" in sliced
@@ -177,19 +193,27 @@ def test_slice_spec_long_keeps_relevant_sections_only():
 
 # ------------------------------------------------- implement prompt wiring
 
+
 def test_implement_prompt_carries_repo_map_and_stable_prefix():
     repo = _repo()
-    gateway = ScriptedModelGateway([
-        '{"changes": [{"path": "src/calculator.py", "operation": "modify",'
-        ' "content": "x = 1\\n"}]}',
-    ])
-    agent = ImplementAgent(
-        _runtime(gateway), repo, prompts=load_implement_prompts(),
-        edit_format="json", repair_attempts=0,
+    gateway = ScriptedModelGateway(
+        [
+            '{"changes": [{"path": "src/calculator.py", "operation": "modify",'
+            ' "content": "x = 1\\n"}]}',
+        ]
     )
-    result = agent.execute(make_implement_request(
-        expected_files=["src/calculator.py"],
-    ))
+    agent = ImplementAgent(
+        _runtime(gateway),
+        repo,
+        prompts=load_implement_prompts(),
+        edit_format="json",
+        repair_attempts=0,
+    )
+    result = agent.execute(
+        make_implement_request(
+            expected_files=["src/calculator.py"],
+        )
+    )
     assert result.status == "SUCCESS"
     request = gateway.requests[0]
     joined = "\n".join(m.content for m in request.messages)
@@ -202,6 +226,7 @@ def test_implement_prompt_carries_repo_map_and_stable_prefix():
 
 
 # ------------------------------------------------------------- fail-fast
+
 
 class _ScriptedSandbox:
     """Sandbox double: per-argv exit codes, honours the port contract."""
@@ -217,38 +242,65 @@ class _ScriptedSandbox:
         failed = False
         for spec in commands:
             if failed and fail_fast:
-                outcomes.append(CommandResult(
-                    exit_code=-1, stdout="", stderr="",
-                    duration_ms=0, skipped=True,
-                ))
+                outcomes.append(
+                    CommandResult(
+                        exit_code=-1,
+                        stdout="",
+                        stderr="",
+                        duration_ms=0,
+                        skipped=True,
+                    )
+                )
                 continue
             self.ran.append(tuple(spec.argv))
             code = self._exits.get(tuple(spec.argv), 0)
-            outcomes.append(CommandResult(
-                exit_code=code, stdout="out", stderr="", duration_ms=1,
-            ))
+            outcomes.append(
+                CommandResult(
+                    exit_code=code,
+                    stdout="out",
+                    stderr="",
+                    duration_ms=1,
+                )
+            )
             failed = failed or code != 0
         return SandboxResult(commands=tuple(outcomes))
 
 
 def _test_request(commands: list[list[str]]) -> AgentRequest:
     code = Artifact(
-        id="code-1", type="CODE", name="CODE.json", version="1",
-        content={"format": "json", "changeSet": {"changes": [
-            {"path": "src/calculator.py", "operation": "create", "content": "x=1"},
-        ]}, "text": "code"},
-        created_by="agent-implement", created_at=NOW,
+        id="code-1",
+        type="CODE",
+        name="CODE.json",
+        version="1",
+        content={
+            "format": "json",
+            "changeSet": {
+                "changes": [
+                    {"path": "src/calculator.py", "operation": "create", "content": "x=1"},
+                ]
+            },
+            "text": "code",
+        },
+        created_by="agent-implement",
+        created_at=NOW,
         metadata={
-            "specArtifactId": "spec-1", "specVersion": "1",
-            "planArtifactId": "plan-1", "planVersion": "1",
-            "taskArtifactId": "task-1", "taskVersion": "1",
-            "taskItemId": "T1", "baseRef": "main",
+            "specArtifactId": "spec-1",
+            "specVersion": "1",
+            "planArtifactId": "plan-1",
+            "planVersion": "1",
+            "taskArtifactId": "task-1",
+            "taskVersion": "1",
+            "taskItemId": "T1",
+            "baseRef": "main",
         },
     )
     task = make_task_artifact()
     return AgentRequest(
-        request_id="req-test", task_id="task-1", project_id="project-1",
-        workflow_id="software-development", agent_id="agent-test",
+        request_id="req-test",
+        task_id="task-1",
+        project_id="project-1",
+        workflow_id="software-development",
+        agent_id="agent-test",
         input={"taskItemId": "T1"},
         context={"project": {"testCommands": commands}},
         artifacts=[task, code],
@@ -259,9 +311,11 @@ def _test_request(commands: list[list[str]]) -> AgentRequest:
 def test_test_agent_fail_fast_marks_remaining_commands_skipped():
     sandbox = _ScriptedSandbox({("pytest", "-q"): 1})
     agent = TestAgent(_runtime(ScriptedModelGateway([])), sandbox)
-    result = agent.execute(_test_request(
-        [["pytest", "-q"], ["lint"], ["build"]],
-    ))
+    result = agent.execute(
+        _test_request(
+            [["pytest", "-q"], ["lint"], ["build"]],
+        )
+    )
     assert result.status == "SUCCESS"
     report = result.output
     assert report["verdict"] == "FAIL"
@@ -278,7 +332,9 @@ def test_test_agent_fail_fast_marks_remaining_commands_skipped():
 def test_test_agent_fail_fast_disabled_runs_everything():
     sandbox = _ScriptedSandbox({("pytest", "-q"): 1})
     agent = TestAgent(
-        _runtime(ScriptedModelGateway([])), sandbox, fail_fast=False,
+        _runtime(ScriptedModelGateway([])),
+        sandbox,
+        fail_fast=False,
     )
     result = agent.execute(_test_request([["pytest", "-q"], ["lint"]]))
     report = result.output
@@ -288,6 +344,7 @@ def test_test_agent_fail_fast_disabled_runs_everything():
 
 
 # ------------------------------------------------------------ report tails
+
 
 def test_tail_text_keeps_error_lines_and_the_tail():
     lines = [f"line {i}" for i in range(300)]
@@ -301,15 +358,23 @@ def test_tail_text_keeps_error_lines_and_the_tail():
 
 def test_tail_artifact_for_prompt_shrinks_streams_only():
     artifact = {
-        "id": "r1", "type": "TEST_REPORT", "version": "1",
-        "content": {"format": "json", "report": {
-            "verdict": "FAIL",
-            "commands": [{
-                "argv": ["pytest"], "exitCode": 1,
-                "stdout": "\n".join(f"o{i}" for i in range(500)),
-                "stderr": "Traceback: boom",
-            }],
-        }},
+        "id": "r1",
+        "type": "TEST_REPORT",
+        "version": "1",
+        "content": {
+            "format": "json",
+            "report": {
+                "verdict": "FAIL",
+                "commands": [
+                    {
+                        "argv": ["pytest"],
+                        "exitCode": 1,
+                        "stdout": "\n".join(f"o{i}" for i in range(500)),
+                        "stderr": "Traceback: boom",
+                    }
+                ],
+            },
+        },
     }
     trimmed = tail_artifact_for_prompt(artifact, max_lines=10)
     assert len(trimmed["content"]["report"]["commands"][0]["stdout"]) < 500
@@ -319,6 +384,7 @@ def test_tail_artifact_for_prompt_shrinks_streams_only():
 
 # -------------------------------------------------------- usage accounting
 
+
 def test_usage_lands_in_result_metrics_and_metrics_service():
     gateway = ScriptedModelGateway([_response("done", usage=(11, 7))])
 
@@ -326,23 +392,38 @@ def test_usage_lands_in_result_metrics_and_metrics_service():
         @property
         def metadata(self) -> AgentMetadata:  # type: ignore[override]
             return AgentMetadata(
-                id="agent-spec", name="Spec", type="spec", version="1",
-                status="IDLE", capabilities=[], configuration={},
+                id="agent-spec",
+                name="Spec",
+                type="spec",
+                version="1",
+                status="IDLE",
+                capabilities=[],
+                configuration={},
             )
 
         def _check(self, request: AgentRequest) -> list[Issue]:
             return []
 
         def _run(self, request: AgentRequest):  # type: ignore[no-untyped-def]
-            self._runtime.models.complete(ModelRequest(messages=[
-                ModelMessage(role="user", content="hi"),
-            ]))
+            self._runtime.models.complete(
+                ModelRequest(
+                    messages=[
+                        ModelMessage(role="user", content="hi"),
+                    ]
+                )
+            )
             return {}, []
 
     agent = _Caller(_runtime(gateway))
     request = AgentRequest(
-        request_id="r1", task_id="t1", project_id="p1", workflow_id="w",
-        agent_id="agent-spec", input={}, context={}, artifacts=[],
+        request_id="r1",
+        task_id="t1",
+        project_id="p1",
+        workflow_id="w",
+        agent_id="agent-spec",
+        input={},
+        context={},
+        artifacts=[],
     )
     result = agent.execute(request)
     assert result.metrics.model_calls == 1
@@ -360,12 +441,13 @@ def test_usage_lands_in_result_metrics_and_metrics_service():
 
 def test_usage_sums_across_the_repair_loop():
     bad = "FILE: src/nope.py\n<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE\n"
-    good = (
-        "CREATE: src/calculator.py\n<<<<<<< FILE\nx = 1\n>>>>>>> FILE\n"
+    good = "CREATE: src/calculator.py\n<<<<<<< FILE\nx = 1\n>>>>>>> FILE\n"
+    gateway = ScriptedModelGateway(
+        [
+            _response(bad, usage=(10, 5)),
+            _response(good, usage=(20, 7)),
+        ]
     )
-    gateway = ScriptedModelGateway([
-        _response(bad, usage=(10, 5)), _response(good, usage=(20, 7)),
-    ])
     repo = InMemoryRepository()
     agent = ImplementAgent(_runtime(gateway), repo, prompts=load_implement_prompts())
     result = agent.execute(make_implement_request())
@@ -380,12 +462,18 @@ def test_usage_sums_across_the_repair_loop():
 
 # ------------------------------------------------------------------ budget
 
+
 class _StepAgent(BaseAgent):
     def __init__(self, runtime: AgentRuntime, agent_id: str, type_: str) -> None:
         super().__init__(runtime)
         self._meta = AgentMetadata(
-            id=agent_id, name=agent_id, type=type_, version="1",
-            status="IDLE", capabilities=[], configuration={},
+            id=agent_id,
+            name=agent_id,
+            type=type_,
+            version="1",
+            status="IDLE",
+            capabilities=[],
+            configuration={},
         )
 
     @property
@@ -396,13 +484,22 @@ class _StepAgent(BaseAgent):
         return []
 
     def _run(self, request: AgentRequest):  # type: ignore[no-untyped-def]
-        self._runtime.models.complete(ModelRequest(messages=[
-            ModelMessage(role="user", content="go"),
-        ]))
+        self._runtime.models.complete(
+            ModelRequest(
+                messages=[
+                    ModelMessage(role="user", content="go"),
+                ]
+            )
+        )
         artifact = Artifact(
-            id=f"art-{self._meta.type}", type=self._meta.type.upper(),
-            name="out", version="1", content={"text": "ok"},
-            created_by=self._meta.id, created_at=NOW, metadata={},
+            id=f"art-{self._meta.type}",
+            type=self._meta.type.upper(),
+            name="out",
+            version="1",
+            content={"text": "ok"},
+            created_by=self._meta.id,
+            created_at=NOW,
+            metadata={},
         )
         return {}, [artifact]
 
@@ -414,33 +511,53 @@ def _budget_engine(budget: RunBudget, gateway: ScriptedModelGateway) -> Orchestr
     registry.register(_StepAgent(runtime, "agent-spec", "spec"))
     registry.register(_StepAgent(runtime, "agent-plan", "plan"))
     definition = WorkflowDefinition(
-        id="wf", name="wf", version="1",
+        id="wf",
+        name="wf",
+        version="1",
         steps=[
             WorkflowStepDef(
-                id="spec", name="Spec", type="AGENT", stage="SPEC",
-                requires_approval=False, agent_type="spec", produces=["SPEC"],
+                id="spec",
+                name="Spec",
+                type="AGENT",
+                stage="SPEC",
+                requires_approval=False,
+                agent_type="spec",
+                produces=["SPEC"],
             ),
             WorkflowStepDef(
-                id="plan", name="Plan", type="AGENT", stage="PLAN",
-                requires_approval=False, agent_type="plan", produces=["PLAN"],
+                id="plan",
+                name="Plan",
+                type="AGENT",
+                stage="PLAN",
+                requires_approval=False,
+                agent_type="plan",
+                produces=["PLAN"],
             ),
         ],
     )
     return Orchestrator(
-        definition, registry, clock=lambda: NOW,
-        new_id=lambda: f"run-{next(ids)}", budget=budget,
+        definition,
+        registry,
+        clock=lambda: NOW,
+        new_id=lambda: f"run-{next(ids)}",
+        budget=budget,
     )
 
 
 def test_budget_exceeded_fails_run_before_another_model_call():
-    gateway = ScriptedModelGateway([
-        _response("a", usage=(10, 5)), _response("b", usage=(10, 5)),
-        _response("c", usage=(10, 5)),
-    ])
+    gateway = ScriptedModelGateway(
+        [
+            _response("a", usage=(10, 5)),
+            _response("b", usage=(10, 5)),
+            _response("c", usage=(10, 5)),
+        ]
+    )
     engine = _budget_engine(RunBudget(max_model_calls=1), gateway)
     run = engine.start(
-        task_id="t1", project_id="p1",
-        inputs={"spec": {}, "plan": {}}, context={},
+        task_id="t1",
+        project_id="p1",
+        inputs={"spec": {}, "plan": {}},
+        context={},
     )
     run = engine.tick(run.id)  # spec runs: 1 call used (not > 1 yet)
     assert run.state.stage == "PLAN"
@@ -448,13 +565,18 @@ def test_budget_exceeded_fails_run_before_another_model_call():
     assert run.state.stage == "COMPLETED"
     assert len(gateway.requests) == 2
 
-    gateway2 = ScriptedModelGateway([
-        _response("a", usage=(10, 5)), _response("b", usage=(10, 5)),
-    ])
+    gateway2 = ScriptedModelGateway(
+        [
+            _response("a", usage=(10, 5)),
+            _response("b", usage=(10, 5)),
+        ]
+    )
     engine2 = _budget_engine(RunBudget(max_prompt_tokens=5), gateway2)
     run = engine2.start(
-        task_id="t1", project_id="p1",
-        inputs={"spec": {}, "plan": {}}, context={},
+        task_id="t1",
+        project_id="p1",
+        inputs={"spec": {}, "plan": {}},
+        context={},
     )
     run = engine2.tick(run.id)  # spec consumes 10 prompt tokens
     run = engine2.tick(run.id)  # 10 > 5: plan never dispatches
@@ -466,23 +588,34 @@ def test_budget_exceeded_fails_run_before_another_model_call():
 
 # ---------------------------------------------------------------- deadline
 
+
 def test_counting_gateway_injects_remaining_deadline():
     inner = ScriptedModelGateway([_response("ok", usage=(1, 1))])
     gateway = CountingGateway(inner)
     ticks = iter([NOW, NOW])  # tracker start + execute stamps
     clock = lambda: next(ticks, NOW)  # noqa: E731
     agent = _StepAgent(
-        AgentRuntime(gateway, clock, lambda: "id-1"), "agent-spec", "spec",
+        AgentRuntime(gateway, clock, lambda: "id-1"),
+        "agent-spec",
+        "spec",
     )
     import datetime as _dt
 
     later = NOW + _dt.timedelta(seconds=12)
     agent._runtime = AgentRuntime(
-        gateway, lambda: later, lambda: "id-1",
+        gateway,
+        lambda: later,
+        lambda: "id-1",
     )
     request = AgentRequest(
-        request_id="r1", task_id="t1", project_id="p1", workflow_id="w",
-        agent_id="agent-spec", input={}, context={}, artifacts=[],
+        request_id="r1",
+        task_id="t1",
+        project_id="p1",
+        workflow_id="w",
+        agent_id="agent-spec",
+        input={},
+        context={},
+        artifacts=[],
         metadata={"stepTimeoutSeconds": 30},
     )
     # Start the execution at NOW by using the tracked path with a
@@ -490,7 +623,9 @@ def test_counting_gateway_injects_remaining_deadline():
     # t_start from the runtime clock — rebuild it for the sequence.
     stamps = iter([NOW, later, later])
     agent._runtime = AgentRuntime(
-        gateway, lambda: next(stamps, later), lambda: "id-1",
+        gateway,
+        lambda: next(stamps, later),
+        lambda: "id-1",
     )
     result = agent.execute(request)
     assert result.status == "SUCCESS"
@@ -504,25 +639,36 @@ def test_gateway_uses_the_smaller_deadline_timeout():
     class _Transport:
         def post(self, url, *, headers, body, timeout_seconds, **kwargs):  # type: ignore[no-untyped-def]
             seen["timeout"] = timeout_seconds
-            return 200, {}, (
-                b'{"model": "m", "choices": [{"message": {"content": "ok"},'
-                b' "finish_reason": "stop"}], "usage":'
-                b' {"prompt_tokens": 1, "completion_tokens": 1}}'
+            return (
+                200,
+                {},
+                (
+                    b'{"model": "m", "choices": [{"message": {"content": "ok"},'
+                    b' "finish_reason": "stop"}], "usage":'
+                    b' {"prompt_tokens": 1, "completion_tokens": 1}}'
+                ),
             )
 
     gateway = OpenAICompatibleGateway(
-        base_url="https://example.test/v1", model="m", api_key="k",
-        transport=_Transport(), timeout_seconds=300.0,
+        base_url="https://example.test/v1",
+        model="m",
+        api_key="k",
+        transport=_Transport(),
+        timeout_seconds=300.0,
     )
-    gateway.complete(ModelRequest(
-        messages=[ModelMessage(role="user", content="hi")],
-        metadata={"deadlineSeconds": 7},
-    ))
+    gateway.complete(
+        ModelRequest(
+            messages=[ModelMessage(role="user", content="hi")],
+            metadata={"deadlineSeconds": 7},
+        )
+    )
     assert seen["timeout"] == 7
-    gateway.complete(ModelRequest(
-        messages=[ModelMessage(role="user", content="hi")],
-        metadata={},
-    ))
+    gateway.complete(
+        ModelRequest(
+            messages=[ModelMessage(role="user", content="hi")],
+            metadata={},
+        )
+    )
     assert seen["timeout"] == 300.0
 
 
@@ -532,10 +678,14 @@ def test_gateway_cache_control_only_with_prompt_cache_enabled():
     class _Transport:
         def post(self, url, *, headers, body, timeout_seconds, **kwargs):  # type: ignore[no-untyped-def]
             bodies.append(body)
-            return 200, {}, (
-                b'{"model": "m", "choices": [{"message": {"content": "ok"},'
-                b' "finish_reason": "stop"}], "usage":'
-                b' {"prompt_tokens": 1, "completion_tokens": 1}}'
+            return (
+                200,
+                {},
+                (
+                    b'{"model": "m", "choices": [{"message": {"content": "ok"},'
+                    b' "finish_reason": "stop"}], "usage":'
+                    b' {"prompt_tokens": 1, "completion_tokens": 1}}'
+                ),
             )
 
     import json as _json
@@ -546,12 +696,18 @@ def test_gateway_cache_control_only_with_prompt_cache_enabled():
         ModelMessage(role="user", content="changing"),
     ]
     cached = OpenAICompatibleGateway(
-        base_url="https://api.anthropic.com/v1", model="m", api_key="k",
-        transport=_Transport(), prompt_cache=True,
+        base_url="https://api.anthropic.com/v1",
+        model="m",
+        api_key="k",
+        transport=_Transport(),
+        prompt_cache=True,
     )
-    cached.complete(ModelRequest(
-        messages=messages, metadata={"cachePrefixMessages": 2},
-    ))
+    cached.complete(
+        ModelRequest(
+            messages=messages,
+            metadata={"cachePrefixMessages": 2},
+        )
+    )
     payload = _json.loads(bodies[-1])
     assert payload["messages"][0]["content"][0]["cache_control"] == {
         "type": "ephemeral",
@@ -560,50 +716,81 @@ def test_gateway_cache_control_only_with_prompt_cache_enabled():
     assert payload["messages"][2]["content"] == "changing"
 
     plain = OpenAICompatibleGateway(
-        base_url="https://example.test/v1", model="m", api_key="k",
+        base_url="https://example.test/v1",
+        model="m",
+        api_key="k",
         transport=_Transport(),
     )
-    plain.complete(ModelRequest(
-        messages=messages, metadata={"cachePrefixMessages": 2},
-    ))
+    plain.complete(
+        ModelRequest(
+            messages=messages,
+            metadata={"cachePrefixMessages": 2},
+        )
+    )
     payload = _json.loads(bodies[-1])
     assert payload["messages"][0]["content"] == "sys"
 
 
 # ------------------------------------------------------------ review skip
 
+
 def _review_request(*, verdict: str = "PASS") -> AgentRequest:
-    code_changes = {"changes": [
-        {"path": "src/calculator.py", "operation": "create", "content": "x = 1\n"},
-    ]}
+    code_changes = {
+        "changes": [
+            {"path": "src/calculator.py", "operation": "create", "content": "x = 1\n"},
+        ]
+    }
     code = Artifact(
-        id="code-1", type="CODE", name="CODE.json", version="1",
+        id="code-1",
+        type="CODE",
+        name="CODE.json",
+        version="1",
         content={"format": "json", "changeSet": code_changes, "text": "code"},
-        created_by="agent-implement", created_at=NOW,
+        created_by="agent-implement",
+        created_at=NOW,
         metadata={
-            "specArtifactId": "spec-1", "specVersion": "1",
-            "planArtifactId": "plan-1", "planVersion": "1",
-            "taskArtifactId": "task-1", "taskVersion": "1",
-            "taskItemId": "T1", "baseRef": "main",
+            "specArtifactId": "spec-1",
+            "specVersion": "1",
+            "planArtifactId": "plan-1",
+            "planVersion": "1",
+            "taskArtifactId": "task-1",
+            "taskVersion": "1",
+            "taskItemId": "T1",
+            "baseRef": "main",
         },
     )
     report = Artifact(
-        id="rep-1", type="TEST_REPORT", name="Test report", version="1",
-        content={"format": "json", "report": {
-            "verdict": verdict, "commands": [], "summary": f"{verdict}: ok",
-        }, "text": verdict},
-        created_by="agent-test", created_at=NOW,
-        metadata={"codeArtifactId": "code-1", "codeVersion": "1",
-                  "taskItemId": "T1"},
+        id="rep-1",
+        type="TEST_REPORT",
+        name="Test report",
+        version="1",
+        content={
+            "format": "json",
+            "report": {
+                "verdict": verdict,
+                "commands": [],
+                "summary": f"{verdict}: ok",
+            },
+            "text": verdict,
+        },
+        created_by="agent-test",
+        created_at=NOW,
+        metadata={"codeArtifactId": "code-1", "codeVersion": "1", "taskItemId": "T1"},
     )
     return AgentRequest(
-        request_id="req-review", task_id="task-1", project_id="project-1",
-        workflow_id="software-development", agent_id="agent-review",
-        input={"taskItemId": "T1"}, context={"project": {}},
+        request_id="req-review",
+        task_id="task-1",
+        project_id="project-1",
+        workflow_id="software-development",
+        agent_id="agent-review",
+        input={"taskItemId": "T1"},
+        context={"project": {}},
         artifacts=[
             make_spec_artifact(),
             make_plan_artifact(),
-            make_task_artifact(), code, report,
+            make_task_artifact(),
+            code,
+            report,
         ],
         metadata={"attempt": 1},
     )
@@ -612,8 +799,10 @@ def _review_request(*, verdict: str = "PASS") -> AgentRequest:
 def test_review_skips_llm_when_tests_pass_and_diff_small():
     gateway = ScriptedModelGateway([])
     agent = ReviewAgent(
-        _runtime(gateway), prompts=load_review_prompts(),
-        skip_when_tests_pass=True, max_diff_lines=200,
+        _runtime(gateway),
+        prompts=load_review_prompts(),
+        skip_when_tests_pass=True,
+        max_diff_lines=200,
     )
     result = agent.execute(_review_request())
     assert result.status == "SUCCESS"
@@ -624,12 +813,16 @@ def test_review_skips_llm_when_tests_pass_and_diff_small():
 
 
 def test_review_does_not_skip_when_tests_failed():
-    gateway = ScriptedModelGateway([
-        '{"findings": [], "verdict": "APPROVE"}',
-    ])
+    gateway = ScriptedModelGateway(
+        [
+            '{"findings": [], "verdict": "APPROVE"}',
+        ]
+    )
     agent = ReviewAgent(
-        _runtime(gateway), prompts=load_review_prompts(),
-        skip_when_tests_pass=True, max_diff_lines=200,
+        _runtime(gateway),
+        prompts=load_review_prompts(),
+        skip_when_tests_pass=True,
+        max_diff_lines=200,
     )
     result = agent.execute(_review_request(verdict="FAIL"))
     assert result.status == "SUCCESS"

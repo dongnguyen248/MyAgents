@@ -40,14 +40,19 @@ class TeamsWorkflow:
     """One trusted Power Automate flow, with explicit at-least-once card delivery."""
 
     def __init__(
-        self, config: TeamsConfig, engine: Orchestrator, *, transport: HttpTransport | None = None,
+        self,
+        config: TeamsConfig,
+        engine: Orchestrator,
+        *,
+        transport: HttpTransport | None = None,
     ) -> None:
         self.approvals = TeamsApprovals(config, engine)
         self._url = config.resolve_workflow_url()
         self._callback_secret = config.callback_secret.resolve()
         if (
             len(self._callback_secret) < 32
-            or not self._callback_secret.isascii() or not self._callback_secret.isprintable()
+            or not self._callback_secret.isascii()
+            or not self._callback_secret.isprintable()
             or any(char.isspace() for char in self._callback_secret)
         ):
             raise ValueError("Teams callback secret must contain at least 32 characters")
@@ -57,7 +62,8 @@ class TeamsWorkflow:
 
     def authenticated(self, authorization: str) -> bool:
         return hmac.compare_digest(
-            authorization.encode("utf-8"), ("Bearer " + self._callback_secret).encode("utf-8"),
+            authorization.encode("utf-8"),
+            ("Bearer " + self._callback_secret).encode("utf-8"),
         )
 
     def send_approval(self, run_id: str) -> None:
@@ -70,18 +76,25 @@ class TeamsWorkflow:
             raise TeamsDeliveryError("Approval card too large; no partial specification was sent")
         config = self.approvals.config
         payload = {
-            "runId": run_id, "approvalId": request.id,
-            "artifactId": artifact.id, "artifactVersion": artifact.version,
-            "tenantId": str(config.tenant_id), "teamId": str(config.team_id),
-            "channelId": config.channel_id, "card": card,
+            "runId": run_id,
+            "approvalId": request.id,
+            "artifactId": artifact.id,
+            "artifactVersion": artifact.version,
+            "tenantId": str(config.tenant_id),
+            "teamId": str(config.team_id),
+            "channelId": config.channel_id,
+            "card": card,
         }
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         if self._callback_secret.encode("utf-8") in body or self._url.encode("utf-8") in body:
             raise TeamsDeliveryError("Approval artifact contains configured credential material")
         try:
             status, _headers, _body = self._transport.post(
-                self._url, headers={"Content-Type": "application/json"}, body=body,
-                timeout_seconds=config.timeout_seconds, max_response_bytes=4096,
+                self._url,
+                headers={"Content-Type": "application/json"},
+                body=body,
+                timeout_seconds=config.timeout_seconds,
+                max_response_bytes=4096,
             )
         except (OSError, ValueError, _ResponseTooLargeError):
             raise TeamsDeliveryError("Teams workflow delivery failed; retry explicitly") from None
@@ -101,9 +114,8 @@ class TeamsWorkflow:
     def advance(self, run_id: str) -> WorkflowExecution:
         engine = self.approvals.engine
         run = engine.get(run_id)
-        if (
-            engine.workflow_run(run_id)["status"] in TERMINAL
-            or run.state.stage.endswith("_ESCALATED")
+        if engine.workflow_run(run_id)["status"] in TERMINAL or run.state.stage.endswith(
+            "_ESCALATED"
         ):
             return run
         run = engine.tick(run_id)
@@ -113,7 +125,10 @@ class TeamsWorkflow:
 
 
 def create_app(
-    workflow: TeamsWorkflow, run_id: str, *, poll_seconds: float = 1,
+    workflow: TeamsWorkflow,
+    run_id: str,
+    *,
+    poll_seconds: float = 1,
 ) -> FastAPI:
     """Run callbacks and automatic agent dispatch on one SQLite-owning event-loop thread."""
     if poll_seconds <= 0:
@@ -127,14 +142,14 @@ def create_app(
                 run = workflow.advance(run_id)
             except (TeamsDeliveryError, ApprovalError, ValueError, KeyError) as error:
                 workflow.failure_code = (
-                    error.code if isinstance(error, (TeamsDeliveryError, ApprovalError))
+                    error.code
+                    if isinstance(error, (TeamsDeliveryError, ApprovalError))
                     else "AGENT_EXECUTION_FAILED"
                 )
                 logger.error("Teams automatic execution paused: %s", workflow.failure_code)
                 return
-            if (
-                engine.workflow_run(run_id)["status"] in TERMINAL
-                or run.state.stage.endswith("_ESCALATED")
+            if engine.workflow_run(run_id)["status"] in TERMINAL or run.state.stage.endswith(
+                "_ESCALATED"
             ):
                 logger.info("Teams workflow stopped at stage %s", run.state.stage)
                 return
@@ -196,14 +211,20 @@ def create_app(
         except ApprovalError as error:
             logger.warning("Teams callback rejected: %s", error.code)
             statuses: dict[str, Literal[403, 404, 409, 410, 422]] = {
-                "APPROVAL_NOT_AUTHORIZED": 403, "NOT_FOUND": 404,
-                "APPROVAL_ALREADY_DECIDED": 409, "APPROVAL_EXPIRED": 410,
+                "APPROVAL_NOT_AUTHORIZED": 403,
+                "NOT_FOUND": 404,
+                "APPROVAL_ALREADY_DECIDED": 409,
+                "APPROVAL_EXPIRED": 410,
                 "VALIDATION_FAILED": 422,
             }
             return response(statuses[error.code], error.code)
-        return JSONResponse(status_code=200, content={
-            "code": "DECISION_RECORDED", "stage": result.state.stage,
-            "approvalPending": result.approval_id == decision.action.approval_id,
-        })
+        return JSONResponse(
+            status_code=200,
+            content={
+                "code": "DECISION_RECORDED",
+                "stage": result.state.stage,
+                "approvalPending": result.approval_id == decision.action.approval_id,
+            },
+        )
 
     return app

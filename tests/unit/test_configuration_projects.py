@@ -175,9 +175,7 @@ workflow: software-development
             )
             with self.assertRaises(ConfigError) as ctx:
                 load_project(file_path)
-            self.assertTrue(
-                any(iss.path == "repository.token" for iss in ctx.exception.issues)
-            )
+            self.assertTrue(any(iss.path == "repository.token" for iss in ctx.exception.issues))
             self.assertIn("must be null or {env: ENV_VAR}", str(ctx.exception))
 
     def test_literal_secret_under_configuration_api_key_rejected(self):
@@ -198,9 +196,7 @@ configuration:
             )
             with self.assertRaises(ConfigError) as ctx:
                 load_project(file_path)
-            self.assertTrue(
-                any(iss.path == "configuration.apiKey" for iss in ctx.exception.issues)
-            )
+            self.assertTrue(any(iss.path == "configuration.apiKey" for iss in ctx.exception.issues))
             self.assertIn("must be null or {env: ENV_VAR}", str(ctx.exception))
 
     def test_secret_scan_accepts_env_ref_and_null_in_repository_and_configuration(self):
@@ -233,4 +229,3 @@ configuration:
 
 if __name__ == "__main__":
     unittest.main()
-

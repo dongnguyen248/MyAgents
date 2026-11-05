@@ -17,13 +17,18 @@ def test_offline_demo_engine_revises_then_approves_and_runs_plan(tmp_path):
     models = DemoModels()
     engine = demo_engine(config(), store, models=models)
     run = engine.start(
-        task_id="demo", project_id="demo", inputs={"spec": {"requirement": "Demo approval"}},
+        task_id="demo",
+        project_id="demo",
+        inputs={"spec": {"requirement": "Demo approval"}},
     )
     run = engine.tick(run.id)
     assert run.state.stage == "SPEC_REVIEW"
     first = run.approval_id
     run = engine.decide(
-        run.id, reviewer="reviewer", decision="REJECTED", comment="Add a retention policy",
+        run.id,
+        reviewer="reviewer",
+        decision="REJECTED",
+        comment="Add a retention policy",
         expected_approval_id=first,
     )
     assert run.state.stage == "SPEC_DRAFT"
@@ -35,7 +40,10 @@ def test_offline_demo_engine_revises_then_approves_and_runs_plan(tmp_path):
     assert "Initial demo specification" in models.requests[1].messages[-1].content
     assert "Revised demo specification" in run.artifacts["SPEC"].content["text"]
     run = engine.decide(
-        run.id, reviewer="reviewer", decision="APPROVED", expected_approval_id=run.approval_id,
+        run.id,
+        reviewer="reviewer",
+        decision="APPROVED",
+        expected_approval_id=run.approval_id,
     )
     assert run.state.stage == "PLAN"
     run = engine.tick(run.id)
@@ -50,11 +58,23 @@ def test_offline_demo_engine_revises_then_approves_and_runs_plan(tmp_path):
 @pytest.mark.parametrize("gemini", [False, True])
 def test_manual_demo_wiring_without_real_network(tmp_path, monkeypatch, capsys, gemini):
     settings = config()
-    (tmp_path / "platform.yaml").write_text(yaml.safe_dump({"notifications": [{
-        "name": "teams-approvals", "type": "teams-workflow",
-        "credentials": {"env": settings.credentials.env},
-        "settings": settings.model_dump(mode="json", by_alias=True, exclude={"credentials"}),
-    }]}), encoding="utf-8")
+    (tmp_path / "platform.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "notifications": [
+                    {
+                        "name": "teams-approvals",
+                        "type": "teams-workflow",
+                        "credentials": {"env": settings.credentials.env},
+                        "settings": settings.model_dump(
+                            mode="json", by_alias=True, exclude={"credentials"}
+                        ),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("ASF_TEAMS_WORKFLOW_URL", f"https://{settings.workflow_host}/trigger")
     monkeypatch.setenv("ASF_TEAMS_CALLBACK_SECRET", "fake-" + "x" * 32)
     calls = []
@@ -65,7 +85,8 @@ def test_manual_demo_wiring_without_real_network(tmp_path, monkeypatch, capsys, 
         return DemoModels()
 
     monkeypatch.setattr(
-        "asf.integrations.teams.demo.GeminiModelGateway.from_environment", fake_gateway,
+        "asf.integrations.teams.demo.GeminiModelGateway.from_environment",
+        fake_gateway,
     )
     monkeypatch.setenv("ASF_LIVE_GEMINI_MODEL", "fake-model")
 
@@ -76,7 +97,8 @@ def test_manual_demo_wiring_without_real_network(tmp_path, monkeypatch, capsys, 
             async with app.router.lifespan_context(app):
                 await asyncio.sleep(0)
                 async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=app), base_url="http://local",
+                    transport=httpx.ASGITransport(app=app),
+                    base_url="http://local",
                 ) as client:
                     assert (await client.get("/health")).status_code == 503
 
@@ -88,13 +110,21 @@ def test_manual_demo_wiring_without_real_network(tmp_path, monkeypatch, capsys, 
         raise TeamsDeliveryError("Simulated delivery failure")
 
     monkeypatch.setattr(
-        "asf.integrations.teams.workflow.TeamsWorkflow.send_approval", fail_before_network,
+        "asf.integrations.teams.workflow.TeamsWorkflow.send_approval",
+        fail_before_network,
     )
     monkeypatch.setattr("uvicorn.run", serve)
-    run_demo(argparse.Namespace(
-        config_dir=tmp_path, channel="teams-approvals", database=tmp_path / "demo.sqlite",
-        run_id=None, port=3978, gemini=gemini, requirement="Demo",
-    ))
+    run_demo(
+        argparse.Namespace(
+            config_dir=tmp_path,
+            channel="teams-approvals",
+            database=tmp_path / "demo.sqlite",
+            run_id=None,
+            port=3978,
+            gemini=gemini,
+            requirement="Demo",
+        )
+    )
     assert calls == [("127.0.0.1", 3978, False)]
     assert "Demo run:" in capsys.readouterr().out
     assert len(model_calls) == int(gemini)
@@ -121,7 +151,9 @@ def test_demo_execution_id_matches_correlation_id(tmp_path):
     try:
         engine = demo_engine(config(), store, execution_id="correlation")
         run = engine.start(
-            task_id="demo", project_id="demo", inputs={"spec": {"requirement": "Demo"}},
+            task_id="demo",
+            project_id="demo",
+            inputs={"spec": {"requirement": "Demo"}},
         )
         assert run.id == "correlation"
         assert engine.tick(run.id).state.stage == "SPEC_REVIEW"

@@ -40,9 +40,7 @@ class ApprovalRulesTests(unittest.TestCase):
     def test_status_to_trigger_mapping_consistency(self):
         """The documented status -> trigger mapping of A10 is consistent with Trigger and schema."""
         trigger_values = {t.value for t in Trigger}
-        decision_enum = set(
-            SCHEMA["$defs"]["ApprovalDecision"]["properties"]["decision"]["enum"]
-        )
+        decision_enum = set(SCHEMA["$defs"]["ApprovalDecision"]["properties"]["decision"]["enum"])
 
         for status, trigger_name in STATUS_TO_TRIGGER_MAPPING.items():
             with self.subTest(status=status, trigger=trigger_name):

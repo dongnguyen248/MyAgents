@@ -89,7 +89,6 @@ def workflow_step():
     }
 
 
-
 VALID_INSTANCES = {
     "AgentMetadata": {
         "id": "agent-spec",
@@ -158,7 +157,6 @@ VALID_INSTANCES = {
         "updatedAt": TIMESTAMP,
         "metadata": {},
     },
-
     "ApprovalRequest": {
         "id": "approval-1",
         "taskId": "task-1",
@@ -311,7 +309,6 @@ class ContractSchemaTests(unittest.TestCase):
         workflow = dict(VALID_INSTANCES["Workflow"], steps=[step])
         self.assertFalse(validator_for("Workflow").is_valid(workflow))
 
-
     def test_approval_rejects_unknown_status_and_decision(self):
         request = dict(VALID_INSTANCES["ApprovalRequest"], status="WAITING")
         decision = dict(VALID_INSTANCES["ApprovalDecision"], decision="MAYBE")
@@ -376,7 +373,6 @@ class ContractSchemaTests(unittest.TestCase):
 
         policy = dict(VALID_INSTANCES["ApprovalPolicy"], expiresInSeconds=None)
         self.assertTrue(validator_for("ApprovalPolicy").is_valid(policy))
-
 
         event_null_task = dict(VALID_INSTANCES["ActivityEvent"], taskId=None)
         self.assertTrue(validator_for("ActivityEvent").is_valid(event_null_task))
@@ -660,7 +656,9 @@ class ContractSchemaTests(unittest.TestCase):
         self.assertFalse(validator_for("ApprovalFeedback").is_valid(fb))
 
         # accepts valid feedback
-        self.assertTrue(validator_for("ApprovalFeedback").is_valid(VALID_INSTANCES["ApprovalFeedback"]))
+        self.assertTrue(
+            validator_for("ApprovalFeedback").is_valid(VALID_INSTANCES["ApprovalFeedback"])
+        )
 
     def test_agent_request_feedback(self):
         # validates without feedback
@@ -852,8 +850,17 @@ class ContractSchemaTests(unittest.TestCase):
 
         # Rejects missing fields
         for field in [
-            "id", "workflowId", "workflowVersion", "projectId", "taskId",
-            "status", "stage", "revisions", "startedAt", "updatedAt", "metadata"
+            "id",
+            "workflowId",
+            "workflowVersion",
+            "projectId",
+            "taskId",
+            "status",
+            "stage",
+            "revisions",
+            "startedAt",
+            "updatedAt",
+            "metadata",
         ]:
             bad_run = dict(run)
             bad_run.pop(field)
@@ -876,7 +883,6 @@ class ContractSchemaTests(unittest.TestCase):
 
         bad_updated = dict(run, updatedAt="not-a-timestamp")
         self.assertFalse(validator_for("WorkflowRun").is_valid(bad_updated))
-
 
 
 if __name__ == "__main__":

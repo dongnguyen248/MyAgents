@@ -38,8 +38,7 @@ def check_file_size(size: int, path: str) -> list[str]:
     issues: list[str] = []
     if size > MAX_FILE_SIZE_BYTES:
         issues.append(
-            f"file '{path}' size {size} bytes "
-            f"exceeds limit of {MAX_FILE_SIZE_BYTES} bytes"
+            f"file '{path}' size {size} bytes exceeds limit of {MAX_FILE_SIZE_BYTES} bytes"
         )
     return issues
 

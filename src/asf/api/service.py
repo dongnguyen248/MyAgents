@@ -112,11 +112,26 @@ _RESULT_STATUS_MAP = {
 
 _TASK_STATUSES = {
     "NEW",
-    "SPEC_DRAFT", "SPEC_REVIEW", "SPEC_REJECTED", "SPEC_APPROVED",
-    "PLAN_DRAFT", "PLAN_REVIEW", "PLAN_REJECTED", "PLAN_APPROVED",
-    "TASK_DRAFT", "TASK_REVIEW", "TASK_REJECTED", "TASK_APPROVED",
-    "IMPLEMENTING", "CODE_REVIEW", "TESTING", "CI", "READY_TO_MERGE",
-    "COMPLETED", "FAILED", "CANCELLED",
+    "SPEC_DRAFT",
+    "SPEC_REVIEW",
+    "SPEC_REJECTED",
+    "SPEC_APPROVED",
+    "PLAN_DRAFT",
+    "PLAN_REVIEW",
+    "PLAN_REJECTED",
+    "PLAN_APPROVED",
+    "TASK_DRAFT",
+    "TASK_REVIEW",
+    "TASK_REJECTED",
+    "TASK_APPROVED",
+    "IMPLEMENTING",
+    "CODE_REVIEW",
+    "TESTING",
+    "CI",
+    "READY_TO_MERGE",
+    "COMPLETED",
+    "FAILED",
+    "CANCELLED",
 }
 
 _WORKFLOW_TYPES = {"feature-development", "bug-fix", "refactoring"}
@@ -124,34 +139,67 @@ _PRIORITIES = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
 _APPROVAL_TYPES = {"SPEC", "PLAN", "TASK", "CODE_REVIEW", "DEPLOYMENT"}
 _TERMINAL_STAGES = {"COMPLETED", "FAILED", "CANCELLED"}
 
-_DASHBOARD_STEP_IDS = {"spec", "plan", "task", "implementation", "code_review",
-                       "testing", "ci", "merge"}
+_DASHBOARD_STEP_IDS = {
+    "spec",
+    "plan",
+    "task",
+    "implementation",
+    "code_review",
+    "testing",
+    "ci",
+    "merge",
+}
 _STEP_ID_BY_STEP_ID = {
-    "spec": "spec", "plan": "plan", "task": "task", "implement": "implementation",
-    "review": "code_review", "test": "testing", "ci": "ci", "merge": "merge",
+    "spec": "spec",
+    "plan": "plan",
+    "task": "task",
+    "implement": "implementation",
+    "review": "code_review",
+    "test": "testing",
+    "ci": "ci",
+    "merge": "merge",
 }
 _STEP_ID_BY_STAGE = {
-    "SPEC": "spec", "PLAN": "plan", "TASK": "task", "IMPLEMENTING": "implementation",
-    "CODE_REVIEW": "code_review", "TESTING": "testing", "CI": "ci",
+    "SPEC": "spec",
+    "PLAN": "plan",
+    "TASK": "task",
+    "IMPLEMENTING": "implementation",
+    "CODE_REVIEW": "code_review",
+    "TESTING": "testing",
+    "CI": "ci",
     "READY_TO_MERGE": "merge",
 }
 _APPROVAL_STEP_IDS = {"spec": "spec_approval", "plan": "plan_approval", "task": "task_approval"}
 
 _ZERO_AGENT_METRICS: dict[str, Any] = {
-    "total": 0, "completed": 0, "running": 0, "failed": 0, "cancelled": 0,
-    "successRate": 0.0, "avgDurationSec": 0.0, "avgRevisions": 0.0,
-    "humanApprovalRate": 0.0, "testPassRate": 0.0, "ciPassRate": 0.0,
+    "total": 0,
+    "completed": 0,
+    "running": 0,
+    "failed": 0,
+    "cancelled": 0,
+    "successRate": 0.0,
+    "avgDurationSec": 0.0,
+    "avgRevisions": 0.0,
+    "humanApprovalRate": 0.0,
+    "testPassRate": 0.0,
+    "ciPassRate": 0.0,
 }
 
 _EMPTY_OVERVIEW: dict[str, Any] = {
     "daily": [],
     "human": {
-        "approvalRate": 0.0, "rejectionRate": 0.0, "avgRevisions": 0.0,
-        "avgApprovalMinutes": 0.0, "daily": [],
+        "approvalRate": 0.0,
+        "rejectionRate": 0.0,
+        "avgRevisions": 0.0,
+        "avgApprovalMinutes": 0.0,
+        "daily": [],
     },
     "quality": {
-        "codeReviewRejectionRate": 0.0, "testPassRate": 0.0, "ciPassRate": 0.0,
-        "reworkRate": 0.0, "daily": [],
+        "codeReviewRejectionRate": 0.0,
+        "testPassRate": 0.0,
+        "ciPassRate": 0.0,
+        "reworkRate": 0.0,
+        "daily": [],
     },
     "agents": [],
 }
@@ -196,7 +244,8 @@ def _valid_test_commands(raw: Any) -> list[list[str]]:
     commands: list[list[str]] = []
     for argv in raw:
         if (
-            not isinstance(argv, list) or not argv
+            not isinstance(argv, list)
+            or not argv
             or not all(isinstance(arg, str) and arg for arg in argv)
         ):
             return []
@@ -306,14 +355,16 @@ class FactoryService:
         return self._model_settings.public()
 
     def update_model_settings(
-        self, payload: Mapping[str, Any],
+        self,
+        payload: Mapping[str, Any],
     ) -> dict[str, Any] | None:
         if self._model_settings is None:
             return None
         return self._model_settings.update(payload)
 
     def test_model_settings(
-        self, agent: str | None = None,
+        self,
+        agent: str | None = None,
     ) -> dict[str, Any] | None:
         if self._model_settings is None:
             return None
@@ -334,9 +385,7 @@ class FactoryService:
                     if isinstance(value, str) and value not in technologies:
                         technologies.append(value)
             approval = profile.configuration.get("approval")
-            channel = (
-                approval.get("channel") if isinstance(approval, Mapping) else None
-            )
+            channel = approval.get("channel") if isinstance(approval, Mapping) else None
             return {
                 "id": profile.id,
                 "name": profile.name,
@@ -376,9 +425,7 @@ class FactoryService:
                 items = values if isinstance(values, list) else [values]
                 groups[str(group)] = [str(item) for item in items if isinstance(item, str)]
         configuration = data.get("configuration") or {}
-        approval = (
-            configuration.get("approval") if isinstance(configuration, Mapping) else None
-        )
+        approval = configuration.get("approval") if isinstance(configuration, Mapping) else None
         channel = approval.get("channel") if isinstance(approval, Mapping) else None
         raw_skills = data.get("enabledSkills", data.get("enabled_skills"))
         return {
@@ -386,23 +433,21 @@ class FactoryService:
             "name": str(data.get("name", project_id)),
             "repositoryProvider": str(provider),
             "repositoryUrl": (
-                str(repository.get("url") or "")
-                if isinstance(repository, Mapping) else ""
+                str(repository.get("url") or "") if isinstance(repository, Mapping) else ""
             ),
             "repositoryPath": (
-                str(repository.get("path") or "")
-                if isinstance(repository, Mapping) else ""
+                str(repository.get("path") or "") if isinstance(repository, Mapping) else ""
             ),
             "testCommands": _valid_test_commands(
-                configuration.get("testCommands")
-                if isinstance(configuration, Mapping) else None
+                configuration.get("testCommands") if isinstance(configuration, Mapping) else None
             ),
             "technologies": [str(item) for item in technologies],
             "description": str(data.get("description", "")),
             "workflow": str(data.get("workflow", "")),
             "enabledSkills": (
                 [str(skill) for skill in raw_skills if isinstance(skill, str)]
-                if isinstance(raw_skills, list) else []
+                if isinstance(raw_skills, list)
+                else []
             ),
             "technologyGroups": groups,
             "approvalChannel": channel if isinstance(channel, str) else "",
@@ -443,7 +488,8 @@ class FactoryService:
                 # a broken store look like "no runs exist".
                 logger.warning(
                     "Could not discover stored runs for project %s",
-                    project_id, exc_info=True,
+                    project_id,
+                    exc_info=True,
                 )
                 continue
 
@@ -462,7 +508,9 @@ class FactoryService:
             self._store_runs[run_id] = self._store.get_execution(run_id)  # type: ignore[union-attr]
         except Exception:
             logger.warning(
-                "Could not load stored run %s", run_id, exc_info=True,
+                "Could not load stored run %s",
+                run_id,
+                exc_info=True,
             )
 
     # List endpoints poll: the dashboard asks for the run list every
@@ -520,7 +568,9 @@ class FactoryService:
         return None
 
     def _step_for_stage(
-        self, run: WorkflowExecution, stage: str,
+        self,
+        run: WorkflowExecution,
+        stage: str,
     ) -> WorkflowStepDef | None:
         definition = self._definition(run)
         if definition is None:
@@ -579,7 +629,9 @@ class FactoryService:
         config = metadata.configuration or {}
         runs = self._runs()
         own = [
-            (run, result) for run in runs for result in run.results
+            (run, result)
+            for run in runs
+            for result in run.results
             if result.agent_id == metadata.id
         ]
         last_activity = max((run.updated_at for run, _ in own), default=None)
@@ -640,20 +692,14 @@ class FactoryService:
             "modelVersion": str(config.get("modelVersion", "latest")),
             "systemPrompt": str(config.get("systemPrompt", "")),
             "skills": list(
-                config.get("skills")
-                or agent_skill_ids(str(metadata.type))
-                or metadata.capabilities
+                config.get("skills") or agent_skill_ids(str(metadata.type)) or metadata.capabilities
             ),
             "tools": list(config.get("tools") or []),
-            "allowedProjectIds": list(
-                config.get("allowedProjectIds") or self._projects.keys()
-            ),
+            "allowedProjectIds": list(config.get("allowedProjectIds") or self._projects.keys()),
             "maxConcurrentTasks": int(config.get("maxConcurrentTasks", 1)),
             "timeoutSeconds": int(config.get("timeoutSeconds", 1800)),
             "retryPolicy": {
-                "maxRetries": int(
-                    retry.get("maxRetries", retry.get("maxAttempts", 0))
-                ),
+                "maxRetries": int(retry.get("maxRetries", retry.get("maxAttempts", 0))),
                 "backoff": str(retry.get("backoff", "none")),
                 "backoffSeconds": int(retry.get("backoffSeconds", 0)),
             },
@@ -667,14 +713,16 @@ class FactoryService:
             for result in run.results:
                 if result.agent_id != agent_id:
                     continue
-                entries.append({
-                    "taskId": run.task_id,
-                    "projectId": run.project_id,
-                    "title": run.task_id,
-                    "status": _RESULT_STATUS_MAP.get(str(result.status), "Running"),
-                    "startedAt": _iso(run.started_at),
-                    "durationSec": float(result.metrics.duration_seconds),
-                })
+                entries.append(
+                    {
+                        "taskId": run.task_id,
+                        "projectId": run.project_id,
+                        "title": run.task_id,
+                        "status": _RESULT_STATUS_MAP.get(str(result.status), "Running"),
+                        "startedAt": _iso(run.started_at),
+                        "durationSec": float(result.metrics.duration_seconds),
+                    }
+                )
         return entries
 
     # ------------------------------------------------------------------
@@ -736,13 +784,13 @@ class FactoryService:
             if isinstance(split.get("total"), int) and split["total"] > 0:
                 view["splitTotal"] = split["total"]
         if run.state.stage in _TERMINAL_STAGES:
-            view["durationSec"] = max(
-                0.0, (run.updated_at - run.started_at).total_seconds()
-            )
+            view["durationSec"] = max(0.0, (run.updated_at - run.started_at).total_seconds())
         return view
 
     def list_tasks(
-        self, filter: Mapping[str, Any] | None = None, **kwargs: Any,
+        self,
+        filter: Mapping[str, Any] | None = None,
+        **kwargs: Any,
     ) -> list[dict[str, Any]]:
         criteria: dict[str, Any] = {**(filter or {}), **kwargs}
         latest: dict[str, WorkflowExecution] = {}
@@ -750,7 +798,8 @@ class FactoryService:
             latest[run.task_id] = run
         views = [self._task_view(run) for run in latest.values()]
         views.extend(
-            view for view in self._split_parent_views(latest)
+            view
+            for view in self._split_parent_views(latest)
             if view["id"] not in {v["id"] for v in views}
         )
         if criteria.get("projectId"):
@@ -769,10 +818,7 @@ class FactoryService:
             )
             if reference is not None:
                 cutoff = reference - timedelta(hours=float(criteria["sinceHours"]))
-                views = [
-                    v for v in views
-                    if datetime.fromisoformat(v["createdAt"]) >= cutoff
-                ]
+                views = [v for v in views if datetime.fromisoformat(v["createdAt"]) >= cutoff]
         views = sorted(views, key=lambda view: view["updatedAt"], reverse=True)
         return FactoryService._group_split_parts(views)
 
@@ -811,7 +857,8 @@ class FactoryService:
         return grouped
 
     def _split_parent_views(
-        self, latest: Mapping[str, WorkflowExecution],
+        self,
+        latest: Mapping[str, WorkflowExecution],
     ) -> list[dict[str, Any]]:
         """Synthesize task rows for auto-split parents.
 
@@ -842,8 +889,7 @@ class FactoryService:
             total = total_raw if isinstance(total_raw, int) and total_raw > 0 else len(children)
             completed = sum(1 for run in children if run.state.stage == "COMPLETED")
             active = next(
-                (run for run in reversed(children)
-                 if run.state.stage not in _TERMINAL_STAGES),
+                (run for run in reversed(children) if run.state.stage not in _TERMINAL_STAGES),
                 None,
             )
             if active is not None:
@@ -857,20 +903,22 @@ class FactoryService:
             else:
                 status = "IMPLEMENTING"
             title = split_of(first).get("title")
-            views.append({
-                "id": parent_id,
-                "title": title if isinstance(title, str) and title else parent_id,
-                "projectId": first.project_id,
-                "workflowType": self._workflow_type(first),
-                "status": status,
-                "priority": self._task_priority(first),
-                "createdAt": _iso(min(run.started_at for run in children)),
-                "updatedAt": _iso(max(run.updated_at for run in children)),
-                "revisions": sum(sum(run.state.revisions.values()) for run in children),
-                "isSplitParent": True,
-                "splitTotal": total,
-                "splitCompleted": completed,
-            })
+            views.append(
+                {
+                    "id": parent_id,
+                    "title": title if isinstance(title, str) and title else parent_id,
+                    "projectId": first.project_id,
+                    "workflowType": self._workflow_type(first),
+                    "status": status,
+                    "priority": self._task_priority(first),
+                    "createdAt": _iso(min(run.started_at for run in children)),
+                    "updatedAt": _iso(max(run.updated_at for run in children)),
+                    "revisions": sum(sum(run.state.revisions.values()) for run in children),
+                    "isSplitParent": True,
+                    "splitTotal": total,
+                    "splitCompleted": completed,
+                }
+            )
         return views
 
     def get_task(self, task_id: str) -> dict[str, Any] | None:
@@ -888,7 +936,8 @@ class FactoryService:
         """
         step = self._step_for_stage(run, run.state.stage)
         return bool(
-            step is not None and step.requires_approval
+            step is not None
+            and step.requires_approval
             and run.state.stage == f"{step.stage}_REVIEW"
         )
 
@@ -910,12 +959,15 @@ class FactoryService:
         for observation in reversed(run.observations):
             event = observation.event
             if event is None or event.event_type not in (
-                "WORKFLOW_STARTED", "WORKFLOW_STAGE_CHANGED",
+                "WORKFLOW_STARTED",
+                "WORKFLOW_STAGE_CHANGED",
             ):
                 continue
             stage = event.metadata.get("stage")
             if isinstance(stage, str) and stage not in (
-                "FAILED", "COMPLETED", "CANCELLED",
+                "FAILED",
+                "COMPLETED",
+                "CANCELLED",
             ):
                 stages.append(stage)
         return stages
@@ -928,7 +980,10 @@ class FactoryService:
         return stages[0] if stages else None
 
     def _step_states(
-        self, run: WorkflowExecution, definition: WorkflowDefinition, status: str,
+        self,
+        run: WorkflowExecution,
+        definition: WorkflowDefinition,
+        status: str,
     ) -> list[dict[str, Any]]:
         sequence = ["NEW"]
         for step in definition.steps:
@@ -968,8 +1023,7 @@ class FactoryService:
                     approved_indexes = [
                         sequence.index(f"{step.stage}_APPROVED")
                         for step in definition.steps
-                        if step.requires_approval
-                        and f"{step.stage}_APPROVED" in sequence
+                        if step.requires_approval and f"{step.stage}_APPROVED" in sequence
                     ]
                     if approved_indexes:
                         terminal_from_index = max(approved_indexes)
@@ -995,9 +1049,8 @@ class FactoryService:
                 for candidate in definition.steps:
                     if failed_stage not in candidate.generated_stages():
                         continue
-                    mapped = (
-                        _STEP_ID_BY_STEP_ID.get(candidate.id)
-                        or _STEP_ID_BY_STAGE.get(candidate.stage)
+                    mapped = _STEP_ID_BY_STEP_ID.get(candidate.id) or _STEP_ID_BY_STAGE.get(
+                        candidate.stage
                     )
                     if mapped in _DASHBOARD_STEP_IDS:
                         forced_failed = mapped
@@ -1037,8 +1090,7 @@ class FactoryService:
                 # step in progress at cancel time and everything after it
                 # are cancelled, never done.
                 main_state = (
-                    "done" if step.produces and set(step.produces) <= produced
-                    else "cancelled"
+                    "done" if step.produces and set(step.produces) <= produced else "cancelled"
                 )
             elif current_index is not None:
                 main_state = "done" if max(indexes) < current_index else "pending"
@@ -1048,7 +1100,11 @@ class FactoryService:
             approval_id = _APPROVAL_STEP_IDS.get(main_id)
             if step.requires_approval and approval_id is not None:
                 approval_state = self._approval_step_state(
-                    step, stage, current_index, sequence, status,
+                    step,
+                    stage,
+                    current_index,
+                    sequence,
+                    status,
                     terminal_from_index,
                 )
                 if approval_state == "done" and main_id in skip_ids:
@@ -1056,17 +1112,22 @@ class FactoryService:
                     # to skip it — say so instead of implying a human
                     # approved it.
                     approval_state = "skipped"
-                steps.append({
-                    "id": approval_id,
-                    "label": f"{step.name} approval",
-                    "state": approval_state,
-                })
+                steps.append(
+                    {
+                        "id": approval_id,
+                        "label": f"{step.name} approval",
+                        "state": approval_state,
+                    }
+                )
         return steps
 
     @staticmethod
     def _approval_step_state(
-        step: WorkflowStepDef, stage: str, current_index: int | None,
-        sequence: list[str], status: str,
+        step: WorkflowStepDef,
+        stage: str,
+        current_index: int | None,
+        sequence: list[str],
+        status: str,
         terminal_from_index: int | None = None,
     ) -> str:
         if status == "COMPLETED":
@@ -1122,7 +1183,8 @@ class FactoryService:
 
     @staticmethod
     def _current_activity(
-        run: WorkflowExecution, steps: list[dict[str, Any]],
+        run: WorkflowExecution,
+        steps: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
         """What the run is doing right now, for the dashboard's live strip.
 
@@ -1155,9 +1217,7 @@ class FactoryService:
         split = run.context.get("split") if isinstance(run.context, Mapping) else None
         if not isinstance(split, Mapping):
             split = {}
-        split_error = (
-            run.context.get("splitError") if isinstance(run.context, Mapping) else None
-        )
+        split_error = run.context.get("splitError") if isinstance(run.context, Mapping) else None
         return {
             "id": run.id,
             "taskId": run.task_id,
@@ -1226,16 +1286,12 @@ class FactoryService:
             failed = sum(run.state.stage == "FAILED" for run in own)
             finished = completed + failed
             metrics: dict[str, Any] = {
-                "activeAgents": len({
-                    result.agent_id for run in own for result in run.results
-                }),
+                "activeAgents": len({result.agent_id for run in own for result in run.results}),
                 "running": sum(run.state.stage not in _TERMINAL_STAGES for run in own),
                 "completed": completed,
                 "failed": failed,
                 "successRate": completed / finished if finished else 0.0,
-                "pendingApprovals": sum(
-                    self._is_review_stage(run) for run in own
-                ),
+                "pendingApprovals": sum(self._is_review_stage(run) for run in own),
             }
             if self._metrics is not None and hasattr(self._metrics, "project_outcomes"):
                 try:
@@ -1247,25 +1303,27 @@ class FactoryService:
                         camel = _camelize(str(key))
                         if camel in metrics and isinstance(value, (int, float)):
                             metrics[camel] = value
-            projects.append({
-                "id": profile["id"],
-                "name": profile["name"],
-                "repositoryProvider": profile["repositoryProvider"],
-                "repositoryUrl": profile["repositoryUrl"],
-                "repositoryPath": profile["repositoryPath"],
-                **self._hosting_token_view(project_id),
-                "testCommands": profile["testCommands"],
-                "technologies": profile["technologies"],
-                "description": profile["description"],
-                "workflow": profile["workflow"],
-                "enabledSkills": profile["enabledSkills"],
-                "technologyGroups": profile["technologyGroups"],
-                "approvalChannel": profile["approvalChannel"],
-                "agentIds": agent_ids,
-                "ci": "UNKNOWN",
-                "ciFailures24h": 0,
-                "metrics": metrics,
-            })
+            projects.append(
+                {
+                    "id": profile["id"],
+                    "name": profile["name"],
+                    "repositoryProvider": profile["repositoryProvider"],
+                    "repositoryUrl": profile["repositoryUrl"],
+                    "repositoryPath": profile["repositoryPath"],
+                    **self._hosting_token_view(project_id),
+                    "testCommands": profile["testCommands"],
+                    "technologies": profile["technologies"],
+                    "description": profile["description"],
+                    "workflow": profile["workflow"],
+                    "enabledSkills": profile["enabledSkills"],
+                    "technologyGroups": profile["technologyGroups"],
+                    "approvalChannel": profile["approvalChannel"],
+                    "agentIds": agent_ids,
+                    "ci": "UNKNOWN",
+                    "ciFailures24h": 0,
+                    "metrics": metrics,
+                }
+            )
         return projects
 
     # ------------------------------------------------------------------
@@ -1300,7 +1358,10 @@ class FactoryService:
             )
 
     def _apply_hosting_token(
-        self, project_id: str, token: str | None, clear: bool,
+        self,
+        project_id: str,
+        token: str | None,
+        clear: bool,
     ) -> None:
         if self._hosting_tokens is None:
             return
@@ -1373,12 +1434,12 @@ class FactoryService:
         self._project_profiles[profile.id] = profile.to_contract()
 
     def _project_view(self, project_id: str) -> dict[str, Any]:
-        return next(
-            view for view in self.list_projects() if view["id"] == project_id
-        )
+        return next(view for view in self.list_projects() if view["id"] == project_id)
 
     def update_project(
-        self, project_id: str, payload: Mapping[str, Any],
+        self,
+        project_id: str,
+        payload: Mapping[str, Any],
     ) -> dict[str, Any]:
         """Replace a project's profile; returns its dashboard project view.
 
@@ -1393,7 +1454,8 @@ class FactoryService:
         if project_id not in self._projects:
             raise ProjectNotFoundError(f"Project '{project_id}' not found")
         merged = deep_merge(
-            self._project_profiles.get(project_id, {}), data,
+            self._project_profiles.get(project_id, {}),
+            data,
         )
         profile = self._validate_profile(merged)
         if profile.id != project_id:
@@ -1414,9 +1476,9 @@ class FactoryService:
         if project_id not in self._projects:
             raise ProjectNotFoundError(f"Project '{project_id}' not found")
         active = [
-            run for run in self._runs()
-            if run.project_id == project_id
-            and run.state.stage not in _TERMINAL_STAGES
+            run
+            for run in self._runs()
+            if run.project_id == project_id and run.state.stage not in _TERMINAL_STAGES
         ]
         if active:
             raise ProjectConflictError(
@@ -1478,15 +1540,22 @@ class FactoryService:
         else:
             step_id = (request.metadata or {}).get("stepId")
             definition = self._definition(run)
-            step = next(
-                (item for item in definition.steps if item.id == step_id), None,
-            ) if definition is not None else None
+            step = (
+                next(
+                    (item for item in definition.steps if item.id == step_id),
+                    None,
+                )
+                if definition is not None
+                else None
+            )
             requested_by = (
                 self._agent_id_for_type(step.agent_type) if step is not None else None
             ) or request.requested_by
             artifact_name = request.artifact_id
         requested_at = getattr(request, "requested_at", None) or getattr(
-            request, "created_at", None,
+            request,
+            "created_at",
+            None,
         )
         view: dict[str, Any] = {
             "id": request.id,
@@ -1518,49 +1587,60 @@ class FactoryService:
         return approvals
 
     def decide_approval(
-        self, approval_id: str, *, decision: str, comment: str = "",
+        self,
+        approval_id: str,
+        *,
+        decision: str,
+        comment: str = "",
     ) -> dict[str, Any]:
         self._invalidate_runs_cache()
         if decision not in (*_DECISIONS, "COMMENT"):
             raise ValueError(f"Unknown approval decision: {decision}")
         run = next(
-            (item for item in self._runs() if item.approval_id == approval_id), None,
+            (item for item in self._runs() if item.approval_id == approval_id),
+            None,
         )
         if run is None:
             raise ApprovalError(
-                "NOT_FOUND", "Approval is not pending for any known run",
+                "NOT_FOUND",
+                "Approval is not pending for any known run",
             )
         request = self._engine.pending_approval(run.id)
         view = self._approval_view(run, request)
         if decision == "COMMENT":
             if comment:
-                view["comments"].append({
-                    "author": self._reviewer,
-                    "at": _iso(self._now() or run.updated_at),
-                    "text": comment,
-                })
+                view["comments"].append(
+                    {
+                        "author": self._reviewer,
+                        "at": _iso(self._now() or run.updated_at),
+                        "text": comment,
+                    }
+                )
             return view
         engine_decision, dashboard_status = _DECISIONS[decision]
         artifact = run.artifact_history.get(request.artifact_id)
         producing_agent = artifact.created_by if artifact is not None else None
         self._engine.decide(
-            run.id, reviewer=self._reviewer, decision=engine_decision,  # type: ignore[arg-type]
-            comment=comment, expected_approval_id=approval_id,
+            run.id,
+            reviewer=self._reviewer,
+            decision=engine_decision,  # type: ignore[arg-type]
+            comment=comment,
+            expected_approval_id=approval_id,
         )
         # Metrics are keyed by agent id (as in AgentResult.agent_id), so the
         # approval outcome must be recorded under the same id, not the type.
         self._record_approval_decision(run, producing_agent, engine_decision)
         decided_run = self._engine.get(run.id)
         # A multi-approval quorum may leave the same request still pending.
-        view["status"] = (
-            "PENDING" if decided_run.approval_id == approval_id else dashboard_status
-        )
+        view["status"] = "PENDING" if decided_run.approval_id == approval_id else dashboard_status
         if comment:
-            view["comments"].append({
-                "author": self._reviewer,
-                "at": _iso(self._now() or decided_run.updated_at),
-                "text": comment,
-            })
+            view["comments"].append(
+                {
+                    "author": self._reviewer,
+                    "at": _iso(self._now() or decided_run.updated_at),
+                    "text": comment,
+                }
+            )
         if view["status"] != "PENDING":
             # The gate is cleared: the run continues on its own to the
             # next approval gate (or to completion) — no manual tick.
@@ -1568,7 +1648,10 @@ class FactoryService:
         return view
 
     def _record_approval_decision(
-        self, run: WorkflowExecution, agent_id: str | None, decision: str,
+        self,
+        run: WorkflowExecution,
+        agent_id: str | None,
+        decision: str,
     ) -> None:
         if not agent_id:
             return
@@ -1577,14 +1660,19 @@ class FactoryService:
         record = getattr(self._metrics, "record_approval_decision")
         try:
             record(
-                project_id=run.project_id, task_id=run.task_id,
-                agent_id=agent_id, decision=decision, at=None,
+                project_id=run.project_id,
+                task_id=run.task_id,
+                agent_id=agent_id,
+                decision=decision,
+                at=None,
             )
         except TypeError:
             try:
                 record(
-                    project_id=run.project_id, task_id=run.task_id,
-                    agent_id=agent_id, decision=decision,
+                    project_id=run.project_id,
+                    task_id=run.task_id,
+                    agent_id=agent_id,
+                    decision=decision,
                 )
             except Exception:  # nosec B110
                 pass
@@ -1601,7 +1689,10 @@ class FactoryService:
         if event_type.startswith("APPROVAL"):
             source_kind = "approval"
         elif str(metadata.get("source", "")).lower() in {
-            "integration", "ci", "gitlab", "github",
+            "integration",
+            "ci",
+            "gitlab",
+            "github",
         } or event_type.startswith(("CI_", "GIT_")):
             source_kind = "integration"
         elif event.agent_id:
@@ -1633,7 +1724,9 @@ class FactoryService:
         return view
 
     def list_activity(
-        self, filter: Mapping[str, Any] | None = None, **kwargs: Any,
+        self,
+        filter: Mapping[str, Any] | None = None,
+        **kwargs: Any,
     ) -> list[dict[str, Any]]:
         criteria: dict[str, Any] = {**(filter or {}), **kwargs}
         events: dict[str, ActivityEvent] = {}
@@ -1648,7 +1741,9 @@ class FactoryService:
             except Exception:  # nosec B110
                 pass
         ordered = sorted(
-            events.values(), key=lambda event: event.timestamp, reverse=True,
+            events.values(),
+            key=lambda event: event.timestamp,
+            reverse=True,
         )
         views = [self._activity_view(event) for event in ordered]
         if criteria.get("agentId"):
@@ -1659,10 +1754,7 @@ class FactoryService:
             # own task ids, linked back via the split context.
             wanted = {criteria["taskId"]}
             for run in self._runs():
-                split = (
-                    run.context.get("split")
-                    if isinstance(run.context, Mapping) else None
-                )
+                split = run.context.get("split") if isinstance(run.context, Mapping) else None
                 if isinstance(split, Mapping) and split.get("parentTaskId") == criteria["taskId"]:
                     wanted.add(run.task_id)
             views = [v for v in views if v.get("taskId") in wanted]
@@ -1743,7 +1835,8 @@ class FactoryService:
                 # _drive_worker is expected to contain drive errors;
                 # a worker must never die and shrink the pool silently.
                 logger.exception(
-                    "Drive worker failed unexpectedly for run %s", run_id,
+                    "Drive worker failed unexpectedly for run %s",
+                    run_id,
                 )
 
     def _drive_worker(self, run_id: str) -> None:
@@ -1767,7 +1860,8 @@ class FactoryService:
         """Wait until no drive for ``run_id`` is queued or running."""
         with self._drive_condition:
             self._drive_condition.wait_for(
-                lambda: run_id not in self._drive_active, timeout=timeout,
+                lambda: run_id not in self._drive_active,
+                timeout=timeout,
             )
 
     def wait_for_drives(self, timeout: float | None = None) -> None:
@@ -1775,10 +1869,7 @@ class FactoryService:
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._drive_condition:
             while self._drive_active:
-                remaining = (
-                    None if deadline is None
-                    else max(0.0, deadline - time.monotonic())
-                )
+                remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
                 if remaining is not None and remaining <= 0:
                     return
                 self._drive_condition.wait(timeout=remaining)
@@ -1831,8 +1922,7 @@ class FactoryService:
                 # a normal outcome, not a run failure: stop this drive
                 # and let the owner (or a later drive) carry the run.
                 logger.warning(
-                    "Drive for run %s stopped: the run was claimed by"
-                    " another writer",
+                    "Drive for run %s stopped: the run was claimed by another writer",
                     run_id,
                 )
                 break
@@ -1882,7 +1972,8 @@ class FactoryService:
         except Exception:
             logger.exception(
                 "Terminal hook failed for run %s (stage %s)",
-                run_id, run.state.stage,
+                run_id,
+                run.state.stage,
             )
 
     def _scheduler_clock(self) -> datetime:
@@ -1934,8 +2025,7 @@ class FactoryService:
                 try:
                     self._engine.recover(
                         run.id,
-                        reason="API startup: the previous backend stopped"
-                        " mid-dispatch",
+                        reason="API startup: the previous backend stopped mid-dispatch",
                         retry_interrupted=True,
                     )
                 except Exception:
@@ -2040,7 +2130,11 @@ class FactoryService:
             and len(requirement) > SPLIT_REQUIREMENT_CHARS
         ):
             return self._start_split_run(
-                task_id, project_id, inputs, context, requirement,
+                task_id,
+                project_id,
+                inputs,
+                context,
+                requirement,
             )
         return self._start_run_once(task_id, project_id, inputs, context)
 
@@ -2065,7 +2159,9 @@ class FactoryService:
         if tier is not None:
             merged_context.setdefault("modelTier", tier)
         run = self._engine.start(
-            task_id=task_id, project_id=project_id, inputs=inputs,
+            task_id=task_id,
+            project_id=project_id,
+            inputs=inputs,
             context=merged_context,
         )
         self.track(run.id)
@@ -2129,7 +2225,10 @@ class FactoryService:
             },
         }
         return self._start_run_once(
-            str(first["taskId"]), project_id, child_inputs, child_context,
+            str(first["taskId"]),
+            project_id,
+            child_inputs,
+            child_context,
         )
 
     def _advance_split_chain(self, run_id: str) -> None:
@@ -2169,9 +2268,7 @@ class FactoryService:
         if already:
             return
         index = split.get("index")
-        child_context = {
-            key: value for key, value in run.context.items() if key != "split"
-        }
+        child_context = {key: value for key, value in run.context.items() if key != "split"}
         child_context["title"] = nxt.get("title") or str(nxt["taskId"])
         child_context["split"] = {
             "parentTaskId": split.get("parentTaskId"),
@@ -2191,7 +2288,10 @@ class FactoryService:
         }
         try:
             self._start_run_once(
-                str(nxt["taskId"]), run.project_id, child_inputs, child_context,
+                str(nxt["taskId"]),
+                run.project_id,
+                child_inputs,
+                child_context,
             )
         except Exception:
             pass
@@ -2286,12 +2386,12 @@ class FactoryService:
         if isinstance(run.context, Mapping):
             skip = run.context.get("skipApprovals")
             if isinstance(skip, list):
-                context["skipApprovals"] = [
-                    item for item in skip if isinstance(item, str)
-                ]
+                context["skipApprovals"] = [item for item in skip if isinstance(item, str)]
         new_run = self.start_run(
-            run.task_id, run.project_id,
-            inputs=dict(run.inputs), context=context or None,
+            run.task_id,
+            run.project_id,
+            inputs=dict(run.inputs),
+            context=context or None,
         )
         return self.get_workflow(new_run.id)
 

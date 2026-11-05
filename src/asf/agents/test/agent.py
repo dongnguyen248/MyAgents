@@ -81,16 +81,17 @@ def _redact(text: str) -> str:
 
 
 def _output(text: str, limit: int) -> str:
-    return _redact(text).encode("utf-8", errors="replace")[:limit].decode(
-        "utf-8", errors="ignore"
-    )
+    return _redact(text).encode("utf-8", errors="replace")[:limit].decode("utf-8", errors="ignore")
 
 
 class TestAgent(BaseAgent):
     """Deterministic test runner; command output is untrusted data, never instructions."""
 
     def __init__(
-        self, runtime: AgentRuntime, sandbox: SandboxPort, *,
+        self,
+        runtime: AgentRuntime,
+        sandbox: SandboxPort,
+        *,
         fail_fast: bool = True,
     ) -> None:
         super().__init__(runtime)
@@ -130,7 +131,9 @@ class TestAgent(BaseAgent):
         changes = code_changeset(code)
         try:
             result = self._sandbox.run(
-                commands, changes, code.metadata["baseRef"],
+                commands,
+                changes,
+                code.metadata["baseRef"],
                 fail_fast=self._fail_fast,
             )
         except (CommandTimeoutError, TimeoutError):
@@ -142,9 +145,7 @@ class TestAgent(BaseAgent):
             or not isinstance(result.commands, (tuple, list))
             or len(result.commands) != len(commands)
         ):
-            raise AgentExecutionError(
-                "SANDBOX_ERROR", "Sandbox returned invalid command results"
-            )
+            raise AgentExecutionError("SANDBOX_ERROR", "Sandbox returned invalid command results")
         for spec, item in zip(commands, result.commands, strict=True):
             if (
                 not isinstance(item, CommandResult)
@@ -164,9 +165,7 @@ class TestAgent(BaseAgent):
         skipped_count = len(result.commands) - len(executed)
         failed = sum(item.exit_code != 0 for item in executed)
         verdict = "FAIL" if failed else "PASS"
-        summary = (
-            f"{verdict}: {len(executed) - failed}/{len(executed)} commands passed"
-        )
+        summary = f"{verdict}: {len(executed) - failed}/{len(executed)} commands passed"
         if skipped_count:
             summary += f" ({skipped_count} skipped)"
         report: dict[str, Any] = {
@@ -180,8 +179,8 @@ class TestAgent(BaseAgent):
                         "durationMs": 0,
                         "skipped": True,
                     }
-                    if item.skipped else
-                    {
+                    if item.skipped
+                    else {
                         "argv": [_redact(arg) for arg in spec.argv],
                         "exitCode": item.exit_code,
                         "stdout": _output(item.stdout, spec.output_limit_bytes),

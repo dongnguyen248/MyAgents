@@ -134,8 +134,9 @@ def load_review_prompts() -> ReviewPrompts:
         resource = importlib.resources.files("asf.agents.review").joinpath("prompts", "system.md")
         return ReviewPrompts(system=resource.read_text(encoding="utf-8"))
     except (OSError, ModuleNotFoundError) as exc:
-        raise ConfigError("Failed to load review prompts", source="asf.agents.review.prompts") \
-            from exc
+        raise ConfigError(
+            "Failed to load review prompts", source="asf.agents.review.prompts"
+        ) from exc
 
 
 def load_fix_prompts() -> FixPrompts:

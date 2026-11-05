@@ -41,9 +41,17 @@ def change(path="calculator.py", content="def add(a, b): return a + b"):
 
 
 def review(verdict="APPROVE", path="calculator.py"):
-    findings = [] if verdict == "APPROVE" else [{
-        "severity": "ERROR", "path": path, "description": "Correct the implementation",
-    }]
+    findings = (
+        []
+        if verdict == "APPROVE"
+        else [
+            {
+                "severity": "ERROR",
+                "path": path,
+                "description": "Correct the implementation",
+            }
+        ]
+    )
     return json.dumps({"findings": findings, "verdict": verdict})
 
 
@@ -60,8 +68,15 @@ class RecordingSandbox(ScriptedSandbox):
 
 
 def harness(
-    tmp_path, *, review_replies, exits, fix_replies=(), task_reply=None,
-    implement_replies=None, max_fixes=3, with_actions=False,
+    tmp_path,
+    *,
+    review_replies,
+    exits,
+    fix_replies=(),
+    task_reply=None,
+    implement_replies=None,
+    max_fixes=3,
+    with_actions=False,
     code_policy=None,
 ):
     registry = AgentRegistry()
@@ -73,46 +88,81 @@ def harness(
         gateways[kind] = gateway
         return AgentRuntime(gateway, lambda: NOW, lambda: f"{kind}-{next(ids)}")
 
-    registry.register(build_spec_agent(
-        runtime("spec", [make_spec_artifact().content["text"]]), PLATFORM, TEMPLATES_DIR,
-    ))
-    registry.register(build_plan_agent(
-        runtime("plan", [make_plan_artifact().content["text"]]), PLATFORM, TEMPLATES_DIR,
-    ))
-    registry.register(build_task_agent(
-        runtime("task", [task_reply or make_task_artifact().content["text"]]),
-        PLATFORM, TEMPLATES_DIR,
-    ))
+    registry.register(
+        build_spec_agent(
+            runtime("spec", [make_spec_artifact().content["text"]]),
+            PLATFORM,
+            TEMPLATES_DIR,
+        )
+    )
+    registry.register(
+        build_plan_agent(
+            runtime("plan", [make_plan_artifact().content["text"]]),
+            PLATFORM,
+            TEMPLATES_DIR,
+        )
+    )
+    registry.register(
+        build_task_agent(
+            runtime("task", [task_reply or make_task_artifact().content["text"]]),
+            PLATFORM,
+            TEMPLATES_DIR,
+        )
+    )
     repository = InMemoryRepository()
-    registry.register(build_implement_agent(
-        runtime("implement", implement_replies or [change()]), PLATFORM, TEMPLATES_DIR, repository,
-    ))
-    registry.register(build_review_agent(
-        runtime("review", review_replies), PLATFORM, TEMPLATES_DIR,
-    ))
+    registry.register(
+        build_implement_agent(
+            runtime("implement", implement_replies or [change()]),
+            PLATFORM,
+            TEMPLATES_DIR,
+            repository,
+        )
+    )
+    registry.register(
+        build_review_agent(
+            runtime("review", review_replies),
+            PLATFORM,
+            TEMPLATES_DIR,
+        )
+    )
     sandbox = RecordingSandbox(exits)
     registry.register(build_test_agent(runtime("test", []), PLATFORM, TEMPLATES_DIR, sandbox))
-    registry.register(build_fix_agent(
-        runtime("fix", fix_replies), PLATFORM, TEMPLATES_DIR, repository,
-    ))
-    definition = WorkflowDefinition.model_validate(yaml.safe_load(
-        (Path(__file__).resolve().parents[2] / "workflows" / "software-development.yaml").read_text(
-            encoding="utf-8",
-        ),
-    ))
+    registry.register(
+        build_fix_agent(
+            runtime("fix", fix_replies),
+            PLATFORM,
+            TEMPLATES_DIR,
+            repository,
+        )
+    )
+    definition = WorkflowDefinition.model_validate(
+        yaml.safe_load(
+            (
+                Path(__file__).resolve().parents[2]
+                / "workflow-definitions"
+                / "software-development.yaml"
+            ).read_text(
+                encoding="utf-8",
+            ),
+        )
+    )
     if not with_actions:
         definition = definition.model_copy(update={"steps": definition.steps[:6]})
     store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     ids = count(1)
     engine = Orchestrator(
-        definition, registry, clock=lambda: NOW, new_id=lambda: f"orchestration-{next(ids)}",
-        store=store, approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
+        definition,
+        registry,
+        clock=lambda: NOW,
+        new_id=lambda: f"orchestration-{next(ids)}",
+        store=store,
+        approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
         code_loop=code_policy or CodeLoopPolicy(max_fixes=max_fixes),
     )
     run = engine.start(
-        task_id="work-1", project_id="project-1",
-        inputs={"spec": {"requirement": "Create a calculator"},
-                "implement": {"ref": "main"}},
+        task_id="work-1",
+        project_id="project-1",
+        inputs={"spec": {"requirement": "Create a calculator"}, "implement": {"ref": "main"}},
         context={"project": {"testCommands": [["pytest", "-q"]]}},
     )
     return engine, run, store, gateways, repository, sandbox
@@ -144,13 +194,20 @@ def test_actual_agents_complete_bounded_rework_and_preserve_links(tmp_path, fail
         review_replies = [review("CHANGES_REQUESTED"), review(), review()]
         exits, fixes = [1, 0], [change(), change()]
     engine, run, store, gateways, repository, sandbox = harness(
-        tmp_path, review_replies=review_replies, exits=exits, fix_replies=fixes,
+        tmp_path,
+        review_replies=review_replies,
+        exits=exits,
+        fix_replies=fixes,
     )
     run = drive(engine, run)
     assert run.state.stage == "COMPLETED", [(error.code, error.message) for error in run.errors]
     assert run.errors == []
-    assert sum(item.event.event_type == "WORKFLOW_COMPLETED"
-               for item in run.observations if item.event) == 1
+    assert (
+        sum(
+            item.event.event_type == "WORKFLOW_COMPLETED" for item in run.observations if item.event
+        )
+        == 1
+    )
     assert len(gateways["fix"].requests) == len(fixes)
     assert len(gateways["implement"].requests) == 1
     assert not gateways["test"].requests
@@ -173,8 +230,10 @@ def test_actual_agents_complete_bounded_rework_and_preserve_links(tmp_path, fail
 
 def test_three_fixes_max_then_persisted_escalation_and_explicit_resume(tmp_path):
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, review_replies=[review("CHANGES_REQUESTED")] * 4 + [review()],
-        exits=[0], fix_replies=[change()] * 4,
+        tmp_path,
+        review_replies=[review("CHANGES_REQUESTED")] * 4 + [review()],
+        exits=[0],
+        fix_replies=[change()] * 4,
     )
     run = drive(engine, run)
     assert run.state.stage == "CODE_FIX_ESCALATED"
@@ -185,8 +244,13 @@ def test_three_fixes_max_then_persisted_escalation_and_explicit_resume(tmp_path)
     store.close()
     store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     engine = Orchestrator(
-        engine._definition, engine._registry, clock=engine._clock, new_id=engine._new_id,
-        store=store, approval_policy=engine._approval_policy, code_loop=engine._code_loop,
+        engine._definition,
+        engine._registry,
+        clock=engine._clock,
+        new_id=engine._new_id,
+        store=store,
+        approval_policy=engine._approval_policy,
+        code_loop=engine._code_loop,
     )
     assert engine.workflow_run(run.id)["status"] == "WAITING"
     run = engine.resume(run.id, reason="Operator reviewed findings and approved another window")
@@ -200,12 +264,20 @@ def test_three_fixes_max_then_persisted_escalation_and_explicit_resume(tmp_path)
 
 def test_dependency_ordered_two_items_are_independent_changes_against_original_base(tmp_path):
     first = json.loads(make_task_artifact().content["text"])["tasks"][0]
-    second = {**first, "id": "T2", "title": "Helper", "dependsOn": ["T1"],
-              "expectedFiles": ["helper.py"]}
+    second = {
+        **first,
+        "id": "T2",
+        "title": "Helper",
+        "dependsOn": ["T1"],
+        "expectedFiles": ["helper.py"],
+    }
     task_reply = json.dumps({"tasks": [first, second]})
     engine, run, store, gateways, repository, sandbox = harness(
-        tmp_path, task_reply=task_reply, review_replies=[review(), review()],
-        exits=[0, 0], implement_replies=[change(), change("helper.py", "def helper(): return 1")],
+        tmp_path,
+        task_reply=task_reply,
+        review_replies=[review(), review()],
+        exits=[0, 0],
+        implement_replies=[change(), change("helper.py", "def helper(): return 1")],
     )
     run = drive(engine, run)
     assert run.state.stage == "COMPLETED", [(error.code, error.message) for error in run.errors]
@@ -225,20 +297,31 @@ def test_dependency_ordered_two_items_are_independent_changes_against_original_b
 
 def test_restart_after_failed_report_does_not_reuse_stale_review_or_report(tmp_path):
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, review_replies=[review(), review()], exits=[1, 0], fix_replies=[change()],
+        tmp_path,
+        review_replies=[review(), review()],
+        exits=[1, 0],
+        fix_replies=[change()],
     )
     for _ in range(20):
         if run.state.stage == "CODE_FIX":
             break
-        run = engine.decide(run.id, reviewer="reviewer", decision="APPROVED") \
-            if run.approval_id else engine.tick(run.id)
+        run = (
+            engine.decide(run.id, reviewer="reviewer", decision="APPROVED")
+            if run.approval_id
+            else engine.tick(run.id)
+        )
     assert run.state.stage == "CODE_FIX"
     original_code = run.artifacts["CODE"]
     store.close()
     store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     engine = Orchestrator(
-        engine._definition, engine._registry, clock=engine._clock, new_id=engine._new_id,
-        store=store, approval_policy=engine._approval_policy, code_loop=engine._code_loop,
+        engine._definition,
+        engine._registry,
+        clock=engine._clock,
+        new_id=engine._new_id,
+        store=store,
+        approval_policy=engine._approval_policy,
+        code_loop=engine._code_loop,
     )
     run = engine.tick(run.id)
     assert run.state.stage == "CODE_REVIEW"
@@ -253,7 +336,10 @@ def test_restart_after_failed_report_does_not_reuse_stale_review_or_report(tmp_p
 
 def test_default_workflow_stops_at_missing_ci_handler_not_false_completion(tmp_path):
     engine, run, store, _, _, _ = harness(
-        tmp_path, review_replies=[review()], exits=[0], with_actions=True,
+        tmp_path,
+        review_replies=[review()],
+        exits=[0],
+        with_actions=True,
     )
     run = drive(engine, run)
     assert run.state.stage == "FAILED"
@@ -265,14 +351,19 @@ def test_default_workflow_stops_at_missing_ci_handler_not_false_completion(tmp_p
 
 def test_default_workflow_completes_only_with_explicit_injected_ci_and_merge_handlers(tmp_path):
     engine, run, store, _, _, _ = harness(
-        tmp_path, review_replies=[review()], exits=[0], with_actions=True,
+        tmp_path,
+        review_replies=[review()],
+        exits=[0],
+        with_actions=True,
     )
     received = []
 
     def handler(request):
         received.append(request)
         return AgentResult(
-            request_id=request.request_id, agent_id=request.agent_id, status="SUCCESS",
+            request_id=request.request_id,
+            agent_id=request.agent_id,
+            status="SUCCESS",
             output={"summary": "simulated action"},
             metrics=RunMetrics(duration_seconds=0, revision_count=0, attempt=1),
         )
@@ -281,7 +372,8 @@ def test_default_workflow_completes_only_with_explicit_injected_ci_and_merge_han
     run = drive(engine, run)
     assert run.state.stage == "COMPLETED"
     assert [request.agent_id for request in received] == [
-        "action:run-pipeline", "action:await-merge",
+        "action:run-pipeline",
+        "action:await-merge",
     ]
     assert [artifact.type for artifact in received[0].artifacts] == ["CODE"]
     assert [artifact.type for artifact in received[1].artifacts] == ["CODE_REVIEW", "TEST_REPORT"]
@@ -292,7 +384,9 @@ def test_default_workflow_completes_only_with_explicit_injected_ci_and_merge_han
 @pytest.mark.parametrize("defect", ["stale-code-id", "stale-task-id", "inconsistent-verdict"])
 def test_stale_or_inconsistent_report_never_dispatches_fix_or_ci(tmp_path, monkeypatch, defect):
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, review_replies=[review()], exits=[0],
+        tmp_path,
+        review_replies=[review()],
+        exits=[0],
     )
     reviewer = engine._registry.for_type("review")
     execute = reviewer.execute
@@ -320,7 +414,10 @@ def test_stale_or_inconsistent_report_never_dispatches_fix_or_ci(tmp_path, monke
 @pytest.mark.parametrize("version,revision", [("1", "implement-1"), ("2", "old-code")])
 def test_wrong_fix_revision_cannot_be_accepted(tmp_path, monkeypatch, version, revision):
     engine, run, store, _, _, _ = harness(
-        tmp_path, review_replies=[review("CHANGES_REQUESTED")], exits=[], fix_replies=[change()],
+        tmp_path,
+        review_replies=[review("CHANGES_REQUESTED")],
+        exits=[],
+        fix_replies=[change()],
     )
     fixer = engine._registry.for_type("fix")
     execute = fixer.execute
@@ -328,9 +425,12 @@ def test_wrong_fix_revision_cannot_be_accepted(tmp_path, monkeypatch, version, r
     def tamper(request):
         result = execute(request)
         artifact = result.artifacts[0]
-        result.artifacts[0] = artifact.model_copy(update={
-            "version": version, "metadata": {**artifact.metadata, "revisionOf": revision},
-        })
+        result.artifacts[0] = artifact.model_copy(
+            update={
+                "version": version,
+                "metadata": {**artifact.metadata, "revisionOf": revision},
+            }
+        )
         return result
 
     monkeypatch.setattr(fixer, "execute", tamper)
@@ -343,7 +443,10 @@ def test_wrong_fix_revision_cannot_be_accepted(tmp_path, monkeypatch, version, r
 
 def test_zero_fix_budget_escalates_without_calling_model_and_cannot_resume(tmp_path):
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, review_replies=[review("CHANGES_REQUESTED")], exits=[], max_fixes=0,
+        tmp_path,
+        review_replies=[review("CHANGES_REQUESTED")],
+        exits=[],
+        max_fixes=0,
     )
     run = drive(engine, run)
     assert run.state.stage == "CODE_FIX_ESCALATED"
@@ -356,19 +459,29 @@ def test_zero_fix_budget_escalates_without_calling_model_and_cannot_resume(tmp_p
 
 def test_one_selected_item_mode_does_not_execute_other_items(tmp_path):
     first = json.loads(make_task_artifact().content["text"])["tasks"][0]
-    second = {**first, "id": "T2", "title": "Helper", "dependsOn": ["T1"],
-              "expectedFiles": ["helper.py"]}
+    second = {
+        **first,
+        "id": "T2",
+        "title": "Helper",
+        "dependsOn": ["T1"],
+        "expectedFiles": ["helper.py"],
+    }
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, task_reply=json.dumps({"tasks": [first, second]}),
-        review_replies=[review()], exits=[0],
+        tmp_path,
+        task_reply=json.dumps({"tasks": [first, second]}),
+        review_replies=[review()],
+        exits=[0],
         implement_replies=[change("helper.py", "def helper(): return 1")],
     )
     # Configure the explicit policy before creating a new execution; stored policy is pinned.
     engine._code_loop = CodeLoopPolicy(all_task_items=False)
     run = engine.start(
-        task_id="selected-work", project_id="project-1",
-        inputs={"spec": {"requirement": "Create a calculator"},
-                "implement": {"ref": "main", "taskItemId": "T2"}},
+        task_id="selected-work",
+        project_id="project-1",
+        inputs={
+            "spec": {"requirement": "Create a calculator"},
+            "implement": {"ref": "main", "taskItemId": "T2"},
+        },
         context={"project": {"testCommands": [["pytest", "-q"]]}},
     )
     run = drive(engine, run)
@@ -381,11 +494,15 @@ def test_one_selected_item_mode_does_not_execute_other_items(tmp_path):
 
 def test_fix_transport_retry_does_not_consume_a_second_rework_slot(tmp_path):
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, review_replies=[review("CHANGES_REQUESTED"), review()], exits=[0],
+        tmp_path,
+        review_replies=[review("CHANGES_REQUESTED"), review()],
+        exits=[0],
         fix_replies=[ModelGatewayError("LLM_TIMEOUT", "Timeout"), change()],
         code_policy=CodeLoopPolicy(
-            max_fixes=1, fix_retry_policy=RetryPolicySettings(
-                max_attempts=2, retry_on=["LLM_TIMEOUT"],
+            max_fixes=1,
+            fix_retry_policy=RetryPolicySettings(
+                max_attempts=2,
+                retry_on=["LLM_TIMEOUT"],
             ),
         ),
     )
@@ -396,19 +513,31 @@ def test_fix_transport_retry_does_not_consume_a_second_rework_slot(tmp_path):
     assert run.item_results["T1"]["CODE"].version == "2"
     assert run.errors == []
     assert [result.status for result in run.results if result.agent_id == "agent-fix"] == [
-        "FAILED", "SUCCESS",
+        "FAILED",
+        "SUCCESS",
     ]
     store.close()
 
 
 def test_fix_budget_is_per_item_and_resets_only_after_passing_review_and_test(tmp_path):
     first = json.loads(make_task_artifact().content["text"])["tasks"][0]
-    second = {**first, "id": "T2", "title": "Helper", "dependsOn": ["T1"],
-              "expectedFiles": ["helper.py"]}
+    second = {
+        **first,
+        "id": "T2",
+        "title": "Helper",
+        "dependsOn": ["T1"],
+        "expectedFiles": ["helper.py"],
+    }
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, task_reply=json.dumps({"tasks": [first, second]}), max_fixes=1,
-        review_replies=[review("CHANGES_REQUESTED"), review(),
-                        review("CHANGES_REQUESTED", "helper.py"), review()],
+        tmp_path,
+        task_reply=json.dumps({"tasks": [first, second]}),
+        max_fixes=1,
+        review_replies=[
+            review("CHANGES_REQUESTED"),
+            review(),
+            review("CHANGES_REQUESTED", "helper.py"),
+            review(),
+        ],
         exits=[0, 0],
         implement_replies=[change(), change("helper.py", "def helper(): return 1")],
         fix_replies=[change(), change("helper.py", "def helper(): return 2")],
@@ -424,7 +553,9 @@ def test_fix_budget_is_per_item_and_resets_only_after_passing_review_and_test(tm
 
 def test_malformed_dependency_graph_stops_before_implement_model(tmp_path, monkeypatch):
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, review_replies=[], exits=[],
+        tmp_path,
+        review_replies=[],
+        exits=[],
     )
     task_agent = engine._registry.for_type("task")
     execute = task_agent.execute
@@ -446,8 +577,13 @@ def test_malformed_dependency_graph_stops_before_implement_model(tmp_path, monke
 def test_conflicting_base_refs_are_rejected_before_execution(tmp_path):
     engine, _, store, gateways, _, _ = harness(tmp_path, review_replies=[], exits=[])
     with pytest.raises(ValueError, match="same base ref"):
-        engine.start(task_id="other", project_id="project-1", inputs={
-            "implement": {"ref": "main"}, "review": {"ref": "another"},
-        })
+        engine.start(
+            task_id="other",
+            project_id="project-1",
+            inputs={
+                "implement": {"ref": "main"},
+                "review": {"ref": "another"},
+            },
+        )
     assert not any(gateway.requests for gateway in gateways.values())
     store.close()

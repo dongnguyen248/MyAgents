@@ -55,11 +55,7 @@ def load_workflows(directory: str | Path) -> dict[str, WorkflowDefinition]:
         )
 
     files = sorted(
-        [
-            p
-            for p in dir_path.iterdir()
-            if p.is_file() and p.suffix.lower() in {".yaml", ".yml"}
-        ]
+        [p for p in dir_path.iterdir() if p.is_file() and p.suffix.lower() in {".yaml", ".yml"}]
     )
 
     workflows: dict[str, WorkflowDefinition] = {}

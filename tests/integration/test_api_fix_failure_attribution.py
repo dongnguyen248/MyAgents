@@ -8,6 +8,7 @@ same history trap applies to a crash on a later cycle (a re-review or
 re-test after a successful fix): the step the run died in, taken from
 its event trail, is the failed step.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -26,8 +27,11 @@ def _view(engine, run_id: str) -> dict:
 
 def test_fix_rejected_after_test_failure_blames_run_tests(tmp_path):
     engine, run, store, _, _, _ = harness(
-        tmp_path, review_replies=[review(), review()], exits=[1, 0],
-        fix_replies=[change("outside.py")], with_actions=True,
+        tmp_path,
+        review_replies=[review(), review()],
+        exits=[1, 0],
+        fix_replies=[change("outside.py")],
+        with_actions=True,
     )
     run = drive(engine, run)
     assert run.state.stage == "FAILED"
@@ -45,8 +49,11 @@ def test_fix_rejected_after_test_failure_blames_run_tests(tmp_path):
 
 def test_fix_rejected_after_review_changes_blames_code_review(tmp_path):
     engine, run, store, _, _, _ = harness(
-        tmp_path, review_replies=[review("CHANGES_REQUESTED"), review()],
-        exits=[0], fix_replies=[change("outside.py")], with_actions=True,
+        tmp_path,
+        review_replies=[review("CHANGES_REQUESTED"), review()],
+        exits=[0],
+        fix_replies=[change("outside.py")],
+        with_actions=True,
     )
     run = drive(engine, run)
     assert run.state.stage == "FAILED"
@@ -59,14 +66,18 @@ def test_fix_rejected_after_review_changes_blames_code_review(tmp_path):
 
 
 def test_crash_on_second_review_blames_code_review(
-    tmp_path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Cycle 1: tests fail, the fix lands. Cycle 2: the review agent
     itself dies (e.g. the model provider times out). Every artifact
     exists in the history, but the run died in Review code — not CI."""
     engine, run, store, _, _, _ = harness(
-        tmp_path, review_replies=[review(), review()], exits=[1, 0],
-        fix_replies=[change()], with_actions=True,
+        tmp_path,
+        review_replies=[review(), review()],
+        exits=[1, 0],
+        fix_replies=[change()],
+        with_actions=True,
     )
     review_agent = engine._registry.for_type("review")
     original = review_agent.execute

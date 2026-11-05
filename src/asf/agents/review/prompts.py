@@ -67,7 +67,9 @@ def _project_context(request: AgentRequest) -> dict[str, Any]:
 
 
 def build_review_messages(
-    *, prompts: ReviewPrompts, request: AgentRequest,
+    *,
+    prompts: ReviewPrompts,
+    request: AgentRequest,
     report_tail_lines: int = 120,
 ) -> list[ModelMessage]:
     """Keep instructions separate from untrusted artifact and project data."""
@@ -75,10 +77,12 @@ def build_review_messages(
     skills = project.get("enabledSkills", [])
     skill_names = (
         [" ".join(skill.split()) for skill in skills if isinstance(skill, str) and skill.strip()]
-        if isinstance(skills, list) else []
+        if isinstance(skills, list)
+        else []
     )
     system = "\n".join(
-        line for line in prompts.system.splitlines()
+        line
+        for line in prompts.system.splitlines()
         if not line.lstrip().startswith("Enabled skills:")
     ).rstrip()
     system += "\nEnabled skills: " + (", ".join(skill_names) or "none")
@@ -104,8 +108,12 @@ def build_review_messages(
         },
         "artifacts": [
             tail_artifact_for_prompt(
-                {"id": artifact.id, "type": artifact.type,
-                 "version": artifact.version, "content": artifact.content},
+                {
+                    "id": artifact.id,
+                    "type": artifact.type,
+                    "version": artifact.version,
+                    "content": artifact.content,
+                },
                 report_tail_lines,
             )
             for artifact in request.artifacts
@@ -126,16 +134,25 @@ def build_review_messages(
 def render_review_markdown(review: ReviewContent, code_id: str, code_version: str) -> str:
     """Render only validated data; metadata is injected by the agent."""
     lines = [
-        "# CODE_REVIEW", "", f"CODE ID: {code_id}", f"CODE Version: {code_version}",
-        f"Verdict: {review.verdict}", "",
+        "# CODE_REVIEW",
+        "",
+        f"CODE ID: {code_id}",
+        f"CODE Version: {code_version}",
+        f"Verdict: {review.verdict}",
+        "",
     ]
     for finding in review.findings:
         location = finding.path
         if finding.line is not None:
             location += f":{finding.line}"
-        lines.extend([
-            f"## Finding: {location} [{finding.severity}]", "", finding.description, "",
-        ])
+        lines.extend(
+            [
+                f"## Finding: {location} [{finding.severity}]",
+                "",
+                finding.description,
+                "",
+            ]
+        )
         if finding.suggestion is not None:
             lines.extend([f"Suggestion: {finding.suggestion}", ""])
     return "\n".join(lines).strip()

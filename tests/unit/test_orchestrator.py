@@ -23,33 +23,52 @@ NOW = datetime(2026, 11, 2, tzinfo=timezone.utc)
 
 def step(name: str, *, approval: bool = False, revisions: int = 2) -> WorkflowStepDef:
     return WorkflowStepDef(
-        id=name, name=name, type="AGENT", stage=name.upper(),
-        agent_type=name, requires_approval=approval,
+        id=name,
+        name=name,
+        type="AGENT",
+        stage=name.upper(),
+        agent_type=name,
+        requires_approval=approval,
         max_revisions=revisions if approval else None,
-        consumes=["SPEC"] if name == "plan" else [], produces=[name.upper()],
+        consumes=["SPEC"] if name == "plan" else [],
+        produces=[name.upper()],
     )
 
 
 def make_engine(
-    *, approval: bool = False, revisions: int = 2, two_steps: bool = True,
+    *,
+    approval: bool = False,
+    revisions: int = 2,
+    two_steps: bool = True,
 ) -> tuple[Orchestrator, DummyAgent, DummyAgent, InMemoryApprovalRepository]:
     ids = count(1)
     runtime = AgentRuntime(
-        models=ScriptedModelGateway([]), clock=lambda: NOW, new_id=lambda: f"id-{next(ids)}",
+        models=ScriptedModelGateway([]),
+        clock=lambda: NOW,
+        new_id=lambda: f"id-{next(ids)}",
     )
 
     def agent(name: str) -> DummyAgent:
         def produce(request):
             artifact = Artifact(
-                id=f"art-{next(ids)}", type=name.upper(), name=name, version="1",
-                content={"text": name}, created_by=f"agent-{name}", created_at=NOW,
+                id=f"art-{next(ids)}",
+                type=name.upper(),
+                name=name,
+                version="1",
+                content={"text": name},
+                created_by=f"agent-{name}",
+                created_at=NOW,
             )
             return {"summary": "done"}, [artifact]
 
         return DummyAgent(
             runtime,
             metadata=AgentMetadata(
-                id=f"agent-{name}", name=name, type=name, version="1", status="IDLE",
+                id=f"agent-{name}",
+                name=name,
+                type=name,
+                version="1",
+                status="IDLE",
             ),
             run_behavior=produce,
         )
@@ -61,20 +80,27 @@ def make_engine(
     repo = InMemoryApprovalRepository()
     service = ApprovalService(repo, id_factory=runtime.new_id)
     workflow = WorkflowDefinition(
-        id="development", name="Development", version="1",
+        id="development",
+        name="Development",
+        version="1",
         steps=[step("spec", approval=approval, revisions=revisions)]
         + ([step("plan")] if two_steps else []),
     )
     engine = Orchestrator(
-        workflow, registry, clock=runtime.clock, new_id=runtime.new_id,
-        approvals=service, approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
+        workflow,
+        registry,
+        clock=runtime.clock,
+        new_id=runtime.new_id,
+        approvals=service,
+        approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
     )
     return engine, spec, plan, repo
 
 
 def start(engine: Orchestrator):
     return engine.start(
-        task_id="task-1", project_id="project-1",
+        task_id="task-1",
+        project_id="project-1",
         inputs={"spec": {"requirement": "Add a feature"}},
         context={"project": {"name": "example"}},
     )
@@ -182,7 +208,8 @@ def test_rejection_routes_feedback_and_previous_output_to_same_agent(decision):
 def test_skip_approval_advances_without_a_request():
     engine, spec, plan, repo = make_engine(approval=True)
     run = engine.start(
-        task_id="task-1", project_id="project-1",
+        task_id="task-1",
+        project_id="project-1",
         inputs={"spec": {"requirement": "Add a feature"}},
         context={"project": {"name": "example"}, "skipApprovals": ["spec"]},
     )
@@ -234,10 +261,14 @@ def test_snapshots_and_runs_are_isolated():
         engine.get("unknown")
 
 
-@pytest.mark.parametrize("output", [
-    {"verdict": "FAIL"}, {"verdict": "CHANGES_REQUESTED"},
-    {"verdict": "unknown"},
-])
+@pytest.mark.parametrize(
+    "output",
+    [
+        {"verdict": "FAIL"},
+        {"verdict": "CHANGES_REQUESTED"},
+        {"verdict": "unknown"},
+    ],
+)
 def test_quality_verdict_never_advances_to_next_step(output):
     engine, spec, plan, _ = make_engine()
     original = spec._run_behavior
@@ -248,16 +279,21 @@ def test_quality_verdict_never_advances_to_next_step(output):
     assert not plan.run_called
 
 
-@pytest.mark.parametrize("agent_type,verdict,expected_stage", [
-    ("review", "APPROVE", "PLAN"),
-    ("review", "PASS", "FAILED"),
-    ("review", None, "FAILED"),
-    ("test", "PASS", "PLAN"),
-    ("test", "APPROVE", "FAILED"),
-    ("test", None, "FAILED"),
-])
+@pytest.mark.parametrize(
+    "agent_type,verdict,expected_stage",
+    [
+        ("review", "APPROVE", "PLAN"),
+        ("review", "PASS", "FAILED"),
+        ("review", None, "FAILED"),
+        ("test", "PASS", "PLAN"),
+        ("test", "APPROVE", "FAILED"),
+        ("test", None, "FAILED"),
+    ],
+)
 def test_quality_verdict_must_match_the_specific_agent_contract(
-    agent_type, verdict, expected_stage,
+    agent_type,
+    verdict,
+    expected_stage,
 ):
     engine, spec, plan, _ = make_engine()
     engine._registry.unregister(spec.metadata.id)
@@ -360,7 +396,10 @@ def test_missing_approval_dependencies_rejected_at_construction():
     engine, _, _, _ = make_engine(approval=True)
     with pytest.raises(ValueError):
         Orchestrator(
-            engine._definition, engine._registry, clock=lambda: NOW, new_id=lambda: "id",
+            engine._definition,
+            engine._registry,
+            clock=lambda: NOW,
+            new_id=lambda: "id",
         )
 
 
@@ -459,7 +498,10 @@ def test_configured_retry_policy_is_executed_without_extra_calls_on_success():
         update={"retry_policy": RetryPolicySettings(max_attempts=2)},
     )
     engine = Orchestrator(
-        definition, engine._registry, clock=lambda: NOW, new_id=engine._new_id,
+        definition,
+        engine._registry,
+        clock=lambda: NOW,
+        new_id=engine._new_id,
     )
     run = engine.tick(start(engine).id)
     assert run.state.stage == "PLAN"

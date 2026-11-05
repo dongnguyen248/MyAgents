@@ -11,13 +11,19 @@ from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
 
 def test_config_defaults(monkeypatch: pytest.MonkeyPatch):
     for key in (
-        "ASF_MARIADB_HOST", "ASF_MARIADB_PORT", "ASF_MARIADB_USER",
-        "ASF_MARIADB_PASSWORD", "ASF_MARIADB_DATABASE",
+        "ASF_MARIADB_HOST",
+        "ASF_MARIADB_PORT",
+        "ASF_MARIADB_USER",
+        "ASF_MARIADB_PASSWORD",
+        "ASF_MARIADB_DATABASE",
     ):
         monkeypatch.delenv(key, raising=False)
     config = MariaDbConfig.from_env()
     assert (config.host, config.port, config.user, config.database) == (
-        "127.0.0.1", 3306, "asf", "asf",
+        "127.0.0.1",
+        3306,
+        "asf",
+        "asf",
     )
     assert config.password == ""
 

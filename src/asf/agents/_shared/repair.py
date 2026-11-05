@@ -145,23 +145,19 @@ def summarize_validation_issues(issues: dict[str, Any]) -> str:
     for key, value in issues.items():
         if key == "outOfScopePaths" and isinstance(value, list):
             parts.append(
-                "paths outside the expected files list:"
-                f" {', '.join(str(path) for path in value)}",
+                f"paths outside the expected files list: {', '.join(str(path) for path in value)}",
             )
         elif key == "missingPaths" and isinstance(value, list):
-            names = ", ".join(
-                str(item.get("path")) for item in value if isinstance(item, dict)
-            )
+            names = ", ".join(str(item.get("path")) for item in value if isinstance(item, dict))
             parts.append(f"files do not exist at the base ref: {names}")
         elif key == "deniedPaths" and isinstance(value, list):
-            names = ", ".join(
-                str(item.get("path")) for item in value if isinstance(item, dict)
-            )
+            names = ", ".join(str(item.get("path")) for item in value if isinstance(item, dict))
             parts.append(f"paths are never allowed: {names}")
         elif key == "contentIssues" and isinstance(value, list):
             rendered = "; ".join(
                 f"{item.get('path')}: {item.get('issue')}"
-                for item in value if isinstance(item, dict)
+                for item in value
+                if isinstance(item, dict)
             )
             parts.append(f"content problems: {rendered}")
         elif key == "emptyChangeSet":

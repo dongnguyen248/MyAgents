@@ -26,19 +26,33 @@ RULES = "Never hardcode an HTTP status code."
 PROJECT = {"reviewRules": RULES}
 
 
-@pytest.mark.parametrize("project", [
-    PROJECT,
-    json.dumps(PROJECT),
-    {"reviewRules": f"  {RULES}  "},
-])
+@pytest.mark.parametrize(
+    "project",
+    [
+        PROJECT,
+        json.dumps(PROJECT),
+        {"reviewRules": f"  {RULES}  "},
+    ],
+)
 def test_project_rules_extracts_from_mapping_or_json(project: Any) -> None:
     assert project_rules(project) == RULES
 
 
-@pytest.mark.parametrize("project", [
-    None, [], 42, "{bad json", "[]", {}, {"reviewRules": ""},
-    {"reviewRules": "   "}, {"reviewRules": 42}, {"reviewRules": ["x"]},
-])
+@pytest.mark.parametrize(
+    "project",
+    [
+        None,
+        [],
+        42,
+        "{bad json",
+        "[]",
+        {},
+        {"reviewRules": ""},
+        {"reviewRules": "   "},
+        {"reviewRules": 42},
+        {"reviewRules": ["x"]},
+    ],
+)
 def test_project_rules_rejects_absent_or_invalid_values(project: Any) -> None:
     assert project_rules(project) == ""
     assert rules_section(project, "Intro:") == ""
@@ -47,8 +61,12 @@ def test_project_rules_rejects_absent_or_invalid_values(project: Any) -> None:
 def test_implement_messages_carry_the_rules() -> None:
     messages = build_implement_messages(
         prompts=ImplementPrompts(system="system"),
-        spec_artifact={}, plan_artifact={}, task_artifact={},
-        task_item_id="T1", existing_files={}, language=None,
+        spec_artifact={},
+        plan_artifact={},
+        task_artifact={},
+        task_item_id="T1",
+        existing_files={},
+        language=None,
         project_context=PROJECT,
     )
     assert "Project development rules" in messages[0].content
@@ -57,13 +75,22 @@ def test_implement_messages_carry_the_rules() -> None:
 
 def test_fix_messages_carry_the_rules() -> None:
     request = AgentRequest(
-        request_id="r1", task_id="t1", project_id="p1", workflow_id="w1",
-        agent_id="agent-fix", input={"ref": "main"},
+        request_id="r1",
+        task_id="t1",
+        project_id="p1",
+        workflow_id="w1",
+        agent_id="agent-fix",
+        input={"ref": "main"},
         context={"project": PROJECT},
     )
     context = FixContext(
-        task_id="T1", spec_summary="", plan_summary="", task_summary="",
-        expected_files=(), existing_files={}, review_findings=(),
+        task_id="T1",
+        spec_summary="",
+        plan_summary="",
+        task_summary="",
+        expected_files=(),
+        existing_files={},
+        review_findings=(),
         previous_changeset=None,
     )
     messages = build_fix_messages(FixPrompts(system="system"), request, context)
@@ -75,7 +102,8 @@ def test_spec_messages_carry_the_rules() -> None:
     messages = build_spec_messages(
         prompts=SpecPrompts(system="system", revision="revision"),
         template=SpecTemplate.from_text("template"),
-        requirement="Build a thing", language=None,
+        requirement="Build a thing",
+        language=None,
         project_context=PROJECT,
     )
     assert "Project standards" in messages[0].content
@@ -86,7 +114,9 @@ def test_plan_messages_carry_the_rules() -> None:
     messages = build_plan_messages(
         prompts=PlanPrompts(system="system", revision="revision"),
         template=PlanTemplate.from_text("template"),
-        spec_artifact={}, language=None, project_context=PROJECT,
+        spec_artifact={},
+        language=None,
+        project_context=PROJECT,
     )
     assert "Project development rules" in messages[0].content
     assert RULES in messages[0].content
@@ -96,7 +126,9 @@ def test_task_messages_carry_the_rules() -> None:
     messages = build_task_messages(
         prompts=TaskPrompts(system="system", revision="revision"),
         template=TaskTemplate.from_text("template"),
-        spec_artifact={}, plan_artifact={}, language=None,
+        spec_artifact={},
+        plan_artifact={},
+        language=None,
         project_context=PROJECT,
     )
     assert "Project development rules" in messages[0].content
@@ -110,6 +142,8 @@ def test_agents_without_rules_keep_their_plain_system_prompt(
     messages = build_plan_messages(
         prompts=PlanPrompts(system="system", revision="revision"),
         template=PlanTemplate.from_text("template"),
-        spec_artifact={}, language=None, project_context=project_context,
+        spec_artifact={},
+        language=None,
+        project_context=project_context,
     )
     assert messages[0].content == "system"

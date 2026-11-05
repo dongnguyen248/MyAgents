@@ -40,13 +40,17 @@ TEMPLATES = Path(__file__).resolve().parents[2] / "templates"
 
 PROJECTS = {
     "proj-1": {
-        "id": "proj-1", "name": "Project One",
+        "id": "proj-1",
+        "name": "Project One",
         "repository": {"provider": "gitlab"},
         "technology": {"backend": ["python"], "frontend": ["react"]},
     },
     "proj-2": ProjectProfile(
-        id="proj-2", name="Project Two", repository={"provider": "github"},
-        technology={"backend": ["java", "spring"]}, workflow="software-development",
+        id="proj-2",
+        name="Project Two",
+        repository={"provider": "github"},
+        technology={"backend": ["java", "spring"]},
+        workflow="software-development",
     ),
 }
 
@@ -68,9 +72,15 @@ class RoutingGateway:
                 request.messages[-1].content,
             )
             assert linked is not None
-            reply = make_plan_artifact().content["text"].replace(
-                "ID: spec-1", f"ID: {linked[1]}",
-            ).replace("Version: 1", f"Version: {linked[2]}", 1)
+            reply = (
+                make_plan_artifact()
+                .content["text"]
+                .replace(
+                    "ID: spec-1",
+                    f"ID: {linked[1]}",
+                )
+                .replace("Version: 1", f"Version: {linked[2]}", 1)
+            )
         else:  # pragma: no cover - the test workflow only uses spec/plan
             raise AssertionError(f"Unexpected model request: {system[:80]}")
         return ScriptedModelGateway([reply]).complete(request)
@@ -82,14 +92,25 @@ class FakeMetrics:
     def __init__(self) -> None:
         self.decisions: list[dict] = []
         self._overview = {
-            "daily": [], "human": {"approvalRate": 1.0}, "quality": {}, "agents": [],
+            "daily": [],
+            "human": {"approvalRate": 1.0},
+            "quality": {},
+            "agents": [],
         }
 
     def agent_metrics(self, agent_id: str) -> dict:
         return {
-            "total": 3, "completed": 2, "running": 1, "failed": 0, "cancelled": 0,
-            "success_rate": 0.5, "avg_duration_sec": 12.0, "avg_revisions": 1.0,
-            "human_approval_rate": 1.0, "test_pass_rate": 1.0, "ci_pass_rate": 1.0,
+            "total": 3,
+            "completed": 2,
+            "running": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "success_rate": 0.5,
+            "avg_duration_sec": 12.0,
+            "avg_revisions": 1.0,
+            "human_approval_rate": 1.0,
+            "test_pass_rate": 1.0,
+            "ci_pass_rate": 1.0,
         }
 
     def overview(self) -> dict:
@@ -117,15 +138,28 @@ def build_engine(store=None) -> Orchestrator:
     registry.register(build_spec_agent(runtime, PlatformConfig(), TEMPLATES))
     registry.register(build_plan_agent(runtime, PlatformConfig(), TEMPLATES))
     definition = WorkflowDefinition(
-        id="spec-plan", name="Spec and Plan", version="1", steps=[
+        id="spec-plan",
+        name="Spec and Plan",
+        version="1",
+        steps=[
             WorkflowStepDef(
-                id="spec", name="Spec", type="AGENT", stage="SPEC",
-                agent_type="spec", requires_approval=True, produces=["SPEC"],
+                id="spec",
+                name="Spec",
+                type="AGENT",
+                stage="SPEC",
+                agent_type="spec",
+                requires_approval=True,
+                produces=["SPEC"],
             ),
             WorkflowStepDef(
-                id="plan", name="Plan", type="AGENT", stage="PLAN",
-                agent_type="plan", requires_approval=True,
-                consumes=["SPEC"], produces=["PLAN"],
+                id="plan",
+                name="Plan",
+                type="AGENT",
+                stage="PLAN",
+                agent_type="plan",
+                requires_approval=True,
+                consumes=["SPEC"],
+                produces=["PLAN"],
             ),
         ],
     )
@@ -134,26 +168,37 @@ def build_engine(store=None) -> Orchestrator:
         kwargs["store"] = store
     else:
         kwargs["approvals"] = ApprovalService(
-            InMemoryApprovalRepository(), id_factory=new_id,
+            InMemoryApprovalRepository(),
+            id_factory=new_id,
         )
     return Orchestrator(
-        definition, registry, clock=lambda: NOW, new_id=new_id,
-        approval_policy=ApprovalPolicy(reviewers=["dashboard"]), **kwargs,
+        definition,
+        registry,
+        clock=lambda: NOW,
+        new_id=new_id,
+        approval_policy=ApprovalPolicy(reviewers=["dashboard"]),
+        **kwargs,
     )
 
 
 def build_service(store=None, hosting_tokens=None) -> tuple[FactoryService, FakeMetrics]:
     metrics = FakeMetrics()
     service = FactoryService(
-        build_engine(store), projects=PROJECTS, metrics=metrics,
-        store=store, clock=lambda: NOW, hosting_tokens=hosting_tokens,
+        build_engine(store),
+        projects=PROJECTS,
+        metrics=metrics,
+        store=store,
+        clock=lambda: NOW,
+        hosting_tokens=hosting_tokens,
     )
     return service, metrics
 
 
 def start_at_spec_review(service: FactoryService) -> str:
     run = service.start_run(
-        "task-1", "proj-1", inputs={"spec": {"requirement": "Build a calculator"}},
+        "task-1",
+        "proj-1",
+        inputs={"spec": {"requirement": "Build a calculator"}},
     )
     view = service.tick_run(run.id)
     assert view is not None and view["status"] == "WAITING_APPROVAL"
@@ -180,7 +225,9 @@ def test_agents_config_and_metrics_normalization():
     assert config["allowedProjectIds"] == ["proj-1", "proj-2"]
     assert config["timeoutSeconds"] == 1800
     assert config["retryPolicy"] == {
-        "maxRetries": 0, "backoff": "none", "backoffSeconds": 0,
+        "maxRetries": 0,
+        "backoff": "none",
+        "backoffSeconds": 0,
     }
     assert service.get_agent_config("agent-nope") is None
     assert service.get_agent_runs("agent-spec") == []
@@ -204,8 +251,10 @@ def test_run_task_workflow_and_approval_flow():
     assert workflow["status"] == "WAITING_APPROVAL"
     states = {step["id"]: step["state"] for step in workflow["steps"]}
     assert states == {
-        "spec": "done", "spec_approval": "active",
-        "plan": "pending", "plan_approval": "pending",
+        "spec": "done",
+        "spec_approval": "active",
+        "plan": "pending",
+        "plan_approval": "pending",
     }
 
     approvals = service.list_approvals()
@@ -240,14 +289,18 @@ def test_run_task_workflow_and_approval_flow():
     assert view is not None and view["status"] == "WAITING_APPROVAL"
 
     commented = service.decide_approval(
-        plan_approvals[0]["id"], decision="COMMENT", comment="Looks close",
+        plan_approvals[0]["id"],
+        decision="COMMENT",
+        comment="Looks close",
     )
     assert commented["status"] == "PENDING"
     assert commented["comments"][0]["author"] == "dashboard"
     assert len(service.list_approvals()) == 1  # comment changed no state
 
     changed = service.decide_approval(
-        plan_approvals[0]["id"], decision="REQUEST_CHANGES", comment="Add risks",
+        plan_approvals[0]["id"],
+        decision="REQUEST_CHANGES",
+        comment="Add risks",
     )
     assert changed["status"] == "CHANGES_REQUESTED"
     assert changed["comments"][-1]["text"] == "Add risks"
@@ -275,7 +328,9 @@ def test_run_task_workflow_and_approval_flow():
 
 def test_metrics_overview_defaults_without_metrics():
     service = FactoryService(
-        build_engine(), projects=PROJECTS, clock=lambda: NOW,
+        build_engine(),
+        projects=PROJECTS,
+        clock=lambda: NOW,
     )
     overview = service.get_metrics_overview()
     assert overview["daily"] == [] and overview["agents"] == []
@@ -289,12 +344,16 @@ def test_store_discovered_runs_are_listed(tmp_path):
     try:
         engine = build_engine(store)
         run = engine.start(
-            task_id="task-9", project_id="proj-1",
+            task_id="task-9",
+            project_id="proj-1",
             inputs={"spec": {"requirement": "Stored run"}},
         )
         engine.tick(run.id)
         service = FactoryService(
-            engine, projects=PROJECTS, store=store, clock=lambda: NOW,
+            engine,
+            projects=PROJECTS,
+            store=store,
+            clock=lambda: NOW,
         )
         assert [t["id"] for t in service.list_tasks()] == ["task-9"]
         assert service.get_workflow(run.id)["status"] == "WAITING_APPROVAL"
@@ -304,7 +363,8 @@ def test_store_discovered_runs_are_listed(tmp_path):
 
 
 NEW_PROJECT = {
-    "id": "proj-3", "name": "Project Three",
+    "id": "proj-3",
+    "name": "Project Three",
     "repository": {"provider": "github"},
     "technology": {"backend": ["go"], "frontend": ["vue"]},
     "workflow": "software-development",
@@ -344,7 +404,9 @@ def test_create_project_rejects_duplicate_and_invalid_payloads():
 def test_create_project_hook_runs_before_registration():
     seen: list[ProjectProfile] = []
     service = FactoryService(
-        build_engine(), projects=PROJECTS, clock=lambda: NOW,
+        build_engine(),
+        projects=PROJECTS,
+        clock=lambda: NOW,
         on_project_created=seen.append,
     )
     service.create_project(NEW_PROJECT)
@@ -354,7 +416,9 @@ def test_create_project_hook_runs_before_registration():
         raise ValueError("disk full")
 
     blocked = FactoryService(
-        build_engine(), projects=PROJECTS, clock=lambda: NOW,
+        build_engine(),
+        projects=PROJECTS,
+        clock=lambda: NOW,
         on_project_created=failing_hook,
     )
     with pytest.raises(ValueError, match="disk full"):
@@ -404,7 +468,8 @@ def test_project_hosting_token_lifecycle():
 
     # A new token replaces it.
     view = service.update_project(
-        "proj-3", {"hostingToken": "glpat-other-9876"},
+        "proj-3",
+        {"hostingToken": "glpat-other-9876"},
     )
     assert view["hostingTokenHint"] == "…9876"
     assert tokens.get("proj-3") == "glpat-other-9876"
@@ -448,13 +513,15 @@ def test_delete_project_blocked_while_run_active():
 
 def test_project_view_exposes_repository_url():
     service, _metrics = build_service()
-    created = service.create_project({
-        **NEW_PROJECT,
-        "repository": {
-            "provider": "gitlab",
-            "url": "https://gitlab.com/group/proj-3",
-        },
-    })
+    created = service.create_project(
+        {
+            **NEW_PROJECT,
+            "repository": {
+                "provider": "gitlab",
+                "url": "https://gitlab.com/group/proj-3",
+            },
+        }
+    )
     assert created["repositoryUrl"] == "https://gitlab.com/group/proj-3"
     listed = next(p for p in service.list_projects() if p["id"] == "proj-1")
     assert listed["repositoryUrl"] == ""
@@ -462,13 +529,15 @@ def test_project_view_exposes_repository_url():
 
 def test_project_view_exposes_workspace_fields():
     service, _metrics = build_service()
-    created = service.create_project({
-        **NEW_PROJECT,
-        "repository": {"provider": "github", "path": "/srv/proj-3"},
-        "configuration": {
-            "testCommands": [["python", "-m", "pytest", "-q"]],
-        },
-    })
+    created = service.create_project(
+        {
+            **NEW_PROJECT,
+            "repository": {"provider": "github", "path": "/srv/proj-3"},
+            "configuration": {
+                "testCommands": [["python", "-m", "pytest", "-q"]],
+            },
+        }
+    )
     assert created["repositoryPath"] == "/srv/proj-3"
     assert created["testCommands"] == [["python", "-m", "pytest", "-q"]]
     updated = service.update_project("proj-3", {"repository": {"path": ""}})
@@ -482,7 +551,9 @@ def test_project_view_exposes_workspace_fields():
 def test_update_and_delete_hooks_run_in_order():
     calls: list = []
     service = FactoryService(
-        build_engine(), projects=PROJECTS, clock=lambda: NOW,
+        build_engine(),
+        projects=PROJECTS,
+        clock=lambda: NOW,
         on_project_updated=lambda profile: calls.append(("updated", profile.id)),
         on_project_deleted=lambda pid: calls.append(("deleted", pid)),
     )
@@ -490,6 +561,8 @@ def test_update_and_delete_hooks_run_in_order():
     service.update_project("proj-3", {"name": "Renamed"})
     service.delete_project("proj-3")
     assert calls == [("updated", "proj-3"), ("deleted", "proj-3")]
+
+
 def test_artifact_text_renders_structured_content_as_json():
     class FakeArtifact:
         content = {"changes": [{"path": "a.py", "operation": "create"}]}
@@ -503,7 +576,10 @@ def test_artifact_text_renders_structured_content_as_json():
 def test_cancel_run_at_approval_gate_cancels_immediately():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     run_id = start_at_spec_review(service)
     assert len(service.list_approvals()) == 1
@@ -523,10 +599,14 @@ def test_cancel_run_at_approval_gate_cancels_immediately():
 def test_cancel_run_while_driving_is_applied_between_steps():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     run = engine.start(
-        task_id="task-1", project_id="proj-1",
+        task_id="task-1",
+        project_id="proj-1",
         inputs={"spec": {"requirement": "Build a calculator"}},
     )
     service.track(run.id)
@@ -553,26 +633,29 @@ def test_cancel_run_while_driving_is_applied_between_steps():
 def test_run_log_records_step_started_before_its_result():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     run = service.start_run(
-        "task-1", "proj-1", inputs={"spec": {"requirement": "Build a calculator"}},
+        "task-1",
+        "proj-1",
+        inputs={"spec": {"requirement": "Build a calculator"}},
     )
     service.wait_for_drives(timeout=10)
 
     observations = engine.get(run.id).observations
     started = [
-        o.event for o in observations
+        o.event
+        for o in observations
         if o.event is not None and o.event.event_type == "STEP_STARTED"
     ]
     assert len(started) == 1
     assert started[0].message == "Spec started"
     assert started[0].metadata["stepId"] == "spec"
     # The start line precedes the step's result in the run's log.
-    kinds = [
-        o.event.event_type if o.event is not None else "RESULT"
-        for o in observations
-    ]
+    kinds = [o.event.event_type if o.event is not None else "RESULT" for o in observations]
     assert kinds.index("STEP_STARTED") < kinds.index("RESULT")
     # ...and it reaches the dashboard activity feed.
     activity = service.list_activity({"taskId": "task-1"})
@@ -585,10 +668,14 @@ def test_run_log_records_step_started_before_its_result():
 def test_workflow_view_reports_current_activity_while_in_flight():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     run = engine.start(
-        task_id="task-1", project_id="proj-1",
+        task_id="task-1",
+        project_id="proj-1",
         inputs={"spec": {"requirement": "Build a calculator"}},
     )
     service.track(run.id)
@@ -608,13 +695,17 @@ def test_workflow_view_reports_current_activity_while_in_flight():
 def test_start_run_classifies_oversized_requirement_as_complex():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     # Dong's messenger case: a pasted requirement far beyond the
     # threshold — the run is classified complex at start, and the
     # workflow view shows it so the upgrade is visible, not silent.
     run = service.start_run(
-        "task-1", "proj-1",
+        "task-1",
+        "proj-1",
         inputs={"spec": {"requirement": "x" * (COMPLEX_REQUIREMENT_CHARS + 1)}},
     )
     assert engine.get(run.id).context["modelTier"] == "complex"
@@ -623,7 +714,9 @@ def test_start_run_classifies_oversized_requirement_as_complex():
 
     # A normal short requirement stays standard: no tier recorded.
     run = service.start_run(
-        "task-2", "proj-1", inputs={"spec": {"requirement": "Build a calculator"}},
+        "task-2",
+        "proj-1",
+        inputs={"spec": {"requirement": "Build a calculator"}},
     )
     assert "modelTier" not in engine.get(run.id).context
 
@@ -631,12 +724,16 @@ def test_start_run_classifies_oversized_requirement_as_complex():
 def test_start_run_skip_approvals_passes_the_gate_without_a_request():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     # Dong's ask: simple tasks may skip chosen approval gates at
     # creation. Skipping spec must leave the plan gate fully intact.
     run = service.start_run(
-        "task-1", "proj-1",
+        "task-1",
+        "proj-1",
         inputs={"spec": {"requirement": "Build a calculator"}},
         context={"skipApprovals": ["spec"]},
     )
@@ -646,8 +743,10 @@ def test_start_run_skip_approvals_passes_the_gate_without_a_request():
     assert view["skippedApprovals"] == ["spec"]
     states = {step["id"]: step["state"] for step in view["steps"]}
     assert states == {
-        "spec": "done", "spec_approval": "skipped",
-        "plan": "done", "plan_approval": "active",
+        "spec": "done",
+        "spec_approval": "skipped",
+        "plan": "done",
+        "plan_approval": "active",
     }
     # Only the plan gate produced an approval request.
     approvals = service.list_approvals()
@@ -672,17 +771,22 @@ def test_start_run_skip_approvals_passes_the_gate_without_a_request():
 def test_start_run_rejects_invalid_skip_approvals():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     with pytest.raises(ValueError, match="skipApprovals"):
         service.start_run(
-            "task-1", "proj-1",
+            "task-1",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
             context={"skipApprovals": ["implement"]},
         )
     with pytest.raises(ValueError, match="skipApprovals"):
         service.start_run(
-            "task-2", "proj-1",
+            "task-2",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
             context={"skipApprovals": "spec"},
         )
@@ -691,7 +795,10 @@ def test_start_run_rejects_invalid_skip_approvals():
 def test_failed_run_does_not_mark_approval_gates_done():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     # Dong's messenger case: the spec agent rejects an over-long
     # requirement on the very first step, so no gate was ever reached —
@@ -699,7 +806,8 @@ def test_failed_run_does_not_mark_approval_gates_done():
     # FAILED stage sits past every step in the sequence and the
     # approval fallthrough compared indexes against it.
     run = service.start_run(
-        "task-1", "proj-1",
+        "task-1",
+        "proj-1",
         inputs={"spec": {"requirement": "A" * (MAX_REQUIREMENT_CHARS + 1)}},
     )
     # The background drive fails the run on its own; read the final view.
@@ -723,9 +831,16 @@ def test_approval_step_state_for_ended_runs_uses_the_trail():
 
     step = SimpleNamespace(stage="SPEC")
     sequence = [
-        "NEW", "SPEC_DRAFT", "SPEC_REVIEW", "SPEC_REJECTED",
-        "SPEC_APPROVED", "SPEC_ESCALATED", "PLAN_DRAFT", "COMPLETED",
-        "FAILED", "CANCELLED",
+        "NEW",
+        "SPEC_DRAFT",
+        "SPEC_REVIEW",
+        "SPEC_REJECTED",
+        "SPEC_APPROVED",
+        "SPEC_ESCALATED",
+        "PLAN_DRAFT",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED",
     ]
     failed_at = sequence.index("FAILED")
     died_writing = sequence.index("SPEC_DRAFT")
@@ -763,9 +878,7 @@ def _complete_run(service: FactoryService, run_id: str) -> dict:
         assert view is not None
         if view["status"] in ("COMPLETED", "FAILED", "CANCELLED"):
             return view
-        pending = [
-            a for a in service.list_approvals() if a["taskId"] == view["taskId"]
-        ]
+        pending = [a for a in service.list_approvals() if a["taskId"] == view["taskId"]]
         assert pending, f"run stuck at {view['status']} with no pending approval"
         service.decide_approval(pending[0]["id"], decision="APPROVE")
     raise AssertionError("run did not finish")
@@ -774,7 +887,10 @@ def _complete_run(service: FactoryService, run_id: str) -> dict:
 def _split_service(decomposer) -> tuple[FactoryService, object]:
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
         decomposer=decomposer,
     )
     return service, engine
@@ -783,13 +899,16 @@ def _split_service(decomposer) -> tuple[FactoryService, object]:
 def test_oversized_requirement_splits_into_sequential_part_runs():
     from asf.api.decomposer import SplitPart
 
-    decomposer = FakeDecomposer(parts=[
-        SplitPart("Foundation", "Build the foundation. " * 5),
-        SplitPart("Features", "Build the features. " * 5),
-    ])
+    decomposer = FakeDecomposer(
+        parts=[
+            SplitPart("Foundation", "Build the foundation. " * 5),
+            SplitPart("Features", "Build the features. " * 5),
+        ]
+    )
     service, engine = _split_service(decomposer)
     run = service.start_run(
-        "big-task", "proj-1",
+        "big-task",
+        "proj-1",
         inputs={"spec": {"requirement": "x" * (SPLIT_REQUIREMENT_CHARS + 1)}},
         context={"title": "Big task"},
     )
@@ -829,19 +948,23 @@ def test_oversized_requirement_splits_into_sequential_part_runs():
 def test_task_list_nests_split_parts_under_their_parent():
     from asf.api.decomposer import SplitPart
 
-    decomposer = FakeDecomposer(parts=[
-        SplitPart("Foundation", "Build the foundation. " * 5),
-        SplitPart("Features", "Build the features. " * 5),
-    ])
+    decomposer = FakeDecomposer(
+        parts=[
+            SplitPart("Foundation", "Build the foundation. " * 5),
+            SplitPart("Features", "Build the features. " * 5),
+        ]
+    )
     service, _engine = _split_service(decomposer)
     # An unrelated task alongside: without grouping the parts would
     # scatter among the other rows purely by recency.
     service.start_run(
-        "other-task", "proj-1",
+        "other-task",
+        "proj-1",
         inputs={"spec": {"requirement": "Small thing"}},
     )
     run = service.start_run(
-        "big-task", "proj-1",
+        "big-task",
+        "proj-1",
         inputs={"spec": {"requirement": "x" * (SPLIT_REQUIREMENT_CHARS + 1)}},
         context={"title": "Big task"},
     )
@@ -866,14 +989,17 @@ def test_failed_part_stops_the_chain_and_fails_the_parent():
     from asf.agents.spec.agent import MAX_REQUIREMENT_CHARS
     from asf.api.decomposer import SplitPart
 
-    decomposer = FakeDecomposer(parts=[
-        # Over the spec agent's own cap: part 1 fails at its first step.
-        SplitPart("Doomed", "z" * (MAX_REQUIREMENT_CHARS + 1)),
-        SplitPart("Never reached", "Build the rest. " * 5),
-    ])
+    decomposer = FakeDecomposer(
+        parts=[
+            # Over the spec agent's own cap: part 1 fails at its first step.
+            SplitPart("Doomed", "z" * (MAX_REQUIREMENT_CHARS + 1)),
+            SplitPart("Never reached", "Build the rest. " * 5),
+        ]
+    )
     service, _engine = _split_service(decomposer)
     run = service.start_run(
-        "big-task", "proj-1",
+        "big-task",
+        "proj-1",
         inputs={"spec": {"requirement": "x" * (SPLIT_REQUIREMENT_CHARS + 1)}},
         context={"title": "Big task"},
     )
@@ -888,7 +1014,8 @@ def test_split_failure_runs_the_task_whole_and_surfaces_it():
     decomposer = FakeDecomposer(error=ValueError("response is not JSON"))
     service, _engine = _split_service(decomposer)
     run = service.start_run(
-        "big-task", "proj-1",
+        "big-task",
+        "proj-1",
         inputs={"spec": {"requirement": "x" * (SPLIT_REQUIREMENT_CHARS + 1)}},
         context={"title": "Big task"},
     )
@@ -904,7 +1031,9 @@ def test_requirement_below_the_threshold_never_splits():
     decomposer = FakeDecomposer(parts=[])
     service, _engine = _split_service(decomposer)
     run = service.start_run(
-        "small-task", "proj-1", inputs={"spec": {"requirement": "Build a calculator"}},
+        "small-task",
+        "proj-1",
+        inputs={"spec": {"requirement": "Build a calculator"}},
     )
     assert decomposer.calls == 0
     assert run.task_id == "small-task"
@@ -913,7 +1042,10 @@ def test_requirement_below_the_threshold_never_splits():
 def test_cancelled_run_steps_are_not_all_done():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     run_id = start_at_spec_review(service)
 
@@ -935,7 +1067,10 @@ def test_cancelled_run_steps_are_not_all_done():
 def test_cancelled_run_keeps_passed_approval_gates_done():
     engine = build_engine()
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+        engine,
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     run_id = start_at_spec_review(service)
     approval = service.list_approvals()[0]

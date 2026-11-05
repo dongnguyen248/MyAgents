@@ -31,7 +31,7 @@ def validator_for(definition: str) -> Draft202012Validator:
 class StateMachineTransitionsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        wf_path = REPO_ROOT / "workflows" / "software-development.yaml"
+        wf_path = REPO_ROOT / "workflow-definitions" / "software-development.yaml"
         cls.workflow_def = load_workflow(wf_path)
         cls.graph = build_graph(cls.workflow_def)
         cls.error_validator = validator_for("PlatformError")
@@ -139,9 +139,7 @@ else:
 
     def test_fail_and_cancel_from_every_non_terminal_stage(self):
         non_terminal_stages = [
-            s.name
-            for s in self.graph.stages
-            if s.name not in {"COMPLETED", "FAILED", "CANCELLED"}
+            s.name for s in self.graph.stages if s.name not in {"COMPLETED", "FAILED", "CANCELLED"}
         ]
 
         for stage_name in non_terminal_stages:

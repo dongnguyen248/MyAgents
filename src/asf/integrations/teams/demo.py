@@ -78,39 +78,69 @@ class DemoModels:
 
 
 def demo_engine(
-    config: TeamsConfig, store: SQLiteExecutionStore, *, models: ModelGateway | None = None,
+    config: TeamsConfig,
+    store: SQLiteExecutionStore,
+    *,
+    models: ModelGateway | None = None,
     execution_id: str | None = None,
 ) -> Orchestrator:
     first_id = iter([execution_id] if execution_id is not None else [])
     runtime = AgentRuntime(
         models=models if models is not None else DemoModels(),
-        clock=lambda: datetime.now(timezone.utc), new_id=lambda: next(first_id, str(uuid4())),
+        clock=lambda: datetime.now(timezone.utc),
+        new_id=lambda: next(first_id, str(uuid4())),
     )
     registry = AgentRegistry()
-    registry.register(SpecAgent(
-        runtime, prompts=load_spec_prompts(), template=load_spec_template(Path("templates")),
-    ))
-    registry.register(PlanAgent(
-        runtime, prompts=load_plan_prompts(), template=load_plan_template(Path("templates")),
-    ))
+    registry.register(
+        SpecAgent(
+            runtime,
+            prompts=load_spec_prompts(),
+            template=load_spec_template(Path("templates")),
+        )
+    )
+    registry.register(
+        PlanAgent(
+            runtime,
+            prompts=load_plan_prompts(),
+            template=load_plan_template(Path("templates")),
+        )
+    )
     return Orchestrator(
         WorkflowDefinition(
-            id="teams-workflow-demo", name="Teams Workflows approval demo", version="2",
+            id="teams-workflow-demo",
+            name="Teams Workflows approval demo",
+            version="2",
             steps=[
                 WorkflowStepDef(
-                    id="spec", name="Specification", type="AGENT", stage="SPEC",
-                    requires_approval=True, agent_type="spec", produces=["SPEC"], max_revisions=3,
+                    id="spec",
+                    name="Specification",
+                    type="AGENT",
+                    stage="SPEC",
+                    requires_approval=True,
+                    agent_type="spec",
+                    produces=["SPEC"],
+                    max_revisions=3,
                 ),
                 WorkflowStepDef(
-                    id="plan", name="Plan after human approval", type="AGENT", stage="PLAN",
-                    requires_approval=False, agent_type="plan",
-                    consumes=["SPEC"], produces=["PLAN"],
+                    id="plan",
+                    name="Plan after human approval",
+                    type="AGENT",
+                    stage="PLAN",
+                    requires_approval=False,
+                    agent_type="plan",
+                    consumes=["SPEC"],
+                    produces=["PLAN"],
                 ),
             ],
         ),
-        registry, clock=runtime.clock, new_id=runtime.new_id, store=store,
+        registry,
+        clock=runtime.clock,
+        new_id=runtime.new_id,
+        store=store,
         approval_policy=ApprovalPolicy(
-            reviewers=list(config.reviewers.values()), min_approvals=1, expires_in_seconds=3600,
+            reviewers=list(config.reviewers.values()),
+            min_approvals=1,
+            expires_in_seconds=3600,
         ),
     )
 
@@ -131,18 +161,27 @@ def run_demo(args: argparse.Namespace) -> None:
         models = GeminiModelGateway.from_environment(
             model=os.environ.get("ASF_LIVE_GEMINI_MODEL", ""),
             evidence=EvidenceCapture(
-                Path(".asf-evidence"), secrets=[os.environ.get("ASF_LIVE_GEMINI_API_KEY", "")],
+                Path(".asf-evidence"),
+                secrets=[os.environ.get("ASF_LIVE_GEMINI_API_KEY", "")],
             ),
             run_id=execution_id,
         )
     store = SQLiteExecutionStore(args.database)
     try:
         engine = demo_engine(
-            settings, store, models=models, execution_id=None if args.run_id else execution_id,
+            settings,
+            store,
+            models=models,
+            execution_id=None if args.run_id else execution_id,
         )
-        run = engine.get(args.run_id) if args.run_id else engine.start(
-            task_id="teams-demo", project_id="teams-demo",
-            inputs={"spec": {"requirement": args.requirement}},
+        run = (
+            engine.get(args.run_id)
+            if args.run_id
+            else engine.start(
+                task_id="teams-demo",
+                project_id="teams-demo",
+                inputs={"spec": {"requirement": args.requirement}},
+            )
         )
         workflow = TeamsWorkflow(settings, engine)
         app = create_app(workflow, run.id)
@@ -157,15 +196,20 @@ def main() -> None:
     parser.add_argument("--config-dir", type=Path, default=Path("config"))
     parser.add_argument("--channel", default="teams-approvals")
     parser.add_argument(
-        "--database", type=Path, default=Path("artifacts/teams-workflow-demo.sqlite"),
+        "--database",
+        type=Path,
+        default=Path("artifacts/teams-workflow-demo.sqlite"),
     )
     parser.add_argument("--run-id", help="Resume a workflow demo; may resend its current card")
     parser.add_argument("--port", type=int, default=3978)
     parser.add_argument(
-        "--requirement", default="Demonstrate Teams approval and SPEC-to-PLAN handoff",
+        "--requirement",
+        default="Demonstrate Teams approval and SPEC-to-PLAN handoff",
     )
     parser.add_argument(
-        "--send", action="store_true", help="Acknowledge real Teams workflow delivery",
+        "--send",
+        action="store_true",
+        help="Acknowledge real Teams workflow delivery",
     )
     parser.add_argument("--gemini", action="store_true", help="Also enable real Gemini model calls")
     args = parser.parse_args()

@@ -33,9 +33,22 @@ MAX_TREE_DEPTH = 6
 MAX_OUTLINE_FILES = 12
 MAX_OUTLINE_ENTRIES = 14
 _PRUNED_DIRS = {
-    "node_modules", ".git", ".hg", "dist", "build", "target",
-    "__pycache__", ".venv", "venv", "vendor", ".idea", ".next",
-    "coverage", "out", "bin", "obj",
+    "node_modules",
+    ".git",
+    ".hg",
+    "dist",
+    "build",
+    "target",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "vendor",
+    ".idea",
+    ".next",
+    "coverage",
+    "out",
+    "bin",
+    "obj",
 }
 
 _PY_IMPORT = re.compile(r"^\s*(?:from\s+([\w\.]+)\s+import|import\s+([\w\.]+))")
@@ -71,7 +84,9 @@ def _kept_paths(tree: tuple[str, ...]) -> list[str]:
 
 
 def _imported_paths(
-    path: str, content: str, tree_set: set[str],
+    path: str,
+    content: str,
+    tree_set: set[str],
 ) -> list[str]:
     """Repo paths this file imports directly (best-effort, regex)."""
     found: list[str] = []

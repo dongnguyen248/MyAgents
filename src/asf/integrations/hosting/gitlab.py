@@ -56,7 +56,12 @@ class GitLabProvider:
 
     # -- writes ------------------------------------------------------------
     def push_changeset(
-        self, *, branch: str, base_branch: str, changes: ChangeSet, message: str,
+        self,
+        *,
+        branch: str,
+        base_branch: str,
+        changes: ChangeSet,
+        message: str,
     ) -> PushResult:
         actions: list[dict[str, Any]] = []
         for change in changes.changes:
@@ -75,7 +80,9 @@ class GitLabProvider:
         }
         try:
             data = self._http.request(
-                "POST", f"/projects/{self._project}/repository/commits", payload,
+                "POST",
+                f"/projects/{self._project}/repository/commits",
+                payload,
             )
         except HostingError as error:
             if error.status != 400 or "already exists" not in str(error):
@@ -84,12 +91,19 @@ class GitLabProvider:
             # commit on top of it instead of recreating it.
             payload.pop("start_branch")
             data = self._http.request(
-                "POST", f"/projects/{self._project}/repository/commits", payload,
+                "POST",
+                f"/projects/{self._project}/repository/commits",
+                payload,
             )
         return PushResult(branch=branch, commit_sha=str(data["id"]))
 
     def open_change_request(
-        self, *, branch: str, base_branch: str, title: str, description: str,
+        self,
+        *,
+        branch: str,
+        base_branch: str,
+        title: str,
+        description: str,
     ) -> ChangeRequestRef:
         existing = self._merge_requests(branch, state="opened")
         if existing:
@@ -115,7 +129,8 @@ class GitLabProvider:
     def pipeline_status(self, *, branch: str) -> PipelineRef | None:
         query = urlencode({"ref": branch, "per_page": 1})
         data = self._http.request(
-            "GET", f"/projects/{self._project}/pipelines?{query}",
+            "GET",
+            f"/projects/{self._project}/pipelines?{query}",
         )
         if not isinstance(data, list) or not data:
             return None
@@ -127,22 +142,26 @@ class GitLabProvider:
         )
 
     def _merge_requests(self, branch: str, *, state: str) -> list[dict[str, Any]]:
-        query = urlencode({
-            "source_branch": branch,
-            "state": state,
-            "order_by": "created_at",
-            "sort": "desc",
-            "per_page": 1,
-        })
+        query = urlencode(
+            {
+                "source_branch": branch,
+                "state": state,
+                "order_by": "created_at",
+                "sort": "desc",
+                "per_page": 1,
+            }
+        )
         data = self._http.request(
-            "GET", f"/projects/{self._project}/merge_requests?{query}",
+            "GET",
+            f"/projects/{self._project}/merge_requests?{query}",
         )
         return data if isinstance(data, list) else []
 
 
 def _to_ref(data: dict[str, Any]) -> ChangeRequestRef:
     state = {"opened": "open", "merged": "merged", "closed": "closed"}.get(
-        str(data.get("state")), "open",
+        str(data.get("state")),
+        "open",
     )
     return ChangeRequestRef(
         id=str(data.get("iid", "")),

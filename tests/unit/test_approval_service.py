@@ -470,7 +470,6 @@ class ApprovalServiceTests(unittest.TestCase):
         self.assertEqual(cancelled.status, "CANCELLED")
         self.assertEqual(self.service.get(req.id).status, "CANCELLED")
 
-
     # (11) feedback_for returns only negative decisions in order, [] when none,
     # each item validates against $defs/ApprovalFeedback, and an AgentRequest dict
     # carrying that list validates against $defs/AgentRequest
@@ -696,4 +695,3 @@ class ApprovalServiceTests(unittest.TestCase):
         req.reviewers.append("r5")
         stored = self.service.get(req.id)
         self.assertEqual(stored.reviewers, ["r1", "r2"])
-

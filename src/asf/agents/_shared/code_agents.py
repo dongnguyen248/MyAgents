@@ -32,10 +32,7 @@ def task_item(task: Artifact, task_item_id: str) -> dict[str, Any]:
         items = parsed.get("tasks")
     if not isinstance(items, list):
         raise ValueError("TASK must contain a tasks list")
-    matches = [
-        item for item in items
-        if isinstance(item, dict) and item.get("id") == task_item_id
-    ]
+    matches = [item for item in items if isinstance(item, dict) and item.get("id") == task_item_id]
     if len(matches) != 1:
         raise ValueError("TASK must contain exactly one matching task item")
     return matches[0]
@@ -149,12 +146,19 @@ def check_code_request(
 
 def linked_metadata(request: AgentRequest, code: Artifact) -> dict[str, Any]:
     metadata = {
-        key: value for key, value in code.metadata.items()
-        if key in {
-            "specArtifactId", "specVersion", "planArtifactId", "planVersion",
-            "taskArtifactId", "taskVersion", "taskItemId", "baseRef",
+        key: value
+        for key, value in code.metadata.items()
+        if key
+        in {
+            "specArtifactId",
+            "specVersion",
+            "planArtifactId",
+            "planVersion",
+            "taskArtifactId",
+            "taskVersion",
+            "taskItemId",
+            "baseRef",
         }
     }
     metadata.update(codeArtifactId=code.id, codeVersion=code.version)
     return metadata
-

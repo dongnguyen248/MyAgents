@@ -65,19 +65,21 @@ class NotificationChannel(ConfigModel):
 # Anything outside the combined set is a typo that would silently
 # disable retries (the example config once shipped TIMEOUT /
 # RATE_LIMITED, which match nothing).
-_AGENT_RETRY_ON_CODES: frozenset[str] = frozenset({
-    "AGENT_EXECUTION_FAILED",
-    "WORKFLOW_STEP_TIMEOUT",
-    "COMMAND_TIMEOUT",
-    "SANDBOX_ERROR",
-    "REPOSITORY_ERROR",
-    "GIT_OPERATION_FAILED",
-    "CI_UNAVAILABLE",
-    # Hosting actions report these while CI / a merge is in flight;
-    # the shipped development workflow retries on exactly them.
-    "PIPELINE_RUNNING",
-    "MERGE_PENDING",
-})
+_AGENT_RETRY_ON_CODES: frozenset[str] = frozenset(
+    {
+        "AGENT_EXECUTION_FAILED",
+        "WORKFLOW_STEP_TIMEOUT",
+        "COMMAND_TIMEOUT",
+        "SANDBOX_ERROR",
+        "REPOSITORY_ERROR",
+        "GIT_OPERATION_FAILED",
+        "CI_UNAVAILABLE",
+        # Hosting actions report these while CI / a merge is in flight;
+        # the shipped development workflow retries on exactly them.
+        "PIPELINE_RUNNING",
+        "MERGE_PENDING",
+    }
+)
 
 
 class RetryPolicySettings(ConfigModel):

@@ -779,10 +779,7 @@ class PlanAgentTests(unittest.TestCase):
         self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("milestoneIssues", res.errors[0].details)
         self.assertTrue(
-            any(
-                "sequential" in issue
-                for issue in res.errors[0].details["milestoneIssues"]
-            )
+            any("sequential" in issue for issue in res.errors[0].details["milestoneIssues"])
         )
 
     def test_milestone_validation_no_milestones(self):
@@ -802,8 +799,7 @@ class PlanAgentTests(unittest.TestCase):
         self.assertIn("milestoneIssues", res.errors[0].details)
         self.assertTrue(
             any(
-                "No milestones found" in issue
-                for issue in res.errors[0].details["milestoneIssues"]
+                "No milestones found" in issue for issue in res.errors[0].details["milestoneIssues"]
             )
         )
 
@@ -837,9 +833,7 @@ class PlanAgentTests(unittest.TestCase):
     def test_milestone_validation_later_milestone_dependency(self):
         """Test that a milestone depending on a later milestone is rejected."""
         # M2 depends on M3 (later milestone)
-        reply = self.valid_reply.replace(
-            "- Depends on: M1", "- Depends on: M3"
-        )
+        reply = self.valid_reply.replace("- Depends on: M1", "- Depends on: M3")
         agent, _ = self._make_agent([reply])
         res = agent.execute(self._make_request())
         self.assertEqual(res.status, "FAILED")
@@ -855,19 +849,14 @@ class PlanAgentTests(unittest.TestCase):
     def test_milestone_validation_self_dependency(self):
         """Test that a milestone depending on itself is rejected."""
         # M1 depends on M1
-        reply = self.valid_reply.replace(
-            "- Depends on: none", "- Depends on: M1"
-        )
+        reply = self.valid_reply.replace("- Depends on: none", "- Depends on: M1")
         agent, _ = self._make_agent([reply])
         res = agent.execute(self._make_request())
         self.assertEqual(res.status, "FAILED")
         self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("milestoneIssues", res.errors[0].details)
         self.assertTrue(
-            any(
-                "self-dependency" in issue
-                for issue in res.errors[0].details["milestoneIssues"]
-            )
+            any("self-dependency" in issue for issue in res.errors[0].details["milestoneIssues"])
         )
 
     def test_milestone_validation_max_milestones(self):
@@ -881,7 +870,7 @@ class PlanAgentTests(unittest.TestCase):
                     lines.append(f"### M{i}: Milestone {i}")
                     lines.append(f"- Deliverables: Deliverable {i}")
                     lines.append(f"- Acceptance criteria: Criteria {i}")
-                    lines.append(f"- Depends on: {'none' if i == 1 else f'M{i-1}'}")
+                    lines.append(f"- Depends on: {'none' if i == 1 else f'M{i - 1}'}")
             else:
                 lines.append(sec)
                 lines.append("Section details content.")
@@ -894,11 +883,9 @@ class PlanAgentTests(unittest.TestCase):
         self.assertIn("milestoneIssues", res.errors[0].details)
         self.assertTrue(
             any(
-                "Too many milestones" in issue
-                for issue in res.errors[0].details["milestoneIssues"]
+                "Too many milestones" in issue for issue in res.errors[0].details["milestoneIssues"]
             )
         )
-
 
     def test_milestone_validation_10_plus_valid_milestones(self):
         """Test that 12 valid milestones (M1..M12) pass validation with numeric ordering."""
@@ -913,7 +900,7 @@ class PlanAgentTests(unittest.TestCase):
                     lines.append(f"### M{i}: Milestone {i}")
                     lines.append(f"- Deliverables: Deliverable {i}")
                     lines.append(f"- Acceptance criteria: Criteria {i}")
-                    lines.append(f"- Depends on: {'none' if i == 1 else f'M{i-1}'}")
+                    lines.append(f"- Depends on: {'none' if i == 1 else f'M{i - 1}'}")
             else:
                 lines.append("Section details content.")
         reply = "\n\n".join(lines)
@@ -983,8 +970,7 @@ class PlanAgentTests(unittest.TestCase):
         self.assertIn("linkedSpecIssues", res.errors[0].details)
         self.assertTrue(
             any(
-                "missing 'ID:' line" in issue
-                for issue in res.errors[0].details["linkedSpecIssues"]
+                "missing 'ID:' line" in issue for issue in res.errors[0].details["linkedSpecIssues"]
             )
         )
         self.assertTrue(
@@ -1130,6 +1116,7 @@ Version: 2
         """Test that SPEC+PLAN content exceeding MAX_PLAN_CHARS is rejected."""
         # Create a SPEC artifact with very large content
         from asf.agents.plan.agent import MAX_PLAN_CHARS
+
         large_text = "x" * (MAX_PLAN_CHARS + 1)
         spec_art = Artifact(
             id="spec-large",
@@ -1147,13 +1134,12 @@ Version: 2
         self.assertFalse(val_res.valid)
         paths = [err.details.get("path") for err in val_res.errors]
         self.assertIn("artifacts", paths)
-        self.assertTrue(
-            any("exceeds" in err.message for err in val_res.errors)
-        )
+        self.assertTrue(any("exceeds" in err.message for err in val_res.errors))
 
         # Execute should also be REJECTED
         exec_res = agent.execute(req)
         self.assertEqual(exec_res.status, "REJECTED")
+
 
 if __name__ == "__main__":
     unittest.main()

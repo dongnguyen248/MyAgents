@@ -35,7 +35,9 @@ NOW = datetime(2026, 11, 5, 15, 0, tzinfo=timezone.utc)
 def git(path: Path, *args: str) -> str:
     proc = subprocess.run(
         ["git", "-C", str(path), *args],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert proc.returncode == 0, f"git {args} failed: {proc.stderr}"
     return proc.stdout
@@ -74,7 +76,9 @@ def _modify(path: str, content: str) -> FileChange:
 def _run_sandbox(workspace: LocalWorkspace, changes: ChangeSet, code: str):
     sandbox = WorkspaceSandbox(workspace, ScriptedSandbox())
     return sandbox.run(
-        [CommandSpec(argv=(PYTHON, "-c", code))], changes, "main",
+        [CommandSpec(argv=(PYTHON, "-c", code))],
+        changes,
+        "main",
     )
 
 
@@ -98,11 +102,16 @@ def test_two_runs_of_one_project_never_see_each_others_changes(tmp_path: Path):
                 root = workspace.current_root("main")
                 assert root is not None and root != repo
                 barrier.wait(timeout=15)  # both worktrees exist now
-                _run_sandbox(workspace, _changeset(
-                    _create(f"marker-{run_id}.py", f"# {run_id}\n"),
-                ), PASS)
+                _run_sandbox(
+                    workspace,
+                    _changeset(
+                        _create(f"marker-{run_id}.py", f"# {run_id}\n"),
+                    ),
+                    PASS,
+                )
                 tree = WorkspaceRepository(
-                    workspace, InMemoryRepository(),
+                    workspace,
+                    InMemoryRepository(),
                 ).list_tree("main")
                 assert f"marker-{run_id}.py" in tree
                 other = "run-2" if run_id == "run-1" else "run-1"
@@ -112,10 +121,7 @@ def test_two_runs_of_one_project_never_see_each_others_changes(tmp_path: Path):
         except BaseException as error:  # noqa: BLE001
             errors.append(error)
 
-    threads = [
-        threading.Thread(target=work, args=(run_id,))
-        for run_id in ("run-1", "run-2")
-    ]
+    threads = [threading.Thread(target=work, args=(run_id,)) for run_id in ("run-1", "run-2")]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -137,9 +143,14 @@ def test_failed_run_changes_never_reach_the_project_tree(tmp_path: Path):
     workspace = make_workspace(tmp_path, repo)
     token = workspace.bind("proj", "run-fail")
     try:
-        _run_sandbox(workspace, _changeset(
-            _create("junk.py", "# junk\n"), _modify("app.py", "VALUE = 'x'\n"),
-        ), FAIL)
+        _run_sandbox(
+            workspace,
+            _changeset(
+                _create("junk.py", "# junk\n"),
+                _modify("app.py", "VALUE = 'x'\n"),
+            ),
+            FAIL,
+        )
     finally:
         workspace.reset_binding(token)
     assert not (repo / "junk.py").exists()
@@ -163,25 +174,37 @@ def test_fix_changeset_lands_on_the_last_passing_commit(tmp_path: Path):
     token = workspace.bind("proj", "run-fix")
     try:
         # Item v1 passes -> committed as the green baseline.
-        _run_sandbox(workspace, _changeset(
-            _modify("app.py", "VALUE = 'v1-good'\n"),
-        ), PASS)
+        _run_sandbox(
+            workspace,
+            _changeset(
+                _modify("app.py", "VALUE = 'v1-good'\n"),
+            ),
+            PASS,
+        )
         sha = workspace.commit_current_worktree(
             "asf: task item T1 — code code-1 v1 (tests passed)",
         )
         assert sha is not None
         # A broken attempt: applied, tests fail, nothing committed.
-        _run_sandbox(workspace, _changeset(
-            _modify("app.py", "VALUE = 'broken'\n"),
-            _create("broken.py", "# broken\n"),
-        ), FAIL)
+        _run_sandbox(
+            workspace,
+            _changeset(
+                _modify("app.py", "VALUE = 'broken'\n"),
+                _create("broken.py", "# broken\n"),
+            ),
+            FAIL,
+        )
         # The fix agent reads the broken state it has to fix.
         assert repository.read_file("app.py", "main") == "VALUE = 'broken'\n"
         # The replacement change set must land on the PASS baseline:
         # the reset wipes broken.py and the broken edit first.
-        _run_sandbox(workspace, _changeset(
-            _modify("app.py", "VALUE = 'v2-fixed'\n"),
-        ), PASS)
+        _run_sandbox(
+            workspace,
+            _changeset(
+                _modify("app.py", "VALUE = 'v2-fixed'\n"),
+            ),
+            PASS,
+        )
         worktree = workspace.current_root("main")
         assert worktree is not None
         assert not (worktree / "broken.py").exists()
@@ -227,7 +250,8 @@ def test_finish_run_cleanup_policy(tmp_path: Path):
     strict = LocalWorkspace(
         {"proj": repo},
         worktrees=GitWorktreeWorkspace(
-            tmp_path / "worktrees", cleanup_completed=True,
+            tmp_path / "worktrees",
+            cleanup_completed=True,
         ),
     )
     token = strict.bind("proj", "run-done-2")
@@ -271,7 +295,8 @@ def test_startup_sweep_removes_orphans_and_keeps_live_work(tmp_path: Path):
 
 
 def test_non_git_project_keeps_direct_behaviour_with_a_warning(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ):
     plain = tmp_path / "plain"
     plain.mkdir()
@@ -287,14 +312,18 @@ def test_non_git_project_keeps_direct_behaviour_with_a_warning(
             workspace.current_root("main")  # warns once, not per call
         assert root == plain
         warnings = [
-            record for record in caplog.records
-            if record.levelno == logging.WARNING
-            and "not a git repository" in record.getMessage()
+            record
+            for record in caplog.records
+            if record.levelno == logging.WARNING and "not a git repository" in record.getMessage()
         ]
         assert len(warnings) == 1
-        _run_sandbox(workspace, _changeset(
-            _create("direct.py", "# written directly\n"),
-        ), PASS)
+        _run_sandbox(
+            workspace,
+            _changeset(
+                _create("direct.py", "# written directly\n"),
+            ),
+            PASS,
+        )
         # Old behaviour: the change lands in the user's folder itself.
         assert (plain / "direct.py").exists()
     finally:
@@ -325,9 +354,13 @@ def test_ensure_rejects_option_like_refs(tmp_path: Path):
 
 def _artifact(type_: str, **kwargs) -> Artifact:  # noqa: ANN202
     return Artifact(
-        id=kwargs.get("id", "art-1"), type=type_, name=type_.title(),
-        version=kwargs.get("version", "1"), content=kwargs.get("content"),
-        created_by="test-agent", created_at=NOW,
+        id=kwargs.get("id", "art-1"),
+        type=type_,
+        name=type_.title(),
+        version=kwargs.get("version", "1"),
+        content=kwargs.get("content"),
+        created_by="test-agent",
+        created_at=NOW,
         metadata=kwargs.get("metadata", {}),
     )
 
@@ -346,34 +379,51 @@ def test_binding_agent_commits_the_worktree_after_a_passing_test(tmp_path: Path)
             raise NotImplementedError
 
         def execute(self, request: AgentRequest) -> AgentResult:
-            _run_sandbox(workspace, _changeset(
-                _create("feature.py", "# feature\n"),
-            ), PASS)
+            _run_sandbox(
+                workspace,
+                _changeset(
+                    _create("feature.py", "# feature\n"),
+                ),
+                PASS,
+            )
             report = _artifact(
-                "TEST_REPORT", id="report-1",
+                "TEST_REPORT",
+                id="report-1",
                 content={
                     "format": "json",
                     "report": {"verdict": "PASS", "summary": "PASS"},
                 },
             )
             return AgentResult(
-                request_id=request.request_id, agent_id="test",
-                status="SUCCESS", artifacts=[report],
+                request_id=request.request_id,
+                agent_id="test",
+                status="SUCCESS",
+                artifacts=[report],
                 metrics=RunMetrics(
-                    duration_seconds=0.1, revision_count=0, attempt=1,
+                    duration_seconds=0.1,
+                    revision_count=0,
+                    attempt=1,
                 ),
             )
 
     agent = _WorkspaceBindingAgent(_FakeTestAgent(), workspace, role="test")
     code = _artifact(
-        "CODE", id="code-9", version="2", metadata={"taskItemId": "T1"},
+        "CODE",
+        id="code-9",
+        version="2",
+        metadata={"taskItemId": "T1"},
         content={"format": "json", "changes": []},
     )
     request = AgentRequest(
-        request_id="req-1", task_id="task-1", project_id="proj",
-        workflow_id="software-development", agent_id="test",
-        input={"taskItemId": "T1", "ref": "main"}, context={},
-        artifacts=[code], metadata={"attempt": 1, "runId": "run-e2e"},
+        request_id="req-1",
+        task_id="task-1",
+        project_id="proj",
+        workflow_id="software-development",
+        agent_id="test",
+        input={"taskItemId": "T1", "ref": "main"},
+        context={},
+        artifacts=[code],
+        metadata={"attempt": 1, "runId": "run-e2e"},
     )
     agent.execute(request)
     worktrees = workspace.worktrees
@@ -390,13 +440,16 @@ def test_service_terminal_hook_fires_on_completion_and_cancel():
 
     calls: list[tuple[str, str, str]] = []
     service = FactoryService(
-        build_engine(RoutingGateway()), projects=PROJECTS,
-        metrics=FakeMetrics(), clock=lambda: NOW,
+        build_engine(RoutingGateway()),
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
         on_run_terminal=lambda *args: calls.append(args),
     )
     try:
         run = service.start_run(
-            "task-hook", "proj-1",
+            "task-hook",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
         )
         service.wait_for_drives(timeout=30)
@@ -410,7 +463,8 @@ def test_service_terminal_hook_fires_on_completion_and_cancel():
         assert (run.id, "proj-1", "COMPLETED") in calls
 
         run2 = service.start_run(
-            "task-hook-2", "proj-1",
+            "task-hook-2",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
         )
         service.wait_for_drives(timeout=30)

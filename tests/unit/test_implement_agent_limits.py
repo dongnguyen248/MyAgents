@@ -268,5 +268,6 @@ def test_secret_details_contain_pattern_and_path_not_value() -> None:
     assert issue["path"] == "src/config.py"
     # Verify secret value is not in the serialized result
     import json
+
     dumped = json.dumps(res.to_contract())
     assert "sk-test123" not in dumped

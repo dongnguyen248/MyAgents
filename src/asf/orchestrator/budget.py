@@ -26,13 +26,12 @@ class RunBudget(ConfigModel):
 
 
 def budget_exceeded_message(
-    run: WorkflowExecution, budget: RunBudget,
+    run: WorkflowExecution,
+    budget: RunBudget,
 ) -> str | None:
     """Why this run is over budget, or None when it is within it."""
     prompt = sum(result.metrics.prompt_tokens for result in run.results)
-    completion = sum(
-        result.metrics.completion_tokens for result in run.results
-    )
+    completion = sum(result.metrics.completion_tokens for result in run.results)
     calls = sum(result.metrics.model_calls for result in run.results)
     checks = (
         ("prompt tokens", prompt, budget.max_prompt_tokens),

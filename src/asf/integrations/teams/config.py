@@ -35,7 +35,9 @@ class TeamsConfig(ConfigModel):
     def hostname(cls, value: str) -> str:
         if (
             re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", value) is None
-            or "." not in value or ".." in value or value.endswith(".local")
+            or "." not in value
+            or ".." in value
+            or value.endswith(".local")
             or not value.rsplit(".", 1)[-1].isalpha()
         ):
             raise ValueError("workflowHost must be the exact lowercase trigger hostname")
@@ -62,15 +64,21 @@ class TeamsConfig(ConfigModel):
         try:
             url = urlsplit(value)
             valid = (
-                url.scheme == "https" and url.hostname == self.workflow_host
-                and url.port in (None, 443) and url.username is None and url.password is None
-                and not url.fragment and url.path.startswith("/") and url.path != "/"
+                url.scheme == "https"
+                and url.hostname == self.workflow_host
+                and url.port in (None, 443)
+                and url.username is None
+                and url.password is None
+                and not url.fragment
+                and url.path.startswith("/")
+                and url.path != "/"
                 and not any(char.isspace() or ord(char) < 32 for char in value)
                 and "\\" not in value
             )
         except ValueError:
             valid = False
         if not valid:
-            raise ValueError("Workflow URL must use HTTPS/443 on the configured trigger host") \
-                from None
+            raise ValueError(
+                "Workflow URL must use HTTPS/443 on the configured trigger host"
+            ) from None
         return value

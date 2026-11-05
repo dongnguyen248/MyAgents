@@ -21,7 +21,8 @@ from asf.configuration.project import ProjectProfile
 
 def make_profile(**overrides: Any) -> ProjectProfile:
     data: dict[str, Any] = {
-        "id": "demo-x", "name": "Demo X",
+        "id": "demo-x",
+        "name": "Demo X",
         "repository": {"provider": "gitlab"},
         "technology": {"backend": ["python"]},
         "workflow": "software-development",
@@ -47,10 +48,12 @@ def test_project_writer_refuses_overwrite_and_literal_secrets(tmp_path: Path):
     with pytest.raises(ValueError):
         write(make_profile())
     with pytest.raises(ValueError):
-        write(make_profile(
-            id="demo-y",
-            repository={"provider": "gitlab", "token": "literal-secret-value"},
-        ))
+        write(
+            make_profile(
+                id="demo-y",
+                repository={"provider": "gitlab", "token": "literal-secret-value"},
+            )
+        )
     assert not (tmp_path / "demo-y.yaml").exists()
 
 
@@ -74,7 +77,8 @@ def test_demo_engine_has_bounded_code_loop_enabled(tmp_path: Path):
 def test_workflow_view_exposes_artifact_contents(tmp_path: Path):
     service, engine, _store = build_demo(tmp_path / "demo.sqlite")
     run = service.start_run(
-        "artifact-task", service.list_projects()[0]["id"],
+        "artifact-task",
+        service.list_projects()[0]["id"],
         inputs={
             "spec": {"requirement": "Demonstrate the artifacts view"},
             "implement": {"taskItemId": "T1", "ref": "main"},
@@ -122,9 +126,15 @@ def make_service(tmp_path: Path, configuration: dict[str, Any]) -> DemoFactorySe
 def test_review_rules_concatenate_files_then_inline(tmp_path: Path):
     (tmp_path / "a.md").write_text("# A\nrule a", encoding="utf-8")
     (tmp_path / "b.md").write_text("# B\nrule b", encoding="utf-8")
-    service = make_service(tmp_path, {"review": {
-        "rulesFiles": ["a.md", "b.md"], "rules": "inline rule",
-    }})
+    service = make_service(
+        tmp_path,
+        {
+            "review": {
+                "rulesFiles": ["a.md", "b.md"],
+                "rules": "inline rule",
+            }
+        },
+    )
     text = service._review_rules("p")
     assert text.index("rule a") < text.index("rule b") < text.index("inline rule")
 
@@ -151,7 +161,12 @@ def test_project_skills_resolve_from_the_catalogue(tmp_path: Path):
     service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
     skills = service._project_skills("vhpc")
     assert [entry["id"] for entry in skills] == [
-        "java", "spring", "react", "git", "testing", "security",
+        "java",
+        "spring",
+        "react",
+        "git",
+        "testing",
+        "security",
     ]
     by_id = {entry["id"]: entry["content"] for entry in skills}
     # Bodies arrive with frontmatter stripped and real content.
@@ -172,7 +187,8 @@ def test_run_context_carries_the_projects_enabled_skills(tmp_path: Path):
     project_id = service.list_projects()[0]["id"]
     enabled = service._project_profiles[project_id]["enabledSkills"]
     run = service.start_run(
-        "skills-task", project_id,
+        "skills-task",
+        project_id,
         inputs={"spec": {"requirement": "Demonstrate skills in context"}},
     )
     project = engine.get(run.id).context["project"]
@@ -184,17 +200,25 @@ def test_vhpc_rules_reach_the_run_context(tmp_path: Path):
     service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
     rules = service._review_rules("vhpc")
     for marker in (
-        "Java Coding Rules", "API Design Rules", "Security Rules",
-        "TypeScript and React Coding Rules", "Constants and Magic Values",
+        "Java Coding Rules",
+        "API Design Rules",
+        "Security Rules",
+        "TypeScript and React Coding Rules",
+        "Constants and Magic Values",
     ):
         assert marker in rules
     # Language packs (java, then typescript) precede the project rules.
-    assert rules.index("Java Coding Rules") < rules.index(
-        "TypeScript and React Coding Rules",
-    ) < rules.index("API Design Rules")
+    assert (
+        rules.index("Java Coding Rules")
+        < rules.index(
+            "TypeScript and React Coding Rules",
+        )
+        < rules.index("API Design Rules")
+    )
     assert service._review_rules("vnpc") == ""
     run = service.start_run(
-        "rules-task", "vhpc",
+        "rules-task",
+        "vhpc",
         inputs={"spec": {"requirement": "Check the review rules wiring"}},
     )
     assert "Constants and Magic Values" in run.context["project"]["reviewRules"]
@@ -213,10 +237,14 @@ def make_stack_service(
 ) -> DemoFactoryService:
     return DemoFactoryService(
         object(),
-        projects={"p": {
-            "id": "p", "name": "P", "technology": technology,
-            "configuration": configuration or {},
-        }},
+        projects={
+            "p": {
+                "id": "p",
+                "name": "P",
+                "technology": technology,
+                "configuration": configuration or {},
+            }
+        },
         projects_dir=tmp_path,
     )
 
@@ -231,7 +259,8 @@ def test_csharp_tokens_select_the_csharp_pack(tmp_path: Path, token: str):
 def test_react_and_typescript_select_the_typescript_pack_once(tmp_path: Path):
     write_pack(tmp_path, "typescript", "# TS Pack")
     service = make_stack_service(
-        tmp_path, {"frontend": ["react", "typescript"]},
+        tmp_path,
+        {"frontend": ["react", "typescript"]},
     )
     assert service._review_rules("p") == "# TS Pack"
 
@@ -247,7 +276,9 @@ def test_unknown_language_and_missing_pack_add_nothing(tmp_path: Path):
 def test_language_packs_precede_project_rules(tmp_path: Path):
     write_pack(tmp_path, "java", "# Java Pack")
     service = make_stack_service(
-        tmp_path, {"backend": ["java"]}, {"review": {"rules": "project rule"}},
+        tmp_path,
+        {"backend": ["java"]},
+        {"review": {"rules": "project rule"}},
     )
     text = service._review_rules("p")
     assert text.index("# Java Pack") < text.index("project rule")
@@ -256,7 +287,8 @@ def test_language_packs_precede_project_rules(tmp_path: Path):
 def test_retry_run_replays_the_original_inputs(tmp_path: Path):
     service, engine, _store = build_demo(tmp_path / "demo.sqlite")
     run = service.start_run(
-        "retry-task", "vhpc",
+        "retry-task",
+        "vhpc",
         inputs={"spec": {"requirement": "Retry me"}},
         context={"title": "Retry demo", "priority": "HIGH"},
     )
@@ -273,7 +305,9 @@ def test_retry_run_replays_the_original_inputs(tmp_path: Path):
 def test_retry_run_rejects_a_run_that_is_still_active(tmp_path: Path):
     service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
     run = service.start_run(
-        "active-task", "vhpc", inputs={"spec": {"requirement": "Still running"}},
+        "active-task",
+        "vhpc",
+        inputs={"spec": {"requirement": "Still running"}},
     )
     with pytest.raises(ValueError, match="still active"):
         service.retry_run(run.id)
@@ -296,7 +330,8 @@ def test_resolve_db_path_selftest_keeps_a_temp_db():
 
 
 def test_load_dotenv_reads_pairs_and_keeps_real_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     from asf.api.demo import _load_dotenv
 
@@ -323,7 +358,8 @@ def test_load_dotenv_missing_file_is_a_no_op(tmp_path: Path):
 
 
 def test_resume_run_continues_from_the_failed_step(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     service, engine, _store = build_demo(tmp_path / "demo.sqlite")
     spec_agent = engine._registry.for_type("spec")
@@ -334,7 +370,9 @@ def test_resume_run_continues_from_the_failed_step(
     # The spec agent dies during the start run's automatic advance.
     monkeypatch.setattr(spec_agent, "execute", explode)
     run = service.start_run(
-        "resume-task", "vhpc", inputs={"spec": {"requirement": "Resume me"}},
+        "resume-task",
+        "vhpc",
+        inputs={"spec": {"requirement": "Resume me"}},
     )
     service.wait_for_drives()
     assert engine.get(run.id).state.stage == "FAILED"
@@ -355,7 +393,9 @@ def test_resume_run_continues_from_the_failed_step(
 def test_resume_run_rejects_a_run_that_has_not_failed(tmp_path: Path):
     service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
     run = service.start_run(
-        "active-task-2", "vhpc", inputs={"spec": {"requirement": "Still running"}},
+        "active-task-2",
+        "vhpc",
+        inputs={"spec": {"requirement": "Still running"}},
     )
     with pytest.raises(ValueError, match="has not failed"):
         service.resume_run(run.id)
@@ -364,7 +404,9 @@ def test_resume_run_rejects_a_run_that_has_not_failed(tmp_path: Path):
 def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
     service, engine, _store = build_demo(tmp_path / "demo.sqlite")
     run = service.start_run(
-        "hands-free", "vhpc", inputs={"spec": {"requirement": "No ticking"}},
+        "hands-free",
+        "vhpc",
+        inputs={"spec": {"requirement": "No ticking"}},
     )
     # Creation alone already produced the spec and parked at its gate.
     service.wait_for_drives()
@@ -388,7 +430,8 @@ def test_run_with_all_approvals_skipped_needs_no_approvals(tmp_path: Path):
     # run drives itself to completion and no approval is ever created.
     service, engine, _store = build_demo(tmp_path / "demo.sqlite")
     run = service.start_run(
-        "hands-free-skip", "vhpc",
+        "hands-free-skip",
+        "vhpc",
         inputs={"spec": {"requirement": "Simple task"}},
         context={"skipApprovals": ["spec", "plan", "task"]},
     )
@@ -404,7 +447,8 @@ def test_run_with_all_approvals_skipped_needs_no_approvals(tmp_path: Path):
 
 
 def test_workflow_view_exposes_the_failure_reason(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     service, engine, _store = build_demo(tmp_path / "demo.sqlite")
     spec_agent = engine._registry.for_type("spec")
@@ -414,7 +458,9 @@ def test_workflow_view_exposes_the_failure_reason(
 
     monkeypatch.setattr(spec_agent, "execute", explode)
     run = service.start_run(
-        "doomed-task", "vhpc", inputs={"spec": {"requirement": "Boom"}},
+        "doomed-task",
+        "vhpc",
+        inputs={"spec": {"requirement": "Boom"}},
     )
     service.wait_for_drives()
     view = service.get_workflow(run.id)
@@ -426,14 +472,17 @@ def test_workflow_view_exposes_the_failure_reason(
 
     monkeypatch.undo()
     healthy = service.start_run(
-        "healthy-task", "vhpc", inputs={"spec": {"requirement": "Fine"}},
+        "healthy-task",
+        "vhpc",
+        inputs={"spec": {"requirement": "Fine"}},
     )
     view = service.get_workflow(healthy.id)
     assert view is not None and view["error"] is None
 
 
 def test_run_failing_in_code_fix_keeps_its_approval_gates_done(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     # Dong's messenger case: he approved all three gates, the run
     # reached the review/fix loop and died there — yet the timeline
@@ -461,10 +510,12 @@ def test_run_failing_in_code_fix_keeps_its_approval_gates_done(
                     "verdict": "CHANGES_REQUESTED",
                 },
             }
-            result = result.model_copy(update={
-                "output": {**result.output, "verdict": "CHANGES_REQUESTED"},
-                "artifacts": [artifact.model_copy(update={"content": content})],
-            })
+            result = result.model_copy(
+                update={
+                    "output": {**result.output, "verdict": "CHANGES_REQUESTED"},
+                    "artifacts": [artifact.model_copy(update={"content": content})],
+                }
+            )
         return result
 
     monkeypatch.setattr(review_agent, "execute", request_changes)
@@ -474,23 +525,31 @@ def test_run_failing_in_code_fix_keeps_its_approval_gates_done(
     def broken_fix(request: object) -> object:
         fix_inputs.append(dict(request.input))
         return AgentResult(
-            request_id=request.request_id, agent_id=request.agent_id,
+            request_id=request.request_id,
+            agent_id=request.agent_id,
             status="FAILED",
             metrics=RunMetrics(
-                duration_seconds=0.0, revision_count=0, attempt=1,
+                duration_seconds=0.0,
+                revision_count=0,
+                attempt=1,
             ),
-            errors=[PlatformError(
-                code="LLM_INVALID_RESPONSE",
-                message="Invalid replacement ChangeSet",
-                category="LLM", retryable=False,
-                timestamp=datetime.now(timezone.utc),
-                details={"cause": "Invalid JSON: Expecting value at line 1"},
-            )],
+            errors=[
+                PlatformError(
+                    code="LLM_INVALID_RESPONSE",
+                    message="Invalid replacement ChangeSet",
+                    category="LLM",
+                    retryable=False,
+                    timestamp=datetime.now(timezone.utc),
+                    details={"cause": "Invalid JSON: Expecting value at line 1"},
+                )
+            ],
         )
 
     monkeypatch.setattr(fix_agent, "execute", broken_fix)
     run = service.start_run(
-        "fix-doomed", "vhpc", inputs={"spec": {"requirement": "Fix loop"}},
+        "fix-doomed",
+        "vhpc",
+        inputs={"spec": {"requirement": "Fix loop"}},
     )
     for _ in range(8):
         service.wait_for_drives()
@@ -537,7 +596,8 @@ def test_run_failing_in_code_fix_keeps_its_approval_gates_done(
 
 
 def test_start_run_returns_while_a_step_is_still_executing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """A slow or hung model call must not block the triggering request.
 
@@ -555,7 +615,9 @@ def test_start_run_returns_while_a_step_is_still_executing(
 
     monkeypatch.setattr(spec_agent, "execute", blocking)
     run = service.start_run(
-        "slow-task", "vhpc", inputs={"spec": {"requirement": "Slow model"}},
+        "slow-task",
+        "vhpc",
+        inputs={"spec": {"requirement": "Slow model"}},
     )
     # start_run returned while the spec agent is still blocked, and the
     # API can still serve the run's (RUNNING) view in the meantime.
@@ -597,7 +659,8 @@ def test_startup_recovers_a_run_left_mid_dispatch(tmp_path: Path):
     """
     service, engine, store = build_demo(tmp_path / "demo.sqlite")
     run = engine.start(
-        task_id="wedged-task", project_id="vhpc",
+        task_id="wedged-task",
+        project_id="vhpc",
         inputs={"spec": {"requirement": "Heal me"}},
     )
     service.track(run.id)
@@ -619,11 +682,13 @@ def test_profile_sandbox_settings_extraction(monkeypatch):
     assert _profile_sandbox_settings(make_profile()) is None
 
     monkeypatch.setenv("MY_PROJECT_FLAG", "from-env")
-    profile = make_profile(configuration={
-        "testEnv": {"LITERAL": "yes", "REFERENCED": {"env": "MY_PROJECT_FLAG"}},
-        "testEnvAllowlist": ["JAVA_HOME"],
-        "sandboxLimits": {"cpuSeconds": 60, "maxProcesses": 16},
-    })
+    profile = make_profile(
+        configuration={
+            "testEnv": {"LITERAL": "yes", "REFERENCED": {"env": "MY_PROJECT_FLAG"}},
+            "testEnvAllowlist": ["JAVA_HOME"],
+            "sandboxLimits": {"cpuSeconds": 60, "maxProcesses": 16},
+        }
+    )
     settings = _profile_sandbox_settings(profile)
     assert settings is not None
     assert settings.env_extra == {"LITERAL": "yes", "REFERENCED": "from-env"}
@@ -639,6 +704,8 @@ def test_profile_sandbox_settings_extraction(monkeypatch):
         _profile_sandbox_settings(profile)
 
     with pytest.raises(ValueError):
-        _profile_sandbox_settings(make_profile(
-            configuration={"sandboxLimits": {"cpuSeconds": -1}},
-        ))
+        _profile_sandbox_settings(
+            make_profile(
+                configuration={"sandboxLimits": {"cpuSeconds": -1}},
+            )
+        )

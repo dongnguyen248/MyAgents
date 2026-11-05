@@ -13,9 +13,7 @@ with SCHEMA_PATH.open(encoding="utf-8") as schema_file:
 
 class StateMachineRulesTests(unittest.TestCase):
     def test_triggers_equal_approval_decision_enum(self):
-        decision_enum = set(
-            SCHEMA["$defs"]["ApprovalDecision"]["properties"]["decision"]["enum"]
-        )
+        decision_enum = set(SCHEMA["$defs"]["ApprovalDecision"]["properties"]["decision"]["enum"])
         trigger_decision_values = {
             Trigger.APPROVED.value,
             Trigger.REJECTED.value,

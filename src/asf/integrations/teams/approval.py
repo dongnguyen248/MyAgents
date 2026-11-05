@@ -43,15 +43,19 @@ class TeamsApprovals:
             or actor.object_id not in config.reviewers
         ):
             raise ApprovalError(
-                "APPROVAL_NOT_AUTHORIZED", "Teams actor or channel is not authorized",
+                "APPROVAL_NOT_AUTHORIZED",
+                "Teams actor or channel is not authorized",
             )
         return config.reviewers[actor.object_id]
 
     def decide(self, actor: TeamsActor, action: TeamsAction) -> WorkflowExecution:
         reviewer = self.authorize(actor)
         return self.engine.decide(
-            action.run_id, reviewer=reviewer, decision=action.decision,
-            comment=action.comment, expected_approval_id=action.approval_id,
+            action.run_id,
+            reviewer=reviewer,
+            decision=action.decision,
+            comment=action.comment,
+            expected_approval_id=action.approval_id,
         )
 
     def pending(self, run_id: str) -> ApprovalRequest:

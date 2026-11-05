@@ -24,8 +24,11 @@ def durable_engine(tmp_path, *, approval=True):
     original, spec, plan, _ = make_engine(approval=approval)
     store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     engine = Orchestrator(
-        original._definition, original._registry,
-        clock=original._clock, new_id=original._new_id, store=store,
+        original._definition,
+        original._registry,
+        clock=original._clock,
+        new_id=original._new_id,
+        store=store,
         approval_policy=ApprovalPolicy(reviewers=["one", "two"], min_approvals=2),
     )
     return engine, spec, plan, store
@@ -35,8 +38,12 @@ def reopen(engine, store, tmp_path):
     store.close()
     store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     return Orchestrator(
-        engine._definition, engine._registry, clock=engine._clock,
-        new_id=engine._new_id, store=store, approval_policy=engine._approval_policy,
+        engine._definition,
+        engine._registry,
+        clock=engine._clock,
+        new_id=engine._new_id,
+        store=store,
+        approval_policy=engine._approval_policy,
         code_loop=engine._code_loop,
     ), store
 
@@ -113,7 +120,9 @@ def test_result_and_new_approval_roll_back_but_inflight_checkpoint_survives(tmp_
 
 @pytest.mark.parametrize("retry_interrupted", [False, True])
 def test_crash_recovery_never_replays_without_explicit_operator_acceptance(
-    tmp_path, monkeypatch, retry_interrupted,
+    tmp_path,
+    monkeypatch,
+    retry_interrupted,
 ):
     engine, spec, _, store = durable_engine(tmp_path, approval=False)
     run = start(engine)
@@ -134,7 +143,9 @@ def test_crash_recovery_never_replays_without_explicit_operator_acceptance(
     with pytest.raises(ValueError):
         engine.cancel(run.id)
     run = engine.recover(
-        run.id, reason="Operator reviewed interruption", retry_interrupted=retry_interrupted,
+        run.id,
+        reason="Operator reviewed interruption",
+        retry_interrupted=retry_interrupted,
     )
     assert run.in_flight is None
     assert run.recovery_notes == ["Operator reviewed interruption"]
@@ -153,14 +164,22 @@ def test_restart_rejects_changed_definition_and_policy(tmp_path):
     run = start(engine)
     changed = engine._definition.model_copy(update={"version": "2"})
     other = Orchestrator(
-        changed, engine._registry, clock=engine._clock, new_id=engine._new_id,
-        store=store, approval_policy=engine._approval_policy,
+        changed,
+        engine._registry,
+        clock=engine._clock,
+        new_id=engine._new_id,
+        store=store,
+        approval_policy=engine._approval_policy,
     )
     with pytest.raises(ValueError, match="differs"):
         other.get(run.id)
     other = Orchestrator(
-        engine._definition, engine._registry, clock=engine._clock, new_id=engine._new_id,
-        store=store, approval_policy=ApprovalPolicy(reviewers=["someone"]),
+        engine._definition,
+        engine._registry,
+        clock=engine._clock,
+        new_id=engine._new_id,
+        store=store,
+        approval_policy=ApprovalPolicy(reviewers=["someone"]),
     )
     with pytest.raises(ValueError, match="differs"):
         other.tick(run.id)
@@ -171,8 +190,13 @@ def test_persistent_store_rejects_split_approval_repository(tmp_path):
     engine, _, _, store = durable_engine(tmp_path)
     with pytest.raises(ValueError, match="store"):
         Orchestrator(
-            engine._definition, engine._registry, clock=engine._clock, new_id=engine._new_id,
-            store=store, approvals=engine._approvals, approval_policy=engine._approval_policy,
+            engine._definition,
+            engine._registry,
+            clock=engine._clock,
+            new_id=engine._new_id,
+            store=store,
+            approvals=engine._approvals,
+            approval_policy=engine._approval_policy,
         )
     store.close()
 
@@ -198,15 +222,22 @@ def test_store_missing_resources_duplicate_ids_and_project_filter(tmp_path):
 def test_retry_schedule_respects_clock_allowlist_bounds_and_restart(tmp_path):
     original, spec, _, _ = make_engine(two_steps=False)
     definition = original._definition.model_copy(deep=True)
-    definition.steps[0] = definition.steps[0].model_copy(update={
-        "retry_policy": RetryPolicySettings(
-            max_attempts=3, backoff_seconds=5, retry_on=["LLM_RATE_LIMITED"],
-        ),
-    })
+    definition.steps[0] = definition.steps[0].model_copy(
+        update={
+            "retry_policy": RetryPolicySettings(
+                max_attempts=3,
+                backoff_seconds=5,
+                retry_on=["LLM_RATE_LIMITED"],
+            ),
+        }
+    )
     now = [NOW]
     store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     engine = Orchestrator(
-        definition, original._registry, clock=lambda: now[0], new_id=original._new_id,
+        definition,
+        original._registry,
+        clock=lambda: now[0],
+        new_id=original._new_id,
         store=store,
     )
     spec._run_behavior = ModelGatewayError("LLM_RATE_LIMITED", "Rate limited")
@@ -228,21 +259,36 @@ def test_retry_schedule_respects_clock_allowlist_bounds_and_restart(tmp_path):
     assert run.attempts["spec"] == 3
     assert run.errors[0].code == "LLM_RATE_LIMITED"
     assert len(run.results) == 3
-    assert sum(item.event.event_type == "WORKFLOW_RETRY_SCHEDULED"
-               for item in run.observations if item.event) == 2
+    assert (
+        sum(
+            item.event.event_type == "WORKFLOW_RETRY_SCHEDULED"
+            for item in run.observations
+            if item.event
+        )
+        == 2
+    )
     store.close()
 
 
-@pytest.mark.parametrize("retryable,allowlist", [
-    (False, None), (True, ["LLM_TIMEOUT"]), (True, []),
-])
+@pytest.mark.parametrize(
+    "retryable,allowlist",
+    [
+        (False, None),
+        (True, ["LLM_TIMEOUT"]),
+        (True, []),
+    ],
+)
 def test_retry_never_overrides_nonretryable_or_unlisted_errors(retryable, allowlist):
     engine, spec, _, _ = make_engine(two_steps=False)
-    engine._definition.steps[0] = engine._definition.steps[0].model_copy(update={
-        "retry_policy": RetryPolicySettings(max_attempts=5, retry_on=allowlist),
-    })
+    engine._definition.steps[0] = engine._definition.steps[0].model_copy(
+        update={
+            "retry_policy": RetryPolicySettings(max_attempts=5, retry_on=allowlist),
+        }
+    )
     spec._run_behavior = AgentExecutionError(
-        "REPOSITORY_ERROR", "Safe failure", retryable=retryable,
+        "REPOSITORY_ERROR",
+        "Safe failure",
+        retryable=retryable,
     )
     run = engine.tick(start(engine).id)
     assert run.state.stage == "FAILED"
@@ -252,9 +298,11 @@ def test_retry_never_overrides_nonretryable_or_unlisted_errors(retryable, allowl
 
 def test_retry_success_resets_budget_and_retains_attempt_history():
     engine, spec, _, _ = make_engine(two_steps=False)
-    engine._definition.steps[0] = engine._definition.steps[0].model_copy(update={
-        "retry_policy": RetryPolicySettings(max_attempts=2),
-    })
+    engine._definition.steps[0] = engine._definition.steps[0].model_copy(
+        update={
+            "retry_policy": RetryPolicySettings(max_attempts=2),
+        }
+    )
     original = spec._run_behavior
     spec._run_behavior = ModelGatewayError("LLM_TIMEOUT", "Timeout")
     run = engine.tick(start(engine).id)
@@ -270,9 +318,11 @@ def test_retry_success_resets_budget_and_retains_attempt_history():
 
 def test_backoff_wait_is_capped_and_cancellable():
     engine, spec, _, _ = make_engine(two_steps=False)
-    engine._definition.steps[0] = engine._definition.steps[0].model_copy(update={
-        "retry_policy": RetryPolicySettings(max_attempts=2, backoff_seconds=1_000_000),
-    })
+    engine._definition.steps[0] = engine._definition.steps[0].model_copy(
+        update={
+            "retry_policy": RetryPolicySettings(max_attempts=2, backoff_seconds=1_000_000),
+        }
+    )
     spec._run_behavior = ModelGatewayError("LLM_TIMEOUT", "Timeout")
     run = engine.tick(start(engine).id)
     assert run.retry_at == NOW + timedelta(seconds=3600)
@@ -345,9 +395,14 @@ def test_missing_sinks_leave_outbox_pending():
 
 def test_action_handler_executes_through_contract_without_concrete_integration():
     engine, _, _, _ = make_engine(two_steps=False)
-    engine._definition.steps[0] = engine._definition.steps[0].model_copy(update={
-        "action": "test-action", "agent_type": None, "type": "SYSTEM", "produces": [],
-    })
+    engine._definition.steps[0] = engine._definition.steps[0].model_copy(
+        update={
+            "action": "test-action",
+            "agent_type": None,
+            "type": "SYSTEM",
+            "produces": [],
+        }
+    )
     from asf.contracts.models import AgentResult, RunMetrics
 
     received = []
@@ -355,9 +410,14 @@ def test_action_handler_executes_through_contract_without_concrete_integration()
     def action(request):
         received.append(request)
         return AgentResult(
-            request_id=request.request_id, agent_id=request.agent_id, status="SUCCESS",
-            output={"summary": "done"}, metrics=RunMetrics(
-                duration_seconds=0, revision_count=0, attempt=1,
+            request_id=request.request_id,
+            agent_id=request.agent_id,
+            status="SUCCESS",
+            output={"summary": "done"},
+            metrics=RunMetrics(
+                duration_seconds=0,
+                revision_count=0,
+                attempt=1,
             ),
         )
 
@@ -464,7 +524,10 @@ print("COMPLETED")
 """
     result = subprocess.run(
         [sys.executable, "-c", script, str(tmp_path / "workflow.sqlite"), run.id],
-        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True, timeout=30,
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
         check=False,
     )
     assert result.returncode == 0, "Fresh-process resume failed"

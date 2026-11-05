@@ -164,11 +164,7 @@ def load_projects(directory: str | Path) -> dict[str, ProjectProfile]:
         )
 
     files = sorted(
-        [
-            p
-            for p in dir_path.iterdir()
-            if p.is_file() and p.suffix.lower() in {".yaml", ".yml"}
-        ]
+        [p for p in dir_path.iterdir() if p.is_file() and p.suffix.lower() in {".yaml", ".yml"}]
     )
 
     profiles: dict[str, ProjectProfile] = {}

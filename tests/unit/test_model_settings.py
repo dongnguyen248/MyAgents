@@ -25,13 +25,15 @@ from asf.models.errors import ModelGatewayError
 
 def _request(model: str | None = None) -> ModelRequest:
     return ModelRequest(
-        messages=[ModelMessage(role="user", content="hi")], model=model,
+        messages=[ModelMessage(role="user", content="hi")],
+        model=model,
     )
 
 
 def _response(content: str, model: str = "m") -> ModelResponse:
     return ModelResponse(
-        content=content, model=model,
+        content=content,
+        model=model,
         usage=ModelUsage(prompt_tokens=1, completion_tokens=1),
         finish_reason="stop",
     )
@@ -51,15 +53,24 @@ class RecordingGateway:
 # store
 # ---------------------------------------------------------------------------
 
+
 def test_defaults_and_public_view_hide_the_key(tmp_path: Path):
     settings = ModelSettings(tmp_path / "model-settings.json")
     assert settings.public() == {
-        "provider": "scripted", "model": "", "baseUrl": "",
-        "agentModels": {}, "keyConfigured": False, "keyHint": "",
+        "provider": "scripted",
+        "model": "",
+        "baseUrl": "",
+        "agentModels": {},
+        "keyConfigured": False,
+        "keyHint": "",
     }
-    view = settings.update({
-        "provider": "gemini", "model": "gemini-x", "apiKey": "AIza-secret-1234",
-    })
+    view = settings.update(
+        {
+            "provider": "gemini",
+            "model": "gemini-x",
+            "apiKey": "AIza-secret-1234",
+        }
+    )
     assert view["keyConfigured"] is True
     assert view["keyHint"] == "…1234"
     assert "apiKey" not in view
@@ -92,15 +103,20 @@ def test_update_validation(tmp_path: Path):
         settings.update({"provider": "gemini", "model": ""})
     with pytest.raises(ValueError, match="base URL"):
         settings.update({"provider": "custom", "model": "m", "baseUrl": ""})
-    updated = settings.update({
-        "provider": "custom", "model": "m", "baseUrl": "https://x/v1",
-    })
+    updated = settings.update(
+        {
+            "provider": "custom",
+            "model": "m",
+            "baseUrl": "https://x/v1",
+        }
+    )
     assert updated["provider"] == "custom"
 
 
 # ---------------------------------------------------------------------------
 # factory + connection test
 # ---------------------------------------------------------------------------
+
 
 def test_factory_scripted_none_and_missing_key():
     assert build_configured_gateway({"provider": "scripted"}) is None
@@ -109,10 +125,14 @@ def test_factory_scripted_none_and_missing_key():
 
 
 def test_factory_builds_openai_compatible_with_default_base():
-    gateway = build_configured_gateway({
-        "provider": "github-models", "model": "openai/gpt-4o",
-        "apiKey": "ghp_x", "baseUrl": "",
-    })
+    gateway = build_configured_gateway(
+        {
+            "provider": "github-models",
+            "model": "openai/gpt-4o",
+            "apiKey": "ghp_x",
+            "baseUrl": "",
+        }
+    )
     assert isinstance(gateway, OpenAICompatibleGateway)
 
 
@@ -132,10 +152,15 @@ class _MetaRecordingTransport:
 
 def test_factory_meta_preset_targets_meta_model_api():
     transport = _MetaRecordingTransport()
-    gateway = build_configured_gateway({
-        "provider": "meta", "model": "muse-spark-1.3",
-        "apiKey": "meta-key", "baseUrl": "",
-    }, transport)
+    gateway = build_configured_gateway(
+        {
+            "provider": "meta",
+            "model": "muse-spark-1.3",
+            "apiKey": "meta-key",
+            "baseUrl": "",
+        },
+        transport,
+    )
     assert isinstance(gateway, OpenAICompatibleGateway)
     response = gateway.complete(_request())
     assert response.content == "hi"
@@ -172,6 +197,7 @@ def test_connection_test_paths(tmp_path: Path):
 # routing gateway
 # ---------------------------------------------------------------------------
 
+
 def test_router_falls_back_when_scripted(tmp_path: Path):
     settings = ModelSettings(tmp_path / "s.json")
     fallback = RecordingGateway("scripted")
@@ -181,12 +207,17 @@ def test_router_falls_back_when_scripted(tmp_path: Path):
 
 def test_router_delegates_and_pins_the_configured_model(tmp_path: Path):
     settings = ModelSettings(tmp_path / "s.json")
-    settings.update({
-        "provider": "openai", "model": "gpt-real", "apiKey": "sk-1",
-    })
+    settings.update(
+        {
+            "provider": "openai",
+            "model": "gpt-real",
+            "apiKey": "sk-1",
+        }
+    )
     real = RecordingGateway("real-answer")
     router = SettingsRoutingGateway(
-        settings, RecordingGateway("scripted"),
+        settings,
+        RecordingGateway("scripted"),
         gateway_factory=lambda s, t: real,
     )
     response = router.complete(_request(model="agent-pinned"))
@@ -197,19 +228,26 @@ def test_router_delegates_and_pins_the_configured_model(tmp_path: Path):
 class _FailingGateway:
     def complete(self, request: ModelRequest) -> ModelResponse:
         raise ModelGatewayError(
-            "LLM_INVALID_RESPONSE", "Model provider error (HTTP 400): nope",
+            "LLM_INVALID_RESPONSE",
+            "Model provider error (HTTP 400): nope",
         )
 
 
 def test_router_logs_the_model_sent_on_provider_failure(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ):
     settings = ModelSettings(tmp_path / "s.json")
-    settings.update({
-        "provider": "openai", "model": "gpt-real", "apiKey": "sk-1",
-    })
+    settings.update(
+        {
+            "provider": "openai",
+            "model": "gpt-real",
+            "apiKey": "sk-1",
+        }
+    )
     router = SettingsRoutingGateway(
-        settings, RecordingGateway("scripted"),
+        settings,
+        RecordingGateway("scripted"),
         gateway_factory=lambda s, t: _FailingGateway(),
     )
     with caplog.at_level(logging.WARNING, logger="asf.api.model_settings"):
@@ -223,16 +261,23 @@ def test_router_logs_the_model_sent_on_provider_failure(
 # per-agent model overrides
 # ---------------------------------------------------------------------------
 
+
 def test_per_agent_overrides_store_validate_and_persist(tmp_path: Path):
     path = tmp_path / "s.json"
     settings = ModelSettings(path)
-    view = settings.update({
-        "provider": "custom", "model": "shared-m",
-        "baseUrl": "https://x/v1", "apiKey": "k-1",
-        "agentModels": {
-            "implement": " code-m ", "agent-spec": "spec-m", "fix": "",
-        },
-    })
+    view = settings.update(
+        {
+            "provider": "custom",
+            "model": "shared-m",
+            "baseUrl": "https://x/v1",
+            "apiKey": "k-1",
+            "agentModels": {
+                "implement": " code-m ",
+                "agent-spec": "spec-m",
+                "fix": "",
+            },
+        }
+    )
     # Values are trimmed, blanks drop out, agent- ids normalize.
     assert view["agentModels"] == {"implement": "code-m", "spec": "spec-m"}
     assert settings.effective_model("implement") == "code-m"
@@ -241,13 +286,18 @@ def test_per_agent_overrides_store_validate_and_persist(tmp_path: Path):
     assert settings.effective_model(None) == "shared-m"
     # Persisted beside the other settings and reloaded.
     assert ModelSettings(path).agent_models() == {
-        "implement": "code-m", "spec": "spec-m",
+        "implement": "code-m",
+        "spec": "spec-m",
     }
     # A later update replaces the whole map (the dashboard sends it all).
-    settings.update({
-        "provider": "custom", "model": "shared-m",
-        "baseUrl": "https://x/v1", "agentModels": {"review": "rev-m"},
-    })
+    settings.update(
+        {
+            "provider": "custom",
+            "model": "shared-m",
+            "baseUrl": "https://x/v1",
+            "agentModels": {"review": "rev-m"},
+        }
+    )
     assert settings.agent_models() == {"review": "rev-m"}
     # The Test agent has no model to override; unknown agents are errors.
     with pytest.raises(ValueError, match="Unknown agent"):
@@ -260,36 +310,47 @@ def test_per_agent_overrides_store_validate_and_persist(tmp_path: Path):
 
 def test_router_pins_per_agent_models(tmp_path: Path):
     settings = ModelSettings(tmp_path / "s.json")
-    settings.update({
-        "provider": "openai", "model": "gpt-shared", "apiKey": "sk-1",
-        "agentModels": {"implement": "gpt-code", "review": "gpt-review"},
-    })
+    settings.update(
+        {
+            "provider": "openai",
+            "model": "gpt-shared",
+            "apiKey": "sk-1",
+            "agentModels": {"implement": "gpt-code", "review": "gpt-review"},
+        }
+    )
     real = RecordingGateway("real-answer")
     router = SettingsRoutingGateway(
-        settings, RecordingGateway("scripted"),
+        settings,
+        RecordingGateway("scripted"),
         gateway_factory=lambda s, t: real,
     )
 
     def call(agent_id: str | None) -> str | None:
         metadata = {"agentId": agent_id} if agent_id else {}
-        return router.complete(ModelRequest(
-            messages=[ModelMessage(role="user", content="hi")],
-            metadata=metadata,
-        )).model
+        return router.complete(
+            ModelRequest(
+                messages=[ModelMessage(role="user", content="hi")],
+                metadata=metadata,
+            )
+        ).model
 
     assert call("agent-implement") == "gpt-code"
     assert call("agent-review") == "gpt-review"
-    assert call("agent-spec") == "gpt-shared"   # no override -> shared
-    assert call(None) == "gpt-shared"           # unattributed -> shared
-    assert call("agent-test") == "gpt-shared"   # test never overrides
+    assert call("agent-spec") == "gpt-shared"  # no override -> shared
+    assert call(None) == "gpt-shared"  # unattributed -> shared
+    assert call("agent-test") == "gpt-shared"  # test never overrides
 
 
 def test_complex_tier_upgrades_every_agent_to_the_shared_model(tmp_path: Path):
     settings = ModelSettings(tmp_path / "s.json")
-    settings.update({
-        "provider": "openai", "model": "gpt-shared", "apiKey": "sk-1",
-        "agentModels": {"implement": "gpt-code", "spec": "gpt-cheap"},
-    })
+    settings.update(
+        {
+            "provider": "openai",
+            "model": "gpt-shared",
+            "apiKey": "sk-1",
+            "agentModels": {"implement": "gpt-code", "spec": "gpt-cheap"},
+        }
+    )
     # Resolution: complex ignores the economy overrides, standard keeps them.
     assert settings.effective_model("implement", "complex") == "gpt-shared"
     assert settings.effective_model("spec", "complex") == "gpt-shared"
@@ -298,15 +359,18 @@ def test_complex_tier_upgrades_every_agent_to_the_shared_model(tmp_path: Path):
 
     real = RecordingGateway("real-answer")
     router = SettingsRoutingGateway(
-        settings, RecordingGateway("scripted"),
+        settings,
+        RecordingGateway("scripted"),
         gateway_factory=lambda s, t: real,
     )
 
     def call(metadata: dict) -> str | None:
-        return router.complete(ModelRequest(
-            messages=[ModelMessage(role="user", content="hi")],
-            metadata=metadata,
-        )).model
+        return router.complete(
+            ModelRequest(
+                messages=[ModelMessage(role="user", content="hi")],
+                metadata=metadata,
+            )
+        ).model
 
     assert call({"agentId": "agent-implement", "modelTier": "complex"}) == "gpt-shared"
     assert call({"agentId": "agent-implement"}) == "gpt-code"
@@ -329,10 +393,14 @@ class _RecordingTransport:
 
 def test_connection_test_uses_the_agents_effective_model(tmp_path: Path):
     settings = ModelSettings(tmp_path / "s.json")
-    settings.update({
-        "provider": "openai", "model": "gpt-shared", "apiKey": "sk-1",
-        "agentModels": {"fix": "gpt-fix"},
-    })
+    settings.update(
+        {
+            "provider": "openai",
+            "model": "gpt-shared",
+            "apiKey": "sk-1",
+            "agentModels": {"fix": "gpt-fix"},
+        }
+    )
     transport = _RecordingTransport()
     assert settings.test(transport)["ok"] is True
     assert settings.test(transport, agent="fix")["ok"] is True

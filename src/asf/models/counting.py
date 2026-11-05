@@ -44,18 +44,15 @@ class ModelCallTracker:
     _clock: Callable[[], datetime] | None = field(default=None, repr=False)
 
     def remaining_seconds(self) -> float | None:
-        if (
-            self._deadline_seconds is None
-            or self._started_at is None
-            or self._clock is None
-        ):
+        if self._deadline_seconds is None or self._started_at is None or self._clock is None:
             return None
         elapsed = (self._clock() - self._started_at).total_seconds()
         return self._deadline_seconds - elapsed
 
 
 _current: ContextVar[ModelCallTracker | None] = ContextVar(
-    "asf_model_call_tracker", default=None,
+    "asf_model_call_tracker",
+    default=None,
 )
 
 
@@ -105,15 +102,17 @@ class CountingGateway:
         if tracker is not None:
             remaining = tracker.remaining_seconds()
             if remaining is not None:
-                outgoing = request.model_copy(update={
-                    "metadata": {
-                        **request.metadata,
-                        # A floor keeps an expired deadline from
-                        # becoming a zero/negative HTTP timeout; the
-                        # gateway will simply time out immediately.
-                        "deadlineSeconds": max(remaining, 0.05),
-                    },
-                })
+                outgoing = request.model_copy(
+                    update={
+                        "metadata": {
+                            **request.metadata,
+                            # A floor keeps an expired deadline from
+                            # becoming a zero/negative HTTP timeout; the
+                            # gateway will simply time out immediately.
+                            "deadlineSeconds": max(remaining, 0.05),
+                        },
+                    }
+                )
         response = self._inner.complete(outgoing)
         with self._lock:
             self.total_calls += 1

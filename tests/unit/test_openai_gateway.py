@@ -21,39 +21,56 @@ class FakeTransport:
         self.calls: list[dict] = []
 
     def post(self, url, *, headers, body, timeout_seconds):  # noqa: ANN001, ANN202
-        self.calls.append({
-            "url": url, "headers": headers, "body": json.loads(body),
-        })
-        raw = self.payload if isinstance(self.payload, bytes) else json.dumps(
-            self.payload,
-        ).encode()
+        self.calls.append(
+            {
+                "url": url,
+                "headers": headers,
+                "body": json.loads(body),
+            }
+        )
+        raw = (
+            self.payload
+            if isinstance(self.payload, bytes)
+            else json.dumps(
+                self.payload,
+            ).encode()
+        )
         return self.status, {}, raw
 
 
 def _request() -> ModelRequest:
-    return ModelRequest(messages=[
-        ModelMessage(role="system", content="You write specs."),
-        ModelMessage(role="user", content="A calculator"),
-    ])
+    return ModelRequest(
+        messages=[
+            ModelMessage(role="system", content="You write specs."),
+            ModelMessage(role="user", content="A calculator"),
+        ]
+    )
 
 
 def _gateway(transport: FakeTransport) -> OpenAICompatibleGateway:
     return OpenAICompatibleGateway(
-        base_url="https://models.example.com/v1/", model="gpt-x",
-        api_key="secret-key", transport=transport,
+        base_url="https://models.example.com/v1/",
+        model="gpt-x",
+        api_key="secret-key",
+        transport=transport,
         sleep=lambda _: None,  # retries must not slow the suite down
     )
 
 
 def test_complete_posts_chat_and_parses_response():
-    transport = FakeTransport(200, {
-        "model": "gpt-x-2026",
-        "choices": [{
-            "message": {"role": "assistant", "content": "# SPEC\n..."},
-            "finish_reason": "stop",
-        }],
-        "usage": {"prompt_tokens": 12, "completion_tokens": 34},
-    })
+    transport = FakeTransport(
+        200,
+        {
+            "model": "gpt-x-2026",
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "# SPEC\n..."},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 34},
+        },
+    )
     response = _gateway(transport).complete(_request())
     assert response.content == "# SPEC\n..."
     assert response.model == "gpt-x-2026"
@@ -67,12 +84,16 @@ def test_complete_posts_chat_and_parses_response():
 
 
 def test_request_model_and_temperature_pass_through():
-    transport = FakeTransport(200, {
-        "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
-    })
+    transport = FakeTransport(
+        200,
+        {
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+        },
+    )
     request = ModelRequest(
         messages=[ModelMessage(role="user", content="hi")],
-        model="other-model", parameters={"temperature": 0.2},
+        model="other-model",
+        parameters={"temperature": 0.2},
     )
     _gateway(transport).complete(request)
     assert transport.calls[0]["body"]["model"] == "other-model"
@@ -137,10 +158,12 @@ def test_constructor_validation():
 
 
 _OK = {
-    "choices": [{
-        "message": {"role": "assistant", "content": "done"},
-        "finish_reason": "stop",
-    }],
+    "choices": [
+        {
+            "message": {"role": "assistant", "content": "done"},
+            "finish_reason": "stop",
+        }
+    ],
     "usage": {"prompt_tokens": 1, "completion_tokens": 1},
 }
 
@@ -166,14 +189,19 @@ class SequenceTransport:
 
 def _retry_gateway(transport: SequenceTransport, sleeps: list) -> OpenAICompatibleGateway:
     return OpenAICompatibleGateway(
-        base_url="https://models.example.com/v1", model="gpt-x",
-        api_key="key-1", transport=transport, sleep=sleeps.append, rand=lambda _lo, hi: hi,
+        base_url="https://models.example.com/v1",
+        model="gpt-x",
+        api_key="key-1",
+        transport=transport,
+        sleep=sleeps.append,
+        rand=lambda _lo, hi: hi,
     )
 
 
 def _unreachable() -> ModelGatewayError:
     return ModelGatewayError(
-        "INTEGRATION_UNAVAILABLE", "Model provider unreachable: timed out",
+        "INTEGRATION_UNAVAILABLE",
+        "Model provider unreachable: timed out",
     )
 
 

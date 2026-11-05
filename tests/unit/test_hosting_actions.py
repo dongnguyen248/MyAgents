@@ -45,7 +45,10 @@ class FakeProvider:
         if self.change_request_state == "none":
             return None
         return ChangeRequestRef(
-            "4", "https://mr/4", self.change_request_state, branch,
+            "4",
+            "https://mr/4",
+            self.change_request_state,
+            branch,
         )
 
     def pipeline_status(self, *, branch):  # noqa: ANN001, ANN202
@@ -57,7 +60,8 @@ class FakeProvider:
 def provider(monkeypatch: pytest.MonkeyPatch) -> FakeProvider:
     fake = FakeProvider()
     monkeypatch.setattr(
-        actions_module, "build_provider",
+        actions_module,
+        "build_provider",
         lambda repository, environ=None, transport=None: fake,
     )
     return fake
@@ -65,36 +69,50 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> FakeProvider:
 
 def _actions():
     return build_hosting_actions(
-        profiles=lambda pid: PROFILES.get(pid), clock=lambda: NOW,
+        profiles=lambda pid: PROFILES.get(pid),
+        clock=lambda: NOW,
     )
 
 
 def _request(action: str, *, with_code: bool = True) -> AgentRequest:
     artifacts = []
     if with_code:
-        artifacts.append(Artifact(
-            id="code-1", type="CODE", name="CODE.json", version="1",
-            content={
-                "format": "json",
-                "changeSet": {"changes": [
-                    {"path": "a.py", "operation": "create", "content": "a = 1\n"},
-                ]},
-                "text": "code",
-            },
-            created_by="agent-implement", created_at=NOW,
-            metadata={"baseRef": "main"},
-        ))
+        artifacts.append(
+            Artifact(
+                id="code-1",
+                type="CODE",
+                name="CODE.json",
+                version="1",
+                content={
+                    "format": "json",
+                    "changeSet": {
+                        "changes": [
+                            {"path": "a.py", "operation": "create", "content": "a = 1\n"},
+                        ]
+                    },
+                    "text": "code",
+                },
+                created_by="agent-implement",
+                created_at=NOW,
+                metadata={"baseRef": "main"},
+            )
+        )
     return AgentRequest(
-        request_id="req-1", task_id="task-1", project_id="proj",
-        workflow_id="software-development", agent_id=f"action:{action}",
-        context={"title": "Build the thing"}, artifacts=artifacts,
+        request_id="req-1",
+        task_id="task-1",
+        project_id="proj",
+        workflow_id="software-development",
+        agent_id=f"action:{action}",
+        context={"title": "Build the thing"},
+        artifacts=artifacts,
         metadata={"attempt": 1, "runId": "run-1", "stepId": "ci"},
     )
 
 
 def test_not_configured_projects_keep_noop_success(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
-        actions_module, "build_provider",
+        actions_module,
+        "build_provider",
         lambda repository, environ=None, transport=None: None,
     )
     actions = _actions()
@@ -109,7 +127,9 @@ def test_run_pipeline_pushes_opens_and_passes(provider: FakeProvider):
     result = _actions()["run-pipeline"](_request("run-pipeline"))
     assert result.status == "SUCCESS"
     assert provider.calls == [
-        "push:asf/task-1:main", "open:asf/task-1", "pipeline:asf/task-1",
+        "push:asf/task-1:main",
+        "open:asf/task-1",
+        "pipeline:asf/task-1",
     ]
     assert result.output["commit"] == "sha-9"
     assert result.output["changeRequest"]["id"] == "4"
@@ -168,7 +188,9 @@ def test_await_merge_states(provider: FakeProvider):
 def test_missing_token_surfaces_as_config_error():
     # No monkeypatch: the real factory raises for a URL without a token.
     actions = build_hosting_actions(
-        profiles=lambda pid: PROFILES.get(pid), clock=lambda: NOW, environ={},
+        profiles=lambda pid: PROFILES.get(pid),
+        clock=lambda: NOW,
+        environ={},
     )
     result = actions["run-pipeline"](_request("run-pipeline"))
     assert result.status == "FAILED"
@@ -183,7 +205,7 @@ def test_workflow_policies_cover_the_polling_error_codes():
     from asf.workflow.loader import load_workflow
 
     root = Path(asf.__file__).resolve().parents[2]
-    definition = load_workflow(root / "workflows" / "software-development.yaml")
+    definition = load_workflow(root / "workflow-definitions" / "software-development.yaml")
     steps = {step.id: step for step in definition.steps}
     assert steps["ci"].retry_policy is not None
     assert steps["ci"].retry_policy.retry_on == ["PIPELINE_RUNNING"]

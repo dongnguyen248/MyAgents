@@ -7,10 +7,12 @@ from asf.tools.changeset import ChangeSet, FileChange
 
 
 def test_build_metadata_code_artifact() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="create", content="a"),
-        FileChange(path="src/b.py", operation="modify", content="b"),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="src/a.py", operation="create", content="a"),
+            FileChange(path="src/b.py", operation="modify", content="b"),
+        )
+    )
     metadata = build_metadata(
         ArtifactKind.CODE,
         task_item_id="task-123",
@@ -78,6 +80,7 @@ def test_build_metadata_no_changeset() -> None:
 def test_build_metadata_timezone_conversion() -> None:
     # Test that non-UTC timezones are converted to UTC
     from datetime import timedelta
+
     tz_est = timezone(timedelta(hours=-5))
     generated_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=tz_est)
     metadata = build_metadata(
@@ -92,6 +95,7 @@ def test_build_metadata_timezone_conversion() -> None:
 def test_build_metadata_naive_datetime_raises() -> None:
     # Naive datetime should raise
     import pytest
+
     with pytest.raises(ValueError, match="timezone-aware"):
         build_metadata(
             ArtifactKind.CODE,

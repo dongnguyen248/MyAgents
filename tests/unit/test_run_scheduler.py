@@ -156,8 +156,13 @@ def test_retry_on_rejects_unknown_codes_with_the_valid_list():
 def test_retry_on_accepts_gateway_and_agent_codes():
     policy = RetryPolicySettings(
         max_attempts=2,
-        retry_on=["LLM_TIMEOUT", "LLM_RATE_LIMITED", "COMMAND_TIMEOUT",
-                  "SANDBOX_ERROR", "INTEGRATION_UNAVAILABLE"],
+        retry_on=[
+            "LLM_TIMEOUT",
+            "LLM_RATE_LIMITED",
+            "COMMAND_TIMEOUT",
+            "SANDBOX_ERROR",
+            "INTEGRATION_UNAVAILABLE",
+        ],
     )
     assert policy.retry_on[0] == "LLM_TIMEOUT"
 
@@ -191,29 +196,49 @@ def _service_with_flaky_gateway(clock: FakeClock):  # noqa: ANN202
     registry.register(build_spec_agent(runtime, PlatformConfig(), TEMPLATES))
     registry.register(build_plan_agent(runtime, PlatformConfig(), TEMPLATES))
     definition = WorkflowDefinition(
-        id="spec-plan", name="Spec and Plan", version="1", steps=[
+        id="spec-plan",
+        name="Spec and Plan",
+        version="1",
+        steps=[
             WorkflowStepDef(
-                id="spec", name="Spec", type="AGENT", stage="SPEC",
-                agent_type="spec", requires_approval=True, produces=["SPEC"],
+                id="spec",
+                name="Spec",
+                type="AGENT",
+                stage="SPEC",
+                agent_type="spec",
+                requires_approval=True,
+                produces=["SPEC"],
                 retry_policy=RetryPolicySettings(
-                    max_attempts=2, backoff_seconds=30,
+                    max_attempts=2,
+                    backoff_seconds=30,
                     retry_on=["LLM_TIMEOUT"],
                 ),
             ),
             WorkflowStepDef(
-                id="plan", name="Plan", type="AGENT", stage="PLAN",
-                agent_type="plan", requires_approval=True,
-                consumes=["SPEC"], produces=["PLAN"],
+                id="plan",
+                name="Plan",
+                type="AGENT",
+                stage="PLAN",
+                agent_type="plan",
+                requires_approval=True,
+                consumes=["SPEC"],
+                produces=["PLAN"],
             ),
         ],
     )
     engine = Orchestrator(
-        definition, registry, clock=clock, new_id=new_id,
+        definition,
+        registry,
+        clock=clock,
+        new_id=new_id,
         approval_policy=ApprovalPolicy(reviewers=["dashboard"]),
         approvals=ApprovalService(InMemoryApprovalRepository(), id_factory=new_id),
     )
     service = FactoryService(
-        engine, projects=PROJECTS, metrics=None, clock=clock,
+        engine,
+        projects=PROJECTS,
+        metrics=None,
+        clock=clock,
     )
     return service, engine, gateway
 
@@ -223,7 +248,8 @@ def test_waiting_run_resumes_by_itself_after_retry_at():
     service, engine, gateway = _service_with_flaky_gateway(clock)
     try:
         run = service.start_run(
-            "task-retry", "proj-1",
+            "task-retry",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
         )
         # The background drive runs the spec step, the gateway times

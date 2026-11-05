@@ -121,13 +121,23 @@ def _workflow_definition() -> WorkflowDefinition:
         version="1",
         steps=[
             WorkflowStepDef(
-                id="spec", name="Spec", type="AGENT", stage="SPEC",
-                agent_type="spec", requires_approval=True, produces=["SPEC"],
+                id="spec",
+                name="Spec",
+                type="AGENT",
+                stage="SPEC",
+                agent_type="spec",
+                requires_approval=True,
+                produces=["SPEC"],
             ),
             WorkflowStepDef(
-                id="plan", name="Plan", type="AGENT", stage="PLAN",
-                agent_type="plan", requires_approval=True,
-                consumes=["SPEC"], produces=["PLAN"],
+                id="plan",
+                name="Plan",
+                type="AGENT",
+                stage="PLAN",
+                agent_type="plan",
+                requires_approval=True,
+                consumes=["SPEC"],
+                produces=["PLAN"],
             ),
         ],
     )
@@ -177,22 +187,33 @@ class EvaluationRunner:
 
         platform = PlatformConfig()
         registry = AgentRegistry()
-        registry.register(build_spec_agent(
-            AgentRuntime(
-                models=ScriptedModelGateway([_spec_text(case)]),
-                clock=clock, new_id=agent_ids("spec"),
-            ),
-            platform, self._templates_dir,
-        ))
-        registry.register(build_plan_agent(
-            AgentRuntime(
-                models=ScriptedModelGateway([_plan_text(case)]),
-                clock=clock, new_id=agent_ids("plan"),
-            ),
-            platform, self._templates_dir,
-        ))
+        registry.register(
+            build_spec_agent(
+                AgentRuntime(
+                    models=ScriptedModelGateway([_spec_text(case)]),
+                    clock=clock,
+                    new_id=agent_ids("spec"),
+                ),
+                platform,
+                self._templates_dir,
+            )
+        )
+        registry.register(
+            build_plan_agent(
+                AgentRuntime(
+                    models=ScriptedModelGateway([_plan_text(case)]),
+                    clock=clock,
+                    new_id=agent_ids("plan"),
+                ),
+                platform,
+                self._templates_dir,
+            )
+        )
         return Orchestrator(
-            _workflow_definition(), registry, clock=clock, new_id=new_id,
+            _workflow_definition(),
+            registry,
+            clock=clock,
+            new_id=new_id,
             approvals=ApprovalService(InMemoryApprovalRepository(), id_factory=new_id),
             approval_policy=ApprovalPolicy(reviewers=[REVIEWER]),
         )
@@ -200,7 +221,8 @@ class EvaluationRunner:
     def run_case(self, case: BenchmarkCase) -> CaseResult:
         engine = self._build_engine(case)
         run = engine.start(
-            task_id=f"task-{case.id}", project_id="harness",
+            task_id=f"task-{case.id}",
+            project_id="harness",
             inputs={"spec": {"requirement": case.requirement}},
         )
         for _ in range(MAX_TICKS):
@@ -223,15 +245,14 @@ class EvaluationRunner:
         if missing:
             failures.append(f"missing expected artifacts: {', '.join(missing)}")
         if revisions > case.max_revisions:
-            failures.append(
-                f"revisions {revisions} exceeded max_revisions {case.max_revisions}"
-            )
+            failures.append(f"revisions {revisions} exceeded max_revisions {case.max_revisions}")
         for error in run.errors:
             failures.append(f"{error.code}: {error.message}")
 
         artifact_fraction = (
             (len(case.expected_artifacts) - len(missing)) / len(case.expected_artifacts)
-            if case.expected_artifacts else 1.0
+            if case.expected_artifacts
+            else 1.0
         )
         score = (
             (0.5 if completed else 0.0)

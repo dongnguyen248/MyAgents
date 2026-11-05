@@ -88,14 +88,22 @@ class _PortTouchingAgent:
         # either touches a port.
         self._barrier.wait(timeout=15)
         self._seen[request.project_id] = self._repository.read_file(
-            "marker.txt", "main",
+            "marker.txt",
+            "main",
         )
-        changeset = ChangeSet(changes=[FileChange(
-            path="written.txt", operation="create",
-            content=f"written-by-{request.project_id}",
-        )])
+        changeset = ChangeSet(
+            changes=[
+                FileChange(
+                    path="written.txt",
+                    operation="create",
+                    content=f"written-by-{request.project_id}",
+                )
+            ]
+        )
         self._sandbox.run(
-            [CommandSpec(argv=(PYTHON, "-c", "pass"))], changeset, "main",
+            [CommandSpec(argv=(PYTHON, "-c", "pass"))],
+            changeset,
+            "main",
         )
         return None
 
@@ -114,7 +122,10 @@ def test_parallel_runs_never_touch_each_others_folders(tmp_path: Path):
         seen: dict[str, str] = {}
         agent = _WorkspaceBindingAgent(
             _PortTouchingAgent(
-                repository, sandbox, threading.Barrier(2), seen,
+                repository,
+                sandbox,
+                threading.Barrier(2),
+                seen,
             ),
             workspace,
         )
@@ -128,12 +139,8 @@ def test_parallel_runs_never_touch_each_others_folders(tmp_path: Path):
         assert seen == {"proj-a": "marker-A", "proj-b": "marker-B"}, (
             f"iteration {iteration}: a run read the other project's files"
         )
-        assert (dir_a / "written.txt").read_text(encoding="utf-8") == (
-            "written-by-proj-a"
-        )
-        assert (dir_b / "written.txt").read_text(encoding="utf-8") == (
-            "written-by-proj-b"
-        )
+        assert (dir_a / "written.txt").read_text(encoding="utf-8") == ("written-by-proj-a")
+        assert (dir_b / "written.txt").read_text(encoding="utf-8") == ("written-by-proj-b")
         # Bindings were reset by the wrapper: the main context is clean.
         assert workspace.bound_project() is None
 
@@ -237,15 +244,26 @@ def build_engine(gateway: Any) -> Orchestrator:
     from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 
     definition = WorkflowDefinition(
-        id="spec-only", name="Spec only", version="1", steps=[
+        id="spec-only",
+        name="Spec only",
+        version="1",
+        steps=[
             WorkflowStepDef(
-                id="spec", name="Spec", type="AGENT", stage="SPEC",
-                agent_type="spec", requires_approval=True, produces=["SPEC"],
+                id="spec",
+                name="Spec",
+                type="AGENT",
+                stage="SPEC",
+                agent_type="spec",
+                requires_approval=True,
+                produces=["SPEC"],
             ),
         ],
     )
     return Orchestrator(
-        definition, registry, clock=lambda: NOW, new_id=new_id,
+        definition,
+        registry,
+        clock=lambda: NOW,
+        new_id=new_id,
         approval_policy=ApprovalPolicy(reviewers=["dashboard"]),
         approvals=ApprovalService(InMemoryApprovalRepository(), id_factory=new_id),
     )
@@ -278,12 +296,16 @@ class _CountingGateway:
 def test_drive_pool_bounds_concurrent_runs():
     gateway = _CountingGateway(RoutingGateway())
     service = FactoryService(
-        build_engine(gateway), projects=PROJECTS, metrics=FakeMetrics(),
-        clock=lambda: NOW, max_concurrent_runs=2,
+        build_engine(gateway),
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
+        max_concurrent_runs=2,
     )
     runs = [
         service.start_run(
-            f"task-{index}", "proj-1",
+            f"task-{index}",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
         )
         for index in range(5)
@@ -300,8 +322,10 @@ def test_drive_pool_bounds_concurrent_runs():
 
 def test_factory_service_defaults_to_two_concurrent_runs():
     service = FactoryService(
-        build_engine(RoutingGateway()), projects=PROJECTS,
-        metrics=FakeMetrics(), clock=lambda: NOW,
+        build_engine(RoutingGateway()),
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
     )
     try:
         assert service._max_concurrent_runs == 2
@@ -332,18 +356,23 @@ class _BlockFirstGateway:
 def test_cancel_a_run_still_queued_in_the_pool():
     gateway = _BlockFirstGateway(RoutingGateway())
     service = FactoryService(
-        build_engine(gateway), projects=PROJECTS, metrics=FakeMetrics(),
-        clock=lambda: NOW, max_concurrent_runs=1,
+        build_engine(gateway),
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
+        max_concurrent_runs=1,
     )
     try:
         run_a = service.start_run(
-            "task-a", "proj-1",
+            "task-a",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
         )
         # The single pool worker is inside A's model call.
         assert gateway.entered.wait(timeout=15)
         run_b = service.start_run(
-            "task-b", "proj-1",
+            "task-b",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
         )
         # B's drive is queued behind A's. Cancelling now records a
@@ -369,12 +398,16 @@ def test_cancel_a_run_still_queued_in_the_pool():
 def test_cancel_a_running_run_still_applies_between_steps():
     gateway = _BlockFirstGateway(RoutingGateway())
     service = FactoryService(
-        build_engine(gateway), projects=PROJECTS, metrics=FakeMetrics(),
-        clock=lambda: NOW, max_concurrent_runs=1,
+        build_engine(gateway),
+        projects=PROJECTS,
+        metrics=FakeMetrics(),
+        clock=lambda: NOW,
+        max_concurrent_runs=1,
     )
     try:
         run = service.start_run(
-            "task-a", "proj-1",
+            "task-a",
+            "proj-1",
             inputs={"spec": {"requirement": "Build a calculator"}},
         )
         assert gateway.entered.wait(timeout=15)
@@ -394,7 +427,8 @@ def test_cancel_a_running_run_still_applies_between_steps():
 
 def _response() -> ModelResponse:
     return ModelResponse(
-        content="ok", model="fake",
+        content="ok",
+        model="fake",
         usage=ModelUsage(prompt_tokens=1, completion_tokens=1),
         finish_reason="stop",
     )
@@ -458,7 +492,8 @@ def test_concurrency_limited_gateway_releases_the_slot_on_error():
 
 def test_scripted_gateway_still_satisfies_the_limiter_protocol():
     gateway = ConcurrencyLimitedGateway(
-        ScriptedModelGateway({}), max_concurrent=2,
+        ScriptedModelGateway({}),
+        max_concurrent=2,
     )
     assert gateway.max_concurrent == 2
 

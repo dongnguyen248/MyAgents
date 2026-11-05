@@ -36,18 +36,20 @@ class NoModels:
 
 
 class FakeSandbox:
-    def __init__(
-        self, result: SandboxResult | None = None, error: Exception | None = None
-    ) -> None:
-        self.result = result if result is not None else SandboxResult(
-            (CommandResult(0, "ok", "", 10),)
+    def __init__(self, result: SandboxResult | None = None, error: Exception | None = None) -> None:
+        self.result = (
+            result if result is not None else SandboxResult((CommandResult(0, "ok", "", 10),))
         )
         self.error = error
         self.calls: list[tuple[tuple[CommandSpec, ...], ChangeSet, str]] = []
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
-        *, fail_fast: bool = True,
+        self,
+        commands: Sequence[CommandSpec],
+        changes: ChangeSet,
+        ref: str,
+        *,
+        fail_fast: bool = True,
     ) -> SandboxResult:
         self.calls.append((tuple(commands), changes, ref))
         self.fail_fast_seen = fail_fast
@@ -79,34 +81,61 @@ def request(commands: Any = None) -> AgentRequest:
         "TASK",
         {
             "text": "Tasks",
-            "tasks": [{"id": "T1", "expectedFiles": ["test_app.py"],
-                       "verificationHint": "never-execute-this"}],
+            "tasks": [
+                {
+                    "id": "T1",
+                    "expectedFiles": ["test_app.py"],
+                    "verificationHint": "never-execute-this",
+                }
+            ],
         },
-        {"specArtifactId": "spec-1", "specVersion": "1",
-         "planArtifactId": "plan-1", "planVersion": "1"},
+        {
+            "specArtifactId": "spec-1",
+            "specVersion": "1",
+            "planArtifactId": "plan-1",
+            "planVersion": "1",
+        },
     )
     code = artifact(
         "CODE",
-        {"text": "Code", "changeSet": {"changes": [
-            {"path": "test_app.py", "operation": "create", "content": "pass\n"}
-        ]}},
-        {"specArtifactId": "spec-1", "specVersion": "1",
-         "planArtifactId": "plan-1", "planVersion": "1",
-         "taskArtifactId": task.id, "taskVersion": task.version,
-         "taskItemId": "T1", "baseRef": "commit-1"},
+        {
+            "text": "Code",
+            "changeSet": {
+                "changes": [{"path": "test_app.py", "operation": "create", "content": "pass\n"}]
+            },
+        },
+        {
+            "specArtifactId": "spec-1",
+            "specVersion": "1",
+            "planArtifactId": "plan-1",
+            "planVersion": "1",
+            "taskArtifactId": task.id,
+            "taskVersion": task.version,
+            "taskItemId": "T1",
+            "baseRef": "commit-1",
+        },
     )
     return AgentRequest(
-        request_id="request-1", task_id="task-1", project_id="project-1",
-        workflow_id="workflow-1", agent_id="agent-test", input={"taskItemId": "T1"},
+        request_id="request-1",
+        task_id="task-1",
+        project_id="project-1",
+        workflow_id="workflow-1",
+        agent_id="agent-test",
+        input={"taskItemId": "T1"},
         context={"project": {"testCommands": [["pytest", "-q"]] if commands is None else commands}},
         artifacts=[task, code],
     )
 
 
 def test_runs_all_commands_once_at_code_ref_and_emits_report_schema() -> None:
-    sandbox = FakeSandbox(SandboxResult((
-        CommandResult(0, "first", "", 1), CommandResult(0, "second", "", 2),
-    )))
+    sandbox = FakeSandbox(
+        SandboxResult(
+            (
+                CommandResult(0, "first", "", 1),
+                CommandResult(0, "second", "", 2),
+            )
+        )
+    )
     req = request([["pytest", "-q"], [r".\tools\verify", "a; b", "|"]])
     req.input["ref"] = "ignored-ref"
     result = RunnerAgent(runtime(), sandbox).execute(req)
@@ -114,14 +143,18 @@ def test_runs_all_commands_once_at_code_ref_and_emits_report_schema() -> None:
     assert len(sandbox.calls) == 1
     commands, changes, ref = sandbox.calls[0]
     assert ref == "commit-1"
-    assert commands == (CommandSpec(("pytest", "-q")),
-                        CommandSpec((r".\tools\verify", "a; b", "|")))
+    assert commands == (
+        CommandSpec(("pytest", "-q")),
+        CommandSpec((r".\tools\verify", "a; b", "|")),
+    )
     assert isinstance(req.artifacts[1].content, dict)
     assert changes == ChangeSet.model_validate(req.artifacts[1].content["changeSet"])
     report = result.artifacts[0]
     assert report.type == "TEST_REPORT"
     assert report.metadata == {
-        **req.artifacts[1].metadata, "codeArtifactId": "code-1", "codeVersion": "1",
+        **req.artifacts[1].metadata,
+        "codeArtifactId": "code-1",
+        "codeVersion": "1",
     }
     assert isinstance(report.content, dict)
     assert set(report.content) == {"format", "report", "text"}
@@ -131,8 +164,11 @@ def test_runs_all_commands_once_at_code_ref_and_emits_report_schema() -> None:
     assert report.content["report"]["summary"] == "PASS: 2/2 commands passed"
     assert report.content["text"].strip()
     assert report.content["report"]["commands"][0] == {
-        "argv": ["pytest", "-q"], "exitCode": 0, "stdout": "first",
-        "stderr": "", "durationMs": 1,
+        "argv": ["pytest", "-q"],
+        "exitCode": 0,
+        "stdout": "first",
+        "stderr": "",
+        "durationMs": 1,
     }
     root = Path(__file__).resolve().parents[2]
     schema = json.loads((root / "contracts" / "schemas" / "contracts.schema.json").read_text())
@@ -145,17 +181,23 @@ def test_runs_all_commands_once_at_code_ref_and_emits_report_schema() -> None:
         "properties": {
             "verdict": {"enum": ["PASS", "FAIL"]},
             "summary": {"type": "string", "minLength": 1},
-            "commands": {"type": "array", "minItems": 1, "maxItems": 20, "items": {
-                "type": "object", "additionalProperties": False,
-                "required": ["argv", "exitCode", "stdout", "stderr", "durationMs"],
-                "properties": {
-                    "argv": {"type": "array", "items": {"type": "string"}},
-                    "exitCode": {"type": "integer"},
-                    "stdout": {"type": "string"},
-                    "stderr": {"type": "string"},
-                    "durationMs": {"type": "integer", "minimum": 0},
+            "commands": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["argv", "exitCode", "stdout", "stderr", "durationMs"],
+                    "properties": {
+                        "argv": {"type": "array", "items": {"type": "string"}},
+                        "exitCode": {"type": "integer"},
+                        "stdout": {"type": "string"},
+                        "stderr": {"type": "string"},
+                        "durationMs": {"type": "integer", "minimum": 0},
+                    },
                 },
-            }},
+            },
         },
     }
     wrapper_schema = {
@@ -181,16 +223,35 @@ def test_test_failure_is_successful_agent_execution(exit_code: int) -> None:
     assert result.errors == []
 
 
-@pytest.mark.parametrize("commands", [
-    [], "pytest", [[""]], [["  "]], [[]], [("pytest",)], [[1]],
-    [["pytest", ""]], [["pytest", "\x00"]], [["pytest", "\ud800"]],
-    [["pytest", "a" * (MAX_ARG_CHARS + 1)]],
-    [["pytest"] * (MAX_ARGS + 1)], [["pytest"]] * 21,
-    [["../pytest"]], [[r"..\pytest"]], [[r"bin\..\pytest"]],
-    [[r"bin/..\pytest"]], [["/bin/pytest"]], [[r"\bin\pytest"]],
-    [[r"C:\tools\pytest"]], [["C:pytest"]], [[r"\\host\share\pytest"]],
-    [["//host/share/pytest"]], [["pytest:stream"]],
-])
+@pytest.mark.parametrize(
+    "commands",
+    [
+        [],
+        "pytest",
+        [[""]],
+        [["  "]],
+        [[]],
+        [("pytest",)],
+        [[1]],
+        [["pytest", ""]],
+        [["pytest", "\x00"]],
+        [["pytest", "\ud800"]],
+        [["pytest", "a" * (MAX_ARG_CHARS + 1)]],
+        [["pytest"] * (MAX_ARGS + 1)],
+        [["pytest"]] * 21,
+        [["../pytest"]],
+        [[r"..\pytest"]],
+        [[r"bin\..\pytest"]],
+        [[r"bin/..\pytest"]],
+        [["/bin/pytest"]],
+        [[r"\bin\pytest"]],
+        [[r"C:\tools\pytest"]],
+        [["C:pytest"]],
+        [[r"\\host\share\pytest"]],
+        [["//host/share/pytest"]],
+        [["pytest:stream"]],
+    ],
+)
 def test_invalid_commands_rejected_without_sandbox(commands: Any) -> None:
     sandbox = FakeSandbox()
     result = RunnerAgent(runtime(), sandbox).execute(request(commands))
@@ -207,8 +268,9 @@ def test_relative_commands_allowed_without_shell_heuristics(executable: str) -> 
     assert sandbox.calls[0][0][0].argv == (executable, "&&", "$data")
 
 
-@pytest.mark.parametrize("context", [{}, {"project": None}, {"project": []},
-                                    {"project": {"testCommands": None}}])
+@pytest.mark.parametrize(
+    "context", [{}, {"project": None}, {"project": []}, {"project": {"testCommands": None}}]
+)
 def test_missing_project_commands_rejected(context: dict[str, Any]) -> None:
     req = request().model_copy(update={"context": context})
     sandbox = FakeSandbox()
@@ -216,10 +278,20 @@ def test_missing_project_commands_rejected(context: dict[str, Any]) -> None:
     assert not sandbox.calls
 
 
-@pytest.mark.parametrize("mutation", [
-    "taskItemId", "missingTask", "duplicateCode", "invalidCode", "staleTask",
-    "wrongTaskItem", "missingRef", "missingTaskItem", "duplicateTaskItem",
-])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "taskItemId",
+        "missingTask",
+        "duplicateCode",
+        "invalidCode",
+        "staleTask",
+        "wrongTaskItem",
+        "missingRef",
+        "missingTaskItem",
+        "duplicateTaskItem",
+    ],
+)
 def test_task_code_validation_and_traceability(mutation: str) -> None:
     req = request()
     assert isinstance(req.artifacts[0].content, dict)
@@ -251,7 +323,8 @@ def test_task_code_validation_and_traceability(mutation: str) -> None:
 def test_runner_errors_are_safe(mode: str) -> None:
     private = fake_secret()
     errors = {
-        "sandbox": SandboxError(private), "unexpected": RuntimeError(private),
+        "sandbox": SandboxError(private),
+        "unexpected": RuntimeError(private),
         "timeout": TimeoutError(private),
         "commandTimeout": CommandTimeoutError(CommandSpec(("pytest", private))),
     }
@@ -280,11 +353,17 @@ def test_timeout_exact_boundary_is_allowed() -> None:
     assert RunnerAgent(runtime(), sandbox).execute(request()).status == "SUCCESS"
 
 
-@pytest.mark.parametrize("items", [
-    (), (CommandResult(0, "", "", 1), CommandResult(0, "", "", 1)),
-    (None,), (CommandResult(0, "", "", -1),),
-    (CommandResult(0, "", "", True),), (CommandResult(True, "", "", 1),),
-])
+@pytest.mark.parametrize(
+    "items",
+    [
+        (),
+        (CommandResult(0, "", "", 1), CommandResult(0, "", "", 1)),
+        (None,),
+        (CommandResult(0, "", "", -1),),
+        (CommandResult(0, "", "", True),),
+        (CommandResult(True, "", "", 1),),
+    ],
+)
 def test_malformed_sandbox_results_are_infrastructure_failures(items: Any) -> None:
     sandbox = FakeSandbox(SandboxResult(items))
     result = RunnerAgent(runtime(), sandbox).execute(request())
@@ -301,9 +380,11 @@ def test_full_secret_matches_redacted_before_utf8_truncation() -> None:
     private = fake_secret()
     limit = CommandSpec(("pytest",)).output_limit_bytes
     prefix = "é" * ((limit - 3) // 2)
-    sandbox = FakeSandbox(SandboxResult((
-        CommandResult(0, prefix + private + "tail", private + "\n" + "界" * limit, 1),
-    )))
+    sandbox = FakeSandbox(
+        SandboxResult(
+            (CommandResult(0, prefix + private + "tail", private + "\n" + "界" * limit, 1),)
+        )
+    )
     result = RunnerAgent(runtime(), sandbox).execute(request([["pytest", private]]))
     assert result.status == "SUCCESS"
     assert isinstance(result.output, dict)
@@ -321,10 +402,14 @@ def test_shared_runtime_patterns_and_overlapping_full_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     private = "sensitive" + "-" + "a" * 100
-    monkeypatch.setattr(security, "SECRET_PATTERNS", [
-        ("short", re.compile(re.escape(private[:30]))),
-        ("full", re.compile(re.escape(private))),
-    ])
+    monkeypatch.setattr(
+        security,
+        "SECRET_PATTERNS",
+        [
+            ("short", re.compile(re.escape(private[:30]))),
+            ("full", re.compile(re.escape(private))),
+        ],
+    )
     req = request()
     req.artifacts[1].metadata["baseRef"] = private
     sandbox = FakeSandbox(SandboxResult((CommandResult(0, private, private, 1),)))

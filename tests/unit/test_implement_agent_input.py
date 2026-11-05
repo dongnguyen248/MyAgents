@@ -678,6 +678,7 @@ def test_validate_spec_version_1_2() -> None:
 def test_validate_spec_plan_task_content_size_limit() -> None:
     """Combined SPEC+PLAN+TASK content exceeding limit -> REJECTED/VALIDATION_FAILED."""
     from asf.agents.implement.agent import MAX_CODE_REPLY_CHARS
+
     agent, gateway = make_agent_and_gateway([])
     large_text = "x" * (MAX_CODE_REPLY_CHARS + 100)
     valid_spec = make_spec_artifact(text=large_text)

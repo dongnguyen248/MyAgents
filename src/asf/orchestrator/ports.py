@@ -29,7 +29,10 @@ class ExecutionStore(Protocol):
     def save_execution(self, run: WorkflowExecution) -> None: ...
 
     def get_execution(
-        self, run_id: str, *, for_update: bool = False,
+        self,
+        run_id: str,
+        *,
+        for_update: bool = False,
     ) -> WorkflowExecution: ...
 
     def list_executions(self, project_id: str) -> list[WorkflowExecution]: ...
@@ -60,5 +63,9 @@ class EventPublisher(Protocol):
 
 class MetricsRecorder(Protocol):
     def record(
-        self, agent_id: str, result: AgentResult, *, run_id: str | None = None,
+        self,
+        agent_id: str,
+        result: AgentResult,
+        *,
+        run_id: str | None = None,
     ) -> None: ...

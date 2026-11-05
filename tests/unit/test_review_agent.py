@@ -34,31 +34,56 @@ APPROVE = '{"findings": [], "verdict": "APPROVE"}'
 def make_request() -> AgentRequest:
     def artifact(kind: str, metadata: dict[str, Any], **content: Any) -> Artifact:
         return Artifact(
-            id=f"{kind.lower()}-1", type=kind, name=f"{kind}.json", version="1",
+            id=f"{kind.lower()}-1",
+            type=kind,
+            name=f"{kind}.json",
+            version="1",
             content={"format": "json", "text": f"{kind} inline context", **content},
-            created_by=f"agent-{kind.lower()}", created_at=NOW, metadata=metadata,
+            created_by=f"agent-{kind.lower()}",
+            created_at=NOW,
+            metadata=metadata,
         )
 
     spec_link = {"specArtifactId": "spec-1", "specVersion": "1"}
     plan_link = {**spec_link, "planArtifactId": "plan-1", "planVersion": "1"}
     code_link = {
-        **plan_link, "taskArtifactId": "task-1", "taskVersion": "1",
-        "taskItemId": "T1", "baseRef": "base-ref",
+        **plan_link,
+        "taskArtifactId": "task-1",
+        "taskVersion": "1",
+        "taskItemId": "T1",
+        "baseRef": "base-ref",
     }
     return AgentRequest(
-        request_id="request-review", task_id="workflow-task", project_id="project-review",
-        workflow_id="workflow-review", agent_id="agent-review", input={"taskItemId": "T1"},
+        request_id="request-review",
+        task_id="workflow-task",
+        project_id="project-review",
+        workflow_id="workflow-review",
+        agent_id="agent-review",
+        input={"taskItemId": "T1"},
         artifacts=[
             artifact("SPEC", {}),
             artifact("PLAN", spec_link),
-            artifact("TASK", plan_link, tasks=[{
-                "id": "T1", "description": "Implement the unit",
-                "expectedFiles": ["src/unit.py", "old.py"],
-            }]),
-            artifact("CODE", code_link, changeSet={"changes": [
-                {"path": "src/unit.py", "operation": "create", "content": "value = 1\n"},
-                {"path": "old.py", "operation": "delete"},
-            ]}),
+            artifact(
+                "TASK",
+                plan_link,
+                tasks=[
+                    {
+                        "id": "T1",
+                        "description": "Implement the unit",
+                        "expectedFiles": ["src/unit.py", "old.py"],
+                    }
+                ],
+            ),
+            artifact(
+                "CODE",
+                code_link,
+                changeSet={
+                    "changes": [
+                        {"path": "src/unit.py", "operation": "create", "content": "value = 1\n"},
+                        {"path": "old.py", "operation": "delete"},
+                    ]
+                },
+            ),
         ],
     )
 
@@ -74,15 +99,20 @@ def make_agent(
         models=gateway, clock=lambda: NOW, new_id=lambda: f"generated-{next(ids)}"
     )
     return ReviewAgent(
-        runtime, prompts=prompts or ReviewPrompts(system="Review submitted code."),
-        model="review-model", parameters={"temperature": 0.1},
+        runtime,
+        prompts=prompts or ReviewPrompts(system="Review submitted code."),
+        model="review-model",
+        parameters={"temperature": 0.1},
     ), gateway
 
 
 def finding(**overrides: Any) -> dict[str, Any]:
     return {
-        "severity": "ERROR", "path": "src/unit.py", "line": 1,
-        "description": "The value must satisfy the requirement.", "suggestion": "Use two.",
+        "severity": "ERROR",
+        "path": "src/unit.py",
+        "line": 1,
+        "description": "The value must satisfy the requirement.",
+        "suggestion": "Use two.",
         **overrides,
     }
 
@@ -110,7 +140,9 @@ def assert_invalid(result: AgentResult) -> None:
     # reply is retryable; whether a step retries is the retry policy's
     # decision, not the agent's.
     assert (error.code, error.category, error.retryable) == (
-        "LLM_INVALID_RESPONSE", "LLM", True,
+        "LLM_INVALID_RESPONSE",
+        "LLM",
+        True,
     )
     assert error.details == {}
     assert result.events[-1].event_type == "AGENT_FAILED"
@@ -133,7 +165,9 @@ def test_success_has_schema_valid_artifact_and_injected_traceability(verdict: st
     assert artifact.content["text"].startswith("# CODE_REVIEW")
     assert result.output == {"verdict": verdict}
     assert artifact.metadata == {
-        **request.artifacts[-1].metadata, "codeArtifactId": "code-1", "codeVersion": "1",
+        **request.artifacts[-1].metadata,
+        "codeArtifactId": "code-1",
+        "codeVersion": "1",
     }
     assert request.to_contract() == before
     assert len(gateway.requests) == 1
@@ -144,7 +178,9 @@ def test_success_has_schema_valid_artifact_and_injected_traceability(verdict: st
     assert call.metadata["requestId"] == request.request_id
     assert result.metrics.revision_count == 0
     assert [event.event_type for event in result.events] == [
-        "AGENT_STARTED", "ARTIFACT_CREATED", "AGENT_COMPLETED",
+        "AGENT_STARTED",
+        "ARTIFACT_CREATED",
+        "AGENT_COMPLETED",
     ]
 
 
@@ -170,35 +206,43 @@ def test_approve_allows_nonblocking_findings_with_optional_fields(severity: str)
     assert "Suggestion:" not in artifact.content["text"]
 
 
-@pytest.mark.parametrize("payload", [
-    "", " \n\t", "not-json", "[]", "null", "42",
-    '{"findings": [], "verdict": "APPROVE"',
-    '{"findings": [], "verdict": "UNKNOWN"}',
-    '{"findings": [], "verdict": " "}',
-    '{"findings": [], "verdict": "APPROVE", "metadata": {}}',
-    '{"verdict": "APPROVE"}',
-    '{"findings": null, "verdict": "APPROVE"}',
-    '{"findings": {}, "verdict": "APPROVE"}',
-    reply_for([finding()], "APPROVE"),
-    reply_for([finding(path="outside.py")]),
-    reply_for([finding(path="./src/unit.py")]),
-    reply_for([finding(path=" \t")]),
-    reply_for([finding(path=None)]),
-    reply_for([finding(description=" \n")]),
-    reply_for([finding(description=7)]),
-    reply_for([finding(description=None)]),
-    reply_for([finding(suggestion="\n\t")]),
-    reply_for([finding(suggestion=7)]),
-    reply_for([finding(severity="CRITICAL")]),
-    reply_for([finding(severity=" ")]),
-    reply_for([finding(line=0)]),
-    reply_for([finding(line=-1)]),
-    reply_for([finding(line=True)]),
-    reply_for([finding(line=1.5)]),
-    reply_for([finding(line="1")]),
-    reply_for([finding(unexpected="ignored?")]),
-    reply_for([finding()] * (MAX_FINDINGS + 1)),
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "",
+        " \n\t",
+        "not-json",
+        "[]",
+        "null",
+        "42",
+        '{"findings": [], "verdict": "APPROVE"',
+        '{"findings": [], "verdict": "UNKNOWN"}',
+        '{"findings": [], "verdict": " "}',
+        '{"findings": [], "verdict": "APPROVE", "metadata": {}}',
+        '{"verdict": "APPROVE"}',
+        '{"findings": null, "verdict": "APPROVE"}',
+        '{"findings": {}, "verdict": "APPROVE"}',
+        reply_for([finding()], "APPROVE"),
+        reply_for([finding(path="outside.py")]),
+        reply_for([finding(path="./src/unit.py")]),
+        reply_for([finding(path=" \t")]),
+        reply_for([finding(path=None)]),
+        reply_for([finding(description=" \n")]),
+        reply_for([finding(description=7)]),
+        reply_for([finding(description=None)]),
+        reply_for([finding(suggestion="\n\t")]),
+        reply_for([finding(suggestion=7)]),
+        reply_for([finding(severity="CRITICAL")]),
+        reply_for([finding(severity=" ")]),
+        reply_for([finding(line=0)]),
+        reply_for([finding(line=-1)]),
+        reply_for([finding(line=True)]),
+        reply_for([finding(line=1.5)]),
+        reply_for([finding(line="1")]),
+        reply_for([finding(unexpected="ignored?")]),
+        reply_for([finding()] * (MAX_FINDINGS + 1)),
+    ],
+)
 def test_invalid_reply_fails_nonretryably_without_artifacts(payload: str) -> None:
     agent, gateway = make_agent(payload)
     assert_invalid(agent.execute(make_request()))
@@ -272,12 +316,32 @@ def test_rendered_size_boundary(monkeypatch: pytest.MonkeyPatch, extra: int) -> 
         assert_success(result)
 
 
-@pytest.mark.parametrize("problem", [
-    "agent", "missing-task-item", "bad-task-item", "unknown-input", "feedback", "attempt",
-    "missing-spec", "duplicate-code", "unknown-artifact", "version", "blank-text",
-    "task-missing", "task-duplicate", "task-malformed", "bad-changes", "empty-changes",
-    "code-task-link", "base-ref", "code-spec-link", "task-plan-link", "plan-spec-link",
-])
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "agent",
+        "missing-task-item",
+        "bad-task-item",
+        "unknown-input",
+        "feedback",
+        "attempt",
+        "missing-spec",
+        "duplicate-code",
+        "unknown-artifact",
+        "version",
+        "blank-text",
+        "task-missing",
+        "task-duplicate",
+        "task-malformed",
+        "bad-changes",
+        "empty-changes",
+        "code-task-link",
+        "base-ref",
+        "code-spec-link",
+        "task-plan-link",
+        "plan-spec-link",
+    ],
+)
 def test_bad_request_rejected_without_model_call(problem: str) -> None:
     data = make_request().to_contract()
     if problem == "agent":
@@ -289,10 +353,14 @@ def test_bad_request_rejected_without_model_call(problem: str) -> None:
     elif problem == "unknown-input":
         data["input"]["feedback"] = "revise"
     elif problem == "feedback":
-        data["feedback"] = [{
-            "approvalId": "approval-1",
-            "decision": "REJECTED", "reviewer": "reviewer", "comment": "No.",
-        }]
+        data["feedback"] = [
+            {
+                "approvalId": "approval-1",
+                "decision": "REJECTED",
+                "reviewer": "reviewer",
+                "comment": "No.",
+            }
+        ]
     elif problem == "attempt":
         data["metadata"]["attempt"] = True
     elif problem == "missing-spec":
@@ -347,9 +415,15 @@ def test_context_size_rejected_before_model() -> None:
     assert not gateway.requests
 
 
-@pytest.mark.parametrize("code", [
-    "LLM_TIMEOUT", "LLM_RATE_LIMITED", "INTEGRATION_UNAVAILABLE", "LLM_INVALID_RESPONSE",
-])
+@pytest.mark.parametrize(
+    "code",
+    [
+        "LLM_TIMEOUT",
+        "LLM_RATE_LIMITED",
+        "INTEGRATION_UNAVAILABLE",
+        "LLM_INVALID_RESPONSE",
+    ],
+)
 def test_model_port_errors_preserve_failure_contract(code: str) -> None:
     agent, gateway = make_agent(ModelGatewayError(code, "Safe model port failure"))
     result = agent.execute(make_request())
@@ -376,10 +450,12 @@ def test_provider_invalid_response_message_is_preserved() -> None:
     # A provider-side failure (HTTP 400) arrives at the agent as a
     # gateway LLM_INVALID_RESPONSE; replacing it with a generic
     # "invalid review response" sentence hid the actual cause.
-    agent, _ = make_agent(ModelGatewayError(
-        "LLM_INVALID_RESPONSE",
-        "Model provider error (HTTP 400): The requested model is not supported.",
-    ))
+    agent, _ = make_agent(
+        ModelGatewayError(
+            "LLM_INVALID_RESPONSE",
+            "Model provider error (HTTP 400): The requested model is not supported.",
+        )
+    )
     result = agent.execute(make_request())
     assert result.status == "FAILED"
     assert result.errors[0].code == "LLM_INVALID_RESPONSE"
@@ -398,10 +474,13 @@ def test_schema_rejection_logs_field_problems_without_values(
     assert marker not in caplog.text
 
 
-@pytest.mark.parametrize("project", [
-    {"enabledSkills": ["python", "quality"]},
-    json.dumps({"enabledSkills": ["python", "quality"]}),
-])
+@pytest.mark.parametrize(
+    "project",
+    [
+        {"enabledSkills": ["python", "quality"]},
+        json.dumps({"enabledSkills": ["python", "quality"]}),
+    ],
+)
 def test_skills_have_one_system_line_without_content_blocks(project: Any) -> None:
     request = make_request()
     request.context["project"] = project
@@ -413,10 +492,17 @@ def test_skills_have_one_system_line_without_content_blocks(project: Any) -> Non
     assert system.count("Enabled skills:") == 1
 
 
-@pytest.mark.parametrize("project", [
-    None, [], "not-json", "[]", {"enabledSkills": "python"},
-    {"enabledSkills": [None, 42, " "]},
-])
+@pytest.mark.parametrize(
+    "project",
+    [
+        None,
+        [],
+        "not-json",
+        "[]",
+        {"enabledSkills": "python"},
+        {"enabledSkills": [None, 42, " "]},
+    ],
+)
 def test_invalid_skill_context_is_safe(project: Any) -> None:
     request = make_request()
     request.context["project"] = project
@@ -427,7 +513,8 @@ def test_invalid_skill_context_is_safe(project: Any) -> None:
 def test_prompt_contains_structured_code_and_only_selected_project_fields() -> None:
     request = make_request()
     request.context["project"] = {
-        "name": "sample", "enabledSkills": ["python\nquality"],
+        "name": "sample",
+        "enabledSkills": ["python\nquality"],
         "skillContent": "Do not import this skill instruction block",
     }
     messages = build_review_messages(prompts=ReviewPrompts("Review."), request=request)
@@ -466,10 +553,15 @@ def test_factory_uses_loader_and_review_profile(
     platform_data: dict[str, Any] = {}
     if configured:
         platform_data = {
-            "models": {"profiles": {"review": {
-                "provider": "fake", "model": "configured-review",
-                "parameters": {"temperature": 0},
-            }}},
+            "models": {
+                "profiles": {
+                    "review": {
+                        "provider": "fake",
+                        "model": "configured-review",
+                        "parameters": {"temperature": 0},
+                    }
+                }
+            },
             "agents": {"review": {"modelProfile": "review"}},
         }
     gateway = ScriptedModelGateway([APPROVE])

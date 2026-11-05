@@ -31,12 +31,14 @@ class ErrorCodesTest(unittest.TestCase):
                 continue
             cells = [cell.strip() for cell in line.strip("|").split("|")]
             if len(cells) >= 4 and cells[0].lower() != "code":
-                rows.append({
-                    "code": cells[0],
-                    "category": cells[1],
-                    "retryable": cells[2],
-                    "meaning": cells[3],
-                })
+                rows.append(
+                    {
+                        "code": cells[0],
+                        "category": cells[1],
+                        "retryable": cells[2],
+                        "meaning": cells[3],
+                    }
+                )
         return rows
 
     def test_error_codes_catalog(self):

@@ -79,10 +79,7 @@ def build_user_message(
         prev_version, prev_text = previous_spec
         sections.append(f"## Previous specification (version {prev_version})\n{prev_text}")
 
-        feedback_lines = [
-            f"- [{fb.decision}] {fb.reviewer}: {fb.comment}"
-            for fb in feedback
-        ]
+        feedback_lines = [f"- [{fb.decision}] {fb.reviewer}: {fb.comment}" for fb in feedback]
         feedback_str = "\n".join(feedback_lines) if feedback_lines else "none"
         sections.append(f"## Reviewer feedback\n{feedback_str}")
 

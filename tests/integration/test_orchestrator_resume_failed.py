@@ -1,4 +1,5 @@
 """Resume-from-failure: a FAILED run forks into a new run at its failed step."""
+
 from __future__ import annotations
 
 import pytest
@@ -12,10 +13,13 @@ def _explode(request):
 
 
 def test_failure_at_test_step_resumes_without_reapproval_or_rewrite(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     engine, run, store, gateways, _, sandbox = harness(
-        tmp_path, review_replies=[review()], exits=[0],
+        tmp_path,
+        review_replies=[review()],
+        exits=[0],
     )
     tester = engine._registry.for_type("test")
     monkeypatch.setattr(tester, "execute", _explode)
@@ -55,7 +59,9 @@ def test_failure_at_test_step_resumes_without_reapproval_or_rewrite(
 
 def test_failure_at_first_step_resumes_from_the_spec(tmp_path, monkeypatch):
     engine, run, store, gateways, _, _ = harness(
-        tmp_path, review_replies=[review()], exits=[0],
+        tmp_path,
+        review_replies=[review()],
+        exits=[0],
     )
     spec_agent = engine._registry.for_type("spec")
     monkeypatch.setattr(spec_agent, "execute", _explode)
@@ -74,7 +80,10 @@ def test_failure_at_first_step_resumes_from_the_spec(tmp_path, monkeypatch):
 
 def test_missing_ci_handler_failure_resumes_into_injected_handlers(tmp_path):
     engine, run, store, _, _, _ = harness(
-        tmp_path, review_replies=[review()], exits=[0], with_actions=True,
+        tmp_path,
+        review_replies=[review()],
+        exits=[0],
+        with_actions=True,
     )
     run = drive(engine, run)
     assert run.state.stage == "FAILED"
@@ -88,7 +97,9 @@ def test_missing_ci_handler_failure_resumes_into_injected_handlers(tmp_path):
     def handler(request):
         received.append(request)
         return AgentResult(
-            request_id=request.request_id, agent_id=request.agent_id, status="SUCCESS",
+            request_id=request.request_id,
+            agent_id=request.agent_id,
+            status="SUCCESS",
             output={"summary": "simulated action"},
             metrics=RunMetrics(duration_seconds=0, revision_count=0, attempt=1),
         )
@@ -97,14 +108,17 @@ def test_missing_ci_handler_failure_resumes_into_injected_handlers(tmp_path):
     resumed = drive(engine, resumed)
     assert resumed.state.stage == "COMPLETED"
     assert [request.agent_id for request in received] == [
-        "action:run-pipeline", "action:await-merge",
+        "action:run-pipeline",
+        "action:await-merge",
     ]
     store.close()
 
 
 def test_resume_failed_rejects_runs_that_have_not_failed(tmp_path):
     engine, run, store, _, _, _ = harness(
-        tmp_path, review_replies=[review()], exits=[0],
+        tmp_path,
+        review_replies=[review()],
+        exits=[0],
     )
     with pytest.raises(ValueError, match="has not failed"):
         engine.resume_failed(run.id)

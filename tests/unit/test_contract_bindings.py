@@ -473,4 +473,3 @@ class ContractBindingsTests(unittest.TestCase):
                     retryable=False,
                 ),
             )
-

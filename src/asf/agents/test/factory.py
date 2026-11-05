@@ -18,6 +18,7 @@ def build_test_agent(
     config = platform.agents.get("test")
     settings = config.settings if config else {}
     return TestAgent(
-        runtime, sandbox,
+        runtime,
+        sandbox,
         fail_fast=bool(settings.get("failFast", True)),
     )

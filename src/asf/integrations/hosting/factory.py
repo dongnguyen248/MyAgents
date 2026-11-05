@@ -78,9 +78,5 @@ def build_provider(
         raise HostingError(
             f"GitHub repository URL must look like <host>/<owner>/<repo>: {url!r}",
         )
-    api_base = (
-        "https://api.github.com"
-        if parsed.hostname == "github.com"
-        else f"{origin}/api/v3"
-    )
+    api_base = "https://api.github.com" if parsed.hostname == "github.com" else f"{origin}/api/v3"
     return GitHubProvider(api_base, segments[0], segments[1], token, transport)

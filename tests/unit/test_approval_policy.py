@@ -29,26 +29,30 @@ class ApprovalPolicyTests(unittest.TestCase):
         self.assertIsNone(policy.expires_in_seconds)
 
         # Explicit minApprovals and expiresInSeconds
-        profile2 = make_profile({
-            "approval": {
-                "reviewers": ["r1", "r2"],
-                "minApprovals": 2,
-                "expiresInSeconds": 3600,
+        profile2 = make_profile(
+            {
+                "approval": {
+                    "reviewers": ["r1", "r2"],
+                    "minApprovals": 2,
+                    "expiresInSeconds": 3600,
+                }
             }
-        })
+        )
         policy2 = approval_policy_from_project(profile2)
         self.assertEqual(policy2.min_approvals, 2)
         self.assertEqual(policy2.reviewers, ["r1", "r2"])
         self.assertEqual(policy2.expires_in_seconds, 3600)
 
     def test_extra_and_channel_keys_ignored(self):
-        profile = make_profile({
-            "approval": {
-                "reviewers": ["r1"],
-                "channel": {"type": "teams", "target": "chan-1"},
-                "extraField": "ignored",
+        profile = make_profile(
+            {
+                "approval": {
+                    "reviewers": ["r1"],
+                    "channel": {"type": "teams", "target": "chan-1"},
+                    "extraField": "ignored",
+                }
             }
-        })
+        )
         policy = approval_policy_from_project(profile)
         self.assertEqual(policy.reviewers, ["r1"])
 
@@ -107,15 +111,10 @@ class ApprovalPolicyTests(unittest.TestCase):
         for bad in bad_reviewers:
             with self.subTest(bad=bad):
                 with self.assertRaises(ConfigError) as ctx:
-                    approval_policy_from_project(
-                        make_profile({"approval": {"reviewers": [bad]}})
-                    )
+                    approval_policy_from_project(make_profile({"approval": {"reviewers": [bad]}}))
                 self.assert_has_issue_path(ctx.exception, "configuration.approval.reviewers")
                 self.assertTrue(
-                    any(
-                        INVALID_REVIEWER_MESSAGE in iss.message
-                        for iss in ctx.exception.issues
-                    )
+                    any(INVALID_REVIEWER_MESSAGE in iss.message for iss in ctx.exception.issues)
                 )
 
     def test_min_approvals_validation(self):

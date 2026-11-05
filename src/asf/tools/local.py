@@ -101,11 +101,22 @@ __all__ = [
     "build_sandbox_env",
 ]
 
-_IGNORED_DIRS = frozenset({
-    ".git", ".hg", ".svn", ".venv", "venv", "__pycache__",
-    "node_modules", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    "dist", "build",
-})
+_IGNORED_DIRS = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "node_modules",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+    }
+)
 
 
 def _resolve_within(root: Path, path: str) -> Path:
@@ -152,7 +163,9 @@ class LocalRepository:
             return target.read_bytes().decode("utf-8")
         except UnicodeDecodeError:
             raise RepositoryError(
-                f"File '{path}' is not valid UTF-8 text", path=path, ref=ref,
+                f"File '{path}' is not valid UTF-8 text",
+                path=path,
+                ref=ref,
             ) from None
 
 
@@ -341,16 +354,19 @@ def _taskkill(pid: int, *, force: bool) -> None:
 
 def _rlimit_preexec(limits: SandboxResourceLimits):  # noqa: ANN202
     """Builds a preexec_fn applying the configured POSIX rlimits."""
+
     def apply() -> None:
         import resource
 
         if limits.cpu_seconds is not None:
             resource.setrlimit(
-                resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds),
+                resource.RLIMIT_CPU,
+                (limits.cpu_seconds, limits.cpu_seconds),
             )
         if limits.memory_bytes is not None:
             resource.setrlimit(
-                resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes),
+                resource.RLIMIT_AS,
+                (limits.memory_bytes, limits.memory_bytes),
             )
         if limits.max_processes is not None:
             resource.setrlimit(
@@ -406,8 +422,12 @@ class LocalSandbox:
         self._base_env = base_env
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
-        *, fail_fast: bool = True,
+        self,
+        commands: Sequence[CommandSpec],
+        changes: ChangeSet,
+        ref: str,
+        *,
+        fail_fast: bool = True,
     ) -> SandboxResult:
         self._apply(changes)
         # One fresh home per run() call: tools that cache into $HOME
@@ -423,10 +443,15 @@ class LocalSandbox:
             failed = False
             for spec in commands:
                 if failed and fail_fast:
-                    outcomes.append(CommandResult(
-                        exit_code=-1, stdout="", stderr="",
-                        duration_ms=0, skipped=True,
-                    ))
+                    outcomes.append(
+                        CommandResult(
+                            exit_code=-1,
+                            stdout="",
+                            stderr="",
+                            duration_ms=0,
+                            skipped=True,
+                        )
+                    )
                     continue
                 outcome = self._run_one(spec, env)
                 outcomes.append(outcome)
@@ -447,7 +472,8 @@ class LocalSandbox:
             exists = target.is_file()
             if change.operation == "create" and exists:
                 raise SandboxError(
-                    f"Cannot create existing file: {change.path}", command=None,
+                    f"Cannot create existing file: {change.path}",
+                    command=None,
                 )
             if change.operation in ("modify", "delete") and not exists:
                 raise SandboxError(
@@ -480,7 +506,8 @@ class LocalSandbox:
             )
         except OSError as error:
             raise SandboxError(
-                f"Could not run command {spec.argv!r}: {error}", command=spec,
+                f"Could not run command {spec.argv!r}: {error}",
+                command=spec,
             ) from None
         assert process.stdout is not None and process.stderr is not None
         readers = [
@@ -517,7 +544,9 @@ class LocalSandbox:
             # keeps type checkers on other platforms quiet.
             return {
                 "creationflags": getattr(
-                    subprocess, "CREATE_NEW_PROCESS_GROUP", 0,
+                    subprocess,
+                    "CREATE_NEW_PROCESS_GROUP",
+                    0,
                 ),
             }
         kwargs: dict = {"start_new_session": True}
@@ -573,8 +602,8 @@ class LocalWorkspace:
             sandbox_settings or {},
         )
         self._worktrees = worktrees
-        self._bound: contextvars.ContextVar[_Binding | None] = (
-            contextvars.ContextVar("asf-local-workspace-binding", default=None)
+        self._bound: contextvars.ContextVar[_Binding | None] = contextvars.ContextVar(
+            "asf-local-workspace-binding", default=None
         )
         self._locks_guard = threading.Lock()
         self._project_locks: dict[str, threading.Lock] = {}
@@ -586,7 +615,9 @@ class LocalWorkspace:
         return self._worktrees
 
     def set_sandbox_settings(
-        self, project_id: str, settings: SandboxSettings | None,
+        self,
+        project_id: str,
+        settings: SandboxSettings | None,
     ) -> None:
         if settings is None:
             self._sandbox_settings.pop(project_id, None)
@@ -619,7 +650,9 @@ class LocalWorkspace:
         return self._roots.get(project_id)
 
     def bind(
-        self, project_id: str, run_id: str | None = None,
+        self,
+        project_id: str,
+        run_id: str | None = None,
     ) -> contextvars.Token[_Binding | None]:
         """Binds this execution context to a project/run; reset the token."""
         return self._bound.set(_Binding(project_id, run_id))
@@ -654,7 +687,10 @@ class LocalWorkspace:
             self._warn_non_git(binding.project_id, plain)
             return plain
         path = self._worktrees.ensure(
-            plain, binding.project_id, binding.run_id, ref or "HEAD",
+            plain,
+            binding.project_id,
+            binding.run_id,
+            ref or "HEAD",
         )
         self._managed_worktrees.add(path)
         return path
@@ -668,7 +704,8 @@ class LocalWorkspace:
             "directly into the working tree (no per-run worktree, no "
             "isolation between runs, no rollback). Initialize git in "
             "the folder to get worktree isolation.",
-            project_id, root,
+            project_id,
+            root,
         )
 
     def is_managed_worktree(self, path: Path) -> bool:
@@ -703,7 +740,8 @@ class LocalWorkspace:
         self._worktrees.finish(plain, project_id, run_id, stage)
 
     def sweep_orphans(
-        self, stage_of: Callable[[str], str | None],
+        self,
+        stage_of: Callable[[str], str | None],
     ) -> list[str]:
         """Startup cleanup of orphaned worktrees (see GitWorktreeWorkspace)."""
         if self._worktrees is None:
@@ -750,8 +788,12 @@ class WorkspaceSandbox:
         self._fallback = fallback
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
-        *, fail_fast: bool = True,
+        self,
+        commands: Sequence[CommandSpec],
+        changes: ChangeSet,
+        ref: str,
+        *,
+        fail_fast: bool = True,
     ) -> SandboxResult:
         root = self._workspace.current_root(ref)
         if root is None:
@@ -761,5 +803,6 @@ class WorkspaceSandbox:
         # before applying the replacement.
         self._workspace.prepare_worktree_for_changes(root)
         return LocalSandbox(
-            root, settings=self._workspace.current_sandbox_settings(),
+            root,
+            settings=self._workspace.current_sandbox_settings(),
         ).run(commands, changes, ref, fail_fast=fail_fast)

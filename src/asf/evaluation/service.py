@@ -16,8 +16,12 @@ _SNAPSHOT_VERSION = 1
 _DECISIONS = ("APPROVED", "REJECTED", "REQUEST_CHANGES")
 _QUALITY_KINDS = ("TEST", "CI", "REVIEW")
 _TEST_VERDICTS = {"PASS": True, "FAIL": False}  # nosec B105
-_REVIEW_VERDICTS = {"APPROVE": True, "APPROVED": True, "CHANGES_REQUESTED": False,
-                    "REJECTED": False}
+_REVIEW_VERDICTS = {
+    "APPROVE": True,
+    "APPROVED": True,
+    "CHANGES_REQUESTED": False,
+    "REJECTED": False,
+}
 _FAILED_STATUSES = ("FAILED", "REJECTED")
 
 
@@ -31,8 +35,12 @@ def _mean(values: list[float]) -> float:
 
 
 def _health_score(
-    *, success_rate: float, human_approval_rate: float, ci_pass_rate: float,
-    test_pass_rate: float, avg_revisions: float,
+    *,
+    success_rate: float,
+    human_approval_rate: float,
+    ci_pass_rate: float,
+    test_pass_rate: float,
+    avg_revisions: float,
 ) -> int:
     """Mirror ``apps/dashboard/src/utils/health.ts`` exactly (weights and rounding).
 
@@ -89,7 +97,11 @@ def _find_verdict(value: Any, allowed: Mapping[str, bool], depth: int = 0) -> bo
 
 
 def _artifact_sample(
-    artifact: Artifact, *, agent_id: str, project_id: str | None, task_id: str | None,
+    artifact: Artifact,
+    *,
+    agent_id: str,
+    project_id: str | None,
+    task_id: str | None,
     recorded_at: datetime,
 ) -> QualityRecord | None:
     """Derive at most one quality sample from an artifact; never raises."""
@@ -99,16 +111,24 @@ def _artifact_sample(
             if passed is None:
                 return None
             return QualityRecord(
-                recorded_at=recorded_at, project_id=project_id, task_id=task_id,
-                agent_id=agent_id, kind="TEST", passed=passed,
+                recorded_at=recorded_at,
+                project_id=project_id,
+                task_id=task_id,
+                agent_id=agent_id,
+                kind="TEST",
+                passed=passed,
             )
         if artifact.type == "CODE_REVIEW":
             passed = _find_verdict(artifact.content, _REVIEW_VERDICTS)
             if passed is None:
                 return None
             return QualityRecord(
-                recorded_at=recorded_at, project_id=project_id, task_id=task_id,
-                agent_id=agent_id, kind="REVIEW", passed=passed,
+                recorded_at=recorded_at,
+                project_id=project_id,
+                task_id=task_id,
+                agent_id=agent_id,
+                kind="REVIEW",
+                passed=passed,
             )
         return None
     except Exception:
@@ -166,7 +186,11 @@ class MetricsService:
     # -- MetricsRecorder port ---------------------------------------------
 
     def record(
-        self, agent_id: str, result: AgentResult, *, run_id: str | None = None,
+        self,
+        agent_id: str,
+        result: AgentResult,
+        *,
+        run_id: str | None = None,
     ) -> None:
         """Record one agent result, deriving quality samples from artifacts."""
         with self._lock:
@@ -178,20 +202,30 @@ class MetricsService:
                     project_id = event.project_id
                 if task_id is None and event.task_id:
                     task_id = event.task_id
-            self._runs.append(AgentRunRecord(
-                recorded_at=recorded_at, agent_id=agent_id,
-                request_id=result.request_id, project_id=project_id, task_id=task_id,
-                status=result.status, duration_seconds=result.metrics.duration_seconds,
-                revision_count=result.metrics.revision_count, attempt=result.metrics.attempt,
-                run_id=run_id,
-                prompt_tokens=result.metrics.prompt_tokens,
-                completion_tokens=result.metrics.completion_tokens,
-                model_calls=result.metrics.model_calls,
-            ))
+            self._runs.append(
+                AgentRunRecord(
+                    recorded_at=recorded_at,
+                    agent_id=agent_id,
+                    request_id=result.request_id,
+                    project_id=project_id,
+                    task_id=task_id,
+                    status=result.status,
+                    duration_seconds=result.metrics.duration_seconds,
+                    revision_count=result.metrics.revision_count,
+                    attempt=result.metrics.attempt,
+                    run_id=run_id,
+                    prompt_tokens=result.metrics.prompt_tokens,
+                    completion_tokens=result.metrics.completion_tokens,
+                    model_calls=result.metrics.model_calls,
+                )
+            )
             for artifact in result.artifacts:
                 sample = _artifact_sample(
-                    artifact, agent_id=agent_id, project_id=project_id,
-                    task_id=task_id, recorded_at=recorded_at,
+                    artifact,
+                    agent_id=agent_id,
+                    project_id=project_id,
+                    task_id=task_id,
+                    recorded_at=recorded_at,
                 )
                 if sample is not None:
                     self._quality.append(sample)
@@ -212,7 +246,12 @@ class MetricsService:
     # -- Explicit samples ---------------------------------------------------
 
     def record_approval_decision(
-        self, *, project_id: str, task_id: str | None, agent_id: str, decision: str,
+        self,
+        *,
+        project_id: str,
+        task_id: str | None,
+        agent_id: str,
+        decision: str,
         at: datetime | None = None,
     ) -> None:
         """Record one human decision; approval rate is APPROVED / all decisions."""
@@ -220,22 +259,43 @@ class MetricsService:
             raise ValueError(f"decision must be one of {_DECISIONS}")
         with self._lock:
             recorded_at = self._now() if at is None else self._require_aware(at, "at")
-            self._approvals.append(ApprovalRecord.model_validate({
-                "recorded_at": recorded_at, "project_id": project_id, "task_id": task_id,
-                "agent_id": agent_id, "decision": decision,
-            }))
+            self._approvals.append(
+                ApprovalRecord.model_validate(
+                    {
+                        "recorded_at": recorded_at,
+                        "project_id": project_id,
+                        "task_id": task_id,
+                        "agent_id": agent_id,
+                        "decision": decision,
+                    }
+                )
+            )
 
     def record_quality(
-        self, *, project_id: str, task_id: str | None, agent_id: str, kind: str, passed: bool,
+        self,
+        *,
+        project_id: str,
+        task_id: str | None,
+        agent_id: str,
+        kind: str,
+        passed: bool,
     ) -> None:
         """Record an explicit TEST, CI, or REVIEW pass/fail sample."""
         if kind not in _QUALITY_KINDS:
             raise ValueError(f"kind must be one of {_QUALITY_KINDS}")
         with self._lock:
-            self._quality.append(QualityRecord.model_validate({
-                "recorded_at": self._now(), "project_id": project_id, "task_id": task_id,
-                "agent_id": agent_id, "kind": kind, "passed": passed,
-            }))
+            self._quality.append(
+                QualityRecord.model_validate(
+                    {
+                        "recorded_at": self._now(),
+                        "project_id": project_id,
+                        "task_id": task_id,
+                        "agent_id": agent_id,
+                        "kind": kind,
+                        "passed": passed,
+                    }
+                )
+            )
 
     # -- Aggregation helpers (lock held by callers) -------------------------
 
@@ -260,7 +320,8 @@ class MetricsService:
             "avgDurationSec": _mean([run.duration_seconds for run in runs]),
             "avgRevisions": _mean([float(run.revision_count) for run in runs]),
             "humanApprovalRate": _rate(
-                sum(1 for item in approvals if item.decision == "APPROVED"), len(approvals),
+                sum(1 for item in approvals if item.decision == "APPROVED"),
+                len(approvals),
             ),
             "testPassRate": self._quality_rate_locked(quality, "TEST"),
             "ciPassRate": self._quality_rate_locked(quality, "CI"),
@@ -292,9 +353,7 @@ class MetricsService:
                 "runId": run_id,
                 "executions": len(runs),
                 "promptTokens": sum(run.prompt_tokens for run in runs),
-                "completionTokens": sum(
-                    run.completion_tokens for run in runs
-                ),
+                "completionTokens": sum(run.completion_tokens for run in runs),
                 "modelCalls": sum(run.model_calls for run in runs),
             }
 
@@ -307,8 +366,7 @@ class MetricsService:
                 | {item.agent_id for item in self._quality}
             )
             return {
-                agent_id: self._agent_metrics_locked(agent_id)
-                for agent_id in sorted(agent_ids)
+                agent_id: self._agent_metrics_locked(agent_id) for agent_id in sorted(agent_ids)
             }
 
     def overview(self) -> dict[str, Any]:
@@ -322,11 +380,15 @@ class MetricsService:
                 day_runs = runs_by_date[date]
                 completed = sum(1 for run in day_runs if run.status == "SUCCESS")
                 failed = sum(1 for run in day_runs if run.status in _FAILED_STATUSES)
-                daily.append({
-                    "date": date, "completed": completed, "failed": failed,
-                    "successRate": _rate(completed, completed + failed),
-                    "avgDurationSec": _mean([run.duration_seconds for run in day_runs]),
-                })
+                daily.append(
+                    {
+                        "date": date,
+                        "completed": completed,
+                        "failed": failed,
+                        "successRate": _rate(completed, completed + failed),
+                        "avgDurationSec": _mean([run.duration_seconds for run in day_runs]),
+                    }
+                )
 
             approvals_by_date: dict[str, list[ApprovalRecord]] = {}
             for item in self._approvals:
@@ -335,15 +397,19 @@ class MetricsService:
             human_daily = []
             for date in sorted(approvals_by_date):
                 day_items = approvals_by_date[date]
-                human_daily.append({
-                    "date": date,
-                    "approvalRate": _rate(
-                        sum(1 for i in day_items if i.decision == "APPROVED"), len(day_items),
-                    ),
-                    "rejectionRate": _rate(
-                        sum(1 for i in day_items if i.decision != "APPROVED"), len(day_items),
-                    ),
-                })
+                human_daily.append(
+                    {
+                        "date": date,
+                        "approvalRate": _rate(
+                            sum(1 for i in day_items if i.decision == "APPROVED"),
+                            len(day_items),
+                        ),
+                        "rejectionRate": _rate(
+                            sum(1 for i in day_items if i.decision != "APPROVED"),
+                            len(day_items),
+                        ),
+                    }
+                )
             human = {
                 "approvalRate": _rate(
                     sum(1 for i in self._approvals if i.decision == "APPROVED"),
@@ -361,40 +427,44 @@ class MetricsService:
             }
 
             quality_dates = sorted(
-                {item.recorded_at.date().isoformat() for item in self._quality}
-                | set(runs_by_date),
+                {item.recorded_at.date().isoformat() for item in self._quality} | set(runs_by_date),
             )
             quality_daily = []
             for date in quality_dates:
                 day_quality = [
-                    item for item in self._quality
-                    if item.recorded_at.date().isoformat() == date
+                    item for item in self._quality if item.recorded_at.date().isoformat() == date
                 ]
                 day_runs = runs_by_date.get(date, [])
-                quality_daily.append({
-                    "date": date,
-                    "testPassRate": self._quality_rate_locked(day_quality, "TEST"),
-                    "ciPassRate": self._quality_rate_locked(day_quality, "CI"),
-                    "reworkRate": _rate(
-                        sum(1 for run in day_runs if run.revision_count > 0), len(day_runs),
-                    ),
-                })
+                quality_daily.append(
+                    {
+                        "date": date,
+                        "testPassRate": self._quality_rate_locked(day_quality, "TEST"),
+                        "ciPassRate": self._quality_rate_locked(day_quality, "CI"),
+                        "reworkRate": _rate(
+                            sum(1 for run in day_runs if run.revision_count > 0),
+                            len(day_runs),
+                        ),
+                    }
+                )
             review_samples = [item for item in self._quality if item.kind == "REVIEW"]
             quality = {
                 "codeReviewRejectionRate": _rate(
-                    sum(1 for item in review_samples if not item.passed), len(review_samples),
+                    sum(1 for item in review_samples if not item.passed),
+                    len(review_samples),
                 ),
                 "testPassRate": self._quality_rate_locked(self._quality, "TEST"),
                 "ciPassRate": self._quality_rate_locked(self._quality, "CI"),
                 "reworkRate": _rate(
-                    sum(1 for run in self._runs if run.revision_count > 0), len(self._runs),
+                    sum(1 for run in self._runs if run.revision_count > 0),
+                    len(self._runs),
                 ),
                 "daily": quality_daily,
             }
 
             agents = [
                 {
-                    "agentId": agent_id, "name": agent_id,
+                    "agentId": agent_id,
+                    "name": agent_id,
                     "successRate": metrics["successRate"],
                     "avgDurationSec": metrics["avgDurationSec"],
                     "avgRevisions": metrics["avgRevisions"],
@@ -435,12 +505,8 @@ class MetricsService:
                 "approvals": [
                     item.model_dump(mode="json", by_alias=True) for item in self._approvals
                 ],
-                "quality": [
-                    item.model_dump(mode="json", by_alias=True) for item in self._quality
-                ],
-                "events": [
-                    event.model_dump(mode="json", by_alias=True) for event in self._events
-                ],
+                "quality": [item.model_dump(mode="json", by_alias=True) for item in self._quality],
+                "events": [event.model_dump(mode="json", by_alias=True) for event in self._events],
             }
 
     def load(self, data: Mapping[str, Any]) -> None:
@@ -451,9 +517,7 @@ class MetricsService:
         if version != _SNAPSHOT_VERSION:
             raise ValueError(f"Unsupported metrics snapshot version: {version!r}")
         runs = [AgentRunRecord.model_validate(item) for item in data.get("runs", [])]
-        approvals = [
-            ApprovalRecord.model_validate(item) for item in data.get("approvals", [])
-        ]
+        approvals = [ApprovalRecord.model_validate(item) for item in data.get("approvals", [])]
         quality = [QualityRecord.model_validate(item) for item in data.get("quality", [])]
         events = [ActivityEvent.model_validate(item) for item in data.get("events", [])]
         with self._lock:
@@ -464,7 +528,10 @@ class MetricsService:
 
     @classmethod
     def restore(
-        cls, data: Mapping[str, Any], *, clock: Callable[[], datetime],
+        cls,
+        data: Mapping[str, Any],
+        *,
+        clock: Callable[[], datetime],
     ) -> MetricsService:
         """Build a new service pre-loaded from a snapshot."""
         service = cls(clock=clock)

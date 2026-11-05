@@ -29,19 +29,33 @@ def test_null_adapter_is_default_and_suggests_nothing():
 def test_local_adapter_quiet_on_healthy_overview():
     adapter = LocalHarness2Adapter()
     assert adapter.available is True
-    overview = _overview(agents=[{
-        "agentId": "agent-spec", "successRate": 0.99, "avgRevisions": 0.4,
-        "humanApprovalRate": 0.95, "healthScore": 92,
-    }])
+    overview = _overview(
+        agents=[
+            {
+                "agentId": "agent-spec",
+                "successRate": 0.99,
+                "avgRevisions": 0.4,
+                "humanApprovalRate": 0.95,
+                "healthScore": 92,
+            }
+        ]
+    )
     assert adapter.assess(overview) == []
 
 
 def test_local_adapter_agent_rules_fire():
     adapter = LocalHarness2Adapter()
-    overview = _overview(agents=[{
-        "agentId": "agent-plan", "successRate": 0.6, "avgRevisions": 2.3,
-        "humanApprovalRate": 0.3, "healthScore": 55,
-    }])
+    overview = _overview(
+        agents=[
+            {
+                "agentId": "agent-plan",
+                "successRate": 0.6,
+                "avgRevisions": 2.3,
+                "humanApprovalRate": 0.3,
+                "healthScore": 55,
+            }
+        ]
+    )
     suggestions = adapter.assess(overview)
     by_metric = {s.metric: s for s in suggestions}
     assert set(by_metric) == {"healthScore", "avgRevisions", "humanApprovalRate"}

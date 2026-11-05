@@ -70,7 +70,9 @@ def is_context_too_long(*texts: str | None) -> bool:
 
 
 def parse_retry_after(
-    headers: Mapping[str, str], *, now: datetime | None = None,
+    headers: Mapping[str, str],
+    *,
+    now: datetime | None = None,
 ) -> float | None:
     """Seconds from a Retry-After header (delay or HTTP-date), if any.
 

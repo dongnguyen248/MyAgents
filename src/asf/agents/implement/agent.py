@@ -152,9 +152,7 @@ class ImplementAgent(BaseAgent):
         spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
         spec_art_idx = -1
         if len(spec_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type SPEC is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type SPEC is required"))
         else:
             spec_art = spec_arts[0]
             spec_art_idx = request.artifacts.index(spec_art)
@@ -184,9 +182,7 @@ class ImplementAgent(BaseAgent):
         plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
         plan_art_idx = -1
         if len(plan_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type PLAN is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type PLAN is required"))
         else:
             plan_art = plan_arts[0]
             plan_art_idx = request.artifacts.index(plan_art)
@@ -216,9 +212,7 @@ class ImplementAgent(BaseAgent):
         task_arts = [a for a in request.artifacts if a.type == "TASK"]
         task_art_idx = -1
         if len(task_arts) != 1:
-            issues.append(
-                Issue("artifacts", "Exactly one artifact of type TASK is required")
-            )
+            issues.append(Issue("artifacts", "Exactly one artifact of type TASK is required"))
         else:
             task_art = task_arts[0]
             task_art_idx = request.artifacts.index(task_art)
@@ -244,7 +238,6 @@ class ImplementAgent(BaseAgent):
                     )
                 )
 
-
         # 9. No CODE artifacts present (no revision mode)
         code_arts = [a for a in request.artifacts if a.type == "CODE"]
         if code_arts:
@@ -266,14 +259,8 @@ class ImplementAgent(BaseAgent):
         # 11. metadata.attempt, if present
         if "attempt" in request.metadata:
             attempt_val = request.metadata["attempt"]
-            if (
-                not isinstance(attempt_val, int)
-                or isinstance(attempt_val, bool)
-                or attempt_val < 1
-            ):
-                issues.append(
-                    Issue("metadata.attempt", "metadata.attempt must be an integer >= 1")
-                )
+            if not isinstance(attempt_val, int) or isinstance(attempt_val, bool) or attempt_val < 1:
+                issues.append(Issue("metadata.attempt", "metadata.attempt must be an integer >= 1"))
 
         # 12. SPEC+PLAN+TASK content size limit
         total_chars = 0
@@ -320,6 +307,7 @@ class ImplementAgent(BaseAgent):
             elif isinstance(content.get("text"), str):
                 try:
                     import json as _json
+
                     task_content = _json.loads(content["text"])
                     if isinstance(task_content.get("tasks"), list):
                         tasks = task_content["tasks"]
@@ -374,7 +362,9 @@ class ImplementAgent(BaseAgent):
         # user message: edit blocks by default, legacy JSON when the
         # agent is configured with edit_format="json").
         repo_map = build_repo_map(
-            self._repository, ref=ref, expected_files=expected_files,
+            self._repository,
+            ref=ref,
+            expected_files=expected_files,
             max_chars=self._repo_map_max_chars,
         )
         messages = build_implement_messages(
@@ -395,7 +385,8 @@ class ImplementAgent(BaseAgent):
             parameters=dict(self._parameters),
             model=self._model,
             metadata={
-                "agentId": self.metadata.id, "requestId": request.request_id,
+                "agentId": self.metadata.id,
+                "requestId": request.request_id,
                 # Stable prefix: system + the SPEC/PLAN message.
                 "cachePrefixMessages": 2 if len(messages) > 2 else 1,
                 **tier_metadata(request.context),
@@ -434,10 +425,16 @@ class ImplementAgent(BaseAgent):
             # "create" for a file that already exists is a "modify" in
             # effect), then validate the change set.
             changeset = normalize_changeset_operations(
-                changeset, ref, self._repository,
+                changeset,
+                ref,
+                self._repository,
             )
             validation_issues = self._validate_changeset(
-                changeset, expected_files, existing_files, ref, self._repository,
+                changeset,
+                expected_files,
+                existing_files,
+                ref,
+                self._repository,
             )
             if validation_issues:
                 raise RepairableOutputError(
@@ -559,8 +556,7 @@ class ImplementAgent(BaseAgent):
             raise RepairableOutputError(
                 "Model response does not match ChangeSet schema",
                 model_message=(
-                    "Model response does not match ChangeSet schema: "
-                    + str(details)[:300]
+                    "Model response does not match ChangeSet schema: " + str(details)[:300]
                 ),
                 details=details,
             ) from None

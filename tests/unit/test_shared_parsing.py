@@ -115,5 +115,5 @@ def test_parse_json_not_an_object() -> None:
 
 def test_parse_json_raw_preserved_in_error() -> None:
     with pytest.raises(ParseError) as exc:
-        parse_json('invalid')
-    assert exc.value.raw == 'invalid'
+        parse_json("invalid")
+    assert exc.value.raw == "invalid"

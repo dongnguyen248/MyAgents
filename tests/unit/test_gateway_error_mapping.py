@@ -28,9 +28,12 @@ OK_OPENAI = {
     "usage": {"prompt_tokens": 3, "completion_tokens": 2},
 }
 OK_GEMINI = {
-    "candidates": [{
-        "content": {"parts": [{"text": "done"}]}, "finishReason": "STOP",
-    }],
+    "candidates": [
+        {
+            "content": {"parts": [{"text": "done"}]},
+            "finishReason": "STOP",
+        }
+    ],
     "modelVersion": "gemini-x",
     "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 2},
 }
@@ -60,8 +63,11 @@ class OpenAiTransport:
 def _openai(transport: OpenAiTransport, **kwargs) -> OpenAICompatibleGateway:
     kwargs.setdefault("sleep", lambda _seconds: None)
     return OpenAICompatibleGateway(
-        base_url="https://models.example.com/v1", model="gpt-x",
-        api_key="<redacted>", transport=transport, **kwargs,
+        base_url="https://models.example.com/v1",
+        model="gpt-x",
+        api_key="<redacted>",
+        transport=transport,
+        **kwargs,
     )
 
 
@@ -83,7 +89,10 @@ class GeminiTransport:
 def _gemini(transport: GeminiTransport, **kwargs) -> GeminiModelGateway:
     kwargs.setdefault("sleep", lambda _seconds: None)
     return GeminiModelGateway(
-        model="gemini-x", api_key="<redacted>", transport=transport, **kwargs,
+        model="gemini-x",
+        api_key="<redacted>",
+        transport=transport,
+        **kwargs,
     )
 
 
@@ -97,10 +106,18 @@ OPENAI_CASES = [
     (429, {}, "LLM_RATE_LIMITED", True),
     (401, {}, "LLM_AUTH_FAILED", False),
     (403, {}, "LLM_AUTH_FAILED", False),
-    (400, {"error": {"code": "context_length_exceeded",
-                     "message": "too long"}}, "LLM_CONTEXT_TOO_LONG", False),
-    (400, {"error": {"message": "Maximum context length is 8192 tokens"}},
-     "LLM_CONTEXT_TOO_LONG", False),
+    (
+        400,
+        {"error": {"code": "context_length_exceeded", "message": "too long"}},
+        "LLM_CONTEXT_TOO_LONG",
+        False,
+    ),
+    (
+        400,
+        {"error": {"message": "Maximum context length is 8192 tokens"}},
+        "LLM_CONTEXT_TOO_LONG",
+        False,
+    ),
     (400, {"error": {"message": "bad field"}}, "LLM_BAD_REQUEST", False),
     (404, {"error": {"message": "no such model"}}, "LLM_BAD_REQUEST", False),
     (422, {"error": {"message": "unprocessable"}}, "LLM_BAD_REQUEST", False),
@@ -112,10 +129,15 @@ GEMINI_CASES = [
     (429, {}, "LLM_RATE_LIMITED", True),
     (401, {}, "LLM_AUTH_FAILED", False),
     (403, _gemini_error("PERMISSION_DENIED", "denied"), "LLM_AUTH_FAILED", False),
-    (400, _gemini_error(
-        "INVALID_ARGUMENT",
-        "The input token count exceeds the maximum number of input"
-        " tokens allowed (1048576)"), "LLM_CONTEXT_TOO_LONG", False),
+    (
+        400,
+        _gemini_error(
+            "INVALID_ARGUMENT",
+            "The input token count exceeds the maximum number of input tokens allowed (1048576)",
+        ),
+        "LLM_CONTEXT_TOO_LONG",
+        False,
+    ),
     (400, _gemini_error("INVALID_ARGUMENT", "bad field"), "LLM_BAD_REQUEST", False),
     (404, _gemini_error("NOT_FOUND", "no such model"), "LLM_BAD_REQUEST", False),
     (500, {}, "INTEGRATION_UNAVAILABLE", True),
@@ -151,7 +173,9 @@ def test_openai_transport_timeout_maps_to_llm_timeout(monkeypatch) -> None:  # n
     with pytest.raises(ModelGatewayError) as caught:
         UrlLibTransport().post(
             "https://models.example.com/v1/chat/completions",
-            headers={}, body=b"{}", timeout_seconds=1,
+            headers={},
+            body=b"{}",
+            timeout_seconds=1,
         )
     assert caught.value.code == "LLM_TIMEOUT"
     assert caught.value.retryable is True
@@ -165,7 +189,9 @@ def test_openai_transport_urlerror_timeout_reason_maps_to_llm_timeout(monkeypatc
     with pytest.raises(ModelGatewayError) as caught:
         UrlLibTransport().post(
             "https://models.example.com/v1/chat/completions",
-            headers={}, body=b"{}", timeout_seconds=1,
+            headers={},
+            body=b"{}",
+            timeout_seconds=1,
         )
     assert caught.value.code == "LLM_TIMEOUT"
 
@@ -178,7 +204,9 @@ def test_openai_transport_connection_error_maps_to_unavailable(monkeypatch) -> N
     with pytest.raises(ModelGatewayError) as caught:
         UrlLibTransport().post(
             "https://models.example.com/v1/chat/completions",
-            headers={}, body=b"{}", timeout_seconds=1,
+            headers={},
+            body=b"{}",
+            timeout_seconds=1,
         )
     assert caught.value.code == "INTEGRATION_UNAVAILABLE"
     assert caught.value.retryable is True
@@ -230,26 +258,34 @@ def _no_jitter_allowed(_lo: float, _hi: float) -> float:
 
 
 def test_openai_retry_after_seconds_is_respected() -> None:
-    transport = OpenAiTransport([
-        (429, {"retry-after": "7"}, {}),
-        (200, {}, OK_OPENAI),
-    ])
+    transport = OpenAiTransport(
+        [
+            (429, {"retry-after": "7"}, {}),
+            (200, {}, OK_OPENAI),
+        ]
+    )
     sleeps: list[float] = []
     gateway = _openai(
-        transport, sleep=sleeps.append, rand=_no_jitter_allowed,
+        transport,
+        sleep=sleeps.append,
+        rand=_no_jitter_allowed,
     )
     assert gateway.complete(_request()).content == "done"
     assert sleeps == [7.0]
 
 
 def test_gemini_retry_after_seconds_is_respected() -> None:
-    transport = GeminiTransport([
-        (429, {"retry-after": "3"}, {}),
-        (200, {}, OK_GEMINI),
-    ])
+    transport = GeminiTransport(
+        [
+            (429, {"retry-after": "3"}, {}),
+            (200, {}, OK_GEMINI),
+        ]
+    )
     sleeps: list[float] = []
     gateway = _gemini(
-        transport, sleep=sleeps.append, rand=_no_jitter_allowed,
+        transport,
+        sleep=sleeps.append,
+        rand=_no_jitter_allowed,
     )
     assert gateway.complete(_request()).content == "done"
     assert sleeps == [3.0]
@@ -257,10 +293,12 @@ def test_gemini_retry_after_seconds_is_respected() -> None:
 
 def test_openai_retry_after_http_date_is_respected() -> None:
     retry_at = datetime.now(timezone.utc) + timedelta(seconds=20)
-    transport = OpenAiTransport([
-        (503, {"retry-after": format_datetime(retry_at)}, {}),
-        (200, {}, OK_OPENAI),
-    ])
+    transport = OpenAiTransport(
+        [
+            (503, {"retry-after": format_datetime(retry_at)}, {}),
+            (200, {}, OK_OPENAI),
+        ]
+    )
     sleeps: list[float] = []
     gateway = _openai(transport, sleep=sleeps.append, rand=_no_jitter_allowed)
     gateway.complete(_request())
@@ -269,10 +307,12 @@ def test_openai_retry_after_http_date_is_respected() -> None:
 
 
 def test_retry_after_is_capped_at_sixty_seconds() -> None:
-    transport = OpenAiTransport([
-        (429, {"retry-after": "3600"}, {}),
-        (200, {}, OK_OPENAI),
-    ])
+    transport = OpenAiTransport(
+        [
+            (429, {"retry-after": "3600"}, {}),
+            (200, {}, OK_OPENAI),
+        ]
+    )
     sleeps: list[float] = []
     _openai(transport, sleep=sleeps.append, rand=_no_jitter_allowed).complete(
         _request(),
@@ -285,7 +325,9 @@ def test_jitter_stays_within_the_exponential_envelope() -> None:
     transport = OpenAiTransport([(503, {}, {}), (503, {}, {}), (200, {}, OK_OPENAI)])
     sleeps: list[float] = []
     _openai(
-        transport, sleep=sleeps.append, rand=lambda _lo, hi: hi,
+        transport,
+        sleep=sleeps.append,
+        rand=lambda _lo, hi: hi,
     ).complete(_request())
     assert sleeps == [1.0, 2.0]
 
@@ -293,7 +335,9 @@ def test_jitter_stays_within_the_exponential_envelope() -> None:
     transport = OpenAiTransport([(503, {}, {}), (200, {}, OK_OPENAI)])
     sleeps = []
     _openai(
-        transport, sleep=sleeps.append, rand=lambda lo, _hi: lo,
+        transport,
+        sleep=sleeps.append,
+        rand=lambda lo, _hi: lo,
     ).complete(_request())
     assert sleeps == [0.0]
 
@@ -303,7 +347,9 @@ def test_jitter_is_capped_at_sixty_seconds() -> None:
     transport = OpenAiTransport(outcomes)
     sleeps: list[float] = []
     _openai(
-        transport, max_retries=8, sleep=sleeps.append,
+        transport,
+        max_retries=8,
+        sleep=sleeps.append,
         rand=lambda _lo, hi: hi,
     ).complete(_request())
     assert sleeps == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 60.0, 60.0]

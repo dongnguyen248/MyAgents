@@ -102,9 +102,7 @@ def test_scripted_sandbox_recorded_result() -> None:
 
 
 def test_scripted_sandbox_timeout_command() -> None:
-    sandbox = ScriptedSandbox(
-        timeout_commands={("sleep", "10")}
-    )
+    sandbox = ScriptedSandbox(timeout_commands={("sleep", "10")})
     with pytest.raises(CommandTimeoutError):
         sandbox.run(
             commands=[CommandSpec(argv=("sleep", "10"))],
@@ -138,9 +136,9 @@ def test_inmemory_sandbox_apply_create() -> None:
     repo.add_tree("main", {"existing.py": "old"})
 
     sandbox = InMemorySandbox(repository=repo)
-    changes = ChangeSet(changes=(
-        FileChange(path="new.py", operation="create", content="new content"),
-    ))
+    changes = ChangeSet(
+        changes=(FileChange(path="new.py", operation="create", content="new content"),)
+    )
     result = sandbox.run(
         commands=[CommandSpec(argv=("ls",))],
         changes=changes,
@@ -159,9 +157,9 @@ def test_inmemory_sandbox_apply_modify() -> None:
     repo.add_tree("main", {"existing.py": "old"})
 
     sandbox = InMemorySandbox(repository=repo)
-    changes = ChangeSet(changes=(
-        FileChange(path="existing.py", operation="modify", content="new"),
-    ))
+    changes = ChangeSet(
+        changes=(FileChange(path="existing.py", operation="modify", content="new"),)
+    )
     result = sandbox.run(
         commands=[CommandSpec(argv=("ls",))],
         changes=changes,
@@ -175,9 +173,7 @@ def test_inmemory_sandbox_apply_delete() -> None:
     repo.add_tree("main", {"existing.py": "old", "other.py": "keep"})
 
     sandbox = InMemorySandbox(repository=repo)
-    changes = ChangeSet(changes=(
-        FileChange(path="existing.py", operation="delete", content=None),
-    ))
+    changes = ChangeSet(changes=(FileChange(path="existing.py", operation="delete", content=None),))
     result = sandbox.run(
         commands=[CommandSpec(argv=("ls",))],
         changes=changes,
@@ -191,9 +187,9 @@ def test_inmemory_sandbox_create_existing_fails() -> None:
     repo.add_tree("main", {"existing.py": "old"})
 
     sandbox = InMemorySandbox(repository=repo)
-    changes = ChangeSet(changes=(
-        FileChange(path="existing.py", operation="create", content="new"),
-    ))
+    changes = ChangeSet(
+        changes=(FileChange(path="existing.py", operation="create", content="new"),)
+    )
     with pytest.raises(SandboxError, match="Cannot create existing file"):
         sandbox.run(
             commands=[CommandSpec(argv=("ls",))],
@@ -207,9 +203,7 @@ def test_inmemory_sandbox_modify_missing_fails() -> None:
     repo.add_tree("main", {"existing.py": "old"})
 
     sandbox = InMemorySandbox(repository=repo)
-    changes = ChangeSet(changes=(
-        FileChange(path="missing.py", operation="modify", content="new"),
-    ))
+    changes = ChangeSet(changes=(FileChange(path="missing.py", operation="modify", content="new"),))
     with pytest.raises(SandboxError, match="Cannot modify missing file"):
         sandbox.run(
             commands=[CommandSpec(argv=("ls",))],
@@ -223,9 +217,7 @@ def test_inmemory_sandbox_delete_missing_fails() -> None:
     repo.add_tree("main", {"existing.py": "old"})
 
     sandbox = InMemorySandbox(repository=repo)
-    changes = ChangeSet(changes=(
-        FileChange(path="missing.py", operation="delete", content=None),
-    ))
+    changes = ChangeSet(changes=(FileChange(path="missing.py", operation="delete", content=None),))
     with pytest.raises(SandboxError, match="Cannot delete missing file"):
         sandbox.run(
             commands=[CommandSpec(argv=("ls",))],
@@ -238,9 +230,7 @@ def test_inmemory_sandbox_create_requires_content() -> None:
     repo = InMemoryRepository()
     _ = InMemorySandbox(repository=repo)  # Create sandbox to verify it can be instantiated
     with pytest.raises(ValueError, match="create operation requires 'content'"):
-        ChangeSet(changes=(
-            FileChange(path="new.py", operation="create", content=None),
-        ))
+        ChangeSet(changes=(FileChange(path="new.py", operation="create", content=None),))
 
 
 def test_inmemory_sandbox_modify_requires_content() -> None:
@@ -248,17 +238,13 @@ def test_inmemory_sandbox_modify_requires_content() -> None:
     repo.add_tree("main", {"existing.py": "old"})
     _ = InMemorySandbox(repository=repo)  # Create sandbox to verify it can be instantiated
     with pytest.raises(ValueError, match="modify operation requires 'content'"):
-        ChangeSet(changes=(
-            FileChange(path="existing.py", operation="modify", content=None),
-        ))
+        ChangeSet(changes=(FileChange(path="existing.py", operation="modify", content=None),))
 
 
 def test_inmemory_sandbox_ref_not_found_starts_empty() -> None:
     repo = InMemoryRepository()
     sandbox = InMemorySandbox(repository=repo)
-    changes = ChangeSet(changes=(
-        FileChange(path="new.py", operation="create", content="content"),
-    ))
+    changes = ChangeSet(changes=(FileChange(path="new.py", operation="create", content="content"),))
     result = sandbox.run(
         commands=[CommandSpec(argv=("ls",))],
         changes=changes,
@@ -273,7 +259,7 @@ def test_inmemory_sandbox_command_results() -> None:
         repository=repo,
         command_results={
             ("test",): CommandResult(exit_code=0, stdout="test output", stderr="", duration_ms=5)
-        }
+        },
     )
     result = sandbox.run(
         commands=[CommandSpec(argv=("test",))],

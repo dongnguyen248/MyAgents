@@ -47,25 +47,29 @@ class ConfigError(Exception):
                 if self.source is not None:
                     details["source"] = self.source
                 msg = f"{issue.path}: {issue.message}" if issue.path else issue.message
-                errors.append({
-                    "code": "VALIDATION_FAILED",
-                    "message": msg,
-                    "category": "VALIDATION",
-                    "details": details,
-                    "retryable": False,
-                    "timestamp": ts,
-                })
+                errors.append(
+                    {
+                        "code": "VALIDATION_FAILED",
+                        "message": msg,
+                        "category": "VALIDATION",
+                        "details": details,
+                        "retryable": False,
+                        "timestamp": ts,
+                    }
+                )
 
         else:
             details = {}
             if self.source is not None:
                 details["source"] = self.source
-            errors.append({
-                "code": "VALIDATION_FAILED",
-                "message": str(self),
-                "category": "VALIDATION",
-                "details": details,
-                "retryable": False,
-                "timestamp": ts,
-            })
+            errors.append(
+                {
+                    "code": "VALIDATION_FAILED",
+                    "message": str(self),
+                    "category": "VALIDATION",
+                    "details": details,
+                    "retryable": False,
+                    "timestamp": ts,
+                }
+            )
         return errors

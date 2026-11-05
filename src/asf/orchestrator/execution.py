@@ -92,13 +92,20 @@ class WorkflowExecution(BaseModel):
 
     def workflow_run(self, status: str, workflow_id: str, version: str) -> dict[str, Any]:
         return {
-            "id": self.id, "workflowId": workflow_id, "workflowVersion": version,
-            "projectId": self.project_id, "taskId": self.task_id, "status": status,
-            "stage": self.state.stage, "revisions": dict(self.state.revisions),
-            "startedAt": self.started_at.isoformat(), "updatedAt": self.updated_at.isoformat(),
+            "id": self.id,
+            "workflowId": workflow_id,
+            "workflowVersion": version,
+            "projectId": self.project_id,
+            "taskId": self.task_id,
+            "status": status,
+            "stage": self.state.stage,
+            "revisions": dict(self.state.revisions),
+            "startedAt": self.started_at.isoformat(),
+            "updatedAt": self.updated_at.isoformat(),
             "metadata": {
                 "retryAt": self.retry_at.isoformat() if self.retry_at else None,
-                "inFlight": self.in_flight, "taskOrder": list(self.task_order),
+                "inFlight": self.in_flight,
+                "taskOrder": list(self.task_order),
                 "completedItems": list(self.item_results),
             },
         }

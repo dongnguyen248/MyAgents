@@ -9,6 +9,7 @@ from asf.tools.changeset import ChangeSet, FileChange
 
 # --- FileChange validation tests ---
 
+
 def test_filechange_create_requires_content() -> None:
     """Create operation requires content."""
     with pytest.raises(ValueError, match="create operation requires 'content'"):
@@ -61,6 +62,7 @@ def test_filechange_nul_bytes_allowed_in_delete() -> None:
 
 # --- ChangeSet validation tests ---
 
+
 def test_changeset_min_length_1() -> None:
     """ChangeSet must have at least 1 change."""
     with pytest.raises(ValueError, match="at least 1"):
@@ -70,8 +72,7 @@ def test_changeset_min_length_1() -> None:
 def test_changeset_max_length_50() -> None:
     """ChangeSet must have at most 50 changes."""
     changes = [
-        FileChange(path=f"file{i}.py", operation="create", content=f"c{i}")
-        for i in range(51)
+        FileChange(path=f"file{i}.py", operation="create", content=f"c{i}") for i in range(51)
     ]
     with pytest.raises(ValueError, match="at most 50"):
         ChangeSet(changes=changes)
@@ -98,6 +99,7 @@ def test_changeset_valid() -> None:
 
 
 # --- generate_changeset tests ---
+
 
 def test_generate_changeset_empty_raises() -> None:
     """generate_changeset with empty input raises ValueError."""
@@ -142,9 +144,9 @@ def test_generate_changeset_mixed() -> None:
     """generate_changeset handles mixed operations."""
     base = {"existing.py": "old"}
     files = {
-        "existing.py": "new",   # modify
-        "new.py": "create",     # create
-        "delete.py": None,      # delete (must be in base)
+        "existing.py": "new",  # modify
+        "new.py": "create",  # create
+        "delete.py": None,  # delete (must be in base)
     }
     # Add delete.py to base so it can be deleted
     base["delete.py"] = "to delete"
@@ -157,6 +159,7 @@ def test_generate_changeset_mixed() -> None:
 
 
 # --- ChangeSet.model_validate tests ---
+
 
 def test_changeset_model_validate_empty_dict_raises() -> None:
     """ChangeSet.model_validate({}) raises because changes is required."""

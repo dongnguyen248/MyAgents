@@ -138,9 +138,11 @@ class SpecAgentTests(unittest.TestCase):
         # a standard run carries no tier key at all.
         agent, gateway = self._make_agent([self.valid_reply])
         req = self._make_request()
-        req = req.model_copy(update={
-            "context": {**req.context, "modelTier": "complex"},
-        })
+        req = req.model_copy(
+            update={
+                "context": {**req.context, "modelTier": "complex"},
+            }
+        )
         res = agent.execute(req)
         self.assertEqual(res.status, "SUCCESS")
         self.assertEqual(gateway.requests[0].metadata.get("modelTier"), "complex")

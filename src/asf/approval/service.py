@@ -180,9 +180,7 @@ class ApprovalService:
         # -> APPROVAL_ALREADY_DECIDED
         if decision.decision == "APPROVED":
             prior_decisions = self._repository.list_decisions(req.id)
-            approving_reviewers = {
-                d.reviewer for d in prior_decisions if d.decision == "APPROVED"
-            }
+            approving_reviewers = {d.reviewer for d in prior_decisions if d.decision == "APPROVED"}
             if decision.reviewer in approving_reviewers:
                 raise ApprovalError(
                     "APPROVAL_ALREADY_DECIDED",
@@ -199,9 +197,7 @@ class ApprovalService:
             new_status = "CHANGES_REQUESTED"
         elif decision.decision == "APPROVED":
             all_decisions = self._repository.list_decisions(req.id)
-            distinct_approvers = {
-                d.reviewer for d in all_decisions if d.decision == "APPROVED"
-            }
+            distinct_approvers = {d.reviewer for d in all_decisions if d.decision == "APPROVED"}
             if len(distinct_approvers) >= req.min_approvals:
                 new_status = "APPROVED"
             else:
@@ -237,9 +233,7 @@ class ApprovalService:
         due = [
             r
             for r in pending
-            if r.status == "PENDING"
-            and r.expires_at is not None
-            and r.expires_at <= now
+            if r.status == "PENDING" and r.expires_at is not None and r.expires_at <= now
         ]
         due.sort(key=lambda r: (r.expires_at, r.id))
 

@@ -144,6 +144,7 @@ def test_validate_relative_path_control_characters() -> None:
 
 # --- check_denied_paths tests (per D9: denied paths always rejected even if in expectedFiles) ---
 
+
 def test_check_denied_paths_denied_git_directory() -> None:
     allowed = {"src/foo.py"}
     issues = check_denied_paths(".git/config", allowed)
@@ -229,20 +230,25 @@ def test_check_denied_paths_non_denied_lookalikes() -> None:
 
 # --- check_scope tests (per D9: denied paths rejected even if in expectedFiles) ---
 
+
 def test_check_scope_in_scope() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="create", content="a"),
-        FileChange(path="src/b.py", operation="modify", content="b"),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="src/a.py", operation="create", content="a"),
+            FileChange(path="src/b.py", operation="modify", content="b"),
+        )
+    )
     allowed = {"src/a.py", "src/b.py", "src/c.py"}
     assert check_scope(changeset, allowed) == []
 
 
 def test_check_scope_out_of_scope() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="create", content="a"),
-        FileChange(path="src/unauthorized.py", operation="create", content="b"),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="src/a.py", operation="create", content="a"),
+            FileChange(path="src/unauthorized.py", operation="create", content="b"),
+        )
+    )
     allowed = {"src/a.py"}
     issues = check_scope(changeset, allowed)
     assert len(issues) == 1
@@ -251,11 +257,13 @@ def test_check_scope_out_of_scope() -> None:
 
 
 def test_check_scope_multiple_out_of_scope() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="create", content="a"),
-        FileChange(path="src/b.py", operation="create", content="b"),
-        FileChange(path="src/c.py", operation="create", content="c"),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="src/a.py", operation="create", content="a"),
+            FileChange(path="src/b.py", operation="create", content="b"),
+            FileChange(path="src/c.py", operation="create", content="c"),
+        )
+    )
     allowed = {"src/a.py"}
     issues = check_scope(changeset, allowed)
     assert len(issues) == 1
@@ -265,9 +273,9 @@ def test_check_scope_multiple_out_of_scope() -> None:
 
 def test_check_scope_denied_path_in_changeset_rejected() -> None:
     """Per D9: denied paths are rejected EVEN IF listed in expectedFiles."""
-    changeset = ChangeSet(changes=(
-        FileChange(path=".git/config", operation="create", content="x"),
-    ))
+    changeset = ChangeSet(
+        changes=(FileChange(path=".git/config", operation="create", content="x"),)
+    )
     allowed = {".git/config"}  # Listed in expectedFiles but still denied
     issues = check_scope(changeset, allowed)
     # Should have denied path issue (and no out-of-scope since it's in allowed)
@@ -277,9 +285,9 @@ def test_check_scope_denied_path_in_changeset_rejected() -> None:
 
 def test_check_scope_denied_path_not_in_expected_files() -> None:
     """Denied path not in expectedFiles -> both denied and out-of-scope."""
-    changeset = ChangeSet(changes=(
-        FileChange(path=".git/config", operation="create", content="x"),
-    ))
+    changeset = ChangeSet(
+        changes=(FileChange(path=".git/config", operation="create", content="x"),)
+    )
     allowed = {"src/foo.py"}
     issues = check_scope(changeset, allowed)
     assert len(issues) >= 2
@@ -288,9 +296,9 @@ def test_check_scope_denied_path_not_in_expected_files() -> None:
 
 
 def test_check_scope_denied_github_workflows() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path=".github/workflows/ci.yml", operation="create", content="x"),
-    ))
+    changeset = ChangeSet(
+        changes=(FileChange(path=".github/workflows/ci.yml", operation="create", content="x"),)
+    )
     allowed = {".github/workflows/ci.yml"}
     issues = check_scope(changeset, allowed)
     assert any("always denied" in i and ".github directory" in i for i in issues)
@@ -299,21 +307,21 @@ def test_check_scope_denied_github_workflows() -> None:
 def test_check_scope_denied_env_variants() -> None:
     """Various .env* variants are denied even when listed."""
     for path in [".env", ".env.local", ".env.production", ".env.development"]:
-        changeset = ChangeSet(changes=(
-            FileChange(path=path, operation="create", content="x"),
-        ))
+        changeset = ChangeSet(changes=(FileChange(path=path, operation="create", content="x"),))
         allowed = {path}
         issues = check_scope(changeset, allowed)
-        assert any(
-            "always denied" in i and ".env*" in i for i in issues
-        ), f"Failed for {path}: {issues}"
+        assert any("always denied" in i and ".env*" in i for i in issues), (
+            f"Failed for {path}: {issues}"
+        )
 
 
 def test_check_scope_denied_pem_key() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="certs/key.pem", operation="create", content="x"),
-        FileChange(path="ssh/id_rsa.key", operation="create", content="x"),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="certs/key.pem", operation="create", content="x"),
+            FileChange(path="ssh/id_rsa.key", operation="create", content="x"),
+        )
+    )
     allowed = {"certs/key.pem", "ssh/id_rsa.key"}
     issues = check_scope(changeset, allowed)
     assert any("always denied" in i and ".pem" in i for i in issues)
@@ -323,34 +331,35 @@ def test_check_scope_denied_pem_key() -> None:
 def test_check_scope_case_insensitive_extensions() -> None:
     """*.pem and *.key should match case-insensitively on basename suffix."""
     for path in ["certs/KEY.PEM", "ssh/ID_RSA.KEY"]:
-        changeset = ChangeSet(changes=(
-            FileChange(path=path, operation="create", content="x"),
-        ))
+        changeset = ChangeSet(changes=(FileChange(path=path, operation="create", content="x"),))
         allowed = {path}
         issues = check_scope(changeset, allowed)
-        assert any(
-            "always denied" in i for i in issues
-        ), f"Failed for {path}: {issues}"
+        assert any("always denied" in i for i in issues), f"Failed for {path}: {issues}"
 
 
 # --- find_out_of_scope tests ---
 
+
 def test_find_out_of_scope_returns_plain_paths() -> None:
     """find_out_of_scope returns plain paths, no message parsing needed."""
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="create", content="a"),
-        FileChange(path="src/unauthorized.py", operation="create", content="b"),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="src/a.py", operation="create", content="a"),
+            FileChange(path="src/unauthorized.py", operation="create", content="b"),
+        )
+    )
     allowed = {"src/a.py"}
     out = find_out_of_scope(changeset, allowed)
     assert out == ["src/unauthorized.py"]
 
 
 def test_find_out_of_scope_empty_when_all_allowed() -> None:
-    changeset = ChangeSet(changes=(
-        FileChange(path="src/a.py", operation="create", content="a"),
-        FileChange(path="src/b.py", operation="modify", content="b"),
-    ))
+    changeset = ChangeSet(
+        changes=(
+            FileChange(path="src/a.py", operation="create", content="a"),
+            FileChange(path="src/b.py", operation="modify", content="b"),
+        )
+    )
     allowed = {"src/a.py", "src/b.py"}
     out = find_out_of_scope(changeset, allowed)
     assert out == []
@@ -358,9 +367,9 @@ def test_find_out_of_scope_empty_when_all_allowed() -> None:
 
 def test_find_out_of_scope_denied_paths_not_included() -> None:
     """find_out_of_scope only reports scope issues, not denied paths."""
-    changeset = ChangeSet(changes=(
-        FileChange(path=".git/config", operation="create", content="x"),
-    ))
+    changeset = ChangeSet(
+        changes=(FileChange(path=".git/config", operation="create", content="x"),)
+    )
     allowed = {"src/a.py"}  # .git/config not in allowed
     out = find_out_of_scope(changeset, allowed)
     # .git/config is out of scope (not in allowed)

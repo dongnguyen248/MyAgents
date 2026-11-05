@@ -184,6 +184,7 @@ def make_implement_request(
         # If task_artifact provided and expected_files given, update the task item
         if expected_files is not None:
             import json as _json
+
             task_text = task_artifact.content.get("text") if task_artifact.content else None
             if not isinstance(task_text, str):
                 raise ValueError("Task artifact content text is missing or not a string")
@@ -200,9 +201,10 @@ def make_implement_request(
             # For custom task artifacts with non-default IDs (e.g., test_full_metadata_injected),
             # ensure the task_item_id exists in the artifact
             import json as _json
+
             is_default_task_artifact = (
-                getattr(task_artifact, 'id', None) == "task-1" and
-                getattr(task_artifact, 'version', None) == "1"
+                getattr(task_artifact, "id", None) == "task-1"
+                and getattr(task_artifact, "version", None) == "1"
             )
             if not is_default_task_artifact:
                 task_text = task_artifact.content.get("text") if task_artifact.content else None
@@ -211,16 +213,18 @@ def make_implement_request(
                     found = any(task.get("id") == task_item_id for task in task_content["tasks"])
                     if not found:
                         default_expected = ["src/calculator.py"]
-                        task_content["tasks"].append({
-                            "id": task_item_id,
-                            "title": "Test task",
-                            "milestoneRef": "M1",
-                            "description": "Test description",
-                            "acceptanceCriteria": ["Test criteria"],
-                            "dependsOn": [],
-                            "expectedFiles": default_expected,
-                            "verificationHint": "Run tests",
-                        })
+                        task_content["tasks"].append(
+                            {
+                                "id": task_item_id,
+                                "title": "Test task",
+                                "milestoneRef": "M1",
+                                "description": "Test description",
+                                "acceptanceCriteria": ["Test criteria"],
+                                "dependsOn": [],
+                                "expectedFiles": default_expected,
+                                "verificationHint": "Run tests",
+                            }
+                        )
                         updated_text = _json.dumps(task_content, indent=2)
                         task_art = task_artifact.model_copy(
                             update={"content": {"format": "json", "text": updated_text}}

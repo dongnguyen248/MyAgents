@@ -63,7 +63,10 @@ class InMemoryExecutionStore:
             self._runs[run.id] = run.snapshot()
 
     def get_execution(
-        self, run_id: str, *, for_update: bool = False,
+        self,
+        run_id: str,
+        *,
+        for_update: bool = False,
     ) -> WorkflowExecution:
         with self._lock:
             stored = self._runs.get(run_id)
@@ -73,20 +76,22 @@ class InMemoryExecutionStore:
 
     def list_executions(self, project_id: str) -> list[WorkflowExecution]:
         with self._lock:
-            return [
-                run.snapshot()
-                for run in self._runs.values() if run.project_id == project_id
-            ]
+            return [run.snapshot() for run in self._runs.values() if run.project_id == project_id]
 
 
 def stored_engine(
-    *, two_steps: bool = True, approval: bool = False,
+    *,
+    two_steps: bool = True,
+    approval: bool = False,
 ) -> tuple[Orchestrator, object, object, InMemoryExecutionStore]:
     original, spec, plan, _ = make_engine(approval=approval, two_steps=two_steps)
     store = InMemoryExecutionStore()
     engine = Orchestrator(
-        original._definition, original._registry,
-        clock=original._clock, new_id=original._new_id, store=store,
+        original._definition,
+        original._registry,
+        clock=original._clock,
+        new_id=original._new_id,
+        store=store,
         approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
     )
     return engine, spec, plan, store
@@ -94,7 +99,8 @@ def stored_engine(
 
 def start(engine: Orchestrator, task_id: str = "task-1") -> WorkflowExecution:
     return engine.start(
-        task_id=task_id, project_id="project-1",
+        task_id=task_id,
+        project_id="project-1",
         inputs={"spec": {"requirement": "Add a feature"}},
         context={"project": {"name": "example"}},
     )
@@ -102,9 +108,13 @@ def start(engine: Orchestrator, task_id: str = "task-1") -> WorkflowExecution:
 
 def produce_for(task_id: str, agent_name: str = "spec"):
     artifact = Artifact(
-        id=f"art-{task_id}-{agent_name}", type=agent_name.upper(),
-        name=agent_name, version="1", content={"text": agent_name},
-        created_by=f"agent-{agent_name}", created_at=NOW,
+        id=f"art-{task_id}-{agent_name}",
+        type=agent_name.upper(),
+        name=agent_name,
+        version="1",
+        content={"text": agent_name},
+        created_by=f"agent-{agent_name}",
+        created_at=NOW,
     )
     return {"summary": "done"}, [artifact]
 
@@ -143,7 +153,10 @@ class DepthTrackingStore:
         self._inner.save_execution(run)
 
     def get_execution(
-        self, run_id: str, *, for_update: bool = False,
+        self,
+        run_id: str,
+        *,
+        for_update: bool = False,
     ) -> WorkflowExecution:
         return self._inner.get_execution(run_id, for_update=for_update)
 
@@ -155,8 +168,11 @@ def test_agent_executes_outside_any_store_transaction():
     original, spec, _, _ = make_engine()
     store = DepthTrackingStore(InMemoryExecutionStore())
     engine = Orchestrator(
-        original._definition, original._registry,
-        clock=original._clock, new_id=original._new_id, store=store,
+        original._definition,
+        original._registry,
+        clock=original._clock,
+        new_id=original._new_id,
+        store=store,
         approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
     )
     depths_during_execute: list[int] = []
@@ -235,7 +251,8 @@ def _assert_single_dispatch(outcomes: list, calls: list[str]) -> None:
     # in_flight token, or — if it arrived after the winner committed —
     # the terminal-stage transition check.
     assert isinstance(
-        error, (ValueError, ConcurrentModificationError, InvalidTransition),
+        error,
+        (ValueError, ConcurrentModificationError, InvalidTransition),
     )
 
 
@@ -254,7 +271,8 @@ def test_two_threads_tick_one_run_dispatches_once():
     outcomes: list = []
     threads = [
         threading.Thread(
-            target=_tick_collecting, args=(engine, run.id, outcomes, barrier),
+            target=_tick_collecting,
+            args=(engine, run.id, outcomes, barrier),
         )
         for _ in range(2)
     ]
@@ -268,8 +286,11 @@ def test_two_threads_tick_one_run_dispatches_once():
 def test_two_engines_sharing_a_store_cannot_claim_the_same_run():
     engine, spec, _, store = stored_engine(two_steps=False)
     other = Orchestrator(
-        engine._definition, engine._registry,
-        clock=engine._clock, new_id=engine._new_id, store=store,
+        engine._definition,
+        engine._registry,
+        clock=engine._clock,
+        new_id=engine._new_id,
+        store=store,
         approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
     )
     calls: list[str] = []
@@ -285,10 +306,12 @@ def test_two_engines_sharing_a_store_cannot_claim_the_same_run():
     outcomes: list = []
     threads = [
         threading.Thread(
-            target=_tick_collecting, args=(engine, run.id, outcomes, barrier),
+            target=_tick_collecting,
+            args=(engine, run.id, outcomes, barrier),
         ),
         threading.Thread(
-            target=_tick_collecting, args=(other, run.id, outcomes, barrier),
+            target=_tick_collecting,
+            args=(other, run.id, outcomes, barrier),
         ),
     ]
     for thread in threads:
@@ -327,9 +350,12 @@ def test_stale_version_save_raises_concurrent_modification():
 def test_save_of_unknown_run_still_raises_key_error():
     store = InMemoryExecutionStore()
     ghost = WorkflowExecution(
-        id="missing", task_id="t", project_id="p",
+        id="missing",
+        task_id="t",
+        project_id="p",
         state=RunState(stage="SPEC", revisions={}),
-        started_at=NOW, updated_at=NOW,
+        started_at=NOW,
+        updated_at=NOW,
     )
     with pytest.raises(KeyError):
         store.save_execution(ghost)

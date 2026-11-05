@@ -110,7 +110,7 @@ def _parse_plan(content: str) -> SplitPlan:
         if start < 0 or end <= start:
             raise ValueError("Decomposition response is not JSON") from None
         try:
-            data = json.loads(text[start:end + 1])
+            data = json.loads(text[start : end + 1])
         except json.JSONDecodeError:
             raise ValueError("Decomposition response is not valid JSON") from None
     if not isinstance(data, dict):
@@ -139,8 +139,10 @@ def _parse_plan(content: str) -> SplitPlan:
             raise ValueError(
                 f"Decomposition part {index} exceeds {MAX_PART_CHARS} characters",
             )
-        parts.append(SplitPart(
-            title=title.strip()[:120],
-            requirement=requirement.strip(),
-        ))
+        parts.append(
+            SplitPart(
+                title=title.strip()[:120],
+                requirement=requirement.strip(),
+            )
+        )
     return SplitPlan(context=context.strip(), parts=parts)

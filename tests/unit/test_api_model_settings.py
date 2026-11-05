@@ -21,9 +21,14 @@ def test_settings_round_trip_never_exposes_the_key(tmp_path: Path):
     assert initial.status_code == 200
     assert initial.json()["provider"] == "scripted"
 
-    updated = client.put("/settings/model", json={
-        "provider": "gemini", "model": "gemini-x", "apiKey": "AIza-topsecret",
-    })
+    updated = client.put(
+        "/settings/model",
+        json={
+            "provider": "gemini",
+            "model": "gemini-x",
+            "apiKey": "AIza-topsecret",
+        },
+    )
     assert updated.status_code == 200
     body = updated.json()
     assert body["keyConfigured"] is True
@@ -63,22 +68,32 @@ def test_settings_per_agent_models_round_trip(tmp_path: Path):
     unknown = client.post("/settings/model/test", json={"agent": "test"})
     assert unknown.json()["ok"] is False
 
-    updated = client.put("/settings/model", json={
-        "provider": "custom", "model": "shared-m",
-        "baseUrl": "http://127.0.0.1:4141/v1", "apiKey": "placeholder",
-        "agentModels": {"implement": "gpt-code", "spec": "claude-spec"},
-    })
+    updated = client.put(
+        "/settings/model",
+        json={
+            "provider": "custom",
+            "model": "shared-m",
+            "baseUrl": "http://127.0.0.1:4141/v1",
+            "apiKey": "placeholder",
+            "agentModels": {"implement": "gpt-code", "spec": "claude-spec"},
+        },
+    )
     assert updated.status_code == 200
     assert updated.json()["agentModels"] == {
-        "implement": "gpt-code", "spec": "claude-spec",
+        "implement": "gpt-code",
+        "spec": "claude-spec",
     }
     fetched = client.get("/settings/model")
     assert fetched.json()["agentModels"]["implement"] == "gpt-code"
 
     # Unknown agents are rejected; the Test agent has no model.
-    bad = client.put("/settings/model", json={
-        "provider": "custom", "model": "shared-m",
-        "baseUrl": "http://127.0.0.1:4141/v1",
-        "agentModels": {"test": "m"},
-    })
+    bad = client.put(
+        "/settings/model",
+        json={
+            "provider": "custom",
+            "model": "shared-m",
+            "baseUrl": "http://127.0.0.1:4141/v1",
+            "agentModels": {"test": "m"},
+        },
+    )
     assert bad.status_code == 422

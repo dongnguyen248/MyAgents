@@ -58,9 +58,7 @@ def assert_contract_binding(
 
     # (a) Serialized property names match schema properties
     schema_props = set(schema_def.get("properties", {}).keys())
-    model_props = set(
-        model_cls.model_json_schema(by_alias=True).get("properties", {}).keys()
-    )
+    model_props = set(model_cls.model_json_schema(by_alias=True).get("properties", {}).keys())
     test_case.assertEqual(
         model_props,
         schema_props,
@@ -115,7 +113,7 @@ def assert_contract_binding(
     for prop_name, prop_def in schema_def.get("properties", {}).items():
         if prop_def.get("format") == "date-time":
             m_prop_def = model_schema.get("properties", {}).get(prop_name, {})
-            is_dt = (m_prop_def.get("format") == "date-time")
+            is_dt = m_prop_def.get("format") == "date-time"
             if not is_dt and "anyOf" in m_prop_def:
                 is_dt = any(sub.get("format") == "date-time" for sub in m_prop_def["anyOf"])
             test_case.assertTrue(

@@ -55,8 +55,7 @@ def build_fix_messages(
     payload["outputFormat"] = edit_format
     if edit_format == "blocks":
         payload["formatInstructions"] = (
-            BLOCKS_FORMAT_INSTRUCTIONS
-            + "\n- Your blocks apply to the PREVIOUS GENERATED files"
+            BLOCKS_FORMAT_INSTRUCTIONS + "\n- Your blocks apply to the PREVIOUS GENERATED files"
             " (the base files with the previous change set applied),"
             " not to the raw base: SEARCH text must match the"
             " previous generated content where a file was changed"

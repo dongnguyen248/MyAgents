@@ -65,10 +65,7 @@ class RunScheduler:
     def registered(self) -> dict[str, datetime]:
         """Current registrations (tests/diagnostics)."""
         with self._condition:
-            return {
-                run_id: retry_at
-                for run_id, (retry_at, _seq) in self._registrations.items()
-            }
+            return {run_id: retry_at for run_id, (retry_at, _seq) in self._registrations.items()}
 
     # -- lifecycle ----------------------------------------------------
 
@@ -79,7 +76,9 @@ class RunScheduler:
                 return
             self._stopped = False
             self._thread = threading.Thread(
-                target=self._run, name="asf-run-scheduler", daemon=True,
+                target=self._run,
+                name="asf-run-scheduler",
+                daemon=True,
             )
             self._thread.start()
 
@@ -129,5 +128,6 @@ class RunScheduler:
                     self._wake(run_id)
                 except Exception:
                     logger.exception(
-                        "Scheduled wake-up for run %s failed", run_id,
+                        "Scheduled wake-up for run %s failed",
+                        run_id,
                     )

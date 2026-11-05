@@ -301,7 +301,6 @@ class ApprovalModelsTests(unittest.TestCase):
                     str(ctx_req.exception),
                 )
 
-
         # same invariants for ApprovalRequest
         with self.assertRaises(ValidationError):
             ApprovalRequest(

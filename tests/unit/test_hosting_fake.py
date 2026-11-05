@@ -19,19 +19,22 @@ class FakeTransport:
         self._routes.append((method, needle, status, payload))
 
     def __call__(self, method, url, headers, body):  # noqa: ANN001, ANN202
-        self.calls.append({
-            "method": method,
-            "url": url,
-            "headers": dict(headers),
-            "body": json.loads(body) if body else None,
-        })
+        self.calls.append(
+            {
+                "method": method,
+                "url": url,
+                "headers": dict(headers),
+                "body": json.loads(body) if body else None,
+            }
+        )
         # Routes are consumed in order, so a test can script a sequence
         # of responses for repeated calls to the same endpoint.
         for index, (route_method, needle, status, payload) in enumerate(self._routes):
             if route_method == method and needle in url:
                 del self._routes[index]
                 return HttpResponse(
-                    status, json.dumps(payload).encode("utf-8"),
+                    status,
+                    json.dumps(payload).encode("utf-8"),
                 )
         raise AssertionError(f"Unexpected transport call: {method} {url}")
 

@@ -27,27 +27,43 @@ def test_metrics_service_collects_metrics_and_events_from_orchestrator_run():
     gateway = ScriptedModelGateway([make_spec_artifact().content["text"]])
     templates = Path(__file__).resolve().parents[2] / "templates"
     registry = AgentRegistry()
-    registry.register(build_spec_agent(
-        AgentRuntime(models=gateway, clock=lambda: now, new_id=new_id),
-        PlatformConfig(), templates,
-    ))
+    registry.register(
+        build_spec_agent(
+            AgentRuntime(models=gateway, clock=lambda: now, new_id=new_id),
+            PlatformConfig(),
+            templates,
+        )
+    )
     definition = WorkflowDefinition(
-        id="spec-only", name="Spec only", version="1", steps=[
+        id="spec-only",
+        name="Spec only",
+        version="1",
+        steps=[
             WorkflowStepDef(
-                id="spec", name="Spec", type="AGENT", stage="SPEC",
-                agent_type="spec", requires_approval=True, produces=["SPEC"],
+                id="spec",
+                name="Spec",
+                type="AGENT",
+                stage="SPEC",
+                agent_type="spec",
+                requires_approval=True,
+                produces=["SPEC"],
             ),
         ],
     )
     service = MetricsService(clock=lambda: now)
     engine = Orchestrator(
-        definition, registry, clock=lambda: now, new_id=new_id,
+        definition,
+        registry,
+        clock=lambda: now,
+        new_id=new_id,
         approvals=ApprovalService(InMemoryApprovalRepository(), id_factory=new_id),
         approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
-        events=service, metrics=service,
+        events=service,
+        metrics=service,
     )
     run = engine.start(
-        task_id="task-1", project_id="project-1",
+        task_id="task-1",
+        project_id="project-1",
         inputs={"spec": {"requirement": "Implement a calculator"}},
     )
     run = engine.tick(run.id)
@@ -66,7 +82,10 @@ def test_metrics_service_collects_metrics_and_events_from_orchestrator_run():
     assert metrics["successRate"] == 1.0
     assert service.all_agent_metrics()["agent-spec"]["total"] == 1
     assert service.project_outcomes("project-1") == {
-        "running": 0, "completed": 1, "failed": 0, "successRate": 1.0,
+        "running": 0,
+        "completed": 1,
+        "failed": 0,
+        "successRate": 1.0,
     }
 
     events = service.events()

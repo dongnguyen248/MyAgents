@@ -30,9 +30,29 @@ _MILESTONE_HEADING = re.compile(r"^###\s+(M\d+):\s*(.+)$", re.MULTILINE)
 _SECTION_HEADING = re.compile(r"^##\s+(.+)$", re.MULTILINE)
 _WORD = re.compile(r"[a-z0-9]{4,}")
 _STOPWORDS = {
-    "this", "that", "with", "from", "must", "should", "when", "then",
-    "than", "into", "have", "will", "each", "such", "other", "about",
-    "which", "their", "there", "these", "those", "using", "used",
+    "this",
+    "that",
+    "with",
+    "from",
+    "must",
+    "should",
+    "when",
+    "then",
+    "than",
+    "into",
+    "have",
+    "will",
+    "each",
+    "such",
+    "other",
+    "about",
+    "which",
+    "their",
+    "there",
+    "these",
+    "those",
+    "using",
+    "used",
 }
 
 
@@ -44,7 +64,8 @@ def slice_plan(plan_text: str, milestone_ref: str | None) -> str:
     if not matches:
         return plan_text
     target = next(
-        (match for match in matches if match.group(1) == milestone_ref), None,
+        (match for match in matches if match.group(1) == milestone_ref),
+        None,
     )
     if target is None:
         return plan_text
@@ -64,7 +85,8 @@ def slice_plan(plan_text: str, milestone_ref: str | None) -> str:
     block = plan_text[start:end].rstrip()
     others = [
         f"{match.group(1)} — {match.group(2).strip()}"
-        for match in matches if match.group(1) != milestone_ref
+        for match in matches
+        if match.group(1) != milestone_ref
     ]
     parts = [preamble, block]
     if others:
@@ -97,11 +119,8 @@ def slice_spec(
     preamble = spec_text[: matches[0].start()].rstrip()
     sections: list[tuple[str, str]] = []
     for index, match in enumerate(matches):
-        end = (
-            matches[index + 1].start()
-            if index + 1 < len(matches) else len(spec_text)
-        )
-        sections.append((match.group(1).strip(), spec_text[match.start():end].rstrip()))
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(spec_text)
+        sections.append((match.group(1).strip(), spec_text[match.start() : end].rstrip()))
     keywords = _keywords(task_title, task_description)
     chosen: list[tuple[str, str]] = []
     budget = threshold - len(preamble)

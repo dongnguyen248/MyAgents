@@ -49,13 +49,17 @@ from asf.storage.sqlite import SQLiteExecutionStore
 # The artifacts directory must exist and must not be committed.
 store = SQLiteExecutionStore(r"artifacts\phase6.sqlite")
 engine = Orchestrator(
-    definition, registry, clock=clock, new_id=new_id,
+    definition,
+    registry,
+    clock=clock,
+    new_id=new_id,
     store=store,
     approval_policy=ApprovalPolicy(reviewers=["reviewer"]),
     code_loop=CodeLoopPolicy(max_fixes=3, all_task_items=True),
 )
 run = engine.start(
-    task_id="work-1", project_id="project-1",
+    task_id="work-1",
+    project_id="project-1",
     inputs={
         "spec": {"requirement": "Describe the feature"},
         "implement": {"ref": "base-ref"},
