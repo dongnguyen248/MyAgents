@@ -113,11 +113,19 @@ class AgentSettings(ConfigModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class ExecutionConfig(ConfigModel):
+    """Bounds on how much work the platform runs at the same time."""
+
+    max_concurrent_runs: int = Field(default=2, ge=1)
+    max_concurrent_model_calls: int = Field(default=2, ge=1)
+
+
 class PlatformConfig(ConfigModel):
     version: Literal[1] = 1
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     paths: PathsConfig = Field(default_factory=PathsConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     source_control: ServiceConfig | None = None
     ci: ServiceConfig | None = None
     notifications: list[NotificationChannel] = Field(default_factory=list)

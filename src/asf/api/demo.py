@@ -62,6 +62,7 @@ from asf.contracts.models import (
 )
 from asf.integrations.hosting.actions import build_hosting_actions
 from asf.models.fake import ScriptedModelGateway
+from asf.models.limited import ConcurrencyLimitedGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.orchestrator.code_loop import CodeLoopPolicy
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
@@ -514,8 +515,12 @@ class _WorkspaceBindingAgent:
     The repository/sandbox ports carry no project id, so before the code
     agents (implement, test, fix) execute, the workspace is bound to the
     request's project; the routed ports then resolve that project's
-    ``repository.path`` folder, if it has one. Runs are driven one step
-    at a time by the local worker, so the binding is never contended.
+    ``repository.path`` folder, if it has one. The binding is a
+    ContextVar scoped to this execution (set here, reset in a finally),
+    so runs of different projects driven in parallel stay isolated.
+    For a project WITH a local folder, the whole execution also holds
+    that project's lock: two runs of the same project never apply
+    change sets or run commands against one working tree at once.
     """
 
     def __init__(self, inner: Any, workspace: LocalWorkspace) -> None:
@@ -529,8 +534,14 @@ class _WorkspaceBindingAgent:
         return self._inner.validate(request)
 
     def execute(self, request: AgentRequest) -> AgentResult:
-        self._workspace.bind(request.project_id)
-        return self._inner.execute(request)
+        token = self._workspace.bind(request.project_id)
+        try:
+            if self._workspace.has_local_root(request.project_id):
+                with self._workspace.project_lock(request.project_id):
+                    return self._inner.execute(request)
+            return self._inner.execute(request)
+        finally:
+            self._workspace.reset_binding(token)
 
 
 def _profile_root(profile: ProjectProfile) -> str | None:
@@ -648,8 +659,11 @@ def build_demo(
         else db_path.parent / "hosting-tokens.json",
     )
     runtime = AgentRuntime(
-        models=SettingsRoutingGateway(
-            model_settings, DemoRoutingGateway(templates_dir),
+        models=ConcurrencyLimitedGateway(
+            SettingsRoutingGateway(
+                model_settings, DemoRoutingGateway(templates_dir),
+            ),
+            max_concurrent=platform.execution.max_concurrent_model_calls,
         ),
         clock=clock, new_id=new_id,
     )
@@ -752,6 +766,7 @@ def build_demo(
         # fails and the service falls back to running the task
         # whole (the failure is shown on the run).
         decomposer=RequirementDecomposer(runtime.models),
+        max_concurrent_runs=platform.execution.max_concurrent_runs,
     )
     service_ref["service"] = service
     return service, engine, store
