@@ -114,7 +114,7 @@ def test_factory_builds_openai_compatible_with_default_base():
     assert isinstance(gateway, OpenAICompatibleGateway)
 
 
-class _RecordingTransport:
+class _MetaRecordingTransport:
     def __init__(self) -> None:
         self.urls: list[str] = []
 
@@ -129,7 +129,7 @@ class _RecordingTransport:
 
 
 def test_factory_meta_preset_targets_meta_model_api():
-    transport = _RecordingTransport()
+    transport = _MetaRecordingTransport()
     gateway = build_configured_gateway({
         "provider": "meta", "model": "muse-spark-1.3",
         "apiKey": "meta-key", "baseUrl": "",

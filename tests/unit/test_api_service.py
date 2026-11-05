@@ -825,6 +825,42 @@ def test_oversized_requirement_splits_into_sequential_part_runs():
     assert parent["status"] == "COMPLETED" and parent["splitCompleted"] == 2
 
 
+def test_task_list_nests_split_parts_under_their_parent():
+    from asf.api.decomposer import SplitPart
+
+    decomposer = FakeDecomposer(parts=[
+        SplitPart("Foundation", "Build the foundation. " * 5),
+        SplitPart("Features", "Build the features. " * 5),
+    ])
+    service, _engine = _split_service(decomposer)
+    # An unrelated task alongside: without grouping the parts would
+    # scatter among the other rows purely by recency.
+    service.start_run(
+        "other-task", "proj-1",
+        inputs={"spec": {"requirement": "Small thing"}},
+    )
+    run = service.start_run(
+        "big-task", "proj-1",
+        inputs={"spec": {"requirement": "x" * (SPLIT_REQUIREMENT_CHARS + 1)}},
+        context={"title": "Big task"},
+    )
+    assert _complete_run(service, run.id)["status"] == "COMPLETED"
+
+    rows = service.list_tasks()
+    ids = [row["id"] for row in rows]
+    # The parent row keeps its sorted place; its parts sit directly
+    # beneath it, in split order, each naming the parent.
+    parent_at = ids.index("big-task")
+    assert ids[parent_at + 1] == "big-task-part-1"
+    assert ids[parent_at + 2] == "big-task-part-2"
+    part1 = rows[parent_at + 1]
+    assert part1["parentTaskId"] == "big-task"
+    assert part1["splitIndex"] == 1 and part1["splitTotal"] == 2
+    assert part1["title"] == "Foundation"
+    other = rows[ids.index("other-task")]
+    assert "parentTaskId" not in other
+
+
 def test_failed_part_stops_the_chain_and_fails_the_parent():
     from asf.agents.spec.agent import MAX_REQUIREMENT_CHARS
     from asf.api.decomposer import SplitPart
