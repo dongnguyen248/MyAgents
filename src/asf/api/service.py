@@ -678,9 +678,9 @@ class FactoryService:
         return "RUNNING"
 
     @staticmethod
-    def _stage_before_failure(run: WorkflowExecution) -> str | None:
-        """The stage a FAILED/CANCELLED run was in just before it ended,
-        from its event trail."""
+    def _trail_stages(run: WorkflowExecution) -> list[str]:
+        """The run's stage trail, newest first, terminal stages removed."""
+        stages: list[str] = []
         for observation in reversed(run.observations):
             event = observation.event
             if event is None or event.event_type not in (
@@ -691,8 +691,15 @@ class FactoryService:
             if isinstance(stage, str) and stage not in (
                 "FAILED", "COMPLETED", "CANCELLED",
             ):
-                return stage
-        return None
+                stages.append(stage)
+        return stages
+
+    @staticmethod
+    def _stage_before_failure(run: WorkflowExecution) -> str | None:
+        """The stage a FAILED/CANCELLED run was in just before it ended,
+        from its event trail."""
+        stages = FactoryService._trail_stages(run)
+        return stages[0] if stages else None
 
     def _step_states(
         self, run: WorkflowExecution, definition: WorkflowDefinition, status: str,
@@ -714,6 +721,32 @@ class FactoryService:
             stage_before = self._stage_before_failure(run)
             if stage_before in sequence:
                 terminal_from_index = sequence.index(stage_before)
+            elif stage_before is not None:
+                # The run ended in a stage no definition step generates
+                # — the code-fix loop's CODE_FIX is injected by the
+                # loop graph, not by a step — so its index lookup fails
+                # and every gate would fall back to pending even though
+                # the run demonstrably passed them. Judge the gates
+                # against the newest defined stage in the trail instead
+                # (for the fix loop, the review/test step that triggered
+                # it — past every gate). A trail holding nothing else
+                # (e.g. a run resumed straight into the fix loop, whose
+                # early stage changes predate the fork) still proves
+                # every gate was passed: the loop is only reachable
+                # after the last approval.
+                for trail_stage in self._trail_stages(run):
+                    if trail_stage in sequence:
+                        terminal_from_index = sequence.index(trail_stage)
+                        break
+                if terminal_from_index is None and stage_before == FIX_STAGE:
+                    approved_indexes = [
+                        sequence.index(f"{step.stage}_APPROVED")
+                        for step in definition.steps
+                        if step.requires_approval
+                        and f"{step.stage}_APPROVED" in sequence
+                    ]
+                    if approved_indexes:
+                        terminal_from_index = max(approved_indexes)
         # The generic FAILED rule below ("first step whose outputs are
         # missing from the artifact history") misattributes any failure
         # that happens after every artifact exists at least once: a run

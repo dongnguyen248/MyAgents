@@ -406,6 +406,110 @@ def test_workflow_view_exposes_the_failure_reason(
     assert view is not None and view["error"] is None
 
 
+def test_run_failing_in_code_fix_keeps_its_approval_gates_done(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    # Dong's messenger case: he approved all three gates, the run
+    # reached the review/fix loop and died there — yet the timeline
+    # showed every approval as Pending. The run ends in CODE_FIX, a
+    # stage no workflow step generates, so the gates' trail lookup
+    # found no position and fell back to pending.
+    from datetime import datetime, timezone
+
+    from asf.contracts.models import AgentResult, PlatformError, RunMetrics
+
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    review_agent = engine._registry.for_type("review")
+    original_review = review_agent.execute
+
+    def request_changes(request: object) -> object:
+        result = original_review(request)
+        if result.status == "SUCCESS":
+            # The engine cross-checks the output verdict against the
+            # CODE_REVIEW artifact's content verdict, so flip both.
+            artifact = result.artifacts[0]
+            content = {
+                **artifact.content,
+                "review": {
+                    **artifact.content["review"],
+                    "verdict": "CHANGES_REQUESTED",
+                },
+            }
+            result = result.model_copy(update={
+                "output": {**result.output, "verdict": "CHANGES_REQUESTED"},
+                "artifacts": [artifact.model_copy(update={"content": content})],
+            })
+        return result
+
+    monkeypatch.setattr(review_agent, "execute", request_changes)
+    fix_agent = engine._registry.for_type("fix")
+    fix_inputs: list[dict[str, Any]] = []
+
+    def broken_fix(request: object) -> object:
+        fix_inputs.append(dict(request.input))
+        return AgentResult(
+            request_id=request.request_id, agent_id=request.agent_id,
+            status="FAILED",
+            metrics=RunMetrics(
+                duration_seconds=0.0, revision_count=0, attempt=1,
+            ),
+            errors=[PlatformError(
+                code="LLM_INVALID_RESPONSE",
+                message="Invalid replacement ChangeSet",
+                category="LLM", retryable=False,
+                timestamp=datetime.now(timezone.utc),
+                details={"cause": "Invalid JSON: Expecting value at line 1"},
+            )],
+        )
+
+    monkeypatch.setattr(fix_agent, "execute", broken_fix)
+    run = service.start_run(
+        "fix-doomed", "vhpc", inputs={"spec": {"requirement": "Fix loop"}},
+    )
+    for _ in range(8):
+        service.wait_for_drives()
+        pending = service.list_approvals()
+        if pending:
+            service.decide_approval(pending[0]["id"], decision="APPROVE")
+            continue
+        if engine.get(run.id).state.stage == "FAILED":
+            break
+    service.wait_for_drives()
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "FAILED"
+    assert view["error"]["message"] == "Invalid replacement ChangeSet"
+    states = {step["id"]: step["state"] for step in view["steps"]}
+    assert states["spec_approval"] == "done"
+    assert states["plan_approval"] == "done"
+    assert states["task_approval"] == "done"
+    assert states["implementation"] == "done"
+    assert states["code_review"] == "failed"
+    assert states["testing"] == "pending"
+    assert states["ci"] == "pending"
+    assert states["merge"] == "pending"
+    # The first fix attempt had no predecessor to learn from.
+    assert len(fix_inputs) == 1
+    assert "previousFixError" not in fix_inputs[0]
+
+    # Resume re-enters the fix loop and fails the same way; the gates
+    # must STILL read done on the fork, and the new attempt must be
+    # told why the previous one was rejected — otherwise Resume just
+    # replays the identical failure, as it did for Dong.
+    resumed = service.resume_run(run.id)
+    assert resumed is not None
+    service.wait_for_drives()
+    view = service.get_workflow(resumed["id"])
+    assert view is not None and view["status"] == "FAILED"
+    states = {step["id"]: step["state"] for step in view["steps"]}
+    assert states["spec_approval"] == "done"
+    assert states["plan_approval"] == "done"
+    assert states["task_approval"] == "done"
+    assert states["code_review"] == "failed"
+    assert len(fix_inputs) == 2
+    assert "Invalid replacement ChangeSet" in fix_inputs[1]["previousFixError"]
+    assert "Invalid JSON" in fix_inputs[1]["previousFixError"]
+
+
 def test_start_run_returns_while_a_step_is_still_executing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):

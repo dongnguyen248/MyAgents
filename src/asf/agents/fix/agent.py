@@ -67,7 +67,18 @@ class FixAgent(BaseAgent):
         issues = check_code_request(
             request, self.metadata.id, {"SPEC", "PLAN", "TASK", "CODE"},
             optional={"CODE_REVIEW", "TEST_REPORT"}, require_ref=True,
+            extra_input={"previousFixError"},
         )
+        previous_error = request.input.get("previousFixError")
+        if previous_error is not None and (
+            not isinstance(previous_error, str)
+            or not previous_error.strip()
+            or len(previous_error) > 2000
+        ):
+            issues.append(Issue(
+                "input.previousFixError",
+                "previousFixError must be a non-empty string of at most 2000 characters",
+            ))
         reports = [
             artifact for artifact in request.artifacts
             if artifact.type in {"CODE_REVIEW", "TEST_REPORT"}
@@ -152,6 +163,7 @@ class FixAgent(BaseAgent):
             artifact for artifact in request.artifacts
             if artifact.type in {"CODE_REVIEW", "TEST_REPORT"}
         ]
+        previous_error = request.input.get("previousFixError")
         context = build_fix_context(
             task_id=item_id, spec_summary=spec.to_contract()["content"]["text"],
             plan_summary=plan.to_contract()["content"]["text"],
@@ -159,6 +171,7 @@ class FixAgent(BaseAgent):
             expected_files=expected, existing_files=existing,
             review_findings=[artifact.to_contract() for artifact in reports],
             previous_changeset=code_changeset(code),
+            previous_error=previous_error if isinstance(previous_error, str) else None,
         )
         response = self._runtime.models.complete(
             ModelRequest(
@@ -174,8 +187,20 @@ class FixAgent(BaseAgent):
             raise invalid_response("Empty or oversized fix reply")
         try:
             changeset = ChangeSet.model_validate(parse_json(response.content))
-        except (ValueError, ValidationError, ParseError):
-            raise invalid_response("Invalid replacement ChangeSet") from None
+        except (ValueError, ValidationError, ParseError) as exc:
+            # Keep the underlying reason: "Invalid replacement
+            # ChangeSet" alone is undiagnosable (truncated JSON? an
+            # extra key? an empty change list?) and the next attempt
+            # is told this error verbatim, so it must say what to fix.
+            raise AgentExecutionError(
+                "LLM_INVALID_RESPONSE", "Invalid replacement ChangeSet",
+                category="LLM", retryable=False,
+                details={
+                    "cause": str(exc)[:400],
+                    "replyChars": len(response.content),
+                    "finishReason": response.finish_reason,
+                },
+            ) from None
         try:
             changeset = normalize_changeset_operations(changeset, ref, self._repository)
             issues = validate_changeset(changeset, expected, ref, self._repository)

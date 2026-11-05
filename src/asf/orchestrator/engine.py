@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager, nullcontext
 from copy import deepcopy
@@ -304,6 +305,28 @@ class Orchestrator:
             inputs["taskItemId"] = run.task_order[run.item_index]
             if "language" in base_inputs:
                 inputs.setdefault("language", base_inputs["language"])
+        if step.id == FIX_STEP:
+            # A re-dispatched fix (a step retry, or a run resumed after
+            # its fix attempt failed) must know WHY the last attempt was
+            # rejected. The failure travels in the run's results — which
+            # a resume fork carries over — and without it the model is
+            # re-prompted with identical context and repeats the
+            # identical invalid reply, so Resume could never succeed.
+            latest_fix = next(
+                (r for r in reversed(run.results) if r.agent_id == agent_id),
+                None,
+            )
+            if (
+                latest_fix is not None and latest_fix.status != "SUCCESS"
+                and latest_fix.errors
+            ):
+                error = latest_fix.errors[0]
+                summary = f"{error.code}: {error.message}"
+                if error.details:
+                    summary += " — " + json.dumps(
+                        error.details, default=str,
+                    )[:500]
+                inputs["previousFixError"] = summary
         request = AgentRequest(
             request_id=run.in_flight or self._new_id(), task_id=run.task_id,
             project_id=run.project_id, workflow_id=self._definition.id, agent_id=agent_id,

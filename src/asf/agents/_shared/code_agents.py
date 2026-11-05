@@ -53,6 +53,7 @@ def check_code_request(
     *,
     optional: set[str] | None = None,
     require_ref: bool = False,
+    extra_input: set[str] | None = None,
 ) -> list[Issue]:
     issues: list[Issue] = []
     if request.agent_id != agent_id:
@@ -60,7 +61,7 @@ def check_code_request(
     item_id = request.input.get("taskItemId")
     if not isinstance(item_id, str) or re.fullmatch(r"T[1-9][0-9]*", item_id) is None:
         issues.append(Issue("input.taskItemId", "taskItemId must match T[1-9][0-9]*"))
-    allowed_input = {"taskItemId", "ref", "language"}
+    allowed_input = {"taskItemId", "ref", "language"} | (extra_input or set())
     if set(request.input) - allowed_input:
         issues.append(Issue("input", "Unsupported input fields"))
     if "language" in request.input:
