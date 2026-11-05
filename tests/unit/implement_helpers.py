@@ -278,6 +278,10 @@ def make_agent_and_gateway(
         prompts=prompts,
         model=model,
         parameters=parameters or {"temperature": 0.3},
+        # These helpers back the suites written against the legacy
+        # JSON contract: pin it (and no repair loop) explicitly.
+        edit_format="json",
+        repair_attempts=0,
     )
     return agent, gateway
 
@@ -303,6 +307,10 @@ def make_agent_with_repo(
         prompts=prompts,
         model=model,
         parameters=parameters or {"temperature": 0.3},
+        # These helpers back the suites written against the legacy
+        # JSON contract: pin it (and no repair loop) explicitly.
+        edit_format="json",
+        repair_attempts=0,
     )
     return agent, gateway
 
@@ -328,6 +336,10 @@ def make_agent_with_gateway(
         prompts=prompts,
         model=model,
         parameters=parameters or {"temperature": 0.3},
+        # These helpers back the suites written against the legacy
+        # JSON contract: pin it (and no repair loop) explicitly.
+        edit_format="json",
+        repair_attempts=0,
     )
     return agent
 

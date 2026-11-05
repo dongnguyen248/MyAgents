@@ -29,7 +29,7 @@ from asf.agents.spec import build_spec_agent
 from asf.agents.task import build_task_agent
 from asf.agents.test import build_test_agent
 from asf.approval.models import ApprovalPolicy
-from asf.configuration.platform import PlatformConfig
+from asf.configuration.platform import AgentSettings, PlatformConfig
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, CodeLoopPolicy, Orchestrator
 from asf.storage.sqlite import SQLiteExecutionStore
@@ -115,7 +115,18 @@ class ExperimentResult(BaseModel):
 
 def _run_code_loop(max_fixes: int) -> ConfigResult:
     clock = lambda: NOW  # noqa: E731 - fixed clock, as in the integration tests
-    platform = PlatformConfig()
+    # The experiment's scripted replies speak the legacy JSON code
+    # format; the experiment varies the fix-cycle budget, not the
+    # output format, so pin the format (and no repair loop, which
+    # would consume scripted replies) explicitly.
+    platform = PlatformConfig(agents={
+        "implement": AgentSettings(
+            settings={"editFormat": "json", "repairAttempts": 0},
+        ),
+        "fix": AgentSettings(
+            settings={"editFormat": "json", "repairAttempts": 0},
+        ),
+    })
     registry = AgentRegistry()
     gateways: dict[str, ScriptedModelGateway] = {}
 

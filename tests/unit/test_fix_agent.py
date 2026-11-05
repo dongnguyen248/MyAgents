@@ -55,6 +55,10 @@ def fix_agent(
         AgentRuntime(gateway, lambda: T_AWARE, counter_id("fix-")),
         repository or InMemoryRepository(),
         prompts=FixPrompts("Return a complete replacement ChangeSet"),
+        # This suite was written against the legacy JSON contract:
+        # pin it (and no repair loop) explicitly.
+        edit_format="json",
+        repair_attempts=0,
     ), gateway
 
 

@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from typing import Any
 
 from asf.agents._shared.codegen import (
-    build_implement_context,
     changeset_secret_issues,
     normalize_changeset_operations,
     validate_changeset,
@@ -16,6 +15,11 @@ from asf.agents._shared.limits import (
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.parsing import parse_json
 from asf.agents._shared.paths import validate_relative_path
+from asf.agents._shared.repair import (
+    RepairableOutputError,
+    run_code_generation,
+    summarize_validation_issues,
+)
 from asf.agents._shared.routing import tier_metadata
 from asf.agents._shared.traceability import ArtifactKind, build_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -24,9 +28,16 @@ from asf.agents.implement.prompts import (
     build_implement_messages,
     render_code_markdown,
 )
-from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
+from asf.contracts.models import (
+    AgentMetadata,
+    AgentRequest,
+    Artifact,
+    ModelRequest,
+    ModelResponse,
+)
 from asf.models.errors import ModelGatewayError
 from asf.tools.changeset import ChangeSet
+from asf.tools.edit_blocks import EditBlockError, parse_edit_blocks
 from asf.tools.ports import FileNotFoundInRepository, FileTooLargeError, RepositoryPort
 
 __all__ = [
@@ -51,12 +62,24 @@ class ImplementAgent(BaseAgent):
         prompts: ImplementPrompts,
         model: str | None = None,
         parameters: Mapping[str, Any] | None = None,
+        edit_format: str = "blocks",
+        repair_attempts: int = 1,
     ) -> None:
         super().__init__(runtime)
+        if edit_format not in ("blocks", "json"):
+            raise ValueError(
+                f"edit_format must be 'blocks' or 'json', got {edit_format!r}",
+            )
+        if repair_attempts not in (0, 1):
+            raise ValueError(
+                f"repair_attempts must be 0 or 1, got {repair_attempts!r}",
+            )
         self._repository = repository
         self._prompts = prompts
         self._model = model
         self._parameters = dict(parameters or {})
+        self._edit_format = edit_format
+        self._repair_attempts = repair_attempts
         self._metadata = AgentMetadata(
             id="agent-implement",
             name="Implementation Agent",
@@ -344,17 +367,9 @@ class ImplementAgent(BaseAgent):
                     },
                 )
 
-        # Build prompt context
-        build_implement_context(
-            task_id=task_item_id,
-            spec_summary=self._summarize_artifact(spec_artifact_dict),
-            plan_summary=self._summarize_artifact(plan_artifact_dict),
-            task_summary=self._summarize_artifact(task_artifact_dict),
-            expected_files=expected_files,
-            existing_files=existing_files,
-        )
-
-        # Build messages
+        # Build messages (the output-format contract travels in the
+        # user message: edit blocks by default, legacy JSON when the
+        # agent is configured with edit_format="json").
         messages = build_implement_messages(
             prompts=self._prompts,
             spec_artifact=spec_artifact_dict,
@@ -364,6 +379,7 @@ class ImplementAgent(BaseAgent):
             existing_files=existing_files,
             language=language,
             project_context=project_context,
+            edit_format=self._edit_format,
         )
 
         model_req = ModelRequest(
@@ -376,85 +392,69 @@ class ImplementAgent(BaseAgent):
             },
         )
 
-        response = self._runtime.models.complete(model_req)
-        reply = response.content.strip()
-
-        # Unwrap single code fence if wrapped
-        if reply.startswith("```") and reply.endswith("```"):
-            lines = reply.splitlines()
-            if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
-                reply = "\n".join(lines[1:-1]).strip()
-
-        # Raw reply size limit
-        if len(reply) > MAX_CODE_REPLY_CHARS:
-            raise invalid_response(
-                f"Raw LLM reply exceeds {MAX_CODE_REPLY_CHARS} characters",
-                details={"charCount": len(reply), "limit": MAX_CODE_REPLY_CHARS},
+        def parse_reply(response: ModelResponse) -> ChangeSet:
+            reply = response.content.strip()
+            # Unwrap single code fence if wrapped
+            if reply.startswith("```") and reply.endswith("```"):
+                lines = reply.splitlines()
+                if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
+                    reply = "\n".join(lines[1:-1]).strip()
+            if len(reply) > MAX_CODE_REPLY_CHARS:
+                raise invalid_response(
+                    f"Raw LLM reply exceeds {MAX_CODE_REPLY_CHARS} characters",
+                    details={"charCount": len(reply), "limit": MAX_CODE_REPLY_CHARS},
+                )
+            if not reply:
+                raise RepairableOutputError("Model returned an empty response")
+            if self._edit_format == "blocks":
+                try:
+                    changeset = parse_edit_blocks(
+                        reply,
+                        existing_files=existing_files,
+                        expected_files=expected_files,
+                    )
+                except EditBlockError as error:
+                    raise RepairableOutputError(
+                        str(error),
+                        details={"editBlockError": str(error)},
+                    ) from None
+            else:
+                changeset = self._parse_json_changeset(reply)
+            # Align operation labels with the repository state (a
+            # "create" for a file that already exists is a "modify" in
+            # effect), then validate the change set.
+            changeset = normalize_changeset_operations(
+                changeset, ref, self._repository,
             )
-
-        if not reply:
-            raise invalid_response(
-                "Model returned an empty response",
+            validation_issues = self._validate_changeset(
+                changeset, expected_files, existing_files, ref, self._repository,
             )
+            if validation_issues:
+                raise RepairableOutputError(
+                    "Model response has invalid change set",
+                    model_message=(
+                        "Model response has invalid change set: "
+                        + summarize_validation_issues(validation_issues)
+                    ),
+                    details=validation_issues,
+                )
+            # Secret findings are never repaired: the model must not
+            # be negotiated with over leaked credentials.
+            secret_issues = self._scan_changeset_for_secrets(changeset)
+            if secret_issues:
+                raise invalid_response(
+                    "Generated content contains secrets",
+                    details={"secretIssues": secret_issues},
+                )
+            return changeset
 
-        # Parse JSON
-        try:
-            data = parse_json(reply)
-        except Exception as e:
-            raise invalid_response(
-                "Model response is not valid JSON",
-                details={"parseError": str(e)},
-            )
-
-        # Validate ChangeSet schema
-        try:
-            changeset = ChangeSet.model_validate(data)
-        except Exception as e:
-            # Convert Pydantic ValidationError to expected format
-            error_str = str(e)
-            details: dict[str, Any] = {"validationError": error_str}
-
-            # Check for specific validation errors and convert to expected format
-            if "at most 50" in error_str or "too_long" in error_str:
-                details = {"limitIssues": ["ChangeSet exceeds limit of 50 changes"]}
-            elif "at least 1" in error_str or "too_short" in error_str:
-                details = {"validationError": "ChangeSet is empty"}
-            elif "NUL" in error_str or "null" in error_str.lower():
-                details = {
-                    "contentIssues": [{"path": "unknown", "issue": "content contains NUL bytes"}]
-                }
-            elif "duplicate" in error_str.lower():
-                details = {"validationError": error_str}
-
-            raise invalid_response(
-                "Model response does not match ChangeSet schema",
-                details=details,
-            )
-
-        # Align operation labels with the repository state (a "create"
-        # for a file that already exists is a "modify" in effect), then
-        # validate the change set.
-        changeset = normalize_changeset_operations(changeset, ref, self._repository)
-        validation_issues = self._validate_changeset(
-            changeset,
-            expected_files,
-            existing_files,
-            ref,
-            self._repository,
+        changeset, usage, repairs = run_code_generation(
+            gateway=self._runtime.models,
+            request=model_req,
+            parse=parse_reply,
+            repair_attempts=self._repair_attempts,
+            format_name="edit-block" if self._edit_format == "blocks" else "JSON",
         )
-        if validation_issues:
-            raise invalid_response(
-                "Model response has invalid change set",
-                details=validation_issues,
-            )
-
-        # Secret scan
-        secret_issues = self._scan_changeset_for_secrets(changeset)
-        if secret_issues:
-            raise invalid_response(
-                "Generated content contains secrets",
-                details={"secretIssues": secret_issues},
-            )
 
         # Render deterministic markdown text
         rendered_text = render_code_markdown(
@@ -511,20 +511,49 @@ class ImplementAgent(BaseAgent):
             "summary": "Code implementation created",
             "artifactId": art_id,
             "version": "1",
+            "usage": {
+                "promptTokens": usage.prompt_tokens,
+                "completionTokens": usage.completion_tokens,
+            },
+            "repairs": repairs,
         }
 
         return output, [artifact]
 
-    def _summarize_artifact(self, artifact_dict: dict[str, Any]) -> str:
-        """Extract a brief summary from an artifact for prompt context."""
-        content = artifact_dict.get("content", {})
-        if isinstance(content, dict):
-            text = content.get("text")
-            if not isinstance(text, str):
-                return ""
-            # Return first 500 chars as summary
-            return text[:500] + ("..." if len(text) > 500 else "")
-        return ""
+    def _parse_json_changeset(self, reply: str) -> ChangeSet:
+        """The legacy JSON output format (edit_format="json")."""
+        try:
+            data = parse_json(reply)
+        except Exception as error:
+            raise RepairableOutputError(
+                "Model response is not valid JSON",
+                model_message=f"Model response is not valid JSON ({error})",
+                details={"parseError": str(error)},
+            ) from None
+        try:
+            return ChangeSet.model_validate(data)
+        except Exception as error:
+            # Convert Pydantic ValidationError to expected format
+            error_str = str(error)
+            details: dict[str, Any] = {"validationError": error_str}
+            if "at most 50" in error_str or "too_long" in error_str:
+                details = {"limitIssues": ["ChangeSet exceeds limit of 50 changes"]}
+            elif "at least 1" in error_str or "too_short" in error_str:
+                details = {"validationError": "ChangeSet is empty"}
+            elif "NUL" in error_str or "null" in error_str.lower():
+                details = {
+                    "contentIssues": [{"path": "unknown", "issue": "content contains NUL bytes"}]
+                }
+            elif "duplicate" in error_str.lower():
+                details = {"validationError": error_str}
+            raise RepairableOutputError(
+                "Model response does not match ChangeSet schema",
+                model_message=(
+                    "Model response does not match ChangeSet schema: "
+                    + str(details)[:300]
+                ),
+                details=details,
+            ) from None
 
     def _validate_changeset(
         self,

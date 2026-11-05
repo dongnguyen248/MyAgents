@@ -72,3 +72,18 @@ agents:
         - LLM_RATE_LIMITED
     settings:
       strictMode: true
+  # Code-generating agents: editFormat selects the model's output
+  # format — "blocks" (SEARCH/REPLACE edit blocks, the default:
+  # far fewer output tokens for small changes) or "json" (the
+  # legacy full-file ChangeSet envelope). repairAttempts (0 or 1,
+  # default 1) lets the agent continue the same conversation once
+  # with the specific rejection reason when a reply fails to parse
+  # or validate.
+  implement:
+    settings:
+      editFormat: blocks
+      repairAttempts: 1
+  fix:
+    settings:
+      editFormat: blocks
+      repairAttempts: 1

@@ -46,7 +46,11 @@ class AgentRulesTests(unittest.TestCase):
         skill bodies into agent system prompts. The model-errors
         helper (asf.agents._shared.model_errors) is allowlisted on
         the same terms: it builds the one standard invalid-response
-        error every agent reports for an unusable model reply.
+        error every agent reports for an unusable model reply. The
+        model-call helper (asf.agents._shared.model_call) is
+        allowlisted on the same terms: it is the one place that
+        interprets a model response's finish_reason (truncation,
+        provider blocks) for every agent.
         """
         agents_dir = REPO_ROOT / "src" / "asf" / "agents"
         logic_modules = [
@@ -67,6 +71,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.routing",
             "asf.agents._shared.skills",
             "asf.agents._shared.model_errors",
+            "asf.agents._shared.model_call",
             "asf.agents.spec",
             "asf.agents.spec.agent",
             "asf.agents.spec.prompts",

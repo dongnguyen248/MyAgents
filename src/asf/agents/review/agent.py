@@ -15,6 +15,7 @@ from asf.agents._shared.code_agents import (
     invalid_response,
     linked_metadata,
 )
+from asf.agents._shared.model_call import call_model
 from asf.agents._shared.parsing import strip_code_fence
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -85,7 +86,7 @@ class ReviewAgent(BaseAgent):
         changes = code_changeset(code)
         messages = build_review_messages(prompts=self._prompts, request=request)
         try:
-            response = self._runtime.models.complete(ModelRequest(
+            response = call_model(self._runtime.models, ModelRequest(
                 messages=messages,
                 model=self._model,
                 parameters=dict(self._parameters),
