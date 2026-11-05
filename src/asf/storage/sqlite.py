@@ -5,6 +5,7 @@ import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from typing import Any
 
 from asf.approval.models import ApprovalDecision, ApprovalRequest
 from asf.orchestrator.execution import WorkflowExecution
@@ -191,6 +192,56 @@ class SQLiteExecutionStore:
                 (project_id,),
             ).fetchall()
         return [WorkflowExecution.model_validate_json(row[0]) for row in rows]
+
+    def list_execution_summaries(
+        self,
+        project_id: str | None = None,
+        *,
+        status: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Summary rows via SQLite's JSON1 extraction: the payload
+        text is never materialized into Python objects. (Unlike the
+        MariaDB store there are no metadata columns or indexes here —
+        this is the local development store; the extraction keeps the
+        per-request cost proportional to the row count, not the
+        payload sizes.)"""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if project_id is not None:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if status is not None:
+            clauses.append("json_extract(payload, '$.state.stage') = ?")
+            params.append(status)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = (
+            "SELECT id, project_id,"
+            " json_extract(payload, '$.task_id'),"
+            " json_extract(payload, '$.definition.id'),"
+            " json_extract(payload, '$.state.stage'),"
+            " json_extract(payload, '$.started_at'),"
+            " json_extract(payload, '$.updated_at')"
+            f" FROM executions{where}"
+            " ORDER BY json_extract(payload, '$.updated_at'), id"
+        )
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+        elif offset:
+            sql += " LIMIT -1 OFFSET ?"
+            params.append(offset)
+        with self._guard():
+            rows = self._connection().execute(sql, params).fetchall()
+        return [
+            {
+                "id": row[0], "projectId": row[1], "taskId": row[2],
+                "workflowId": row[3], "stage": row[4], "status": row[4],
+                "startedAt": row[5], "updatedAt": row[6],
+            }
+            for row in rows
+        ]
 
     def close(self) -> None:
         # Closes the calling thread's connection; per-thread connections

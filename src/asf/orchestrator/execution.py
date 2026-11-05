@@ -83,7 +83,12 @@ class WorkflowExecution(BaseModel):
         return {"stage": value.stage, "revisions": dict(value.revisions)}
 
     def snapshot(self) -> WorkflowExecution:
-        return WorkflowExecution.model_validate_json(self.model_dump_json())
+        # A deep model_copy, not a JSON round-trip: the copy must be
+        # structurally independent (rollback + public-access
+        # isolation) but serializing and re-validating the whole
+        # execution — every artifact, result and observation — on
+        # every edit cost more than the mutation itself on big runs.
+        return self.model_copy(deep=True)
 
     def workflow_run(self, status: str, workflow_id: str, version: str) -> dict[str, Any]:
         return {

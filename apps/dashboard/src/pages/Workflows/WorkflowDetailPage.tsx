@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ActivityFeed } from '../../components/activity/ActivityFeed';
 import { AsyncView } from '../../components/common/AsyncView';
@@ -8,7 +8,7 @@ import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
-import { cancelWorkflow, resumeWorkflow, retryWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
+import { cancelWorkflow, resumeWorkflow, retryWorkflow, useRunLiveRefetch, useWorkflowDetail } from '../../features/workflow-monitoring';
 import { titleCase } from '../../utils/format';
 
 export function WorkflowDetailPage() {
@@ -24,16 +24,15 @@ export function WorkflowDetailPage() {
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
 
-  // While a run is live, keep the page fresh on its own: steps, the
-  // execution log and the "agent is working" strip advance without a
-  // manual refresh.
+  // While a run is live, keep the page fresh: refetch when the
+  // activity stream reports an event for this task, with a slow
+  // watchdog poll only if the stream itself goes silent.
   const workflowStatus = detail.data?.workflow?.status;
-  const reloadDetail = detail.reload;
-  useEffect(() => {
-    if (workflowStatus !== 'RUNNING') return;
-    const timer = setInterval(reloadDetail, 4000);
-    return () => clearInterval(timer);
-  }, [workflowStatus, reloadDetail]);
+  useRunLiveRefetch(
+    detail.data?.workflow?.taskId,
+    workflowStatus === 'RUNNING',
+    detail.reload,
+  );
 
   const runAgain = async () => {
     setRetryError(undefined);

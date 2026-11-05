@@ -55,6 +55,13 @@ class RunState:
         # Store an immutable copy of revisions
         object.__setattr__(self, "revisions", MappingProxyType(dict(self.revisions)))
 
+    def __deepcopy__(self, memo: dict) -> RunState:
+        # MappingProxyType cannot be pickled, which is what
+        # copy.deepcopy (and pydantic's model_copy(deep=True)) falls
+        # back to. The state is an immutable value: a fresh RunState
+        # over a plain dict of the revisions is an exact deep copy.
+        return RunState(stage=self.stage, revisions=dict(self.revisions))
+
     @classmethod
     def initial(cls) -> RunState:
         return cls(stage="NEW", revisions={})

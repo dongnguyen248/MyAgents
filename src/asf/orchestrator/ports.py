@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from typing import Protocol
+from typing import Any, Protocol
 
 from asf.approval.ports import ApprovalRepository
 from asf.contracts.models import ActivityEvent, AgentResult
@@ -33,6 +33,25 @@ class ExecutionStore(Protocol):
     ) -> WorkflowExecution: ...
 
     def list_executions(self, project_id: str) -> list[WorkflowExecution]: ...
+
+    def list_execution_summaries(
+        self,
+        project_id: str | None = None,
+        *,
+        status: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Lightweight run rows WITHOUT payloads (id, project, task,
+        workflow, stage/status, started/updated timestamps).
+
+        List views and store discovery use these to avoid loading and
+        deserializing every run's full payload per request; a full
+        execution is fetched only when it is new/changed or a detail
+        view needs it. ``status`` filters on the store-level status,
+        which mirrors the run's stage.
+        """
+        ...
 
 
 class EventPublisher(Protocol):
