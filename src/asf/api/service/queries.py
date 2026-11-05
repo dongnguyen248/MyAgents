@@ -407,6 +407,8 @@ class QueriesMixin:
             raw = "COMPLETED" if run.state.stage == "COMPLETED" else "RUNNING"
         if raw in _TERMINAL_STAGES:
             return raw
+        if run.paused:
+            return "PAUSED"
         if self._is_review_stage(run):
             return "WAITING_APPROVAL"
         # The engine's coarse status calls both of these "WAITING",
@@ -462,6 +464,21 @@ class QueriesMixin:
             "suggestedActions": [],
         }
         if status in _TERMINAL_STAGES:
+            return waiting
+        if status == "PAUSED":
+            waiting["kind"] = "PAUSED"
+            waiting["reason"] = "Paused by operator — no step will start until continued"
+            waiting["suggestedActions"] = ["continue", "cancel"]
+            paused_event = next(
+                (
+                    obs.event
+                    for obs in reversed(run.observations)
+                    if obs.event is not None and obs.event.event_type == "RUN_PAUSED"
+                ),
+                None,
+            )
+            if paused_event is not None:
+                waiting["since"] = _iso(paused_event.timestamp)
             return waiting
         if status == "WAITING_APPROVAL":
             waiting["kind"] = "APPROVAL"

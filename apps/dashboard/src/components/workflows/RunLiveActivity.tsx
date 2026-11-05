@@ -37,6 +37,11 @@ export function RunLiveActivity({ workflow }: { workflow: Workflow }) {
             {activity.reason && <> — {activity.reason}</>}
             {waiting?.budget && <> · fix budget {waiting.budget.used}/{waiting.budget.max}</>}
           </span>
+        ) : activity.kind === 'PAUSED' ? (
+          <span>
+            <strong>Paused by operator</strong>
+            {activity.reason && <> — {activity.reason}</>}
+          </span>
         ) : activity.kind === 'STALLED' ? (
           <span>
             <strong>Stalled</strong>

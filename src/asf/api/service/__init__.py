@@ -624,12 +624,24 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
 
     def _stage_kind(self, run: WorkflowExecution, stage: str) -> str | None:
         definition = self._definition(run)
-        if definition is None:
-            return None
-        try:
-            return str(kind_of(build_graph(definition), stage))
-        except Exception:
-            return None
+        if definition is not None:
+            try:
+                return str(kind_of(build_graph(definition), stage))
+            except Exception:
+                # Not a definition stage — the engine graph below
+                # knows the code loop's injected stages.
+                definition = None
+        # Stages the code loop injects (CODE_FIX, CODE_REWORK,
+        # CODE_FIX_ESCALATED) exist only in the engine's augmented
+        # graph; without this fallback their kind reads as None and
+        # escalated runs are invisible to kind-based logic.
+        graph = getattr(self._engine, "_graph", None)
+        if graph is not None:
+            try:
+                return str(kind_of(graph, stage))
+            except Exception:
+                return None
+        return None
 
     def _now(self) -> datetime | None:
         return self._clock() if self._clock is not None else None

@@ -319,4 +319,113 @@ def create_app(service: FactoryService) -> FastAPI:
         except ValueError as error:
             return JSONResponse(status_code=409, content={"detail": str(error)})
 
+    # -- operator run controls -------------------------------------
+    # Every action carries a reason (validated here: required,
+    # non-blank, <= 500 chars -> 422) and the operator identity
+    # from the X-Operator header (default "operator"); both land
+    # in the run's audit events. State the action does not allow
+    # and lost version races surface as 409 via the service.
+
+    def _operator(request: Request) -> str:
+        return request.headers.get("x-operator") or "operator"
+
+    def _reason(payload: dict[str, Any]) -> str | JSONResponse:
+        reason = payload.get("reason")
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 500:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "reason is required (non-empty, at most 500 characters)"},
+            )
+        return reason.strip()
+
+    @app.post("/runs/{run_id}/escalation/resume")
+    async def resume_escalation(
+        run_id: str, request: Request, payload: dict[str, Any] = Body(...)
+    ) -> Any:
+        reason = _reason(payload)
+        if isinstance(reason, JSONResponse):
+            return reason
+        try:
+            view = service.resume_escalation(run_id, reason=reason, operator=_operator(request))
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
+    @app.post("/runs/{run_id}/recover")
+    async def recover_run(
+        run_id: str, request: Request, payload: dict[str, Any] = Body(...)
+    ) -> Any:
+        reason = _reason(payload)
+        if isinstance(reason, JSONResponse):
+            return reason
+        try:
+            view = service.recover_run(
+                run_id,
+                reason=reason,
+                retry_interrupted=bool(payload.get("retryInterrupted", False)),
+                operator=_operator(request),
+            )
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
+    @app.post("/runs/{run_id}/drive")
+    async def drive_run(run_id: str) -> Any:
+        try:
+            view = service.drive_run(run_id)
+        except KeyError:
+            return _not_found("Run")
+        return view if view is not None else _not_found("Run")
+
+    @app.post("/runs/{run_id}/fail")
+    async def fail_run(run_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Any:
+        reason = _reason(payload)
+        if isinstance(reason, JSONResponse):
+            return reason
+        try:
+            view = service.fail_run(run_id, reason=reason, operator=_operator(request))
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
+    @app.post("/runs/{run_id}/pause")
+    async def pause_run(
+        run_id: str, request: Request, payload: dict[str, Any] = Body(default={})
+    ) -> Any:
+        reason = payload.get("reason")
+        try:
+            view = service.pause_run(
+                run_id,
+                reason=reason.strip() if isinstance(reason, str) else "",
+                operator=_operator(request),
+            )
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
+    @app.post("/runs/{run_id}/continue")
+    async def continue_run(
+        run_id: str, request: Request, payload: dict[str, Any] = Body(default={})
+    ) -> Any:
+        reason = payload.get("reason")
+        try:
+            view = service.continue_run(
+                run_id,
+                reason=reason.strip() if isinstance(reason, str) else "",
+                operator=_operator(request),
+            )
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
     return app

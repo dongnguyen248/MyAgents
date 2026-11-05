@@ -7,6 +7,7 @@ const MAP: Record<WorkflowStatus, [Tone, string]> = {
   WAITING_APPROVAL: ['warn', '◔'],
   WAITING_RETRY: ['warn', '◔'],
   ESCALATED: ['danger', '⚠'],
+  PAUSED: ['warn', '❚❚'],
   COMPLETED: ['ok', '✓'],
   FAILED: ['danger', '✕'],
   CANCELLED: ['muted', '⊘'],

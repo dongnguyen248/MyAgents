@@ -12,7 +12,7 @@ export interface WorkflowStep {
   state: StepState;
 }
 
-export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'WAITING_RETRY' | 'ESCALATED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'WAITING_RETRY' | 'ESCALATED' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 /** The failure that ended a FAILED workflow run (absent otherwise). */
 export interface WorkflowError {
@@ -37,7 +37,7 @@ export interface WorkflowArtifact {
 
 /** What a live run is doing right now (absent for terminal/waiting runs). */
 export interface WorkflowCurrentActivity {
-  kind: 'STEP_RUNNING' | 'RETRY_WAIT' | 'APPROVAL' | 'ESCALATED' | 'STALLED';
+  kind: 'STEP_RUNNING' | 'RETRY_WAIT' | 'APPROVAL' | 'ESCALATED' | 'STALLED' | 'PAUSED';
   stepId?: string | null;
   stepLabel?: string | null;
   stage?: string | null;
@@ -51,7 +51,7 @@ export interface WorkflowCurrentActivity {
 
 /** What a non-terminal run is waiting for, in operator terms. */
 export interface WorkflowWaiting {
-  kind: 'APPROVAL' | 'ESCALATED' | 'RETRY_WAIT' | 'STEP_RUNNING' | 'STALLED' | 'NONE';
+  kind: 'APPROVAL' | 'ESCALATED' | 'RETRY_WAIT' | 'STEP_RUNNING' | 'STALLED' | 'PAUSED' | 'NONE';
   since: string;
   reason?: string | null;
   retryAt?: string | null;
