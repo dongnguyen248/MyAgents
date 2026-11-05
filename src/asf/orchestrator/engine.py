@@ -171,18 +171,25 @@ class Orchestrator:
         self._runs[run_id] = run
         return run.snapshot()
 
-    def get(self, run_id: str) -> WorkflowExecution:
-        return self._load(run_id).snapshot()
+    def get(self, run_id: str, *, copy: bool = True) -> WorkflowExecution:
+        """The run, as an independent copy by default.
+
+        ``copy=False`` returns the live stored object for internal
+        read-only paths (view building, observation scans): callers
+        must not mutate it. Public callers keep the safe default.
+        """
+        run = self._load(run_id)
+        return run.snapshot() if copy else run
 
     def workflow_run(self, run_id: str) -> dict[str, Any]:
-        run = self.get(run_id)
+        run = self.get(run_id, copy=False)
         status = run_status(self._graph, run.state.stage)
         if run.retry_at is not None:
             status = "WAITING"
         return run.workflow_run(status, self._definition.id, self._definition.version)
 
     def task(self, run_id: str) -> dict[str, Any]:
-        run = self.get(run_id)
+        run = self.get(run_id, copy=False)
         return {
             "id": run.task_id, "projectId": run.project_id, "workflowId": self._definition.id,
             "title": run.task_id, "description": "", "priority": "NORMAL", "assignedAgent": None,
@@ -915,22 +922,46 @@ class Orchestrator:
             self._active.remove(run_id)
 
     def _deliver_observations(self, run_id: str) -> WorkflowExecution:
-        # Delivery is at-least-once. Consumers deduplicate by event.id/request_id.
-        for observation in self.get(run_id).observations:
-            if observation.delivered:
-                continue
-            if observation.event is not None and self._events is None:
-                continue
-            if observation.result is not None and self._metrics is None:
-                continue
+        # Delivery is at-least-once. Consumers deduplicate by
+        # event.id/request_id. All pending observations are published
+        # first, then the delivered marks are persisted in ONE edit —
+        # the old shape re-saved the entire execution once per
+        # observation, which made a run with N observations cost N
+        # full serializations. On a publish failure, exactly the
+        # observations delivered so far are marked before raising, so
+        # the failed one (and everything after it) stays pending.
+        pending = [
+            observation
+            for observation in self.get(run_id, copy=False).observations
+            if not observation.delivered
+            and not (
+                observation.event is not None and self._events is None
+            )
+            and not (
+                observation.result is not None and self._metrics is None
+            )
+        ]
+        delivered: list[str] = []
+        failed = False
+        for observation in pending:
             try:
                 if observation.event is not None and self._events is not None:
                     self._events.publish(observation.event)
                 if observation.result is not None and self._metrics is not None:
                     self._metrics.record(observation.result.agent_id, observation.result)
             except Exception:
-                raise RuntimeError("Observation delivery failed; record remains pending") from None
+                failed = True
+                break
+            delivered.append(observation.id)
+        if delivered:
             with self._edit(run_id) as run:
-                stored = next(item for item in run.observations if item.id == observation.id)
-                stored.delivered = True
+                by_id = {item.id: item for item in run.observations}
+                for observation_id in delivered:
+                    stored = by_id.get(observation_id)
+                    if stored is not None:
+                        stored.delivered = True
+        if failed:
+            raise RuntimeError(
+                "Observation delivery failed; record remains pending",
+            )
         return self.get(run_id)

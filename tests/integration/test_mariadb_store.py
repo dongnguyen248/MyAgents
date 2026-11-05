@@ -278,3 +278,96 @@ def test_long_running_agent_holds_no_row_lock():
     assert calls == ["lock-task"]  # the agent ran exactly once
     assert engine_a.get(run.id).artifacts.get("SPEC") is not None
     store.close()
+
+
+def test_summaries_and_migration_v3_backfill():
+    """Metadata columns: saves populate them, summaries read only
+    them, and the v3 backfill UPDATE (the exact statement shipped in
+    _MIGRATIONS) repairs rows whose columns were never written."""
+    from asf.storage.mariadb import _MIGRATIONS
+
+    project_id = f"itest-{uuid4().hex[:8]}"
+    store = make_store()
+    try:
+        run = WorkflowExecution(
+            id=f"run-{uuid4().hex[:8]}", task_id="backfill-task",
+            project_id=project_id, state=RunState(stage="COMPLETED"),
+            definition={"id": "software-development"},
+            started_at=datetime(2026, 11, 5, 9, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 11, 5, 9, 30, tzinfo=timezone.utc),
+        )
+        store.create_execution(run)
+        summaries = store.list_execution_summaries(project_id)
+        assert [row["id"] for row in summaries] == [run.id]
+        assert summaries[0]["taskId"] == "backfill-task"
+        assert summaries[0]["stage"] == "COMPLETED"
+        assert summaries[0]["workflowId"] == "software-development"
+
+        # Simulate a pre-v3 row: columns NULL, payload intact. Running
+        # the shipped backfill statement must restore them.
+        with store._connection().cursor() as cursor:
+            cursor.execute(
+                "UPDATE executions SET task_id = NULL, stage = NULL,"
+                " status = NULL, workflow_id = NULL, started_at = NULL,"
+                " updated_at = NULL WHERE id = %s",
+                (run.id,),
+            )
+        backfill = next(
+            statement for statement in dict(_MIGRATIONS)[3]
+            if statement.strip().startswith("UPDATE executions")
+        )
+        with store._connection().cursor() as cursor:
+            cursor.execute(backfill)
+        summaries = store.list_execution_summaries(project_id)
+        assert summaries[0]["taskId"] == "backfill-task"
+        assert summaries[0]["stage"] == "COMPLETED"
+        assert summaries[0]["startedAt"].startswith("2026-11-05T09:00:00")
+        assert summaries[0]["updatedAt"].startswith("2026-11-05T09:30:00")
+        # The status filter rides the indexed status column.
+        assert store.list_execution_summaries(
+            project_id, status="FAILED",
+        ) == []
+        assert [
+            row["id"]
+            for row in store.list_execution_summaries(
+                project_id, status="COMPLETED",
+            )
+        ] == [run.id]
+    finally:
+        store.close()
+
+
+def test_approval_queries_use_their_indexes():
+    """EXPLAIN must show index access (not a full table scan) for the
+    two approval list queries and the summaries query."""
+    store = make_store()
+    try:
+        checks = [
+            (
+                "SELECT payload FROM approvals WHERE status = %s"
+                " ORDER BY requested_at, id",
+                ("PENDING",), "idx_approvals_status",
+            ),
+            (
+                "SELECT payload FROM approvals WHERE task_id = %s"
+                " ORDER BY requested_at, id",
+                ("some-task",), "idx_approvals_task",
+            ),
+            (
+                "SELECT id FROM executions WHERE project_id = %s"
+                " ORDER BY updated_at, id",
+                ("some-project",), "idx_executions_project_updated",
+            ),
+        ]
+        with store._connection().cursor() as cursor:
+            for sql, params, expected_key in checks:
+                cursor.execute(f"EXPLAIN {sql}", params)
+                rows = cursor.fetchall()
+                # EXPLAIN columns: id, select_type, table, type, ...
+                # key is column 6 (index 5) in the classic format.
+                used_keys = {row[5] for row in rows}
+                access_types = {row[3] for row in rows}
+                assert expected_key in used_keys, (sql, rows)
+                assert "ALL" not in access_types, (sql, rows)
+    finally:
+        store.close()

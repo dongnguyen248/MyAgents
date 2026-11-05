@@ -18,17 +18,21 @@ from the command line or a file.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from asf.approval.models import ApprovalDecision, ApprovalRequest
 from asf.orchestrator.execution import WorkflowExecution
 from asf.orchestrator.ports import ConcurrentModificationError
+
+logger = logging.getLogger(__name__)
 
 _DATABASE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 
@@ -71,6 +75,56 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             version INT NOT NULL DEFAULT 0
         """,
     )),
+    (3, (
+        # Queryable metadata columns for executions: list views and
+        # store discovery read these instead of deserializing every
+        # run's payload. save/create keep them in step with the
+        # payload; the UPDATE below backfills rows written before
+        # this migration (payloads are JSON text, so the values are
+        # extracted from the payload itself).
+        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS task_id VARCHAR(191) NULL",
+        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS stage VARCHAR(64) NULL",
+        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS status VARCHAR(64) NULL",
+        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS workflow_id VARCHAR(191) NULL",
+        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS started_at DATETIME(6) NULL",
+        "ALTER TABLE executions ADD COLUMN IF NOT EXISTS updated_at DATETIME(6) NULL",
+        """
+        UPDATE executions SET
+            task_id = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.task_id')),
+            stage = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.state.stage')),
+            status = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.state.stage')),
+            workflow_id = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.definition.id')),
+            started_at = CAST(REPLACE(LEFT(
+                JSON_UNQUOTE(JSON_EXTRACT(payload, '$.started_at')), 19
+            ), 'T', ' ') AS DATETIME(6)),
+            updated_at = CAST(REPLACE(LEFT(
+                JSON_UNQUOTE(JSON_EXTRACT(payload, '$.updated_at')), 19
+            ), 'T', ' ') AS DATETIME(6))
+        WHERE task_id IS NULL
+        """,
+        """
+        ALTER TABLE executions ADD INDEX IF NOT EXISTS
+            idx_executions_project_updated (project_id, updated_at)
+        """,
+        "ALTER TABLE executions ADD INDEX IF NOT EXISTS idx_executions_status (status)",
+        # Approvals get the same treatment: list_pending/list_by_task
+        # become indexed WHERE queries instead of loading every
+        # approval payload and filtering in Python.
+        "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS status VARCHAR(32) NULL",
+        "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS task_id VARCHAR(191) NULL",
+        "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS requested_at DATETIME(6) NULL",
+        """
+        UPDATE approvals SET
+            status = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.status')),
+            task_id = JSON_UNQUOTE(JSON_EXTRACT(payload, '$.task_id')),
+            requested_at = CAST(REPLACE(LEFT(
+                JSON_UNQUOTE(JSON_EXTRACT(payload, '$.requested_at')), 19
+            ), 'T', ' ') AS DATETIME(6))
+        WHERE status IS NULL
+        """,
+        "ALTER TABLE approvals ADD INDEX IF NOT EXISTS idx_approvals_status (status)",
+        "ALTER TABLE approvals ADD INDEX IF NOT EXISTS idx_approvals_task (task_id)",
+    )),
 )
 
 
@@ -95,6 +149,32 @@ class MariaDbConfig:
         )
 
 
+def _as_utc_naive(value: datetime) -> datetime:
+    """DATETIME columns hold UTC wall time (payloads stay the truth)."""
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _as_utc_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _execution_columns(run: WorkflowExecution) -> tuple[Any, ...]:
+    """The queryable metadata columns for one execution row."""
+    workflow_id = run.definition.get("id") if isinstance(run.definition, dict) else None
+    return (
+        run.task_id,
+        run.state.stage,
+        run.state.stage,  # status mirrors the stage at the store level
+        workflow_id if isinstance(workflow_id, str) else None,
+        _as_utc_naive(run.started_at),
+        _as_utc_naive(run.updated_at),
+    )
+
+
 class MariaDbApprovalRepository:
     def __init__(self, connect: Callable[[], Any]) -> None:
         self._connect = connect
@@ -102,8 +182,12 @@ class MariaDbApprovalRepository:
     def create(self, approval: ApprovalRequest) -> ApprovalRequest:
         with self._connect().cursor() as cursor:
             cursor.execute(
-                "INSERT INTO approvals(id, payload) VALUES (%s, %s)",
-                (approval.id, approval.model_dump_json()),
+                "INSERT INTO approvals(id, payload, status, task_id, requested_at)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                (
+                    approval.id, approval.model_dump_json(), approval.status,
+                    approval.task_id, _as_utc_naive(approval.requested_at),
+                ),
             )
         return approval.model_copy(deep=True)
 
@@ -118,27 +202,33 @@ class MariaDbApprovalRepository:
     def update(self, approval: ApprovalRequest) -> ApprovalRequest:
         with self._connect().cursor() as cursor:
             cursor.execute(
-                "UPDATE approvals SET payload = %s WHERE id = %s",
-                (approval.model_dump_json(), approval.id),
+                "UPDATE approvals SET payload = %s, status = %s,"
+                " task_id = %s, requested_at = %s WHERE id = %s",
+                (
+                    approval.model_dump_json(), approval.status,
+                    approval.task_id, _as_utc_naive(approval.requested_at),
+                    approval.id,
+                ),
             )
             if cursor.rowcount != 1:
                 raise KeyError(approval.id)
         return approval.model_copy(deep=True)
 
-    def _all(self) -> list[ApprovalRequest]:
+    def _query(self, where: str, params: tuple[Any, ...]) -> list[ApprovalRequest]:
         with self._connect().cursor() as cursor:
-            cursor.execute("SELECT payload FROM approvals")
+            cursor.execute(
+                f"SELECT payload FROM approvals WHERE {where}"
+                " ORDER BY requested_at, id",
+                params,
+            )
             rows = cursor.fetchall()
-        return sorted(
-            [ApprovalRequest.model_validate_json(row[0]) for row in rows],
-            key=lambda approval: (approval.requested_at, approval.id),
-        )
+        return [ApprovalRequest.model_validate_json(row[0]) for row in rows]
 
     def list_by_task(self, task_id: str) -> list[ApprovalRequest]:
-        return [approval for approval in self._all() if approval.task_id == task_id]
+        return self._query("task_id = %s", (task_id,))
 
     def list_pending(self) -> list[ApprovalRequest]:
-        return [approval for approval in self._all() if approval.status == "PENDING"]
+        return self._query("status = %s", ("PENDING",))
 
     def add_decision(self, decision: ApprovalDecision) -> None:
         with self._connect().cursor() as cursor:
@@ -177,6 +267,41 @@ class MariaDbExecutionStore:
         self._local.connection = self._open()
         self._migrate()
         self.approvals = MariaDbApprovalRepository(self._connection)
+        self._max_allowed_packet = self._read_max_allowed_packet()
+        self._packet_warned: set[str] = set()
+
+    def _read_max_allowed_packet(self) -> int | None:
+        try:
+            with self._connection().cursor() as cursor:
+                cursor.execute("SELECT @@max_allowed_packet")
+                row = cursor.fetchone()
+            return int(row[0]) if row else None
+        except Exception:
+            return None
+
+    def _check_payload_size(self, run_id: str, payload: str) -> None:
+        """Warns when one run's payload nears the server's packet cap.
+
+        A single execution payload holds every artifact (including
+        CODE text and test output) plus all observations and results,
+        so a long run grows it monotonically; past max_allowed_packet
+        the save itself fails. The structural fix is splitting
+        observations and artifact history into append-only tables —
+        proposed, not yet built (payloads stay the checkpoint format
+        until then).
+        """
+        if self._max_allowed_packet is None or run_id in self._packet_warned:
+            return
+        size = len(payload.encode("utf-8"))
+        if size > self._max_allowed_packet // 2:
+            self._packet_warned.add(run_id)
+            logger.warning(
+                "Execution %s payload is %d bytes, over 50%% of the"
+                " server's max_allowed_packet (%d): saves will fail"
+                " outright at the cap. Consider splitting observations"
+                " and artifact history out of the payload.",
+                run_id, size, self._max_allowed_packet,
+            )
 
     def _connection(self) -> Any:
         connection = getattr(self._local, "connection", None)
@@ -295,11 +420,17 @@ class MariaDbExecutionStore:
 
     def create_execution(self, run: WorkflowExecution) -> None:
         run.version = 0
+        payload = run.model_dump_json()
+        self._check_payload_size(run.id, payload)
         with self._connection().cursor() as cursor:
             cursor.execute(
-                "INSERT INTO executions(id, project_id, payload, version)"
-                " VALUES (%s, %s, %s, %s)",
-                (run.id, run.project_id, run.model_dump_json(), 0),
+                "INSERT INTO executions(id, project_id, payload, version,"
+                " task_id, stage, status, workflow_id, started_at, updated_at)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    run.id, run.project_id, payload, 0,
+                    *_execution_columns(run),
+                ),
             )
 
     def save_execution(self, run: WorkflowExecution) -> None:
@@ -308,12 +439,19 @@ class MariaDbExecutionStore:
         # from; a stale writer fails loudly instead of overwriting.
         expected = run.version
         run.version = expected + 1
+        payload = run.model_dump_json()
+        self._check_payload_size(run.id, payload)
         try:
             with self._connection().cursor() as cursor:
                 cursor.execute(
-                    "UPDATE executions SET payload = %s, version = %s"
+                    "UPDATE executions SET payload = %s, version = %s,"
+                    " task_id = %s, stage = %s, status = %s,"
+                    " workflow_id = %s, started_at = %s, updated_at = %s"
                     " WHERE id = %s AND version = %s",
-                    (run.model_dump_json(), run.version, run.id, expected),
+                    (
+                        payload, run.version, *_execution_columns(run),
+                        run.id, expected,
+                    ),
                 )
                 if cursor.rowcount != 1:
                     cursor.execute(
@@ -363,6 +501,48 @@ class MariaDbExecutionStore:
             run.version = version
             runs.append(run)
         return runs
+
+    def list_execution_summaries(
+        self,
+        project_id: str | None = None,
+        *,
+        status: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Metadata-column rows only: no payload is read or parsed."""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if project_id is not None:
+            clauses.append("project_id = %s")
+            params.append(project_id)
+        if status is not None:
+            clauses.append("status = %s")
+            params.append(status)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = (
+            "SELECT id, project_id, task_id, workflow_id, stage, status,"
+            " started_at, updated_at FROM executions"
+            f"{where} ORDER BY updated_at, id"
+        )
+        if limit is not None:
+            sql += " LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+        elif offset:
+            sql += " LIMIT 18446744073709551615 OFFSET %s"
+            params.append(offset)
+        with self._connection().cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+        return [
+            {
+                "id": row[0], "projectId": row[1], "taskId": row[2],
+                "workflowId": row[3], "stage": row[4], "status": row[5],
+                "startedAt": _as_utc_iso(row[6]),
+                "updatedAt": _as_utc_iso(row[7]),
+            }
+            for row in rows
+        ]
 
     def close(self) -> None:
         # Closes the calling thread's connection; per-thread connections

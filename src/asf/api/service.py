@@ -170,6 +170,19 @@ def _iso(value: Any) -> str:
     return str(value)
 
 
+def _parse_iso(value: Any) -> datetime | None:
+    """Parses an ISO-8601 timestamp (accepting a trailing 'Z')."""
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
 def _valid_test_commands(raw: Any) -> list[list[str]]:
     """Normalize a profile's ``configuration.testCommands`` value.
 
@@ -262,6 +275,8 @@ class FactoryService:
         }
         self._tracked: list[str] = []
         self._store_runs: dict[str, WorkflowExecution] = {}
+        self._runs_cache: list[WorkflowExecution] | None = None
+        self._runs_cache_at: float = 0.0
         # Background drives run on a bounded pool of daemon workers
         # (see _drive_in_background): at most max_concurrent_runs runs
         # are driven at once; further drives queue. _drive_lock guards
@@ -408,28 +423,80 @@ class FactoryService:
     def _discover_store_runs(self) -> None:
         if self._store is None:
             return
+        summaries = getattr(self._store, "list_execution_summaries", None)
         for project_id in self._projects:
             try:
-                executions = self._store.list_executions(project_id)
-            except Exception:  # nosec B112
+                if callable(summaries):
+                    # Cheap path: metadata rows only. A full payload is
+                    # (re)loaded just for runs that are new or whose
+                    # updated_at moved past the cached copy — the old
+                    # shape deserialized EVERY run on EVERY request.
+                    for summary in summaries(project_id):
+                        self._refresh_store_run(summary)
+                else:
+                    for run in self._store.list_executions(project_id):
+                        self._store_runs[run.id] = run
+                        if run.id not in self._tracked:
+                            self._tracked.append(run.id)
+            except Exception:
+                # Discovery used to swallow this silently, which made
+                # a broken store look like "no runs exist".
+                logger.warning(
+                    "Could not discover stored runs for project %s",
+                    project_id, exc_info=True,
+                )
                 continue
-            for run in executions:
-                self._store_runs[run.id] = run
-                if run.id not in self._tracked:
-                    self._tracked.append(run.id)
+
+    def _refresh_store_run(self, summary: Mapping[str, Any]) -> None:
+        run_id = summary.get("id")
+        if not isinstance(run_id, str) or not run_id:
+            return
+        if run_id not in self._tracked:
+            self._tracked.append(run_id)
+        cached = self._store_runs.get(run_id)
+        if cached is not None:
+            updated = _parse_iso(summary.get("updatedAt"))
+            if updated is not None and updated <= cached.updated_at:
+                return  # cached copy is current; skip the payload load
+        try:
+            self._store_runs[run_id] = self._store.get_execution(run_id)  # type: ignore[union-attr]
+        except Exception:
+            logger.warning(
+                "Could not load stored run %s", run_id, exc_info=True,
+            )
+
+    # List endpoints poll: the dashboard asks for the run list every
+    # few seconds. Assembling it costs a store discovery + an engine
+    # read per run, so the assembled list is cached for a breath —
+    # long enough to absorb a poll burst, short enough that a human
+    # never acts on stale state. Every mutating service method and
+    # every finished drive invalidates it immediately.
+    _RUNS_CACHE_TTL_SECONDS = 1.5
+
+    def _invalidate_runs_cache(self) -> None:
+        self._runs_cache = None
 
     def _runs(self) -> list[WorkflowExecution]:
+        now = time.monotonic()
+        if (
+            self._runs_cache is not None
+            and now - self._runs_cache_at < self._RUNS_CACHE_TTL_SECONDS
+        ):
+            return list(self._runs_cache)
         self._discover_store_runs()
         found: dict[str, WorkflowExecution] = {}
         for run_id in self._tracked:
             try:
-                found[run_id] = self._engine.get(run_id)
+                found[run_id] = self._engine.get(run_id, copy=False)
             except Exception:
                 if run_id in self._store_runs:
                     found[run_id] = self._store_runs[run_id]
         for run_id, run in self._store_runs.items():
             found.setdefault(run_id, run)
-        return sorted(found.values(), key=lambda run: (run.started_at, run.id))
+        result = sorted(found.values(), key=lambda run: (run.started_at, run.id))
+        self._runs_cache = result
+        self._runs_cache_at = now
+        return list(result)
 
     # ------------------------------------------------------------------
     # engine internals: registry / definition / stage helpers
@@ -1453,6 +1520,7 @@ class FactoryService:
     def decide_approval(
         self, approval_id: str, *, decision: str, comment: str = "",
     ) -> dict[str, Any]:
+        self._invalidate_runs_cache()
         if decision not in (*_DECISIONS, "COMMENT"):
             raise ValueError(f"Unknown approval decision: {decision}")
         run = next(
@@ -1682,6 +1750,7 @@ class FactoryService:
         try:
             self._drive(run_id)
         finally:
+            self._invalidate_runs_cache()
             with self._drive_condition:
                 self._drive_active.discard(run_id)
                 self._drive_condition.notify_all()
@@ -1962,6 +2031,7 @@ class FactoryService:
         # "split") and ordinary requirements start directly; every
         # actual start classifies the run's complexity tier (see
         # _start_run_once).
+        self._invalidate_runs_cache()
         requirement = self._requirement_text(inputs)
         if (
             self._decomposer is not None
@@ -1981,6 +2051,7 @@ class FactoryService:
         inputs: Mapping[str, Any] | None = None,
         context: Mapping[str, Any] | None = None,
     ) -> WorkflowExecution:
+        self._invalidate_runs_cache()
         # Automatic model routing: classify the run from its
         # requirement and record the tier in its context; a
         # caller-provided tier wins. Split parts start here too, so
@@ -2126,6 +2197,7 @@ class FactoryService:
             pass
 
     def tick_run(self, run_id: str) -> dict[str, Any] | None:
+        self._invalidate_runs_cache()
         # A manual tick must not race the run's background drive: wait
         # for the drive to park the run, then tick (usually a no-op).
         self._wait_for_drive(run_id)
@@ -2148,6 +2220,7 @@ class FactoryService:
         cancellation taking effect moments later. Cancelling a run that
         already finished raises ``ValueError`` (the API maps it to 409).
         """
+        self._invalidate_runs_cache()
         run = self._engine.get(run_id)
         if run.state.stage in _TERMINAL_STAGES:
             raise ValueError(
@@ -2232,6 +2305,7 @@ class FactoryService:
         again. The failed run itself stays untouched as the record of
         the failure. A run that has not failed raises ``ValueError``.
         """
+        self._invalidate_runs_cache()
         run = self._engine.resume_failed(run_id)
         self.track(run.id)
         self._drive_in_background(run.id)

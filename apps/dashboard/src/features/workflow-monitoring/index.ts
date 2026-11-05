@@ -8,3 +8,4 @@ export const tickWorkflow = svc.tickWorkflow;
 export const retryWorkflow = svc.retryWorkflow;
 export const resumeWorkflow = svc.resumeWorkflow;
 export const cancelWorkflow = svc.cancelWorkflow;
+export { useRunLiveRefetch } from './useRunLiveRefetch';

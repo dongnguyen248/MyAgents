@@ -12,7 +12,7 @@ import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBa
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { useAgents } from '../../features/agent-management';
 import { useTaskDetail } from '../../features/task-monitoring';
-import { cancelWorkflow, resumeWorkflow, retryWorkflow } from '../../features/workflow-monitoring';
+import { cancelWorkflow, resumeWorkflow, retryWorkflow, useRunLiveRefetch } from '../../features/workflow-monitoring';
 import { dateTime, duration, titleCase } from '../../utils/format';
 
 export function TaskDetailPage() {
@@ -27,16 +27,11 @@ export function TaskDetailPage() {
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState<string | undefined>();
 
-  // While the latest run is live, keep the page fresh on its own:
-  // steps, the execution log and the "agent is working" strip advance
-  // without a manual refresh.
+  // While the latest run is live, keep the page fresh: refetch when
+  // the activity stream reports an event for this task, with a slow
+  // watchdog poll only if the stream itself goes silent.
   const workflowStatus = detail.data?.workflow?.status;
-  const reloadDetail = detail.reload;
-  useEffect(() => {
-    if (workflowStatus !== 'RUNNING') return;
-    const timer = setInterval(reloadDetail, 4000);
-    return () => clearInterval(timer);
-  }, [workflowStatus, reloadDetail]);
+  useRunLiveRefetch(taskId, workflowStatus === 'RUNNING', detail.reload);
 
   const runAgain = async (runId: string) => {
     setRetryError(undefined);
