@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import threading
 from datetime import datetime, timezone
 from itertools import count
 from pathlib import Path
@@ -533,8 +532,10 @@ def test_cancel_run_while_driving_is_applied_between_steps():
     service.track(run.id)
     # Pretend a background drive is mid-dispatch for this run: the
     # engine cannot be mutated safely right now, so the service must
-    # record the request instead of cancelling synchronously.
-    service._drive_threads[run.id] = threading.Thread()
+    # record the request instead of cancelling synchronously. (The
+    # drive registry used to be a thread dict; drives now live in the
+    # bounded pool's active set — the simulated state is the same.)
+    service._drive_active.add(run.id)
     try:
         view = service.cancel_run(run.id)
         assert view is not None and view["status"] != "CANCELLED"
@@ -546,7 +547,7 @@ def test_cancel_run_while_driving_is_applied_between_steps():
         assert engine.get(run.id).state.stage == "CANCELLED"
         assert run.id not in service._cancel_requested
     finally:
-        service._drive_threads.pop(run.id, None)
+        service._drive_active.discard(run.id)
 
 
 def test_run_log_records_step_started_before_its_result():

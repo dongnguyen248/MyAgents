@@ -182,6 +182,7 @@ class ModelsGatewayTests(unittest.TestCase):
             "asf.models",
             "asf.models.errors",
             "asf.models.fake",
+            "asf.models.limited",
             "asf.models.ports",
         }
 

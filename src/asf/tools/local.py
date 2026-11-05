@@ -40,14 +40,18 @@ execution for local projects:
 
 Projects opt in individually through ``repository.path`` in their
 profile. :class:`LocalWorkspace` holds the project-id → folder mapping
-plus the currently bound project (runs are driven one at a time by the
-local worker), and :class:`WorkspaceRepository` / :class:`WorkspaceSandbox`
+plus the *per-execution* binding (a :class:`contextvars.ContextVar`,
+so parallel runs of different projects each see their own folder) and
+a lock per project (so two runs of the SAME project never execute
+code agents against its folder at the same time), and
+:class:`WorkspaceRepository` / :class:`WorkspaceSandbox`
 route each port call to the bound project's folder, delegating to a
 fallback implementation for projects without one.
 """
 
 from __future__ import annotations
 
+import contextvars
 import os
 import re
 import signal
@@ -497,12 +501,22 @@ class LocalSandbox:
 
 
 class LocalWorkspace:
-    """Project-id → folder mapping plus the currently bound project.
+    """Project-id → folder mapping plus the per-execution binding.
 
     The port calls carry no project id, so the assembly binds the
-    workspace to the project of the run being executed (the local worker
-    drives one step at a time) and the routed ports below resolve the
-    folder per call.
+    workspace to the project of the step being executed. The binding
+    lives in a :class:`contextvars.ContextVar`: each drive — whatever
+    thread or context runs it — sees only its own binding, so two
+    runs of different projects executing in parallel can never read
+    or write each other's folders. (The binding used to be one shared
+    attribute; with one drive thread per run that was a cross-project
+    data-corruption race.) Callers must reset the token returned by
+    :meth:`bind` when the step finishes.
+
+    A per-project lock additionally serializes code-agent execution
+    for projects that share one folder: two runs of the same project
+    must never apply change sets or run test commands against the
+    same working tree at the same time.
     """
 
     def __init__(
@@ -516,7 +530,11 @@ class LocalWorkspace:
         self._sandbox_settings: dict[str, SandboxSettings] = dict(
             sandbox_settings or {},
         )
-        self._current: str | None = None
+        self._bound: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "asf-local-workspace-project", default=None,
+        )
+        self._locks_guard = threading.Lock()
+        self._project_locks: dict[str, threading.Lock] = {}
 
     def set_sandbox_settings(
         self, project_id: str, settings: SandboxSettings | None,
@@ -527,9 +545,10 @@ class LocalWorkspace:
             self._sandbox_settings[project_id] = settings
 
     def current_sandbox_settings(self) -> SandboxSettings | None:
-        if self._current is None:
+        project_id = self._bound.get()
+        if project_id is None:
             return None
-        return self._sandbox_settings.get(self._current)
+        return self._sandbox_settings.get(project_id)
 
     def set_root(self, project_id: str, path: str | Path | None) -> None:
         if path is None or (isinstance(path, str) and not path.strip()):
@@ -540,16 +559,36 @@ class LocalWorkspace:
     def remove(self, project_id: str) -> None:
         self._roots.pop(project_id, None)
         self._sandbox_settings.pop(project_id, None)
-        if self._current == project_id:
-            self._current = None
+        with self._locks_guard:
+            self._project_locks.pop(project_id, None)
 
-    def bind(self, project_id: str) -> None:
-        self._current = project_id
+    def has_local_root(self, project_id: str) -> bool:
+        return project_id in self._roots
+
+    def bind(self, project_id: str) -> contextvars.Token[str | None]:
+        """Binds this execution context to a project; reset the token."""
+        return self._bound.set(project_id)
+
+    def reset_binding(self, token: contextvars.Token[str | None]) -> None:
+        self._bound.reset(token)
+
+    def bound_project(self) -> str | None:
+        return self._bound.get()
 
     def current_root(self) -> Path | None:
-        if self._current is None:
+        project_id = self._bound.get()
+        if project_id is None:
             return None
-        return self._roots.get(self._current)
+        return self._roots.get(project_id)
+
+    def project_lock(self, project_id: str) -> threading.Lock:
+        """The lock serializing code-agent work for one project."""
+        with self._locks_guard:
+            lock = self._project_locks.get(project_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._project_locks[project_id] = lock
+            return lock
 
 
 class WorkspaceRepository:
