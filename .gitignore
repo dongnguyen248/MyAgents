@@ -3,6 +3,10 @@
 .env.*
 *.secret
 *.pem
+/data/hosting-tokens.json
+/data/model-settings.json
+/projects/*.yaml
+/projects/*.yml
 secrets/
 config/*.local.yaml
 
@@ -20,14 +24,17 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
 # Runtime artifacts
-artifacts/
+/artifacts/
 .asf-evidence/
+*.log
 
 # Node and editor
 node_modules/
 .idea/
 .vscode/
+.DS_Store
 
 !.env.example
