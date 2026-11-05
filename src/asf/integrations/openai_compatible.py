@@ -23,13 +23,27 @@ from typing import Any, Protocol
 from asf.contracts.models import ModelRequest, ModelResponse, ModelUsage
 from asf.models.errors import ModelGatewayError
 
-__all__ = ["HttpTransport", "OpenAICompatibleGateway", "UrlLibTransport"]
+__all__ = [
+    "DEFAULT_MAX_TOKENS",
+    "HttpTransport",
+    "OpenAICompatibleGateway",
+    "UrlLibTransport",
+]
 
 # Transient failures (timeouts, connection errors, HTTP 429/5xx) are
 # retried with exponential backoff, mirroring the Gemini gateway: a
 # momentary provider stall should cost seconds, not the agent step —
 # through a session proxy, stalls of a few seconds are routine.
 DEFAULT_MAX_RETRIES = 2
+
+# Always send an explicit output cap. When the field is absent,
+# providers — and especially session proxies such as Copilot's —
+# apply their own small defaults, and long agent documents (specs,
+# plans, changesets) come back truncated mid-document and fail the
+# agents' output contracts. 16384 fits the output limits of every
+# model ASF is used with; a request may override it via the
+# ``max_tokens`` model parameter.
+DEFAULT_MAX_TOKENS = 16384
 
 
 class HttpTransport(Protocol):
@@ -103,6 +117,13 @@ class OpenAICompatibleGateway:
         temperature = request.parameters.get("temperature")
         if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
             payload["temperature"] = temperature
+        max_tokens = request.parameters.get("max_tokens")
+        if (
+            isinstance(max_tokens, bool) or not isinstance(max_tokens, int)
+            or max_tokens <= 0
+        ):
+            max_tokens = DEFAULT_MAX_TOKENS
+        payload["max_tokens"] = max_tokens
         status, raw = self._post_with_retries(payload)
         if status >= 400:
             detail = _provider_message(raw)
