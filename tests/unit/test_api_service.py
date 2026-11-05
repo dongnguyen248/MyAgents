@@ -491,3 +491,58 @@ def test_cancel_run_while_driving_is_applied_between_steps():
         assert run.id not in service._cancel_requested
     finally:
         service._drive_threads.pop(run.id, None)
+
+
+def test_run_log_records_step_started_before_its_result():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    run = service.start_run(
+        "task-1", "proj-1", inputs={"spec": {"requirement": "Build a calculator"}},
+    )
+    service.wait_for_drives(timeout=10)
+
+    observations = engine.get(run.id).observations
+    started = [
+        o.event for o in observations
+        if o.event is not None and o.event.event_type == "STEP_STARTED"
+    ]
+    assert len(started) == 1
+    assert started[0].message == "Spec started"
+    assert started[0].metadata["stepId"] == "spec"
+    # The start line precedes the step's result in the run's log.
+    kinds = [
+        o.event.event_type if o.event is not None else "RESULT"
+        for o in observations
+    ]
+    assert kinds.index("STEP_STARTED") < kinds.index("RESULT")
+    # ...and it reaches the dashboard activity feed.
+    activity = service.list_activity({"taskId": "task-1"})
+    assert any(a["message"] == "Spec started" for a in activity)
+    # Parked at the approval gate, the run reports no live activity.
+    view = service.get_workflow(run.id)
+    assert view is not None and view["currentActivity"] is None
+
+
+def test_workflow_view_reports_current_activity_while_in_flight():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    run = engine.start(
+        task_id="task-1", project_id="proj-1",
+        inputs={"spec": {"requirement": "Build a calculator"}},
+    )
+    service.track(run.id)
+    # Stamp the in-flight marker exactly as tick does before dispatching.
+    engine._runs[run.id].in_flight = "dispatch-1"
+
+    view = service.get_workflow(run.id)
+
+    assert view is not None
+    activity = view["currentActivity"]
+    assert activity["kind"] == "STEP_RUNNING"
+    assert activity["stepId"] == "spec"
+    assert activity["stepLabel"] == "Spec"
+    assert activity["since"] == NOW.isoformat()

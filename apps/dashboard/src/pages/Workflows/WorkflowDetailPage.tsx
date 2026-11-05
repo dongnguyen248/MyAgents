@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ActivityFeed } from '../../components/activity/ActivityFeed';
 import { AsyncView } from '../../components/common/AsyncView';
 import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
+import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
@@ -22,6 +23,17 @@ export function WorkflowDetailPage() {
   const [cancelError, setCancelError] = useState<string | undefined>();
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
+
+  // While a run is live, keep the page fresh on its own: steps, the
+  // execution log and the "agent is working" strip advance without a
+  // manual refresh.
+  const workflowStatus = detail.data?.workflow?.status;
+  const reloadDetail = detail.reload;
+  useEffect(() => {
+    if (workflowStatus !== 'RUNNING') return;
+    const timer = setInterval(reloadDetail, 4000);
+    return () => clearInterval(timer);
+  }, [workflowStatus, reloadDetail]);
 
   const runAgain = async () => {
     setRetryError(undefined);
@@ -113,6 +125,7 @@ export function WorkflowDetailPage() {
                 </p>
               </Card>
             )}
+            <RunLiveActivity workflow={workflow} />
             {!['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
               <Card>
                 {cancelRequested ? (

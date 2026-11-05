@@ -107,11 +107,15 @@ class Orchestrator:
                 self._runs[run_id] = before
                 raise
 
-    def _event(self, run: WorkflowExecution, event_type: str, message: str) -> None:
+    def _event(
+        self, run: WorkflowExecution, event_type: str, message: str,
+        *, metadata: Mapping[str, Any] | None = None,
+    ) -> None:
         event = ActivityEvent(
             id=self._new_id(), timestamp=self._now(), project_id=run.project_id,
             task_id=run.task_id, workflow_id=self._definition.id, event_type=event_type,
-            message=message, metadata={"runId": run.id, "stage": run.state.stage},
+            message=message,
+            metadata={"runId": run.id, "stage": run.state.stage, **(metadata or {})},
         )
         run.observations.append(Observation(id=event.id, event=event))
 
@@ -218,6 +222,25 @@ class Orchestrator:
                     run.retry_at = None
                     run.in_flight = self._new_id()
                     dispatch = True
+                    # Record the step start before dispatching: this
+                    # edit is saved when the block exits, so the run's
+                    # log shows what the agent is doing while a long
+                    # step (e.g. a minutes-long model call) is still in
+                    # flight, not only after it finishes.
+                    step = self._step(run)
+                    attempt = run.attempts.get(step.id, 0) + 1
+                    message = f"{step.name} started"
+                    if step.agent_type == "implement" and run.task_order:
+                        message += f" · item {run.task_order[run.item_index]}"
+                    if attempt > 1:
+                        message += f" (attempt {attempt})"
+                    self._event(
+                        run, "STEP_STARTED", message,
+                        metadata={
+                            "stepId": step.id, "agentType": step.agent_type,
+                            "attempt": attempt,
+                        },
+                    )
         if not dispatch:
             return self.get(run_id)
         self._active.add(run_id)

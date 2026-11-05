@@ -35,6 +35,18 @@ export interface WorkflowArtifact {
   content?: string | null;
 }
 
+/** What a live run is doing right now (absent for terminal/waiting runs). */
+export interface WorkflowCurrentActivity {
+  kind: 'STEP_RUNNING' | 'RETRY_WAIT';
+  stepId?: string | null;
+  stepLabel?: string | null;
+  stage?: string | null;
+  /** When the current step started (or when the run last changed). */
+  since: string;
+  /** For RETRY_WAIT: when the next attempt is due. */
+  retryAt?: string | null;
+}
+
 export interface Workflow {
   id: string;
   taskId: string;
@@ -43,6 +55,7 @@ export interface Workflow {
   type: WorkflowType;
   status: WorkflowStatus;
   error?: WorkflowError | null;
+  currentActivity?: WorkflowCurrentActivity | null;
   steps: WorkflowStep[];
   startedAt: string;
   updatedAt: string;

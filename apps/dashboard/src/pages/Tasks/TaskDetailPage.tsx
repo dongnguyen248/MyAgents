@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ActivityFeed } from '../../components/activity/ActivityFeed';
 import { AsyncView } from '../../components/common/AsyncView';
@@ -6,6 +6,7 @@ import { CiBadge } from '../../components/common/Badge';
 import { Card, PageHeader, Stat } from '../../components/common/Layout';
 import { TaskStatusBadge } from '../../components/tasks/TaskStatusBadge';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
+import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
@@ -25,6 +26,17 @@ export function TaskDetailPage() {
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState<string | undefined>();
+
+  // While the latest run is live, keep the page fresh on its own:
+  // steps, the execution log and the "agent is working" strip advance
+  // without a manual refresh.
+  const workflowStatus = detail.data?.workflow?.status;
+  const reloadDetail = detail.reload;
+  useEffect(() => {
+    if (workflowStatus !== 'RUNNING') return;
+    const timer = setInterval(reloadDetail, 4000);
+    return () => clearInterval(timer);
+  }, [workflowStatus, reloadDetail]);
 
   const runAgain = async (runId: string) => {
     setRetryError(undefined);
@@ -127,6 +139,7 @@ export function TaskDetailPage() {
               </Card>
             )}
             {workflow && <WorkflowErrorBanner workflow={workflow} />}
+            {workflow && <RunLiveActivity workflow={workflow} />}
             <div className="grid two-col">
               <Card title="Workflow timeline">{workflow ? <WorkflowStepper steps={workflow.steps} /> : <p className="muted">No workflow.</p>}</Card>
               <div className="stack">

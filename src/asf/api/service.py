@@ -799,6 +799,34 @@ class FactoryService:
             "stage": FactoryService._stage_before_failure(run),
         }
 
+    @staticmethod
+    def _current_activity(
+        run: WorkflowExecution, steps: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """What the run is doing right now, for the dashboard's live strip.
+
+        Derived at read time from state the engine already persists:
+        ``in_flight`` is stamped (and the run saved) before a step
+        dispatches, so a run sitting in a minutes-long model call still
+        reports which step it is on and since when; ``retry_at`` marks a
+        step waiting out its backoff. Terminal and approval-waiting runs
+        have no live activity — their own cards explain those states.
+        """
+        if run.state.stage in _TERMINAL_STAGES:
+            return None
+        active = next((s for s in steps if s.get("state") == "active"), None)
+        base: dict[str, Any] = {
+            "stepId": active["id"] if active else None,
+            "stepLabel": active["label"] if active else None,
+            "stage": run.state.stage,
+            "since": _iso(run.updated_at),
+        }
+        if run.in_flight is not None:
+            return {**base, "kind": "STEP_RUNNING", "retryAt": None}
+        if run.retry_at is not None:
+            return {**base, "kind": "RETRY_WAIT", "retryAt": _iso(run.retry_at)}
+        return None
+
     def _workflow_view(self, run: WorkflowExecution) -> dict[str, Any]:
         definition = self._definition(run)
         status = self._workflow_status(run)
@@ -811,6 +839,7 @@ class FactoryService:
             "type": self._workflow_type(run),
             "status": status,
             "error": self._run_error(run, status),
+            "currentActivity": self._current_activity(run, steps),
             "steps": steps,
             "startedAt": _iso(run.started_at),
             "updatedAt": _iso(run.updated_at),
@@ -1297,6 +1326,16 @@ class FactoryService:
             if deadline is not None and time.monotonic() >= deadline:
                 return
 
+    def _flush_observations_quietly(self, run_id: str) -> None:
+        try:
+            self._engine.flush_observations(run_id)
+        except (RuntimeError, ValueError):
+            # RuntimeError: nothing to deliver to. ValueError: another
+            # thread is dispatching this run right now and the engine
+            # will not flush mid-dispatch. At-least-once delivery; a
+            # later flush retries.
+            pass
+
     def _drive(self, run_id: str) -> None:
         """Advance a run automatically until it needs a human or stops.
 
@@ -1323,6 +1362,10 @@ class FactoryService:
                 break
             if self._apply_requested_cancel(run_id):
                 break
+            # Publish the step's events (its STEP_STARTED line and the
+            # agent's result events) now, not only when the whole drive
+            # parks: SSE subscribers see the run's log grow step by step.
+            self._flush_observations_quietly(run_id)
             after = self._engine.get(run_id)
             if (after.state.stage, len(after.results)) == before:
                 break
