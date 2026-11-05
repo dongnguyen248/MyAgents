@@ -20,10 +20,16 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
-# Runtime artifacts
-artifacts/
+# Runtime artifacts (repo root only: nested artifacts/ directories
+# inside src/ or tests/ are source, not output)
+/artifacts/
 .asf-evidence/
+# Runtime data (the default SQLite run database lives in data/)
+data/
+*.log
+.DS_Store
 
 # Node and editor
 node_modules/
