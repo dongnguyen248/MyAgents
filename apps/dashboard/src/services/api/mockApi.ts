@@ -210,6 +210,22 @@ export const mockApi: FactoryApi = {
     return delay(workflow);
   },
 
+  cancelRun: (runId) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return Promise.reject(new Error(`Run '${runId}' not found`));
+    if (['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status)) {
+      return Promise.reject(new Error('Only an active run can be cancelled'));
+    }
+    workflow.status = 'CANCELLED';
+    workflow.updatedAt = new Date().toISOString();
+    const task = taskStore.find((t) => t.id === workflow.taskId);
+    if (task) {
+      task.status = 'CANCELLED';
+      task.updatedAt = workflow.updatedAt;
+    }
+    return delay(workflow);
+  },
+
   listProjects: () => delay(projectStore),
   createProject: (input) => {
     if (projectStore.some((p) => p.id === input.id)) {

@@ -33,6 +33,8 @@ export interface FactoryApi {
   retryRun(runId: string): Promise<Workflow>;
   /** Continue a failed run from its failed step, keeping its artifacts and approvals. */
   resumeRun(runId: string): Promise<Workflow>;
+  /** Cancel an active run; a run mid-step stops once that step returns. */
+  cancelRun(runId: string): Promise<Workflow>;
 
   listProjects(): Promise<Project[]>;
   createProject(input: ProjectProfileInput): Promise<Project>;

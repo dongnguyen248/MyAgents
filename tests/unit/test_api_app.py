@@ -155,3 +155,22 @@ def test_resume_endpoint_rejects_non_failed_runs():
 
     assert client.post(f"/runs/{run_id}/cancel").status_code == 200
     assert client.post(f"/runs/{run_id}/resume").status_code == 409
+
+
+def test_cancel_endpoint_rejects_terminal_and_unknown_runs():
+    client = make_client()
+    created = client.post(
+        "/runs", json={"taskId": "task-1", "projectId": "proj-1",
+                       "inputs": {"spec": {"requirement": "Build a calculator"}}},
+    )
+    assert created.status_code == 201
+    run_id = created.json()["id"]
+
+    cancelled = client.post(f"/runs/{run_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "CANCELLED"
+
+    again = client.post(f"/runs/{run_id}/cancel")
+    assert again.status_code == 409
+    assert "already cancelled" in again.json()["detail"]
+    assert client.post("/runs/run-missing/cancel").status_code == 404

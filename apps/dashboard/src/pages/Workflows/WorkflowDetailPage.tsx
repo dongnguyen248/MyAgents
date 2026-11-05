@@ -8,7 +8,7 @@ import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
-import { resumeWorkflow, retryWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
+import { cancelWorkflow, resumeWorkflow, retryWorkflow, useWorkflowDetail } from '../../features/workflow-monitoring';
 import { titleCase } from '../../utils/format';
 
 export function WorkflowDetailPage() {
@@ -19,6 +19,10 @@ export function WorkflowDetailPage() {
   const [retryError, setRetryError] = useState<string | undefined>();
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | undefined>();
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | undefined>();
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
 
   // While a run is live, keep the page fresh on its own: steps, the
   // execution log and the "agent is working" strip advance without a
@@ -54,6 +58,23 @@ export function WorkflowDetailPage() {
       setResumeError(err instanceof Error ? err.message : 'Failed to resume');
     } finally {
       setResuming(false);
+    }
+  };
+
+  const cancel = async () => {
+    setCancelError(undefined);
+    setCancelling(true);
+    try {
+      const updated = await cancelWorkflow(workflowId);
+      setConfirmingCancel(false);
+      // A run mid-step cannot stop instantly: the backend records the
+      // request and the run flips to Cancelled when the step returns.
+      if (updated.status !== 'CANCELLED') setCancelRequested(true);
+      detail.reload();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Failed to cancel the run');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -105,6 +126,43 @@ export function WorkflowDetailPage() {
               </Card>
             )}
             <RunLiveActivity workflow={workflow} />
+            {!['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
+              <Card>
+                {cancelRequested ? (
+                  <p className="muted">
+                    Cancellation requested — the run stops as soon as its current step
+                    finishes and then shows as Cancelled. A step already calling the
+                    model cannot be interrupted mid-call.
+                  </p>
+                ) : confirmingCancel ? (
+                  <div className="filters">
+                    <span className="muted small">
+                      Cancel this run? It cannot be resumed afterwards — you can Run again
+                      from scratch, and this run stays as the record. A step already in
+                      progress finishes first.
+                    </span>
+                    <button type="button" className="btn btn-danger" onClick={cancel} disabled={cancelling}>
+                      {cancelling ? 'Cancelling…' : 'Yes, cancel run'}
+                    </button>
+                    <button type="button" className="btn" onClick={() => setConfirmingCancel(false)} disabled={cancelling}>
+                      Keep running
+                    </button>
+                  </div>
+                ) : (
+                  <div className="filters">
+                    <button type="button" className="btn btn-danger" onClick={() => setConfirmingCancel(true)}>
+                      Cancel run
+                    </button>
+                    <span className="muted small">Stops this run for good — it cannot be resumed.</span>
+                  </div>
+                )}
+                {cancelError && (
+                  <p className="alert" role="alert">
+                    {cancelError}
+                  </p>
+                )}
+              </Card>
+            )}
             <div className="grid two-col">
               <Card title="Steps"><WorkflowStepper steps={workflow.steps} /></Card>
               <Card title="Execution history"><ActivityFeed events={events} showTask={false} /></Card>
