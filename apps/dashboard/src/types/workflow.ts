@@ -55,6 +55,12 @@ export interface Workflow {
   type: WorkflowType;
   status: WorkflowStatus;
   error?: WorkflowError | null;
+  /** Split lineage for auto-split tasks: set on each part's run. */
+  parentTaskId?: string | null;
+  splitIndex?: number | null;
+  splitTotal?: number | null;
+  /** Set when auto-split was attempted but decomposition failed (run proceeds whole). */
+  splitError?: string | null;
   currentActivity?: WorkflowCurrentActivity | null;
   steps: WorkflowStep[];
   startedAt: string;

@@ -30,6 +30,9 @@ export function TaskTable({ tasks, agentNames }: { tasks: Task[]; agentNames: Re
               <th scope="row">
                 <Link to={`/tasks/${t.id}`}>{t.id}</Link>
                 <div className="small">{t.title}</div>
+                {t.isSplitParent && (
+                  <div className="muted small">Split task · {t.splitCompleted}/{t.splitTotal} parts completed</div>
+                )}
               </th>
               <td>{t.projectId.toUpperCase()}</td>
               <td><TaskStatusBadge status={t.status} /></td>

@@ -41,6 +41,7 @@ from asf.agents.spec.factory import build_spec_agent
 from asf.agents.task.factory import build_task_agent
 from asf.agents.test.factory import build_test_agent
 from asf.api.app import create_app
+from asf.api.decomposer import RequirementDecomposer
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
 from asf.api.service import FactoryService
@@ -592,6 +593,12 @@ def build_demo(
         on_project_deleted=on_deleted,
         model_settings=model_settings,
         hosting_tokens=hosting_tokens,
+        # Auto-splitting runs on the same routed gateway as the
+        # agents, so it uses the configured provider and shared
+        # model; with the scripted provider its JSON validation
+        # fails and the service falls back to running the task
+        # whole (the failure is shown on the run).
+        decomposer=RequirementDecomposer(runtime.models),
     )
     service_ref["service"] = service
     return service, engine, store
