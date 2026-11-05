@@ -4,7 +4,7 @@ export type WorkflowStepId =
   | 'requirement' | 'spec' | 'spec_approval' | 'plan' | 'plan_approval' | 'task' | 'task_approval'
   | 'implementation' | 'code_review' | 'testing' | 'ci' | 'merge';
 
-export type StepState = 'done' | 'active' | 'pending' | 'rejected' | 'failed' | 'cancelled';
+export type StepState = 'done' | 'active' | 'pending' | 'rejected' | 'failed' | 'cancelled' | 'skipped';
 
 export interface WorkflowStep {
   id: WorkflowStepId;
@@ -63,6 +63,8 @@ export interface Workflow {
   splitError?: string | null;
   /** "complex" when the run's oversized requirement auto-upgraded every agent to the shared model. */
   modelTier?: string | null;
+  /** Approval steps (spec/plan/task) this task asked to skip at creation. */
+  skippedApprovals?: string[];
   currentActivity?: WorkflowCurrentActivity | null;
   steps: WorkflowStep[];
   startedAt: string;

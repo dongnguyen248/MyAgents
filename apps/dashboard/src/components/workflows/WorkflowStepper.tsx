@@ -7,6 +7,7 @@ const ICON: Record<StepState, [string, string]> = {
   rejected: ['✕', 'Rejected'],
   failed: ['✕', 'Failed'],
   cancelled: ['⊘', 'Cancelled'],
+  skipped: ['»', 'Skipped'],
 };
 
 /** Vertical = full timeline (detail pages). Compact = one-line chips (lists). */

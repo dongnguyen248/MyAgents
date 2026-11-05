@@ -122,6 +122,7 @@ export const mockApi: FactoryApi = {
       projectId: input.projectId,
       type: task.workflowType,
       status: 'RUNNING',
+      skippedApprovals: input.skipApprovals ?? [],
       steps: freshSteps(),
       startedAt: now,
       updatedAt: now,
@@ -143,7 +144,15 @@ export const mockApi: FactoryApi = {
     const active = workflow.steps.findIndex((s) => s.state === 'active');
     if (active >= 0) {
       workflow.steps[active].state = 'done';
-      const next = workflow.steps[active + 1];
+      let next = workflow.steps[active + 1];
+      // Approval gates this task chose to skip are passed over.
+      if (
+        next && next.id.endsWith('_approval')
+        && workflow.skippedApprovals?.includes(next.id.replace('_approval', ''))
+      ) {
+        next.state = 'skipped';
+        next = workflow.steps[active + 2];
+      }
       if (next) next.state = 'active';
       else workflow.status = 'COMPLETED';
       workflow.updatedAt = new Date().toISOString();

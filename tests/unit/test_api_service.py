@@ -627,6 +627,66 @@ def test_start_run_classifies_oversized_requirement_as_complex():
     assert "modelTier" not in engine.get(run.id).context
 
 
+def test_start_run_skip_approvals_passes_the_gate_without_a_request():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    # Dong's ask: simple tasks may skip chosen approval gates at
+    # creation. Skipping spec must leave the plan gate fully intact.
+    run = service.start_run(
+        "task-1", "proj-1",
+        inputs={"spec": {"requirement": "Build a calculator"}},
+        context={"skipApprovals": ["spec"]},
+    )
+    service.wait_for_drives()
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "WAITING_APPROVAL"
+    assert view["skippedApprovals"] == ["spec"]
+    states = {step["id"]: step["state"] for step in view["steps"]}
+    assert states == {
+        "spec": "done", "spec_approval": "skipped",
+        "plan": "done", "plan_approval": "active",
+    }
+    # Only the plan gate produced an approval request.
+    approvals = service.list_approvals()
+    assert len(approvals) == 1 and approvals[0]["type"] == "PLAN"
+
+    # Run again keeps the task's skips.
+    decided = service.decide_approval(approvals[0]["id"], decision="APPROVE")
+    assert decided["status"] == "APPROVED"
+    service.wait_for_drives()
+    view = service.get_workflow(run.id)
+    assert view is not None and view["status"] == "COMPLETED"
+    again = service.retry_run(run.id)
+    assert again is not None and again["skippedApprovals"] == ["spec"]
+    service.wait_for_drives()
+    again_view = service.get_workflow(again["id"])
+    assert again_view is not None
+    states = {step["id"]: step["state"] for step in again_view["steps"]}
+    assert states["spec_approval"] == "skipped"
+    assert states["plan_approval"] == "active"
+
+
+def test_start_run_rejects_invalid_skip_approvals():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    with pytest.raises(ValueError, match="skipApprovals"):
+        service.start_run(
+            "task-1", "proj-1",
+            inputs={"spec": {"requirement": "Build a calculator"}},
+            context={"skipApprovals": ["implement"]},
+        )
+    with pytest.raises(ValueError, match="skipApprovals"):
+        service.start_run(
+            "task-2", "proj-1",
+            inputs={"spec": {"requirement": "Build a calculator"}},
+            context={"skipApprovals": "spec"},
+        )
+
+
 def test_failed_run_does_not_mark_approval_gates_done():
     engine = build_engine()
     service = FactoryService(
