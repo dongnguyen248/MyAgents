@@ -546,3 +546,49 @@ def test_workflow_view_reports_current_activity_while_in_flight():
     assert activity["stepId"] == "spec"
     assert activity["stepLabel"] == "Spec"
     assert activity["since"] == NOW.isoformat()
+
+
+def test_cancelled_run_steps_are_not_all_done():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    run_id = start_at_spec_review(service)
+
+    service.cancel_run(run_id)
+    view = service.get_workflow(run_id)
+
+    assert view is not None and view["status"] == "CANCELLED"
+    states = {step["id"]: step["state"] for step in view["steps"]}
+    # The spec was really written before the cancel; everything from the
+    # gate the run was sitting at onwards is cancelled, never done.
+    assert states == {
+        "spec": "done",
+        "spec_approval": "cancelled",
+        "plan": "cancelled",
+        "plan_approval": "cancelled",
+    }
+
+
+def test_cancelled_run_keeps_passed_approval_gates_done():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    run_id = start_at_spec_review(service)
+    approval = service.list_approvals()[0]
+    service.decide_approval(approval["id"], decision="APPROVE")
+    service.wait_for_drives(timeout=10)
+    assert len(service.list_approvals()) == 1  # parked at the plan gate
+
+    service.cancel_run(run_id)
+    view = service.get_workflow(run_id)
+
+    assert view is not None and view["status"] == "CANCELLED"
+    states = {step["id"]: step["state"] for step in view["steps"]}
+    assert states == {
+        "spec": "done",
+        "spec_approval": "done",
+        "plan": "done",
+        "plan_approval": "cancelled",
+    }

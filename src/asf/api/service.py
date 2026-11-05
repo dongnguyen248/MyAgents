@@ -681,6 +681,15 @@ class FactoryService:
         stage = run.state.stage
         current_index = sequence.index(stage) if stage in sequence else None
         produced = {artifact.type for artifact in run.artifact_history.values()}
+        # For a cancelled run, the stage the run was in when the cancel
+        # landed (from its event trail): approval steps are judged
+        # against it, since the CANCELLED stage itself sits past every
+        # step in the sequence and would mark them all done.
+        cancelled_from_index: int | None = None
+        if status == "CANCELLED":
+            stage_before = self._stage_before_failure(run)
+            if stage_before in sequence:
+                cancelled_from_index = sequence.index(stage_before)
         # The generic FAILED rule below ("first step whose outputs are
         # missing from the artifact history") misattributes any failure
         # that happens after every artifact exists at least once: a run
@@ -736,13 +745,19 @@ class FactoryService:
                     main_state, failure_marked = "failed", True
                 else:
                     main_state = "pending"
-            elif current_index is not None:
-                main_state = "done" if max(indexes) < current_index else "pending"
             elif status == "CANCELLED":
+                # Must precede the current_index fallthrough: a cancelled
+                # run's stage is the sequence's last entry, so every step
+                # would otherwise read as done. A step counts as done only
+                # if it actually published everything it produces; the
+                # step in progress at cancel time and everything after it
+                # are cancelled, never done.
                 main_state = (
                     "done" if step.produces and set(step.produces) <= produced
                     else "cancelled"
                 )
+            elif current_index is not None:
+                main_state = "done" if max(indexes) < current_index else "pending"
             else:
                 main_state = "pending"
             steps.append({"id": main_id, "label": step.name, "state": main_state})
@@ -753,6 +768,7 @@ class FactoryService:
                     "label": f"{step.name} approval",
                     "state": self._approval_step_state(
                         step, stage, current_index, sequence, status,
+                        cancelled_from_index,
                     ),
                 })
         return steps
@@ -761,9 +777,18 @@ class FactoryService:
     def _approval_step_state(
         step: WorkflowStepDef, stage: str, current_index: int | None,
         sequence: list[str], status: str,
+        cancelled_from_index: int | None = None,
     ) -> str:
         if status == "COMPLETED":
             return "done"
+        if status == "CANCELLED":
+            # Done only if the run had already passed this gate when the
+            # cancel landed; the gate it was sitting at, and every later
+            # gate, are cancelled.
+            if cancelled_from_index is None:
+                return "cancelled"
+            approved_index = sequence.index(f"{step.stage}_APPROVED")
+            return "done" if cancelled_from_index >= approved_index else "cancelled"
         if stage == f"{step.stage}_REVIEW" or stage == f"{step.stage}_ESCALATED":
             return "active"
         if stage == f"{step.stage}_REJECTED":
