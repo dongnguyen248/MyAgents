@@ -15,6 +15,7 @@ from asf.agents._shared.code_agents import (
     linked_metadata,
 )
 from asf.agents._shared.parsing import strip_code_fence
+from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.review.prompts import (
     MAX_FINDINGS,
@@ -71,6 +72,7 @@ class ReviewAgent(BaseAgent):
                 metadata={
                     "requestId": request.request_id, "agentId": self.metadata.id,
                     "taskItemId": request.input["taskItemId"],
+                    **tier_metadata(request.context),
                 },
             ))
         except ModelGatewayError as exc:

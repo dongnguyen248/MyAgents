@@ -152,6 +152,9 @@ export function TaskDetailPage() {
                     <Stat label="Revisions" value={task.revisions} />
                     <Stat label="Created" value={dateTime(task.createdAt)} />
                     <Stat label="Duration" value={task.durationSec ? duration(task.durationSec) : 'In progress'} />
+                    {workflow?.modelTier === 'complex' && (
+                      <Stat label="Model routing" value="Complex requirement — all agents upgraded to the shared model" />
+                    )}
                   </dl>
                 </Card>
                 <Card title="GitLab / CI">

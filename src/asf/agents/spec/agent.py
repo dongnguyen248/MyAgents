@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.spec.prompts import SpecPrompts, SpecTemplate, build_spec_messages
 from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
@@ -190,7 +191,10 @@ class SpecAgent(BaseAgent):
             messages=messages,
             parameters=dict(self._parameters),
             model=self._model,
-            metadata={"agentId": self.metadata.id, "requestId": request.request_id},
+            metadata={
+                "agentId": self.metadata.id, "requestId": request.request_id,
+                **tier_metadata(request.context),
+            },
         )
 
         response = self._runtime.models.complete(model_req)
