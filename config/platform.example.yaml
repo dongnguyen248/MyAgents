@@ -10,6 +10,10 @@ logLevel: INFO
 execution:
   maxConcurrentRuns: 2
   maxConcurrentModelCalls: 2
+  # A step running longer than this (or a run untouched for over a
+  # minute with nobody driving it) is shown to operators as STALLED.
+  watchdog:
+    stallSeconds: 900
 
 # Per-run model budget (all dimensions optional; omit or leave a
 # dimension out for no limit). The orchestrator checks the run's

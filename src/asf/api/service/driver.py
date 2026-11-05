@@ -10,6 +10,7 @@ sibling parts provide — declarations only, never assignments.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections import deque
@@ -26,6 +27,10 @@ from asf.api.service import (
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
 from asf.orchestrator.ports import ConcurrentModificationError
+
+# Drive-specific log channel: why drives stop is the first thing an
+# operator needs when a run stalls, so it gets its own logger name.
+drive_logger = logging.getLogger("asf.api.drive")
 
 
 class DriverMixin:
@@ -56,6 +61,10 @@ class DriverMixin:
     _drive_queue: deque[str]
     _drive_workers: list[threading.Thread]
     _drive_stopped: bool
+    _driver_info: dict[str, dict[str, Any]]
+    _adopt_attempts: dict[str, int]
+    _adopt_seen: dict[str, tuple[str, int]]
+    _stall_seconds: float
     _advance_split_chain: Callable[[str], None]
     _apply_requested_cancel: Callable[[str], bool]
     _invalidate_runs_cache: Callable[[], None]
@@ -120,6 +129,49 @@ class DriverMixin:
             # completion is what starts the next part.
             self._advance_split_chain(run_id)
 
+    def _adopt_orphans(self) -> None:
+        """Re-drive runs that should be moving but nobody is driving.
+
+        A run can be orphaned by a backend restart between drives, a
+        lost wake-up, or a drive that died with its thread. Adoption
+        is deliberately narrow — status RUNNING only, no step in
+        flight, no scheduled retry (the retry scheduler owns those),
+        no approval/escalation (a human owns those), and no drive
+        already active — and bounded: a run that makes no progress
+        is adopted at most _ADOPT_LIMIT times in a row, then left
+        alone (the workflow view reports it STALLED) with the
+        give-up recorded on the run.
+        """
+        for run in self._runs():
+            run_id = run.id
+            progress = (run.state.stage, len(run.results))
+            if self._adopt_seen.get(run_id) != progress:
+                self._adopt_seen[run_id] = progress
+                self._adopt_attempts[run_id] = 0
+            if (
+                run.state.stage in ("COMPLETED", "FAILED", "CANCELLED")
+                or run.in_flight is not None
+                or run.retry_at is not None
+                or run_id in self._drive_active
+            ):
+                continue
+            if self._workflow_status(run) != "RUNNING":
+                continue
+            attempts = self._adopt_attempts.get(run_id, 0)
+            if attempts >= self._ADOPT_LIMIT:
+                if attempts == self._ADOPT_LIMIT:
+                    self._adopt_attempts[run_id] = attempts + 1
+                    self._note_drive_stop(run_id, "stalled")
+                continue
+            self._adopt_attempts[run_id] = attempts + 1
+            drive_logger.info(
+                "Adopting orphaned run %s (attempt %d/%d)",
+                run_id,
+                attempts + 1,
+                self._ADOPT_LIMIT,
+            )
+            self._drive_in_background(run_id)
+
     def _wait_for_drive(self, run_id: str, timeout: float | None = None) -> None:
         """Wait until no drive for ``run_id`` is queued or running."""
         with self._drive_condition:
@@ -156,6 +208,44 @@ class DriverMixin:
         with suppress(RuntimeError, ValueError):
             self._engine.flush_observations(run_id)
 
+    # Consecutive orphan adoptions per run before the drive gives
+    # up and leaves the run to be reported STALLED.
+    _ADOPT_LIMIT = 3
+
+    def _note_drive_stop(
+        self,
+        run_id: str,
+        reason: str,
+        *,
+        error_type: str | None = None,
+        record: bool = True,
+    ) -> None:
+        """Bookkeep a drive stop and (usually) record it on the run.
+
+        The DRIVE_STOPPED event puts the reason in the run's own
+        history — an operator reading the run later can see why it
+        stopped moving — while ``_driver_info`` feeds the workflow
+        view's live driver summary. Recording is best-effort: the
+        run may be mid-dispatch by another writer.
+        """
+        info = self._driver_info.setdefault(run_id, {})
+        info["lastStopReason"] = reason
+        if error_type is not None:
+            info["lastErrorType"] = error_type
+        if not record:
+            return
+        with suppress(Exception):
+            self._engine.record_event(
+                run_id,
+                "DRIVE_STOPPED",
+                f"Drive stopped: {reason}",
+                metadata={
+                    "reason": reason,
+                    **({"errorType": error_type} if error_type else {}),
+                },
+            )
+        self._flush_observations_quietly(run_id)
+
     def _drive(self, run_id: str) -> None:
         """Advance a run automatically until it needs a human or stops.
 
@@ -168,33 +258,64 @@ class DriverMixin:
         Best-effort by design: a dispatch problem (e.g. an interrupted
         run awaiting recover()) stops the drive and leaves the run for
         manual handling instead of failing the request that triggered it.
+
+        Every exit is classified and recorded on the run as a
+        DRIVE_STOPPED event (see _note_drive_stop) — a drive never
+        just silently stops anymore.
         """
+        ticks = 0
+        stop_reason: str | None = None
+        stop_error: str | None = None
         for _ in range(self._DRIVE_LIMIT):
             if self._apply_requested_cancel(run_id):
+                stop_reason = "cancelled"
                 break
             run = self._engine.get(run_id)
-            if self._workflow_status(run) != "RUNNING":
+            status = self._workflow_status(run)
+            # A retry-waiting run whose deadline has arrived is
+            # drivable again — that wake-up is the retry scheduler's
+            # whole job. Before the deadline, ticking is pointless
+            # (the engine would no-op) and the drive stops.
+            retry_due = (
+                status == "WAITING_RETRY"
+                and run.retry_at is not None
+                and self._scheduler_clock() >= run.retry_at
+            )
+            if status != "RUNNING" and not retry_due:
+                stop_reason = {
+                    "WAITING_APPROVAL": "awaiting_approval",
+                    "ESCALATED": "escalated",
+                    "WAITING_RETRY": "retry_wait",
+                }.get(status, "terminal")
                 break
             before = (run.state.stage, len(run.results))
             try:
                 self._engine.tick(run_id)
+                ticks += 1
+                info = self._driver_info.setdefault(run_id, {})
+                if self._clock is not None:
+                    info["lastTickAt"] = self._clock().isoformat()
             except ConcurrentModificationError:
                 # Another writer owns this run now (a racing drive, a
                 # manual tick, a second process). Losing the claim is
                 # a normal outcome, not a run failure: stop this drive
                 # and let the owner (or a later drive) carry the run.
-                logger.warning(
+                drive_logger.warning(
                     "Drive for run %s stopped: the run was claimed by another writer",
                     run_id,
                 )
+                stop_reason = "lost_race"
                 break
-            except Exception:
-                logger.exception(
+            except Exception as error:
+                drive_logger.exception(
                     "Drive for run %s stopped on an unexpected error",
                     run_id,
                 )
+                stop_reason = "error"
+                stop_error = type(error).__name__
                 break
             if self._apply_requested_cancel(run_id):
+                stop_reason = "cancelled"
                 break
             # Publish the step's events (its STEP_STARTED line and the
             # agent's result events) now, not only when the whole drive
@@ -202,7 +323,16 @@ class DriverMixin:
             self._flush_observations_quietly(run_id)
             after = self._engine.get(run_id)
             if (after.state.stage, len(after.results)) == before:
+                stop_reason = "no_progress"
                 break
+        else:
+            stop_reason = "no_progress"
+        # A drive that never got to tick because the run was already
+        # parked/terminal adds no information to the run's history;
+        # error, lost-race and cancel stops are always recorded.
+        record = ticks > 0 or stop_reason in ("error", "lost_race", "cancelled")
+        if stop_reason is not None:
+            self._note_drive_stop(run_id, stop_reason, error_type=stop_error, record=record)
         # ValueError: another thread is dispatching this run right
         # now (a manual tick racing the drive) and the engine will
         # not flush mid-dispatch. At-least-once delivery; retried on

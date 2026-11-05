@@ -1,5 +1,5 @@
 import type { Project } from '../../types/project';
-import type { Workflow } from '../../types/workflow';
+import type { RunDiagnostics, Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
 /**
@@ -59,6 +59,7 @@ export function createHttpApi(baseUrl: string): FactoryApi {
 
     listWorkflows: () => get('/workflows'),
     getWorkflow: (id) => getOpt(`/workflows/${id}`),
+    getRunDiagnostics: (runId) => getOpt(`/runs/${runId}/diagnostics`),
     tickRun: (runId) => send<Workflow>(`/runs/${runId}/tick`, 'POST'),
     retryRun: (runId) => send<Workflow>(`/runs/${runId}/retry`, 'POST'),
     resumeRun: (runId) => send<Workflow>(`/runs/${runId}/resume`, 'POST'),

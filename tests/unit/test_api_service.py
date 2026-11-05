@@ -659,9 +659,11 @@ def test_run_log_records_step_started_before_its_result():
     # ...and it reaches the dashboard activity feed.
     activity = service.list_activity({"taskId": "task-1"})
     assert any(a["message"] == "Spec started" for a in activity)
-    # Parked at the approval gate, the run reports no live activity.
+    # Parked at the approval gate, the run's activity strip now
+    # reports the wait itself (it used to report nothing at all).
     view = service.get_workflow(run.id)
-    assert view is not None and view["currentActivity"] is None
+    assert view is not None and view["currentActivity"]["kind"] == "APPROVAL"
+    assert view["waiting"]["kind"] == "APPROVAL"
 
 
 def test_workflow_view_reports_current_activity_while_in_flight():

@@ -291,7 +291,21 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
         decomposer: Any = None,
         max_concurrent_runs: int = 2,
         on_run_terminal: Callable[[str, str, str], None] | None = None,
+        stall_seconds: float = 900,
     ) -> None:
+        # Watchdog: a step in flight longer than this (or a run
+        # nobody is driving and nothing has touched for a minute)
+        # is reported to operators as STALLED.
+        self._stall_seconds = stall_seconds
+        # Per-run drive bookkeeping kept in RAM for the workflow
+        # view and diagnostics: when a drive last ticked the run
+        # and why the most recent drive stopped.
+        self._driver_info: dict[str, dict[str, Any]] = {}
+        # Orphan adoption: consecutive adoption drives per run and
+        # the last (stage, result-count) seen, so a run that makes
+        # no progress is adopted at most _ADOPT_LIMIT times in a row.
+        self._adopt_attempts: dict[str, int] = {}
+        self._adopt_seen: dict[str, tuple[str, int]] = {}
         if max_concurrent_runs < 1:
             raise ValueError("max_concurrent_runs must be at least 1")
         # Optional assembly hook fired when a run reaches a terminal
@@ -328,6 +342,8 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
         self._scheduler = RunScheduler(
             clock=self._scheduler_clock,
             wake=self._drive_in_background,
+            periodic=self._adopt_orphans,
+            periodic_seconds=30,
         )
         self._projects = {
             pid: self._normalize_project(pid, profile) for pid, profile in projects.items()

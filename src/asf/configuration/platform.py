@@ -115,11 +115,18 @@ class AgentSettings(ConfigModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class WatchdogConfig(ConfigModel):
+    """When a live run counts as stalled for operator displays."""
+
+    stall_seconds: int = Field(default=900, ge=1)
+
+
 class ExecutionConfig(ConfigModel):
     """Bounds on how much work the platform runs at the same time."""
 
     max_concurrent_runs: int = Field(default=2, ge=1)
     max_concurrent_model_calls: int = Field(default=2, ge=1)
+    watchdog: WatchdogConfig = Field(default_factory=WatchdogConfig)
 
 
 class RunBudgetSettings(ConfigModel):

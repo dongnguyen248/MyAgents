@@ -36,9 +36,17 @@ class RunScheduler:
         *,
         clock: Callable[[], datetime],
         wake: Callable[[str], None],
+        periodic: Callable[[], None] | None = None,
+        periodic_seconds: float = 30,
     ) -> None:
         self._clock = clock
         self._wake = wake
+        # Optional housekeeping invoked every ``periodic_seconds``
+        # (by the injected clock) whether or not any retry is due —
+        # the service uses it to re-adopt orphaned runs.
+        self._periodic = periodic
+        self._periodic_seconds = periodic_seconds
+        self._last_periodic: datetime | None = None
         self._condition = threading.Condition()
         self._heap: list[tuple[datetime, int, str]] = []
         self._registrations: dict[str, tuple[datetime, int]] = {}
@@ -104,10 +112,17 @@ class RunScheduler:
     def _run(self) -> None:
         while True:
             due: list[str] = []
+            run_periodic = False
             with self._condition:
                 if self._stopped:
                     return
                 now = self._clock()
+                if self._periodic is not None and (
+                    self._last_periodic is None
+                    or (now - self._last_periodic).total_seconds() >= self._periodic_seconds
+                ):
+                    self._last_periodic = now
+                    run_periodic = True
                 while self._heap and self._heap[0][0] <= now:
                     retry_at, sequence, run_id = heapq.heappop(self._heap)
                     current = self._registrations.get(run_id)
@@ -121,6 +136,11 @@ class RunScheduler:
                         remaining = (self._heap[0][0] - now).total_seconds()
                         wait = max(0.0, min(wait, remaining))
                     self._condition.wait(timeout=wait)
+            if run_periodic and self._periodic is not None:
+                try:
+                    self._periodic()
+                except Exception:
+                    logger.exception("Periodic scheduler callback failed")
             # Wake outside the lock: driving a run can take minutes and
             # must not block registrations.
             for run_id in due:

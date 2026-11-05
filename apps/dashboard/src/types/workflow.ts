@@ -2,9 +2,9 @@ import type { WorkflowType } from './task';
 
 export type WorkflowStepId =
   | 'requirement' | 'spec' | 'spec_approval' | 'plan' | 'plan_approval' | 'task' | 'task_approval'
-  | 'implementation' | 'code_review' | 'testing' | 'ci' | 'merge';
+  | 'implementation' | 'code_review' | 'testing' | 'fix' | 'ci' | 'merge';
 
-export type StepState = 'done' | 'active' | 'pending' | 'rejected' | 'failed' | 'cancelled' | 'skipped';
+export type StepState = 'done' | 'active' | 'pending' | 'rejected' | 'failed' | 'cancelled' | 'skipped' | 'escalated';
 
 export interface WorkflowStep {
   id: WorkflowStepId;
@@ -12,7 +12,7 @@ export interface WorkflowStep {
   state: StepState;
 }
 
-export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'WAITING_RETRY' | 'ESCALATED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 /** The failure that ended a FAILED workflow run (absent otherwise). */
 export interface WorkflowError {
@@ -37,14 +37,59 @@ export interface WorkflowArtifact {
 
 /** What a live run is doing right now (absent for terminal/waiting runs). */
 export interface WorkflowCurrentActivity {
-  kind: 'STEP_RUNNING' | 'RETRY_WAIT';
+  kind: 'STEP_RUNNING' | 'RETRY_WAIT' | 'APPROVAL' | 'ESCALATED' | 'STALLED';
   stepId?: string | null;
   stepLabel?: string | null;
   stage?: string | null;
   /** When the current step started (or when the run last changed). */
   since: string;
+  /** Human reason for waits (approval target, escalation, stall). */
+  reason?: string | null;
   /** For RETRY_WAIT: when the next attempt is due. */
   retryAt?: string | null;
+}
+
+/** What a non-terminal run is waiting for, in operator terms. */
+export interface WorkflowWaiting {
+  kind: 'APPROVAL' | 'ESCALATED' | 'RETRY_WAIT' | 'STEP_RUNNING' | 'STALLED' | 'NONE';
+  since: string;
+  reason?: string | null;
+  retryAt?: string | null;
+  budget?: { used: number; max: number } | null;
+  suggestedActions: string[];
+}
+
+/** The background drive's own state for a run (kept in backend RAM). */
+export interface WorkflowDriver {
+  alive: boolean;
+  lastTickAt?: string | null;
+  lastStopReason?: string | null;
+}
+
+/** GET /runs/{id}/diagnostics — the operator's one-shot answer. */
+export interface RunDiagnostics {
+  runId: string;
+  taskId: string;
+  projectId: string;
+  stage: string;
+  stageKind: string;
+  status: WorkflowStatus;
+  waiting: WorkflowWaiting;
+  inFlight?: { token: string; ageSeconds: number } | null;
+  retryAt?: string | null;
+  fixBudget: { used: number; max: number };
+  revisions: Record<string, number>;
+  lastEvents: { type: string; message: string; at: string; metadata: Record<string, unknown> }[];
+  lastError?: {
+    code: string;
+    message: string;
+    category: string;
+    retryable: boolean;
+    at: string;
+    details?: Record<string, unknown> | null;
+  } | null;
+  driver: WorkflowDriver;
+  suggestedActions: string[];
 }
 
 export interface Workflow {
@@ -66,6 +111,8 @@ export interface Workflow {
   /** Approval steps (spec/plan/task) this task asked to skip at creation. */
   skippedApprovals?: string[];
   currentActivity?: WorkflowCurrentActivity | null;
+  waiting?: WorkflowWaiting;
+  driver?: WorkflowDriver;
   steps: WorkflowStep[];
   startedAt: string;
   updatedAt: string;
