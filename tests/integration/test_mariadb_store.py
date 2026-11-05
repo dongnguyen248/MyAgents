@@ -10,6 +10,8 @@ account needs privileges on that database only (GRANT ALL ON asf_test.*)
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import threading
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -22,6 +24,7 @@ from asf.api.demo import build_demo
 from asf.orchestrator.execution import WorkflowExecution
 from asf.state_machine.machine import RunState
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
+from tests.unit.test_orchestrator import start as _start_run
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("ASF_TEST_MARIADB") != "1",
@@ -40,7 +43,7 @@ def make_store() -> MariaDbExecutionStore:
 def test_store_round_trip_and_reopen(tmp_path: Path):
     project_id = f"itest-{uuid4().hex[:8]}"
     store = make_store()
-    service, engine, _ = build_demo(tmp_path / "anchor.sqlite", store=store)
+    service, engine, _ = build_demo(tmp_path, store=store)
     run = service.start_run(
         "maria-task",
         project_id,
@@ -76,7 +79,7 @@ def test_transaction_rolls_back_on_error(tmp_path: Path):
     project_id = f"itest-{uuid4().hex[:8]}"
     store = make_store()
     try:
-        _service, engine, _ = build_demo(tmp_path / "anchor.sqlite", store=store)
+        _service, engine, _ = build_demo(tmp_path, store=store)
         run = engine.start(
             task_id="tx-task",
             project_id=project_id,
@@ -94,7 +97,7 @@ def test_transaction_rolls_back_on_error(tmp_path: Path):
 
 
 def test_store_supports_concurrent_threads():
-    """Same guarantee as the SQLite store: per-thread connections make
+    """Per-thread connections make
     concurrent transactions from many threads land cleanly."""
     project_id = f"itest-{uuid4().hex[:8]}"
     store = make_store()
@@ -408,3 +411,88 @@ def test_approval_queries_use_their_indexes():
                 assert "ALL" not in access_types, (sql, rows)
     finally:
         store.close()
+
+
+# -- Fresh-process resume (relocated from the unit operations suite:
+# cross-process durability is a MariaDB property now) -----------------
+
+
+def _durable_engine():
+    from asf.approval.models import ApprovalPolicy
+    from asf.orchestrator import Orchestrator
+    from tests.unit.test_orchestrator import make_engine
+
+    original, spec, plan, _ = make_engine(approval=True)
+    store = make_store()
+    engine = Orchestrator(
+        original._definition,
+        original._registry,
+        clock=original._clock,
+        new_id=original._new_id,
+        store=store,
+        approval_policy=ApprovalPolicy(reviewers=["one", "two"], min_approvals=2),
+    )
+    return engine, spec, plan, store
+
+
+def test_fresh_python_process_resumes_quorum_and_runs_plan_without_repeating_spec():
+    engine, _spec, _plan, store = _durable_engine()
+    run = engine.tick(_start_run(engine).id)
+    engine.decide(run.id, reviewer="one", decision="APPROVED")
+    store.close()
+    script = r"""
+import sys
+from uuid import uuid4
+from asf.agents.base import AgentRuntime
+from asf.agents.plan import build_plan_agent
+from asf.approval.models import ApprovalPolicy
+from asf.models.fake import ScriptedModelGateway
+from asf.orchestrator import AgentRegistry, Orchestrator
+from asf.storage.memory import InMemoryStore
+from asf.workflow.definition import WorkflowDefinition
+from tests.integration.test_chain import PLATFORM, TEMPLATES_DIR, make_plan_artifact
+from tests.unit.test_orchestrator import NOW
+
+config = replace(
+    MariaDbConfig.from_env(),
+    database=os.environ.get("ASF_TEST_MARIADB_DATABASE", "asf_test"),
+)
+store = MariaDbExecutionStore(config)
+saved = store.get_execution(sys.argv[1])
+reply = make_plan_artifact().content["text"].replace(
+    "ID: spec-1", "ID: " + saved.artifacts["SPEC"].id,
+)
+gateway = ScriptedModelGateway([reply])
+registry = AgentRegistry()
+registry.register(build_plan_agent(
+    AgentRuntime(gateway, lambda: NOW, lambda: str(uuid4())), PLATFORM, TEMPLATES_DIR,
+))
+engine = Orchestrator(
+    WorkflowDefinition.model_validate(saved.definition), registry,
+    clock=lambda: NOW, new_id=lambda: str(uuid4()), store=store,
+    approval_policy=ApprovalPolicy.model_validate(saved.settings["approvalPolicy"]),
+)
+run = engine.decide(saved.id, reviewer="two", decision="APPROVED")
+run = engine.tick(run.id)
+assert run.state.stage == "COMPLETED"
+assert len(run.results) == 2
+assert len(gateway.requests) == 1
+assert run.results[0].agent_id == "agent-spec"
+assert run.results[1].agent_id == "agent-plan"
+store.close()
+print("COMPLETED")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, run.id],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, "Fresh-process resume failed"
+    assert result.stdout.strip() == "COMPLETED"
+    store = make_store()
+    assert store.get_execution(run.id).state.stage == "COMPLETED"
+    assert len(store.get_execution(run.id).results) == 2
+    store.close()

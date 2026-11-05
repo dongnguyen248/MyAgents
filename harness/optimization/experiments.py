@@ -32,7 +32,7 @@ from asf.approval.models import ApprovalPolicy
 from asf.configuration.platform import AgentSettings, PlatformConfig
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, CodeLoopPolicy, Orchestrator
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
 from asf.workflow.definition import WorkflowDefinition
 from harness.evaluation.cases import BenchmarkCase
@@ -193,8 +193,8 @@ def _run_code_loop(max_fixes: int) -> ConfigResult:
     )
     definition = definition.model_copy(update={"steps": definition.steps[:6]})
 
-    with tempfile.TemporaryDirectory() as tmp:
-        store = SQLiteExecutionStore(Path(tmp) / "experiment.sqlite")
+    with tempfile.TemporaryDirectory():
+        store = InMemoryStore()
         ids = count(1)
         engine = Orchestrator(
             definition,

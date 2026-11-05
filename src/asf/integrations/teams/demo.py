@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -38,7 +39,9 @@ from asf.integrations.teams.workflow import TeamsWorkflow, create_app
 from asf.models.fake import ScriptedModelGateway
 from asf.models.ports import ModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.orchestrator.ports import ExecutionStore
+from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
+from asf.storage.memory import InMemoryStore
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 
 
@@ -79,7 +82,7 @@ class DemoModels:
 
 def demo_engine(
     config: TeamsConfig,
-    store: SQLiteExecutionStore,
+    store: ExecutionStore,
     *,
     models: ModelGateway | None = None,
     execution_id: str | None = None,
@@ -166,7 +169,19 @@ def run_demo(args: argparse.Namespace) -> None:
             ),
             run_id=execution_id,
         )
-    store = SQLiteExecutionStore(args.database)
+    # Same store rule as the main demo: MariaDB when configured,
+    # otherwise an in-memory store (this is a demo; a resumed run
+    # then only works within one process lifetime).
+    store: ExecutionStore
+    if os.environ.get("ASF_MARIADB_PASSWORD"):
+        store = MariaDbExecutionStore(MariaDbConfig.from_env())
+    else:
+        print(
+            "WARNING: no ASF_MARIADB_PASSWORD set — using an in-memory "
+            "store; demo state is lost on restart.",
+            file=sys.stderr,
+        )
+        store = InMemoryStore()
     try:
         engine = demo_engine(
             settings,
@@ -195,11 +210,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config-dir", type=Path, default=Path("config"))
     parser.add_argument("--channel", default="teams-approvals")
-    parser.add_argument(
-        "--database",
-        type=Path,
-        default=Path("artifacts/teams-workflow-demo.sqlite"),
-    )
     parser.add_argument("--run-id", help="Resume a workflow demo; may resend its current card")
     parser.add_argument("--port", type=int, default=3978)
     parser.add_argument(

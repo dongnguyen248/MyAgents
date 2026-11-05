@@ -30,8 +30,7 @@ from asf.configuration.project import ProjectProfile
 from asf.contracts.models import ModelRequest, ModelResponse
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
-from asf.storage.memory import InMemoryApprovalRepository
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryApprovalRepository, InMemoryStore
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 from tests.integration.test_chain import make_plan_artifact, make_spec_artifact
 
@@ -340,7 +339,7 @@ def test_metrics_overview_defaults_without_metrics():
 
 
 def test_store_discovered_runs_are_listed(tmp_path):
-    store = SQLiteExecutionStore(tmp_path / "executions.sqlite")
+    store = InMemoryStore()
     try:
         engine = build_engine(store)
         run = engine.start(

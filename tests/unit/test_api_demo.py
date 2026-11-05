@@ -12,7 +12,7 @@ import pytest
 from asf.api.demo import (
     _project_remover,
     _project_writer,
-    _resolve_db_path,
+    _resolve_data_dir,
     build_demo,
 )
 from asf.configuration.loader import load_project, load_projects
@@ -69,13 +69,13 @@ def test_project_writer_overwrite_and_remover(tmp_path: Path):
 
 
 def test_demo_engine_has_bounded_code_loop_enabled(tmp_path: Path):
-    _service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    _service, engine, _store = build_demo(tmp_path, ephemeral=True)
     assert engine._code_loop is not None
     assert engine._code_loop.max_fixes == 3
 
 
 def test_workflow_view_exposes_artifact_contents(tmp_path: Path):
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     run = service.start_run(
         "artifact-task",
         service.list_projects()[0]["id"],
@@ -160,7 +160,7 @@ def test_review_rules_file_cannot_escape_projects_dir(tmp_path: Path):
 
 
 def test_project_skills_resolve_from_the_catalogue(tmp_path: Path):
-    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, _engine, _store = build_demo(tmp_path, ephemeral=True)
     skills = service._project_skills("vhpc")
     assert [entry["id"] for entry in skills] == [
         "java",
@@ -178,14 +178,14 @@ def test_project_skills_resolve_from_the_catalogue(tmp_path: Path):
 
 
 def test_project_skills_missing_file_fails_loudly(tmp_path: Path):
-    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, _engine, _store = build_demo(tmp_path, ephemeral=True)
     service._project_profiles["broken"] = {"enabledSkills": ["no-such-skill"]}
     with pytest.raises(ValueError, match="no-such-skill"):
         service._project_skills("broken")
 
 
 def test_run_context_carries_the_projects_enabled_skills(tmp_path: Path):
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     project_id = service.list_projects()[0]["id"]
     enabled = service._project_profiles[project_id]["enabledSkills"]
     run = service.start_run(
@@ -199,7 +199,7 @@ def test_run_context_carries_the_projects_enabled_skills(tmp_path: Path):
 
 
 def test_vhpc_rules_reach_the_run_context(tmp_path: Path):
-    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, _engine, _store = build_demo(tmp_path, ephemeral=True)
     rules = service._review_rules("vhpc")
     for marker in (
         "Java Coding Rules",
@@ -287,7 +287,7 @@ def test_language_packs_precede_project_rules(tmp_path: Path):
 
 
 def test_retry_run_replays_the_original_inputs(tmp_path: Path):
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     run = service.start_run(
         "retry-task",
         "vhpc",
@@ -305,7 +305,7 @@ def test_retry_run_replays_the_original_inputs(tmp_path: Path):
 
 
 def test_retry_run_rejects_a_run_that_is_still_active(tmp_path: Path):
-    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, _engine, _store = build_demo(tmp_path, ephemeral=True)
     run = service.start_run(
         "active-task",
         "vhpc",
@@ -315,20 +315,25 @@ def test_retry_run_rejects_a_run_that_is_still_active(tmp_path: Path):
         service.retry_run(run.id)
 
 
-def test_resolve_db_path_serving_defaults_to_repo_data_dir():
-    path = _resolve_db_path(None, selftest=False)
-    assert path.name == "asf.sqlite" and path.parent.name == "data"
+def test_resolve_data_dir_serving_defaults_to_repo_data_dir():
+    path = _resolve_data_dir(selftest=False)
+    assert path.name == "data"
 
 
-def test_resolve_db_path_explicit_argument_wins(tmp_path: Path):
-    explicit = tmp_path / "custom.sqlite"
-    assert _resolve_db_path(explicit, selftest=False) == explicit
-    assert _resolve_db_path(explicit, selftest=True) == explicit
+def test_resolve_data_dir_selftest_keeps_a_temp_dir():
+    path = _resolve_data_dir(selftest=True)
+    assert "asf-api-demo-" in path.name
 
 
-def test_resolve_db_path_selftest_keeps_a_temp_db():
-    path = _resolve_db_path(None, selftest=True)
-    assert path.name == "demo.sqlite" and "asf-api-demo-" in path.parent.name
+def test_build_demo_without_store_or_ephemeral_requires_mariadb_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # No silent fallback: without ASF_MARIADB_PASSWORD (and without
+    # an explicit store or the ephemeral flag) assembly refuses
+    # with the configuration guidance.
+    monkeypatch.delenv("ASF_MARIADB_PASSWORD", raising=False)
+    with pytest.raises(ValueError, match="No execution store is configured"):
+        build_demo(tmp_path)
 
 
 def test_load_dotenv_reads_pairs_and_keeps_real_env(
@@ -363,7 +368,7 @@ def test_resume_run_continues_from_the_failed_step(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     spec_agent = engine._registry.for_type("spec")
 
     def explode(request: object) -> object:
@@ -393,7 +398,7 @@ def test_resume_run_continues_from_the_failed_step(
 
 
 def test_resume_run_rejects_a_run_that_has_not_failed(tmp_path: Path):
-    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, _engine, _store = build_demo(tmp_path, ephemeral=True)
     run = service.start_run(
         "active-task-2",
         "vhpc",
@@ -404,7 +409,7 @@ def test_resume_run_rejects_a_run_that_has_not_failed(tmp_path: Path):
 
 
 def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     run = service.start_run(
         "hands-free",
         "vhpc",
@@ -430,7 +435,7 @@ def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
 def test_run_with_all_approvals_skipped_needs_no_approvals(tmp_path: Path):
     # Dong's simple-task case: every gate skipped at creation — the
     # run drives itself to completion and no approval is ever created.
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     run = service.start_run(
         "hands-free-skip",
         "vhpc",
@@ -452,7 +457,7 @@ def test_workflow_view_exposes_the_failure_reason(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     spec_agent = engine._registry.for_type("spec")
 
     def explode(request: object) -> object:
@@ -495,7 +500,7 @@ def test_run_failing_in_code_fix_keeps_its_approval_gates_done(
 
     from asf.contracts.models import AgentResult, PlatformError, RunMetrics
 
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     review_agent = engine._registry.for_type("review")
     original_review = review_agent.execute
 
@@ -606,7 +611,7 @@ def test_start_run_returns_while_a_step_is_still_executing(
     Regression: drives ran on the request thread, so one stuck agent
     call froze the whole API — every dashboard list stuck at Loading.
     """
-    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, _store = build_demo(tmp_path, ephemeral=True)
     spec_agent = engine._registry.for_type("spec")
     original = spec_agent.execute
     gate = threading.Event()
@@ -659,7 +664,7 @@ def test_startup_recovers_a_run_left_mid_dispatch(tmp_path: Path):
     recovers it (nothing can be in flight in a fresh process) and the
     run continues on its own instead of stranding at RUNNING forever.
     """
-    service, engine, store = build_demo(tmp_path / "demo.sqlite")
+    service, engine, store = build_demo(tmp_path, ephemeral=True)
     run = engine.start(
         task_id="wedged-task",
         project_id="vhpc",

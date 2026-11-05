@@ -49,13 +49,18 @@ python -m asf.api.demo --selftest
 ### 3b. Chạy server thật
 
 ```powershell
-# Cách A — DB tạm (mỗi lần chạy là DB mới, mất hết run khi tắt):
+# Cách A — chạy thật trên MariaDB (giữ run/approval qua các lần restart).
+# Cần .env ở thư mục gốc repo chứa ASF_MARIADB_PASSWORD (xem mục 5):
 python -m asf.api.demo --port 8000
 
-# Cách B — DB bền (giữ run/approval qua các lần restart):
-mkdir data -Force
-python -m asf.api.demo --port 8000 --db .\data\asf.sqlite
+# Cách B — chạy tạm trong RAM (không cần DB; mất HẾT run/approval khi tắt,
+# chỉ để demo nhanh — server sẽ in cảnh báo to khi khởi động):
+python -m asf.api.demo --port 8000 --ephemeral
 ```
+
+Không có `.env`/mật khẩu MariaDB mà cũng không truyền `--ephemeral` thì
+server từ chối khởi động và in hướng dẫn cấu hình — không còn store file
+nào để tự rơi xuống nữa.
 
 Kiểm tra sống: mở http://127.0.0.1:8000/health → `{"status":"ok"}`
 
@@ -98,16 +103,23 @@ npm run dev          # http://localhost:5173
 - Không có file `.env` này → dashboard tự dùng mock data trong trình duyệt.
 - Kiểm tra build: `npm run build`
 
-## 5. Database — KHÔNG cần setup gì
+## 5. Database — MariaDB là store duy nhất cho chạy thật
 
-- Chỉ dùng **SQLite** (thư viện chuẩn của Python). Không server, không user/pass,
-  không migration: `SQLiteExecutionStore` tự chạy `CREATE TABLE IF NOT EXISTS`
-  (executions / approvals / decisions) ngay khi mở file.
-- Demo API: không truyền `--db` thì file nằm ở thư mục temp của Windows
-  (mỗi lần khởi động là 1 file mới). Muốn bền thì dùng `--db .\data\asf.sqlite` (Cách B).
+- Cần một server MariaDB và một tài khoản có quyền trên database của ASF,
+  ví dụ (chạy bằng tài khoản root của MariaDB):
+  `CREATE USER 'asf'@'127.0.0.1' IDENTIFIED BY '<mật khẩu>';`
+  `GRANT ALL PRIVILEGES ON asf.* TO 'asf'@'127.0.0.1';`
+  Database và bảng được store tự tạo + migrate khi mở — không cần tạo tay.
+- Kết nối khai trong file `.env` ở thư mục gốc repo (đã gitignore; mẫu ở
+  `.env.example`): bắt buộc có `ASF_MARIADB_PASSWORD`; các biến
+  `ASF_MARIADB_HOST` / `ASF_MARIADB_PORT` / `ASF_MARIADB_USER` /
+  `ASF_MARIADB_DATABASE` chỉ cần khi khác mặc định 127.0.0.1 / 3306 / asf / asf.
 - Metrics (Phase 10): sống trong RAM của process backend, tắt server là reset.
   Thư viện có `snapshot()/restore()` dạng JSON nếu sau này muốn lưu ra file.
-- Tests: dùng store in-memory, không chạm file DB nào.
+- Tests: unit test dùng `InMemoryStore` (đúng contract của store MariaDB,
+  không bền qua process); hành vi MariaDB thật nằm ở
+  `tests/integration/test_mariadb_store.py`, tự skip khi không đặt
+  `ASF_TEST_MARIADB=1` — cách chạy bằng Docker xem `src/asf/storage/README.md`.
 
 ## 6. .env / biến môi trường — toàn cảnh
 

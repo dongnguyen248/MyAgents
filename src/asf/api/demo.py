@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+import sys
 import tempfile
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -66,8 +67,9 @@ from asf.models.limited import ConcurrencyLimitedGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.orchestrator.budget import RunBudget
 from asf.orchestrator.code_loop import CodeLoopPolicy
+from asf.orchestrator.ports import ExecutionStore
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
 from asf.tools.local import (
     LocalWorkspace,
@@ -720,15 +722,21 @@ def _profile_sandbox_settings(profile: ProjectProfile) -> SandboxSettings | None
 
 
 def build_demo(
-    db_path: Path,
+    data_dir: Path,
     *,
-    store: SQLiteExecutionStore | MariaDbExecutionStore | None = None,
+    store: ExecutionStore | None = None,
+    ephemeral: bool = False,
 ) -> tuple[FactoryService, Orchestrator, Any]:
     """Assemble store, engine (all seven agents), and dashboard service.
 
-    ``db_path`` locates the SQLite store and the model-settings file kept
-    beside it; pass ``store`` to run on a different execution store (e.g.
-    MariaDB) — ``db_path`` then only anchors the settings file.
+    ``data_dir`` anchors the dashboard-managed files (model settings,
+    hosting tokens) — it implies no database file. Store selection:
+    an explicit ``store`` wins; ``ephemeral=True`` runs on an
+    in-memory store (state is lost on restart — tests and throwaway
+    demos only); otherwise the store is MariaDB configured through
+    the ``ASF_MARIADB_*`` environment variables, and a missing
+    ``ASF_MARIADB_PASSWORD`` is a loud configuration error, never a
+    silent fallback.
     """
     root = Path(asf.__file__).resolve().parents[2]
     templates_dir = root / "templates"
@@ -743,18 +751,18 @@ def build_demo(
     def new_id() -> str:
         return str(uuid4())
 
-    # UI-managed model provider settings: beside the run DB by default,
-    # so a provider/key configured in the dashboard survives restarts.
+    # UI-managed model provider settings: in the data directory, so
+    # a provider/key configured in the dashboard survives restarts.
     settings_override = os.environ.get("ASF_MODEL_SETTINGS_FILE")
     settings_path = (
-        Path(settings_override) if settings_override else db_path.parent / "model-settings.json"
+        Path(settings_override) if settings_override else data_dir / "model-settings.json"
     )
     model_settings = ModelSettings(settings_path)
     # Per-project hosting tokens entered in the dashboard, kept beside
     # the run DB like the model settings — never in the project YAML.
     tokens_override = os.environ.get("ASF_HOSTING_TOKENS_FILE")
     hosting_tokens = HostingTokens(
-        Path(tokens_override) if tokens_override else db_path.parent / "hosting-tokens.json",
+        Path(tokens_override) if tokens_override else data_dir / "hosting-tokens.json",
     )
     runtime = AgentRuntime(
         models=ConcurrencyLimitedGateway(
@@ -772,9 +780,9 @@ def build_demo(
     # files, change sets land in the folder, test commands really run);
     # every other project keeps the in-memory/scripted fakes.
     # Git projects get a per-run worktree under the data directory
-    # (beside the run database) instead of writes into the user's own
+    # instead of writes into the user's own
     # working tree; see asf.tools.worktree for the state convention.
-    worktrees = GitWorktreeWorkspace(Path(db_path).parent / "worktrees")
+    worktrees = GitWorktreeWorkspace(data_dir / "worktrees")
     workspace = LocalWorkspace(
         {
             profile.id: root_path
@@ -817,7 +825,8 @@ def build_demo(
         )
     )
 
-    store = store if store is not None else SQLiteExecutionStore(db_path)
+    if store is None:
+        store = InMemoryStore() if ephemeral else _mariadb_store_from_env()
     metrics = _load_metrics()
     # Hosting actions (Phase 8): projects whose profile links a GitLab /
     # GitHub repository (repository.url + provider, token from the
@@ -963,22 +972,51 @@ def run_selftest(service: FactoryService, engine: Orchestrator) -> int:
     return 0
 
 
-def _resolve_db_path(db_arg: Path | None, *, selftest: bool) -> Path:
-    """Where the demo's SQLite store lives.
+DB_CONFIG_GUIDANCE = """\
+No execution store is configured. ASF stores runs in MariaDB —
+there is no file-based store anymore. To run the backend:
 
-    An explicit ``--db`` wins. Serving defaults to ``<repo>/data/asf.sqlite``
-    so runs — and the model settings stored beside the DB — survive
-    restarts no matter which directory the backend is started from; the
-    previous default (a fresh temp directory per start) silently discarded
-    every run on restart. The headless selftest keeps a throwaway temp DB
-    so it never pollutes the real one.
+  1. Start a MariaDB server and create an account with rights on
+     its database, e.g.:
+       CREATE USER 'asf'@'127.0.0.1' IDENTIFIED BY '<password>';
+       GRANT ALL PRIVILEGES ON asf.* TO 'asf'@'127.0.0.1';
+  2. Put the connection in a repo-root .env file (see .env.example):
+       ASF_MARIADB_PASSWORD=<password>
+     ASF_MARIADB_HOST / ASF_MARIADB_PORT / ASF_MARIADB_USER /
+     ASF_MARIADB_DATABASE override the defaults 127.0.0.1 / 3306 /
+     asf / asf when set.
+  3. Re-run:  python -m asf.api.demo --port 8000
+
+For a throwaway run with no persistence at all, pass --ephemeral
+(state is kept in memory and lost when the backend stops)."""
+
+
+def _mariadb_store_from_env() -> MariaDbExecutionStore:
+    """The production store, from ASF_MARIADB_* environment variables.
+
+    The password is the one setting with no usable default; without
+    it the configuration is incomplete and starting anyway would
+    either fail opaquely inside the driver or — worse — silently
+    fall back to throwaway storage, so refuse with guidance.
     """
-    if db_arg is not None:
-        return db_arg
+    config = MariaDbConfig.from_env()
+    if not config.password:
+        raise ValueError(DB_CONFIG_GUIDANCE)
+    return MariaDbExecutionStore(config)
+
+
+def _resolve_data_dir(*, selftest: bool) -> Path:
+    """Where the dashboard-managed files (settings, tokens) live.
+
+    Serving uses ``<repo>/data`` regardless of the directory the
+    backend is started from, so a configured provider/key survives
+    restarts; the headless selftest uses a throwaway temp directory
+    so it never touches the real settings.
+    """
     if selftest:
-        return Path(tempfile.mkdtemp(prefix="asf-api-demo-")) / "demo.sqlite"
+        return Path(tempfile.mkdtemp(prefix="asf-api-demo-"))
     root = Path(asf.__file__).resolve().parents[2]
-    return root / "data" / "asf.sqlite"
+    return root / "data"
 
 
 def _load_dotenv(path: Path) -> bool:
@@ -1030,11 +1068,11 @@ def main() -> None:
         print(f"Loaded environment from {dotenv_path}")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--db", type=Path, default=None, help="SQLite store path")
     parser.add_argument(
-        "--mariadb",
+        "--ephemeral",
         action="store_true",
-        help="Store runs in MariaDB (ASF_MARIADB_* env vars) instead of SQLite",
+        help="Run on an in-memory store: ALL state is lost when the "
+        "backend stops (tests and throwaway demos only)",
     )
     parser.add_argument(
         "--selftest",
@@ -1042,20 +1080,25 @@ def main() -> None:
         help="Run one headless end-to-end run instead of serving HTTP",
     )
     args = parser.parse_args()
-    if args.mariadb:
-        config = MariaDbConfig.from_env()
-        maria_store = MariaDbExecutionStore(config)
-        # Runs live in MariaDB; the model-settings file still needs a home,
-        # so anchor it at the usual data directory.
+    data_dir = _resolve_data_dir(selftest=args.selftest)
+    try:
         service, engine, store = build_demo(
-            _resolve_db_path(None, selftest=False),
-            store=maria_store,
+            data_dir,
+            ephemeral=args.ephemeral or args.selftest,
         )
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(2) from error
+    if isinstance(store, MariaDbExecutionStore):
+        config = MariaDbConfig.from_env()
         db_label = f"mariadb {config.user}@{config.host}:{config.port}/{config.database}"
     else:
-        db_path = _resolve_db_path(args.db, selftest=args.selftest)
-        service, engine, store = build_demo(db_path)
-        db_label = str(db_path.resolve())
+        db_label = "in-memory (EPHEMERAL: all state is lost on restart)"
+        print(
+            "WARNING: ephemeral in-memory store — runs, approvals and "
+            "history will be LOST when this process stops.",
+            file=sys.stderr,
+        )
     try:
         if args.selftest:
             raise SystemExit(run_selftest(service, engine))

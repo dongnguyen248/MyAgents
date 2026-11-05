@@ -1,10 +1,10 @@
 """MariaDB-backed execution store.
 
-Same contract as :mod:`asf.storage.sqlite` — one connection per
+The production ``ExecutionStore`` — one connection per
 thread, autocommit outside explicit transactions, JSON payloads — over
 a MariaDB server, for
-deployments that outgrow a local SQLite file. The driver (PyMySQL) is
-imported lazily so SQLite users never need it installed.
+The driver (PyMySQL) is imported lazily so importing this
+module never requires it to be installed.
 
 Startup is self-migrating: connecting creates the database when missing
 and applies any pending schema migrations, so the only manual setup is a
@@ -362,7 +362,7 @@ class MariaDbExecutionStore:
                 charset="utf8mb4",
                 autocommit=True,
                 # FOUND_ROWS: an UPDATE's rowcount must count matched rows
-                # (SQLite semantics the store contract assumes), not only
+                # (the semantics the store contract assumes), not only
                 # rows whose values actually changed.
                 client_flag=CLIENT.FOUND_ROWS,
             )
@@ -452,7 +452,7 @@ class MariaDbExecutionStore:
             )
 
     def save_execution(self, run: WorkflowExecution) -> None:
-        # Optimistic locking, same contract as the SQLite store: the
+        # Optimistic locking: the
         # update only lands on the row version this copy was read
         # from; a stale writer fails loudly instead of overwriting.
         expected = run.version

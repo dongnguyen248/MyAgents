@@ -31,7 +31,7 @@ own scope; a module can still have planned capabilities.
 | `integrations` | Implemented | LLM, hosting and Teams adapters exist; see the integration status below for their boundaries. |
 | `tools` | Implemented | Repository and sandbox ports, fakes and local workspace adapters. Local commands run in a trusted workspace, not an isolation sandbox. |
 | `execution` | Contract only | Placeholder for execution isolation and runtime runners; no isolated execution implementation in this package. |
-| `storage` | Implemented | In-memory, SQLite and MariaDB execution storage; SQLite is a local single-worker store, not a distributed persistence claim. |
+| `storage` | Implemented | MariaDB execution storage for real runs; an in-memory store with the same contract serves tests and ephemeral demos. |
 | `evaluation` | Implemented | Runtime metrics and aggregation; metrics are not a substitute for an independent quality benchmark. |
 | `api` | Implemented | FastAPI REST/SSE adapter and demo assembly for the dashboard; not a production security boundary. |
 | `cli` | Implemented | Minimal console entry point: `asf --version` and `asf serve` (runs the demo server, passing its flags through). A general platform CLI is not implemented. The offline harness has a separate CLI. |
@@ -44,7 +44,7 @@ own scope; a module can still have planned capabilities.
 | MCP | Planned | No MCP integration is claimed. |
 | GitLab / CI | Implemented | Hosting adapters and workflow actions exist. The CI action succeeds when hosting is unconfigured or no pipeline exists, so it is not a mandatory quality gate; live behavior and production readiness are not established. |
 | Teams | Implemented | Teams Workflows approval adapter and authenticated callback exist; deploying the external flow and live validation remain outstanding. |
-| Database | Implemented | SQLite and MariaDB execution stores exist; MariaDB requires a configured server. Neither implies distributed execution readiness. |
+| Database | Implemented | MariaDB is the execution store (a configured server is required); it does not imply distributed execution readiness. |
 | Authentication / authorization | Planned | General API user authentication and authorization are not established; the Teams callback's authentication is specific to that integration. |
 | Dashboard | Implemented | React UI can use mock data or the HTTP/SSE backend. The backend demo and integrations are not a production deployment. |
 | Offline harness | Implemented | Scripted Spec/Plan evaluation and a deterministic fix-cycle experiment exercise orchestration; their scores do not independently establish artifact quality or optimal configuration. |
@@ -118,7 +118,7 @@ variables (or the backend's own settings stores):
 
 | Variable | Purpose |
 | --- | --- |
-| `ASF_MARIADB_HOST` / `ASF_MARIADB_PORT` / `ASF_MARIADB_USER` / `ASF_MARIADB_PASSWORD` / `ASF_MARIADB_DATABASE` | MariaDB run store (demo `--mariadb`); the demo also loads the repo-root `.env` |
+| `ASF_MARIADB_HOST` / `ASF_MARIADB_PORT` / `ASF_MARIADB_USER` / `ASF_MARIADB_PASSWORD` / `ASF_MARIADB_DATABASE` | MariaDB run store (the demo's default store); the demo also loads the repo-root `.env` |
 | `ASF_GITLAB_TOKEN` / `ASF_GITHUB_TOKEN` | Fallback hosting tokens (a per-project token stored via the dashboard wins; `repository.tokenEnv` can name a different variable per project) |
 | `ASF_MODEL_SETTINGS_FILE` | Where the dashboard's model settings (provider/model/key) persist; defaults to `model-settings.json` beside the run database |
 | `ASF_HOSTING_TOKENS_FILE` | Same, for per-project hosting tokens (`hosting-tokens.json`) |

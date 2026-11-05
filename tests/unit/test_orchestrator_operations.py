@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import sqlite3
-import subprocess
-import sys
 from datetime import timedelta
-from pathlib import Path
 
 import pytest
 
@@ -15,14 +11,14 @@ from asf.configuration.platform import RetryPolicySettings
 from asf.models.errors import ModelGatewayError
 from asf.orchestrator import Orchestrator
 from asf.state_machine.machine import InvalidTransition
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryStore
 from tests.unit.contract_models import validator_for
 from tests.unit.test_orchestrator import NOW, make_engine, start
 
 
 def durable_engine(tmp_path, *, approval=True):
     original, spec, plan, _ = make_engine(approval=approval)
-    store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
+    store = InMemoryStore()
     engine = Orchestrator(
         original._definition,
         original._registry,
@@ -35,8 +31,11 @@ def durable_engine(tmp_path, *, approval=True):
 
 
 def reopen(engine, store, tmp_path):
+    # In-memory store: closing is a no-op and the same object is
+    # reused — a "restart" here means a fresh engine over the same
+    # store. Durability across processes belongs to MariaDB and is
+    # covered in tests/integration/test_mariadb_store.py.
     store.close()
-    store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     return Orchestrator(
         engine._definition,
         engine._registry,
@@ -80,10 +79,10 @@ def test_decision_and_execution_checkpoint_roll_back_together(tmp_path, monkeypa
     save = store.save_execution
 
     def broken(run):
-        raise sqlite3.OperationalError("simulated storage failure")
+        raise RuntimeError("simulated storage failure")
 
     monkeypatch.setattr(store, "save_execution", broken)
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(RuntimeError, match="simulated storage failure"):
         engine.decide(run.id, reviewer="one", decision="APPROVED")
     assert store.approvals.list_decisions(approval_id) == []
     assert store.approvals.get(approval_id).status == "PENDING"
@@ -101,11 +100,11 @@ def test_result_and_new_approval_roll_back_but_inflight_checkpoint_survives(tmp_
 
     def broken(run):
         if run.results:
-            raise sqlite3.OperationalError("simulated storage failure")
+            raise RuntimeError("simulated storage failure")
         save(run)
 
     monkeypatch.setattr(store, "save_execution", broken)
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(RuntimeError, match="simulated storage failure"):
         engine.tick(run.id)
     assert spec.run_called
     assert store.approvals.list_pending() == []
@@ -209,7 +208,7 @@ def test_store_missing_resources_duplicate_ids_and_project_filter(tmp_path):
         store.get_execution("missing")
     with pytest.raises(KeyError):
         store.save_execution(first.model_copy(update={"id": "missing"}))
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(ValueError, match="already exists"):
         store.create_execution(first)
     assert [run.id for run in store.list_executions("project-1")] == [first.id]
     assert store.list_executions("unknown-project") == []
@@ -232,7 +231,7 @@ def test_retry_schedule_respects_clock_allowlist_bounds_and_restart(tmp_path):
         }
     )
     now = [NOW]
-    store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
+    store = InMemoryStore()
     engine = Orchestrator(
         definition,
         original._registry,
@@ -477,62 +476,3 @@ def test_repeated_cancel_resume_and_recovery_of_noninterrupted_run_are_rejected(
     with pytest.raises(InvalidTransition) as exc:
         engine.cancel(run.id)
     assert type(exc.value).__name__ == "InvalidTransition"
-
-
-def test_fresh_python_process_resumes_quorum_and_runs_plan_without_repeating_spec(tmp_path):
-    engine, _, _, store = durable_engine(tmp_path)
-    run = engine.tick(start(engine).id)
-    engine.decide(run.id, reviewer="one", decision="APPROVED")
-    store.close()
-    script = r"""
-import sys
-from uuid import uuid4
-from asf.agents.base import AgentRuntime
-from asf.agents.plan import build_plan_agent
-from asf.approval.models import ApprovalPolicy
-from asf.models.fake import ScriptedModelGateway
-from asf.orchestrator import AgentRegistry, Orchestrator
-from asf.storage.sqlite import SQLiteExecutionStore
-from asf.workflow.definition import WorkflowDefinition
-from tests.integration.test_chain import PLATFORM, TEMPLATES_DIR, make_plan_artifact
-from tests.unit.test_orchestrator import NOW
-
-store = SQLiteExecutionStore(sys.argv[1])
-saved = store.get_execution(sys.argv[2])
-reply = make_plan_artifact().content["text"].replace(
-    "ID: spec-1", "ID: " + saved.artifacts["SPEC"].id,
-)
-gateway = ScriptedModelGateway([reply])
-registry = AgentRegistry()
-registry.register(build_plan_agent(
-    AgentRuntime(gateway, lambda: NOW, lambda: str(uuid4())), PLATFORM, TEMPLATES_DIR,
-))
-engine = Orchestrator(
-    WorkflowDefinition.model_validate(saved.definition), registry,
-    clock=lambda: NOW, new_id=lambda: str(uuid4()), store=store,
-    approval_policy=ApprovalPolicy.model_validate(saved.settings["approvalPolicy"]),
-)
-run = engine.decide(saved.id, reviewer="two", decision="APPROVED")
-run = engine.tick(run.id)
-assert run.state.stage == "COMPLETED"
-assert len(run.results) == 2
-assert len(gateway.requests) == 1
-assert run.results[0].agent_id == "agent-spec"
-assert run.results[1].agent_id == "agent-plan"
-store.close()
-print("COMPLETED")
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", script, str(tmp_path / "workflow.sqlite"), run.id],
-        cwd=Path(__file__).resolve().parents[2],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-    assert result.returncode == 0, "Fresh-process resume failed"
-    assert result.stdout.strip() == "COMPLETED"
-    store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
-    assert store.get_execution(run.id).state.stage == "COMPLETED"
-    assert len(store.get_execution(run.id).results) == 2
-    store.close()

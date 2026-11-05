@@ -10,7 +10,8 @@ Two layers, deliberately separated:
 |---|---|
 | `service.py` | `FactoryService` — framework-free. Maps orchestrator state onto the exact dashboard JSON shapes (`apps/dashboard/src/types/*.ts`). No FastAPI import, no system-clock reads (timestamps come from runs or the injected `clock`). |
 | `app.py` | `create_app(service)` — thin FastAPI adapter exposing the service over HTTP. FastAPI is imported here only; `asf.api.__init__` re-exports just `FactoryService`, so importing the package never requires FastAPI. |
-| `demo.py` | Runnable assembly: SQLite store, all seven real agents behind one deterministic routing `ScriptedModelGateway`, `ApprovalPolicy(reviewers=["dashboard"])`, metrics from `asf.evaluation` when importable (guarded, with a local fallback recorder), and `uvicorn`. |
+| `demo.py` | Runnable assembly: MariaDB store from the environment (or an
+|  | in-memory store with `--ephemeral`), all seven real agents behind one deterministic routing `ScriptedModelGateway`, `ApprovalPolicy(reviewers=["dashboard"])`, metrics from `asf.evaluation` when importable (guarded, with a local fallback recorder), and `uvicorn`. |
 
 The service programs against a local `MetricsProtocol`
 (`agent_metrics(agent_id)`, `overview()`, `events()`,
@@ -139,7 +140,7 @@ reconnects by itself) and the returned unsubscribe closes the source.
 ## Running
 
 ```bash
-.venv/bin/python -m asf.api.demo --port 8000 [--db path]
+.venv/bin/python -m asf.api.demo --port 8000 [--ephemeral]
 .venv/bin/python -m asf.api.demo --selftest   # headless: approves as "dashboard"
 cp apps/dashboard/.env.example apps/dashboard/.env   # VITE_API_BASE_URL
 ```

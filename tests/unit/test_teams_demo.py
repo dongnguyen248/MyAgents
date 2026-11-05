@@ -8,12 +8,12 @@ import pytest
 import yaml
 
 from asf.integrations.teams.demo import DemoModels, demo_engine, main, run_demo
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryStore
 from tests.unit.test_teams_approval import config
 
 
 def test_offline_demo_engine_revises_then_approves_and_runs_plan(tmp_path):
-    store = SQLiteExecutionStore(tmp_path / "demo.sqlite")
+    store = InMemoryStore()
     models = DemoModels()
     engine = demo_engine(config(), store, models=models)
     run = engine.start(
@@ -57,6 +57,11 @@ def test_offline_demo_engine_revises_then_approves_and_runs_plan(tmp_path):
 
 @pytest.mark.parametrize("gemini", [False, True])
 def test_manual_demo_wiring_without_real_network(tmp_path, monkeypatch, capsys, gemini):
+    # run_demo picks MariaDB when ASF_MARIADB_PASSWORD is present in
+    # the environment; other tests in this process may have loaded a
+    # .env (the dotenv loader uses setdefault), so pin the in-memory
+    # path explicitly.
+    monkeypatch.delenv("ASF_MARIADB_PASSWORD", raising=False)
     settings = config()
     (tmp_path / "platform.yaml").write_text(
         yaml.safe_dump(
@@ -118,7 +123,6 @@ def test_manual_demo_wiring_without_real_network(tmp_path, monkeypatch, capsys, 
         argparse.Namespace(
             config_dir=tmp_path,
             channel="teams-approvals",
-            database=tmp_path / "demo.sqlite",
             run_id=None,
             port=3978,
             gemini=gemini,
@@ -147,7 +151,7 @@ def test_live_demo_cannot_resume_and_reset_request_budget():
 
 
 def test_demo_execution_id_matches_correlation_id(tmp_path):
-    store = SQLiteExecutionStore(tmp_path / "demo.sqlite")
+    store = InMemoryStore()
     try:
         engine = demo_engine(config(), store, execution_id="correlation")
         run = engine.start(

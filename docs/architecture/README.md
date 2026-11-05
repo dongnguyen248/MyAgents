@@ -158,7 +158,8 @@ Besides task counts, each agent gets a Health Score (success, human approval, CI
 
 ## Implementation status
 The state machine and local Phase 6 orchestrator are implemented. The orchestrator
-supports SQLite checkpoints, approval/revision, bounded retries, dependency-ordered
+supports persistent checkpoints (MariaDB), approval/revision, bounded retries,
+dependency-ordered
 task items, bounded Fix loops and observable delivery ports. See the
 [orchestrator README](../../src/asf/orchestrator/README.md) for the exact local
 execution boundary. Real repository/sandbox composition, cumulative workspaces,

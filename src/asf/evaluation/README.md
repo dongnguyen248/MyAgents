@@ -86,7 +86,7 @@ rounded up as `Math.round` does.
 `snapshot()` returns a JSON-safe dict of all records (runs, approvals,
 quality samples, events). `MetricsService.restore(data, clock=...)` builds a
 new service from it, and `load(data)` replaces an existing service's state,
-so metrics can survive restarts alongside the SQLite execution store.
+so metrics can survive restarts alongside the MariaDB execution store.
 
 The service is thread-safe: all public methods serialise on one lock, and
 all getters return fresh dicts / copies, never internal state.
