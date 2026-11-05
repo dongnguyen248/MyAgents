@@ -27,7 +27,7 @@ class FakeTransport:
         raw = self.payload if isinstance(self.payload, bytes) else json.dumps(
             self.payload,
         ).encode()
-        return self.status, raw
+        return self.status, {}, raw
 
 
 def _request() -> ModelRequest:
@@ -111,7 +111,7 @@ def test_http_errors_map_to_gateway_errors():
     transport = FakeTransport(401, {"error": {"message": "bad key"}})
     with pytest.raises(ModelGatewayError) as caught:
         _gateway(transport).complete(_request())
-    assert caught.value.code == "LLM_INVALID_RESPONSE"
+    assert caught.value.code == "LLM_AUTH_FAILED"
     assert "bad key" in caught.value.message
 
     transport = FakeTransport(503, {"error": {"message": "down"}})
@@ -161,13 +161,13 @@ class SequenceTransport:
             raise outcome
         status, payload = outcome
         raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
-        return status, raw
+        return status, {}, raw
 
 
 def _retry_gateway(transport: SequenceTransport, sleeps: list) -> OpenAICompatibleGateway:
     return OpenAICompatibleGateway(
         base_url="https://models.example.com/v1", model="gpt-x",
-        api_key="key-1", transport=transport, sleep=sleeps.append,
+        api_key="key-1", transport=transport, sleep=sleeps.append, rand=lambda _lo, hi: hi,
     )
 
 
@@ -210,7 +210,7 @@ def test_client_error_is_not_retried():
     sleeps: list[float] = []
     with pytest.raises(ModelGatewayError) as caught:
         _retry_gateway(transport, sleeps).complete(_request())
-    assert caught.value.code == "LLM_INVALID_RESPONSE"
+    assert caught.value.code == "LLM_AUTH_FAILED"
     assert transport.calls == 1
     assert sleeps == []
 

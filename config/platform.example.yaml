@@ -4,6 +4,13 @@
 version: 1
 logLevel: INFO
 
+# Concurrency bounds: how many runs may be driven at once, and how
+# many model calls may be in flight at once (protects provider quotas
+# from a burst of parallel runs).
+execution:
+  maxConcurrentRuns: 2
+  maxConcurrentModelCalls: 2
+
 # Filesystem paths
 paths:
   artifactsDir: artifacts
@@ -61,7 +68,7 @@ agents:
       maxAttempts: 2
       backoffSeconds: 1.5
       retryOn:
-        - TIMEOUT
-        - RATE_LIMITED
+        - LLM_TIMEOUT
+        - LLM_RATE_LIMITED
     settings:
       strictMode: true

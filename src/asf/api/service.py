@@ -13,11 +13,13 @@ runs themselves or from the injected ``clock`` callable.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
 import time
 import uuid
+from collections import deque
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
@@ -26,6 +28,7 @@ from pydantic import ValidationError
 
 from asf.agents._shared.skills import agent_skill_ids
 from asf.api.hosting_tokens import HostingTokens
+from asf.api.scheduler import RunScheduler
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import ProjectProfile
 from asf.configuration.yamlio import deep_merge
@@ -34,9 +37,12 @@ from asf.integrations.hosting.factory import DEFAULT_TOKEN_ENVS
 from asf.orchestrator.code_loop import FIX_STAGE
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
+from asf.orchestrator.ports import ConcurrentModificationError
 from asf.state_machine.graph import build_graph
 from asf.state_machine.status import kind_of
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
+
+logger = logging.getLogger("asf.api.service")
 
 
 class MetricsProtocol(Protocol):
@@ -211,7 +217,16 @@ class FactoryService:
         model_settings: Any = None,
         hosting_tokens: HostingTokens | None = None,
         decomposer: Any = None,
+        max_concurrent_runs: int = 2,
+        on_run_terminal: Callable[[str, str, str], None] | None = None,
     ) -> None:
+        if max_concurrent_runs < 1:
+            raise ValueError("max_concurrent_runs must be at least 1")
+        # Optional assembly hook fired when a run reaches a terminal
+        # stage (run_id, project_id, stage) — the demo uses it to
+        # clean up the run's git worktree. Best-effort: failures are
+        # logged, never allowed to break a drive.
+        self._on_run_terminal = on_run_terminal
         self._engine = engine
         self._metrics = metrics
         self._store = store
@@ -234,14 +249,32 @@ class FactoryService:
         # The assembly injects a clock; the engine's own clock is the fallback
         # so this service still never reads the system clock directly.
         self._clock = clock or getattr(engine, "_clock", None)
+        # Retry scheduler: wakes runs when their retry_at comes due so
+        # a scheduled retry resumes on its own (see api/scheduler.py).
+        # Its clock resolves lazily so stub engines in tests (which
+        # carry no clock) can still assemble a service.
+        self._scheduler = RunScheduler(
+            clock=self._scheduler_clock,
+            wake=self._drive_in_background,
+        )
         self._projects = {
             pid: self._normalize_project(pid, profile) for pid, profile in projects.items()
         }
         self._tracked: list[str] = []
         self._store_runs: dict[str, WorkflowExecution] = {}
-        # Background drive threads, by run id (see _drive_in_background).
+        # Background drives run on a bounded pool of daemon workers
+        # (see _drive_in_background): at most max_concurrent_runs runs
+        # are driven at once; further drives queue. _drive_lock guards
+        # the pool state AND the cancel set together, which keeps the
+        # cancel-vs-drive-finish interleavings airtight (a cancel is
+        # either seen by the active drive or applied synchronously).
+        self._max_concurrent_runs = max_concurrent_runs
         self._drive_lock = threading.Lock()
-        self._drive_threads: dict[str, threading.Thread] = {}
+        self._drive_condition = threading.Condition(self._drive_lock)
+        self._drive_active: set[str] = set()
+        self._drive_queue: deque[str] = deque()
+        self._drive_workers: list[threading.Thread] = []
+        self._drive_stopped = False
         # Cooperative cancellation: runs whose drive thread is mid-dispatch
         # cannot be cancelled synchronously (the engine refuses to mutate a
         # run while a step is in flight), so a cancel request is recorded
@@ -1597,38 +1630,64 @@ class FactoryService:
     # only guards against a pathological no-progress loop.
     _DRIVE_LIMIT = 100
 
-    # Drives run on background threads: a step can sit in a model call
-    # for minutes, and driving on the request thread froze the whole
-    # API — the dashboard could not even load its lists until the call
-    # returned. The stores keep one connection per thread, so request
-    # threads and drive threads never share a connection object.
+    # Drives run on a bounded pool of background worker threads: a
+    # step can sit in a model call for minutes, and driving on the
+    # request thread froze the whole API — the dashboard could not
+    # even load its lists until the call returned. The pool bound
+    # (execution.maxConcurrentRuns) also bounds how many runs can be
+    # inside model calls at once. The stores keep one connection per
+    # thread, so request threads and drive threads never share a
+    # connection object. Workers are daemon threads; shutdown()
+    # stops them cleanly.
     def _drive_in_background(self, run_id: str) -> None:
-        """Start a drive thread for a run (coalesced per run)."""
-        with self._drive_lock:
-            if run_id in self._drive_threads:
+        """Queue a drive for a run (coalesced per run, pool-bounded)."""
+        with self._drive_condition:
+            if run_id in self._drive_active or self._drive_stopped:
                 return
-            thread = threading.Thread(
-                target=self._drive_worker, args=(run_id,),
-                name=f"asf-drive-{run_id[:8]}", daemon=True,
+            self._drive_active.add(run_id)
+            self._drive_queue.append(run_id)
+            self._ensure_drive_workers_locked()
+            self._drive_condition.notify_all()
+
+    def _ensure_drive_workers_locked(self) -> None:
+        while len(self._drive_workers) < self._max_concurrent_runs:
+            worker = threading.Thread(
+                target=self._drive_pool_loop,
+                name=f"asf-drive-pool-{len(self._drive_workers)}",
+                daemon=True,
             )
-            self._drive_threads[run_id] = thread
-            # Start while still holding the lock: publishing an
-            # unstarted thread lets a concurrent wait_for_drives pick
-            # it up and join() it, which raises "cannot join thread
-            # before it is started". Split-chain advancement spawns
-            # drives from inside other drive threads, which made
-            # that window easy to hit.
-            thread.start()
+            self._drive_workers.append(worker)
+            # Start under the lock, like the old per-run threads, so
+            # no waiter can observe a worker that has not started.
+            worker.start()
+
+    def _drive_pool_loop(self) -> None:
+        while True:
+            with self._drive_condition:
+                while not self._drive_queue and not self._drive_stopped:
+                    self._drive_condition.wait()
+                if not self._drive_queue:
+                    return  # stopped and drained
+                run_id = self._drive_queue.popleft()
+            try:
+                self._drive_worker(run_id)
+            except Exception:
+                # _drive_worker is expected to contain drive errors;
+                # a worker must never die and shrink the pool silently.
+                logger.exception(
+                    "Drive worker failed unexpectedly for run %s", run_id,
+                )
 
     def _drive_worker(self, run_id: str) -> None:
         try:
             self._drive(run_id)
         finally:
-            with self._drive_lock:
-                self._drive_threads.pop(run_id, None)
+            with self._drive_condition:
+                self._drive_active.discard(run_id)
+                self._drive_condition.notify_all()
             # A cancel requested just as the drive parked (e.g. the run
             # reached an approval gate in the same moment) must not be
-            # lost with the thread: nobody is dispatching now, so the
+            # lost with the drive: nobody is dispatching now, so the
             # cancellation can be applied directly.
             self._apply_requested_cancel(run_id)
             # If this run was a split part that just completed, its
@@ -1636,28 +1695,34 @@ class FactoryService:
             self._advance_split_chain(run_id)
 
     def _wait_for_drive(self, run_id: str, timeout: float | None = None) -> None:
-        """Join a run's drive thread if one is active."""
-        with self._drive_lock:
-            thread = self._drive_threads.get(run_id)
-        if thread is not None:
-            thread.join(timeout)
+        """Wait until no drive for ``run_id`` is queued or running."""
+        with self._drive_condition:
+            self._drive_condition.wait_for(
+                lambda: run_id not in self._drive_active, timeout=timeout,
+            )
 
     def wait_for_drives(self, timeout: float | None = None) -> None:
-        """Block until every background drive finishes (tests/shutdown)."""
+        """Block until every queued/running drive finishes."""
         deadline = None if timeout is None else time.monotonic() + timeout
-        while True:
-            with self._drive_lock:
-                threads = list(self._drive_threads.values())
-            if not threads:
-                return
-            for thread in threads:
+        with self._drive_condition:
+            while self._drive_active:
                 remaining = (
                     None if deadline is None
                     else max(0.0, deadline - time.monotonic())
                 )
-                thread.join(remaining)
-            if deadline is not None and time.monotonic() >= deadline:
-                return
+                if remaining is not None and remaining <= 0:
+                    return
+                self._drive_condition.wait(timeout=remaining)
+
+    def shutdown(self) -> None:
+        """Stops the retry scheduler and the drive pool (clean exit)."""
+        self.stop_scheduler()
+        with self._drive_condition:
+            self._drive_stopped = True
+            self._drive_condition.notify_all()
+            workers = list(self._drive_workers)
+        for worker in workers:
+            worker.join(timeout=5)
 
     def _flush_observations_quietly(self, run_id: str) -> None:
         try:
@@ -1691,7 +1756,22 @@ class FactoryService:
             before = (run.state.stage, len(run.results))
             try:
                 self._engine.tick(run_id)
+            except ConcurrentModificationError:
+                # Another writer owns this run now (a racing drive, a
+                # manual tick, a second process). Losing the claim is
+                # a normal outcome, not a run failure: stop this drive
+                # and let the owner (or a later drive) carry the run.
+                logger.warning(
+                    "Drive for run %s stopped: the run was claimed by"
+                    " another writer",
+                    run_id,
+                )
+                break
             except Exception:
+                logger.exception(
+                    "Drive for run %s stopped on an unexpected error",
+                    run_id,
+                )
                 break
             if self._apply_requested_cancel(run_id):
                 break
@@ -1710,6 +1790,60 @@ class FactoryService:
             # not flush mid-dispatch. At-least-once delivery; retried
             # on a later flush.
             pass
+        self._sync_retry_schedule(run_id)
+        self._notify_run_terminal(run_id)
+
+    def _notify_run_terminal(self, run_id: str) -> None:
+        """Fires the assembly's terminal hook when the run is finished.
+
+        Idempotent on the receiver's side: drives can observe the
+        same terminal run more than once (e.g. a startup re-drive of
+        an already finished run), and the hook must tolerate that.
+        """
+        if self._on_run_terminal is None:
+            return
+        try:
+            run = self._engine.get(run_id)
+        except Exception:
+            return
+        if run.state.stage not in _TERMINAL_STAGES:
+            return
+        try:
+            self._on_run_terminal(run.id, run.project_id, run.state.stage)
+        except Exception:
+            logger.exception(
+                "Terminal hook failed for run %s (stage %s)",
+                run_id, run.state.stage,
+            )
+
+    def _scheduler_clock(self) -> datetime:
+        """Clock for the retry scheduler: the service's injected
+        clock, else the engine's, else (stub assemblies only) UTC now."""
+        clock = self._clock or getattr(self._engine, "_clock", None)
+        if clock is not None:
+            return clock()
+        return datetime.now(timezone.utc)
+
+    def _sync_retry_schedule(self, run_id: str) -> None:
+        """Registers a parked run's retry_at with the scheduler.
+
+        Called when a drive parks: if the run is waiting out a retry
+        backoff, the scheduler will drive it again when the backoff
+        expires — no manual tick needed. A run without a pending
+        retry is unregistered (its schedule, if any, is stale).
+        """
+        try:
+            run = self._engine.get(run_id)
+        except Exception:
+            return
+        if run.retry_at is not None:
+            self._scheduler.register(run_id, run.retry_at)
+        else:
+            self._scheduler.unregister(run_id)
+
+    def stop_scheduler(self) -> None:
+        """Stops the retry scheduler thread (tests/shutdown)."""
+        self._scheduler.stop()
 
     def drive_run(self, run_id: str) -> dict[str, Any] | None:
         """Auto-advance a run to its next stopping point; returns its view."""
@@ -1738,6 +1872,11 @@ class FactoryService:
                 except Exception:
                     continue
                 run = self._engine.get(run.id)
+            if run.retry_at is not None:
+                # Parked on a retry backoff when the backend stopped:
+                # the scheduler drives it when the backoff expires
+                # (a retry_at already in the past fires at once).
+                self._scheduler.register(run.id, run.retry_at)
             if self._workflow_status(run) == "RUNNING":
                 self._drive_in_background(run.id)
         # A split part that completed just before the previous backend
@@ -2016,7 +2155,7 @@ class FactoryService:
                 "only an active run can be cancelled",
             )
         with self._drive_lock:
-            driving = run_id in self._drive_threads
+            driving = run_id in self._drive_active
             if driving:
                 self._cancel_requested.add(run_id)
             else:
@@ -2024,6 +2163,7 @@ class FactoryService:
         if driving:
             return self.get_workflow(run_id)
         self._engine.cancel(run_id)
+        self._notify_run_terminal(run_id)
         return self.get_workflow(run_id)
 
     def _apply_requested_cancel(self, run_id: str) -> bool:
@@ -2041,6 +2181,7 @@ class FactoryService:
             self._engine.cancel(run_id)
         except Exception:
             return False
+        self._notify_run_terminal(run_id)
         return True
 
     def retry_run(self, run_id: str) -> dict[str, Any] | None:

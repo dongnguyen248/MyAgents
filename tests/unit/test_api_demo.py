@@ -82,6 +82,12 @@ def test_workflow_view_exposes_artifact_contents(tmp_path: Path):
             "test": {"taskItemId": "T1", "ref": "main"},
         },
     )
+    # start_run also spawns the service's background drive; the manual
+    # loop below must be the only driver (the engine refuses a second
+    # concurrent dispatcher), so wait for the drive to park first.
+    # Without this the two drivers race and the test flakes.
+    service.wait_for_drives()
+    run = engine.get(run.id)
     for _ in range(40):
         if run.state.stage in ("COMPLETED", "FAILED", "CANCELLED"):
             break
@@ -604,3 +610,35 @@ def test_startup_recovers_a_run_left_mid_dispatch(tmp_path: Path):
     view = service.get_workflow(run.id)
     assert view is not None and view["status"] == "WAITING_APPROVAL"
     assert engine.get(run.id).in_flight is None
+
+
+def test_profile_sandbox_settings_extraction(monkeypatch):
+    from asf.api.demo import _profile_sandbox_settings
+    from asf.configuration.errors import ConfigError
+
+    assert _profile_sandbox_settings(make_profile()) is None
+
+    monkeypatch.setenv("MY_PROJECT_FLAG", "from-env")
+    profile = make_profile(configuration={
+        "testEnv": {"LITERAL": "yes", "REFERENCED": {"env": "MY_PROJECT_FLAG"}},
+        "testEnvAllowlist": ["JAVA_HOME"],
+        "sandboxLimits": {"cpuSeconds": 60, "maxProcesses": 16},
+    })
+    settings = _profile_sandbox_settings(profile)
+    assert settings is not None
+    assert settings.env_extra == {"LITERAL": "yes", "REFERENCED": "from-env"}
+    assert settings.env_allowlist == ("JAVA_HOME",)
+    assert settings.resource_limits is not None
+    assert settings.resource_limits.cpu_seconds == 60
+    assert settings.resource_limits.memory_bytes is None
+    assert settings.resource_limits.max_processes == 16
+
+    # A missing {env: NAME} reference fails loudly (secret convention).
+    monkeypatch.delenv("MY_PROJECT_FLAG")
+    with pytest.raises(ConfigError):
+        _profile_sandbox_settings(profile)
+
+    with pytest.raises(ValueError):
+        _profile_sandbox_settings(make_profile(
+            configuration={"sandboxLimits": {"cpuSeconds": -1}},
+        ))

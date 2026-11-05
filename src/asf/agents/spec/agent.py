@@ -5,11 +5,11 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.spec.prompts import SpecPrompts, SpecTemplate, build_spec_messages
 from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
-from asf.models.errors import ModelGatewayError
 
 __all__ = ["MAX_REQUIREMENT_CHARS", "SpecAgent"]
 
@@ -207,8 +207,7 @@ class SpecAgent(BaseAgent):
                 reply = "\n".join(lines[1:-1]).strip()
 
         if not reply:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model returned an empty response",
             )
 
@@ -223,8 +222,7 @@ class SpecAgent(BaseAgent):
             if sec not in reply_heading_lines
         ]
         if missing_sections:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 f"Model response is missing required template sections: {missing_sections}",
                 details={"missingSections": missing_sections},
             )

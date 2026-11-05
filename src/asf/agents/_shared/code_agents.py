@@ -6,7 +6,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from asf.agents.base import AgentExecutionError, Issue
+from asf.agents._shared.model_errors import invalid_response  # noqa: F401  (re-export for fix/review)
+from asf.agents.base import Issue
 from asf.contracts.models import AgentRequest, Artifact
 from asf.tools.changeset import ChangeSet
 
@@ -157,6 +158,3 @@ def linked_metadata(request: AgentRequest, code: Artifact) -> dict[str, Any]:
     metadata.update(codeArtifactId=code.id, codeVersion=code.version)
     return metadata
 
-
-def invalid_response(message: str) -> AgentExecutionError:
-    return AgentExecutionError("LLM_INVALID_RESPONSE", message, category="LLM", retryable=False)

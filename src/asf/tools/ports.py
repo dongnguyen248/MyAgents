@@ -37,6 +37,8 @@ class CommandResult:
     stderr: str
     duration_ms: int
     timed_out: bool = False
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,12 @@ class SandboxPort(Protocol):
         self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str
     ) -> SandboxResult:
         """Create a workspace at ref, apply changes, run commands, return results.
+
+        A command that exceeds its timeout is reported either by
+        raising :class:`CommandTimeoutError` or by a
+        :class:`CommandResult` with ``timed_out=True`` for that
+        command (adapters that can clean up the process tree report
+        the result; callers must handle both shapes).
 
         Raises:
             SandboxError: on sandbox infrastructure failure.

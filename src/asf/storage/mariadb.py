@@ -28,6 +28,7 @@ from typing import Any
 
 from asf.approval.models import ApprovalDecision, ApprovalRequest
 from asf.orchestrator.execution import WorkflowExecution
+from asf.orchestrator.ports import ConcurrentModificationError
 
 _DATABASE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 
@@ -59,6 +60,15 @@ _MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             CONSTRAINT fk_decisions_approval
                 FOREIGN KEY (approval_id) REFERENCES approvals (id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """,
+    )),
+    (2, (
+        # Optimistic locking for executions: saves are guarded by the
+        # version the writer read, so concurrent writers cannot
+        # silently overwrite each other (lost update).
+        """
+        ALTER TABLE executions ADD COLUMN IF NOT EXISTS
+            version INT NOT NULL DEFAULT 0
         """,
     )),
 )
@@ -170,6 +180,22 @@ class MariaDbExecutionStore:
 
     def _connection(self) -> Any:
         connection = getattr(self._local, "connection", None)
+        if connection is not None and not getattr(
+            self._local, "in_transaction", False,
+        ):
+            # A cached per-thread connection can be silently dead by
+            # the time it is reused (server restart, wait_timeout).
+            # ping(reconnect=True) revives it; if even that fails, drop
+            # it and open a fresh one. Skipped inside a transaction: a
+            # reconnect there would silently lose the transaction.
+            try:
+                connection.ping(reconnect=True)
+            except Exception:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+                connection = None
         if connection is None:
             connection = self._connect(database=self._config.database)
             self._local.connection = connection
@@ -251,49 +277,92 @@ class MariaDbExecutionStore:
     def transaction(self) -> Iterator[None]:
         connection = self._connection()
         connection.begin()
+        # While a transaction is open the connection must not be
+        # pinged/reconnected (see _connection); the block below always
+        # ends it with commit or rollback, so the connection returns
+        # to the pool of reusable connections in a clean state. If the
+        # owning thread dies mid-transaction, the server rolls back
+        # when the dropped connection is reaped.
+        self._local.in_transaction = True
         try:
             yield
             connection.commit()
         except BaseException:
             connection.rollback()
             raise
+        finally:
+            self._local.in_transaction = False
 
     def create_execution(self, run: WorkflowExecution) -> None:
+        run.version = 0
         with self._connection().cursor() as cursor:
             cursor.execute(
-                "INSERT INTO executions(id, project_id, payload)"
-                " VALUES (%s, %s, %s)",
-                (run.id, run.project_id, run.model_dump_json()),
+                "INSERT INTO executions(id, project_id, payload, version)"
+                " VALUES (%s, %s, %s, %s)",
+                (run.id, run.project_id, run.model_dump_json(), 0),
             )
 
     def save_execution(self, run: WorkflowExecution) -> None:
-        with self._connection().cursor() as cursor:
-            cursor.execute(
-                "UPDATE executions SET payload = %s WHERE id = %s",
-                (run.model_dump_json(), run.id),
-            )
-            if cursor.rowcount != 1:
-                raise KeyError(run.id)
+        # Optimistic locking, same contract as the SQLite store: the
+        # update only lands on the row version this copy was read
+        # from; a stale writer fails loudly instead of overwriting.
+        expected = run.version
+        run.version = expected + 1
+        try:
+            with self._connection().cursor() as cursor:
+                cursor.execute(
+                    "UPDATE executions SET payload = %s, version = %s"
+                    " WHERE id = %s AND version = %s",
+                    (run.model_dump_json(), run.version, run.id, expected),
+                )
+                if cursor.rowcount != 1:
+                    cursor.execute(
+                        "SELECT 1 FROM executions WHERE id = %s", (run.id,),
+                    )
+                    if cursor.fetchone() is None:
+                        raise KeyError(run.id)
+                    raise ConcurrentModificationError(
+                        f"Execution '{run.id}' was modified concurrently"
+                        f" (expected version {expected})",
+                    )
+        except BaseException:
+            run.version = expected
+            raise
 
-    def get_execution(self, run_id: str) -> WorkflowExecution:
+    def get_execution(
+        self, run_id: str, *, for_update: bool = False,
+    ) -> WorkflowExecution:
+        # FOR UPDATE (used by the orchestrator's claim phase) locks the
+        # row until the claim transaction ends, so two processes cannot
+        # both observe in_flight unset and claim the same run.
+        suffix = " FOR UPDATE" if for_update else ""
         with self._connection().cursor() as cursor:
             cursor.execute(
-                "SELECT payload FROM executions WHERE id = %s", (run_id,),
+                "SELECT payload, version FROM executions"
+                f" WHERE id = %s{suffix}",
+                (run_id,),
             )
             row = cursor.fetchone()
         if row is None:
             raise KeyError(run_id)
-        return WorkflowExecution.model_validate_json(row[0])
+        run = WorkflowExecution.model_validate_json(row[0])
+        run.version = row[1]
+        return run
 
     def list_executions(self, project_id: str) -> list[WorkflowExecution]:
         with self._connection().cursor() as cursor:
             cursor.execute(
-                "SELECT payload FROM executions WHERE project_id = %s"
+                "SELECT payload, version FROM executions WHERE project_id = %s"
                 " ORDER BY id",
                 (project_id,),
             )
             rows = cursor.fetchall()
-        return [WorkflowExecution.model_validate_json(row[0]) for row in rows]
+        runs = []
+        for payload, version in rows:
+            run = WorkflowExecution.model_validate_json(payload)
+            run.version = version
+            runs.append(run)
+        return runs
 
     def close(self) -> None:
         # Closes the calling thread's connection; per-thread connections

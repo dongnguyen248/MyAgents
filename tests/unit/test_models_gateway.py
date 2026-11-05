@@ -133,6 +133,9 @@ class ModelsGatewayTests(unittest.TestCase):
             "LLM_TIMEOUT",
             "LLM_RATE_LIMITED",
             "LLM_INVALID_RESPONSE",
+            "LLM_AUTH_FAILED",
+            "LLM_CONTEXT_TOO_LONG",
+            "LLM_BAD_REQUEST",
             "INTEGRATION_UNAVAILABLE",
         }
         self.assertEqual(set(ALLOWED_GATEWAY_ERROR_CODES.keys()), expected_codes)
@@ -179,6 +182,7 @@ class ModelsGatewayTests(unittest.TestCase):
             "asf.models",
             "asf.models.errors",
             "asf.models.fake",
+            "asf.models.limited",
             "asf.models.ports",
         }
 

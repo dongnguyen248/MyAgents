@@ -36,7 +36,8 @@ class FakeTransport:
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
-        return outcome
+        status, raw = outcome
+        return status, {}, raw
 
 
 def request(text: str = "hello") -> ModelRequest:
@@ -94,7 +95,7 @@ def test_success_maps_gemini_response_and_authenticates_with_header():
     [
         ((429, b"rate limited"), "LLM_RATE_LIMITED"),
         ((500, b"server error"), "INTEGRATION_UNAVAILABLE"),
-        ((400, b"bad request"), "LLM_INVALID_RESPONSE"),
+        ((400, b"bad request"), "LLM_BAD_REQUEST"),
     ],
 )
 def test_http_error_mapping(outcome, code):
@@ -117,6 +118,7 @@ def test_timeout_retries_are_bounded():
         api_key="fake-secret-value",
         transport=transport,
         sleep=sleeps.append,
+        rand=lambda _lo, hi: hi,
         max_retries=2,
     )
 

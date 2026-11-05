@@ -3,9 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_serializer,
+    field_validator,
+)
 
-from asf.approval.models import ApprovalFeedback
+from asf.approval.models import ApprovalFeedback, ApprovalSpec
 from asf.contracts.models import ActivityEvent, AgentResult, Artifact, PlatformError
 from asf.state_machine.machine import RunState
 
@@ -49,6 +57,17 @@ class WorkflowExecution(BaseModel):
     artifact_history: dict[str, Artifact] = Field(default_factory=dict)
     observations: list[Observation] = Field(default_factory=list)
     recovery_notes: list[str] = Field(default_factory=list)
+    # Store-managed optimistic-locking counter: the version of the
+    # stored row this copy was read from. Internal bookkeeping only —
+    # the stores stamp it from their version column on every read and
+    # guard every save with it; it is not part of any public contract.
+    version: int = 0
+
+    # Transient dispatch state, never serialized: an approval the
+    # commit phase still has to request (see Orchestrator.tick). Set
+    # while a result is applied to a claimed working copy; the commit
+    # creates the request inside its transaction and clears this.
+    _pending_approval: ApprovalSpec | None = PrivateAttr(default=None)
 
     @field_validator("state", mode="before")
     @classmethod
