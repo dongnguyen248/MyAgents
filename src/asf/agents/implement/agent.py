@@ -4,6 +4,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from asf.agents._shared.code_agents import task_item as find_task_item
 from asf.agents._shared.codegen import (
     changeset_secret_issues,
     normalize_changeset_operations,
@@ -296,35 +297,16 @@ class ImplementAgent(BaseAgent):
         language = request.input.get("language")
         project_context = request.context.get("project")
 
-        # Find the task item in the TASK artifact (validated in _check)
-        task_item = None
-        if isinstance(task_art.content, dict):
-            content = task_art.content
-            # Tasks may be in content["tasks"] directly or in content["text"] as JSON string
-            tasks = None
-            if isinstance(content.get("tasks"), list):
-                tasks = content["tasks"]
-            elif isinstance(content.get("text"), str):
-                try:
-                    import json as _json
-
-                    task_content = _json.loads(content["text"])
-                    if isinstance(task_content.get("tasks"), list):
-                        tasks = task_content["tasks"]
-                except _json.JSONDecodeError:
-                    pass
-            if tasks:
-                for task in tasks:
-                    if task.get("id") == task_item_id:
-                        task_item = task
-                        break
-
-        # task_item is guaranteed to exist due to _check validation
-        if task_item is None:
+        # Find the task item in the TASK artifact through the one
+        # shared lookup (its existence is validated in _check; the
+        # conversion below keeps the defensive path's error surface).
+        try:
+            task_item = find_task_item(task_art, task_item_id)
+        except ValueError:
             raise invalid_response(
                 f"Task item '{task_item_id}' not found in TASK artifact",
                 details={"taskItemId": task_item_id},
-            )
+            ) from None
         expected_files = task_item.get("expectedFiles", [])
 
         # Validate expected_files with shared path validator

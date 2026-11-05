@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
-
 from pydantic import Field
 
+from asf.agents._shared.code_agents import task_items
 from asf.agents.task.agent import MAX_TASKS, TaskContent
 from asf.configuration.platform import ConfigModel, RetryPolicySettings
 from asf.contracts.models import Artifact
@@ -83,18 +82,7 @@ def loop_graph(
 
 
 def ordered_task_ids(artifact: Artifact) -> list[str]:
-    content = artifact.content
-    if not isinstance(content, dict):
-        raise ValueError("TASK content must be an object")
-    items = content.get("tasks")
-    if items is None:
-        text = content.get("text")
-        if not isinstance(text, str):
-            raise ValueError("TASK has no task list")
-        parsed = json.loads(text)
-        if not isinstance(parsed, dict):
-            raise ValueError("TASK text must contain an object")
-        items = parsed.get("tasks")
+    items = task_items(artifact)
     tasks = TaskContent.model_validate({"tasks": items}).tasks
     if len(tasks) > MAX_TASKS:
         raise ValueError("TASK exceeds the task count limit")
