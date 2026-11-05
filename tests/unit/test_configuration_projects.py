@@ -29,9 +29,11 @@ def project_validator():
 class ConfigurationProjectsTests(unittest.TestCase):
     def test_load_real_projects_and_validate_contracts(self):
         projects = load_projects(PROJECTS_DIR)
-        self.assertGreaterEqual(len(projects), 2)
+        # Only vhpc ships in the repo now: vnpc.yaml was removed and
+        # projects/*.yaml is git-ignored, so other profiles a machine
+        # may have locally are welcome but not required.
+        self.assertGreaterEqual(len(projects), 1)
         self.assertIn("vhpc", projects)
-        self.assertIn("vnpc", projects)
 
         validator = project_validator()
         for project_id, profile in projects.items():

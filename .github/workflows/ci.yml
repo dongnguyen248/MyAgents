@@ -15,7 +15,11 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install (with dev extras)
-        run: pip install -e .[dev]
+        # The suite imports the API stack (fastapi/httpx) and the
+        # MariaDB driver at module level, so CI needs every extra —
+        # with only [dev] collection fails on a clean machine even
+        # though developer venvs (which have all extras) pass.
+        run: pip install -e ".[dev,api,mariadb]"
       - name: Ruff lint
         run: ruff check src tests harness
       - name: Ruff format
