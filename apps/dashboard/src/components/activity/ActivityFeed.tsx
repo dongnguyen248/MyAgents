@@ -26,6 +26,25 @@ export function ActivityFeed({ events, showTask = true }: { events: ActivityEven
                 {e.message}
                 {showTask && e.taskId && <> · <Link to={`/tasks/${e.taskId}`}>{e.taskId}</Link></>}
               </div>
+              {typeof e.metadata?.errorCode === 'string' && (
+                <div className="feed-error-detail">
+                  {e.metadata.errorCode}
+                  {typeof e.metadata.errorMessage === 'string' && <> — {e.metadata.errorMessage}</>}
+                </div>
+              )}
+              {e.metadata && Object.keys(e.metadata).length > 0 && (
+                <details className="feed-details">
+                  <summary>Details</summary>
+                  <dl>
+                    {Object.entries(e.metadata).map(([key, value]) => (
+                      <div key={key}>
+                        <dt>{key}</dt>
+                        <dd>{String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </details>
+              )}
             </div>
           </li>
         );

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["scan_secrets", "SecretMatch"]
+__all__ = ["redact_text", "scan_secrets", "SecretMatch"]
 
 
 from dataclasses import dataclass
@@ -103,3 +103,32 @@ def scan_secrets(
                     )
 
     return matches
+
+
+def redact_text(text: str) -> str:
+    """Replace every secret-pattern span in ``text`` with ``[REDACTED]``.
+
+    Matches are computed against the original text and merged, so
+    overlapping patterns cannot hide a longer secret — the same
+    algorithm the Test agent applies to command output, shared here
+    for any surface that quotes potentially sensitive text (agent
+    error messages on activity events, diagnostics).
+    """
+    spans = sorted(
+        (match.start(), match.end())
+        for _, pattern in SECRET_PATTERNS
+        for match in pattern.finditer(text)
+    )
+    merged: list[tuple[int, int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    parts: list[str] = []
+    cursor = 0
+    for start, end in merged:
+        parts.extend((text[cursor:start], "[REDACTED]"))
+        cursor = end
+    parts.append(text[cursor:])
+    return "".join(parts)

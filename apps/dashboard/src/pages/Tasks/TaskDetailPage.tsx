@@ -31,7 +31,7 @@ export function TaskDetailPage() {
   // the activity stream reports an event for this task, with a slow
   // watchdog poll only if the stream itself goes silent.
   const workflowStatus = detail.data?.workflow?.status;
-  useRunLiveRefetch(taskId, workflowStatus === 'RUNNING', detail.reload);
+  useRunLiveRefetch(taskId, workflowStatus === 'RUNNING' || workflowStatus === 'WAITING_RETRY', detail.reload);
 
   const runAgain = async (runId: string) => {
     setRetryError(undefined);

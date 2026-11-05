@@ -5,7 +5,7 @@ import type { MetricsOverview } from '../../types/metrics';
 import type { Project, ProjectProfileInput } from '../../types/project';
 import type { ModelSettings, ModelSettingsInput, ModelTestResult } from '../../types/settings';
 import type { StartRunInput, Task, TaskFilter } from '../../types/task';
-import type { Workflow } from '../../types/workflow';
+import type { RunDiagnostics, Workflow } from '../../types/workflow';
 
 export type Unsubscribe = () => void;
 
@@ -27,6 +27,7 @@ export interface FactoryApi {
 
   listWorkflows(): Promise<Workflow[]>;
   getWorkflow(id: string): Promise<Workflow | undefined>;
+  getRunDiagnostics(runId: string): Promise<RunDiagnostics | undefined>;
   /** Advance a run by one engine step; resolves to its workflow view. */
   tickRun(runId: string): Promise<Workflow>;
   /** Start a fresh run of a finished run's task with its original inputs. */

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
+from asf.agents._shared.security import redact_text
 from asf.contracts.models import (
     ActivityEvent,
     AgentMetadata,
@@ -202,6 +203,7 @@ class BaseAgent(ABC):
         t_end: datetime,
         outcome: str,
         artifacts: list[Artifact],
+        error: PlatformError | None = None,
     ) -> list[ActivityEvent]:
         """The execution's activity trail, built in exactly one place.
 
@@ -209,7 +211,11 @@ class BaseAgent(ABC):
         per produced artifact (at t_end, only on the completed path —
         error results carry no artifacts), then the terminal event:
         AGENT_COMPLETED for outcome "COMPLETED", AGENT_FAILED for
-        "FAILED". Event ids are minted in that order.
+        "FAILED", AGENT_REJECTED for "REJECTED". A failure/rejection
+        event carries the error's code, category, retryable flag and
+        a redacted, truncated message, so an operator reading the
+        run's history sees WHY it failed without opening the result.
+        Event ids are minted in that order.
         """
 
         def event(
@@ -257,12 +263,24 @@ class BaseAgent(ABC):
                 )
             )
         else:
+            metadata: dict[str, Any] = {"requestId": request.request_id}
+            if error is not None:
+                metadata.update(
+                    {
+                        "errorCode": error.code,
+                        "errorCategory": error.category,
+                        "retryable": error.retryable,
+                        "errorMessage": redact_text(error.message)[:300],
+                    }
+                )
             events.append(
                 event(
                     t_end,
-                    "AGENT_FAILED",
-                    "Agent execution failed",
-                    {"requestId": request.request_id},
+                    "AGENT_REJECTED" if outcome == "REJECTED" else "AGENT_FAILED",
+                    "Agent execution rejected"
+                    if outcome == "REJECTED"
+                    else "Agent execution failed",
+                    metadata,
                 )
             )
         return events
@@ -337,11 +355,14 @@ class BaseAgent(ABC):
                 json.dumps(err.details, default=str)[:600] if err.details else "-",
             )
             p_err = PlatformError.model_validate(err.to_platform_error(t_end))
-            events = self._lifecycle_events(request, t_start, t_end, "FAILED", [])
+            rejected = isinstance(err, AgentExecutionError) and err.status == "REJECTED"
+            events = (
+                []
+                if rejected
+                else self._lifecycle_events(request, t_start, t_end, "FAILED", [], error=p_err)
+            )
             duration = max(0.0, (t_end - t_start).total_seconds())
             metrics = self._compute_metrics(request, duration, tracker)
-            if isinstance(err, AgentExecutionError) and err.status == "REJECTED":
-                events = []
             return AgentResult(
                 request_id=request.request_id,
                 agent_id=self.metadata.id,
@@ -363,7 +384,7 @@ class BaseAgent(ABC):
                 retryable=True,
                 timestamp=t_end,
             )
-            events = self._lifecycle_events(request, t_start, t_end, "FAILED", [])
+            events = self._lifecycle_events(request, t_start, t_end, "FAILED", [], error=p_err)
             duration = max(0.0, (t_end - t_start).total_seconds())
             metrics = self._compute_metrics(request, duration, tracker)
             return AgentResult(

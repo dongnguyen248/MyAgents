@@ -11,6 +11,8 @@ export interface ActivityEvent {
   taskId?: string;
   level: ActivityLevel;
   message: string;
+  /** Operator detail for failure/drive events (error code, reason...). */
+  metadata?: Record<string, unknown>;
 }
 
 export interface ActivityFilter {

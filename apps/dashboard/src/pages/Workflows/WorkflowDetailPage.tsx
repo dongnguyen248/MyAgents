@@ -5,6 +5,7 @@ import { AsyncView } from '../../components/common/AsyncView';
 import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
+import { WorkflowDiagnostics } from '../../components/workflows/WorkflowDiagnostics';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
@@ -30,7 +31,7 @@ export function WorkflowDetailPage() {
   const workflowStatus = detail.data?.workflow?.status;
   useRunLiveRefetch(
     detail.data?.workflow?.taskId,
-    workflowStatus === 'RUNNING',
+    workflowStatus === 'RUNNING' || workflowStatus === 'WAITING_RETRY',
     detail.reload,
   );
 
@@ -166,6 +167,7 @@ export function WorkflowDetailPage() {
               <Card title="Steps"><WorkflowStepper steps={workflow.steps} /></Card>
               <Card title="Execution history"><ActivityFeed events={events} showTask={false} /></Card>
             </div>
+            <WorkflowDiagnostics runId={workflow.id} />
             <WorkflowArtifacts artifacts={workflow.artifacts} />
           </>
         )

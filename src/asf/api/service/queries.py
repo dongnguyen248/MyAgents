@@ -15,6 +15,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
+from asf.agents._shared.security import redact_text
 from asf.agents._shared.skills import agent_skill_ids
 from asf.api.service import (
     _AGENT_STATUS_MAP,
@@ -37,10 +38,12 @@ from asf.api.service import (
 )
 from asf.approval.errors import ApprovalError
 from asf.contracts.models import ActivityEvent
-from asf.orchestrator.code_loop import FIX_STAGE
+from asf.orchestrator.code_loop import ESCALATED_STAGE, FIX_STAGE, FIX_STEP, REWORK_STAGE
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
+
+_LOOP_STAGES = {FIX_STAGE, REWORK_STAGE, ESCALATED_STAGE}
 
 
 class QueriesMixin:
@@ -54,6 +57,9 @@ class QueriesMixin:
     _metadata_list: Callable[[], list[Any]]
     _now: Callable[[], datetime | None]
     _runs: Callable[[], list[WorkflowExecution]]
+    _stall_seconds: float
+    _drive_active: set[str]
+    _driver_info: dict[str, dict[str, Any]]
     _skip_approvals_of: Callable[[WorkflowExecution], list[str]]
     _stage_kind: Callable[[WorkflowExecution, str], str | None]
     _step_for_stage: Callable[[WorkflowExecution, str], WorkflowStepDef | None]
@@ -403,7 +409,124 @@ class QueriesMixin:
             return raw
         if self._is_review_stage(run):
             return "WAITING_APPROVAL"
+        # The engine's coarse status calls both of these "WAITING",
+        # which the old mapping flattened to RUNNING — an escalated
+        # run looked identical to a healthy one. They are distinct
+        # operator states and nothing should tick them pointlessly.
+        if run.state.stage == ESCALATED_STAGE:
+            return "ESCALATED"
+        if run.retry_at is not None:
+            return "WAITING_RETRY"
         return "RUNNING"
+
+    def _fix_budget(self, run: WorkflowExecution) -> dict[str, int]:
+        """Fix attempts used vs the code loop's per-item budget."""
+        used = int(run.state.revisions.get(FIX_STEP, 0))
+        budget = used
+        graph = getattr(self._engine, "_graph", None)
+        if graph is not None:
+            budget = int(graph.max_revisions.get(FIX_STEP, used))
+        return {"used": used, "max": budget}
+
+    def _service_now(self, run: WorkflowExecution) -> datetime:
+        now = self._now()
+        return now if now is not None else run.updated_at
+
+    def _is_stalled(self, run: WorkflowExecution, status: str) -> bool:
+        """A RUNNING run nobody is moving: a step in flight past the
+        watchdog limit, or no step in flight, no drive alive and no
+        change for a minute (an orphan the adoption loop has not
+        picked up yet, or one it gave up on)."""
+        if status != "RUNNING":
+            return False
+        age = (self._service_now(run) - run.updated_at).total_seconds()
+        if run.in_flight is not None:
+            return age > self._stall_seconds
+        return run.id not in self._drive_active and age > 60
+
+    def _waiting(self, run: WorkflowExecution, status: str) -> dict[str, Any]:
+        """What the run is waiting for, in operator terms.
+
+        Always present on the workflow view: ``kind`` is NONE for a
+        terminal run, otherwise exactly one of APPROVAL, ESCALATED,
+        RETRY_WAIT, STEP_RUNNING or STALLED, with the moment the
+        wait began, a human reason, the fix budget when relevant
+        and the actions an operator can take from here.
+        """
+        waiting: dict[str, Any] = {
+            "kind": "NONE",
+            "since": _iso(run.updated_at),
+            "reason": None,
+            "retryAt": None,
+            "budget": None,
+            "suggestedActions": [],
+        }
+        if status in _TERMINAL_STAGES:
+            return waiting
+        if status == "WAITING_APPROVAL":
+            waiting["kind"] = "APPROVAL"
+            waiting["suggestedActions"] = ["approve", "reject", "cancel"]
+            try:
+                pending = self._engine.pending_approval(run.id)
+            except Exception:
+                pending = None
+            if pending is not None:
+                waiting["since"] = _iso(pending.requested_at)
+                waiting["reason"] = (
+                    f"Waiting for approval of {pending.type} "
+                    f"(reviewers: {', '.join(pending.reviewers) or 'any'})"
+                )
+            else:
+                waiting["reason"] = "Waiting for approval"
+            return waiting
+        if status == "ESCALATED":
+            budget = self._fix_budget(run)
+            waiting["kind"] = "ESCALATED"
+            waiting["budget"] = budget
+            waiting["suggestedActions"] = ["resume", "cancel"]
+            waiting["reason"] = (
+                f"Escalated — fix budget used ({budget['used']}/{budget['max']}), needs operator"
+            )
+            escalated = next(
+                (
+                    obs.event
+                    for obs in reversed(run.observations)
+                    if obs.event is not None and obs.event.event_type == "WORKFLOW_ESCALATED"
+                ),
+                None,
+            )
+            if escalated is not None:
+                waiting["since"] = _iso(escalated.timestamp)
+                waiting["reason"] = escalated.message
+            return waiting
+        if status == "WAITING_RETRY":
+            waiting["kind"] = "RETRY_WAIT"
+            waiting["retryAt"] = _iso(run.retry_at)
+            waiting["reason"] = "Step failed; waiting to retry"
+            waiting["suggestedActions"] = ["cancel"]
+            return waiting
+        if self._is_stalled(run, status):
+            waiting["kind"] = "STALLED"
+            waiting["suggestedActions"] = ["adopt", "cancel"]
+            waiting["reason"] = (
+                "Step in flight longer than the watchdog limit"
+                if run.in_flight is not None
+                else "No drive is advancing this run"
+            )
+            return waiting
+        # RUNNING and none of the waits above: a step is in flight
+        # or the run is between ticks of an active drive.
+        waiting["kind"] = "STEP_RUNNING"
+        waiting["suggestedActions"] = ["cancel"]
+        return waiting
+
+    def _driver_view(self, run_id: str) -> dict[str, Any]:
+        info = self._driver_info.get(run_id, {})
+        return {
+            "alive": run_id in self._drive_active,
+            "lastTickAt": info.get("lastTickAt"),
+            "lastStopReason": info.get("lastStopReason"),
+        }
 
     @staticmethod
     def _trail_stages(run: WorkflowExecution) -> list[str]:
@@ -444,6 +567,32 @@ class QueriesMixin:
         sequence.extend(["COMPLETED", "FAILED", "CANCELLED"])
         stage = run.state.stage
         current_index = sequence.index(stage) if stage in sequence else None
+        # Code-loop stages are injected by the loop graph and appear
+        # in NO step's generated stages, so the index lookup above
+        # fails for a run inside the loop and (for a live run) every
+        # step fell back to pending. Anchor such a run just past the
+        # testing step — exactly where the loop sits — so the steps
+        # before the loop resolve by the usual index rules, then add
+        # the loop's own synthetic step below.
+        loop_stage: str | None = stage if stage in _LOOP_STAGES else None
+        if status == "FAILED":
+            before = self._stage_before_failure(run)
+            if before in _LOOP_STAGES:
+                loop_stage = before
+        if loop_stage is not None and status not in ("COMPLETED", "CANCELLED", "FAILED"):
+            testing_step = next(
+                (
+                    step
+                    for step in definition.steps
+                    if (_STEP_ID_BY_STEP_ID.get(step.id) or _STEP_ID_BY_STAGE.get(step.stage))
+                    == "testing"
+                ),
+                None,
+            )
+            if testing_step is not None:
+                testing_stages = testing_step.generated_stages()
+                if testing_stages and testing_stages[-1] in sequence:
+                    current_index = sequence.index(testing_stages[-1])
         produced = {artifact.type for artifact in run.artifact_history.values()}
         # For a run that ended (cancelled or failed), the stage it was
         # in when the terminal transition landed (from its event
@@ -472,7 +621,7 @@ class QueriesMixin:
                     if trail_stage in sequence:
                         terminal_from_index = sequence.index(trail_stage)
                         break
-                if terminal_from_index is None and stage_before == FIX_STAGE:
+                if terminal_from_index is None and stage_before in _LOOP_STAGES:
                     approved_indexes = [
                         sequence.index(f"{step.stage}_APPROVED")
                         for step in definition.steps
@@ -572,6 +721,36 @@ class QueriesMixin:
                         "state": approval_state,
                     }
                 )
+        if loop_stage is not None and status != "CANCELLED":
+            budget = self._fix_budget(run)
+            if status == "FAILED":
+                fix_state = "failed"
+            elif loop_stage == FIX_STAGE:
+                fix_state = "active"
+            elif loop_stage == REWORK_STAGE:
+                fix_state = "rejected"
+            else:
+                fix_state = "escalated"
+            if status != "FAILED":
+                # Review delivered the verdict that opened this cycle
+                # (the index rules already mark it done); testing
+                # shows whether this cycle has produced a report.
+                for entry in steps:
+                    if entry["id"] == "testing":
+                        entry["state"] = "done" if "TEST_REPORT" in run.artifacts else "pending"
+            fix_step = {
+                "id": "fix",
+                "label": f"Fix code · fix {budget['used']}/{budget['max']}",
+                "state": fix_state,
+            }
+            testing_at = next(
+                (i for i, entry in enumerate(steps) if entry["id"] == "testing"),
+                None,
+            )
+            if testing_at is None:
+                steps.append(fix_step)
+            else:
+                steps.insert(testing_at + 1, fix_step)
         return steps
 
     @staticmethod
@@ -634,34 +813,36 @@ class QueriesMixin:
             "stage": QueriesMixin._stage_before_failure(run),
         }
 
-    @staticmethod
     def _current_activity(
+        self,
         run: WorkflowExecution,
         steps: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
-        """What the run is doing right now, for the dashboard's live strip.
+        """What the run is doing or waiting for, for the live strip.
 
-        Derived at read time from state the engine already persists:
-        ``in_flight`` is stamped (and the run saved) before a step
-        dispatches, so a run sitting in a minutes-long model call still
-        reports which step it is on and since when; ``retry_at`` marks a
-        step waiting out its backoff. Terminal and approval-waiting runs
-        have no live activity — their own cards explain those states.
+        Covers EVERY non-terminal state, so the strip never just
+        disappears on a stuck run: a step in flight (``in_flight``
+        is stamped and saved before dispatch, so a minutes-long
+        model call still reports its step and start), a scheduled
+        retry, an approval gate, an escalation, or a stall (same
+        derivation as the view's ``waiting`` block). Terminal runs
+        return None — their own cards explain those states.
         """
         if run.state.stage in _TERMINAL_STAGES:
             return None
+        status = self._workflow_status(run)
+        waiting = self._waiting(run, status)
         active = next((s for s in steps if s.get("state") == "active"), None)
         base: dict[str, Any] = {
             "stepId": active["id"] if active else None,
             "stepLabel": active["label"] if active else None,
             "stage": run.state.stage,
-            "since": _iso(run.updated_at),
+            "since": waiting["since"],
+            "reason": waiting["reason"],
+            "retryAt": waiting["retryAt"],
         }
-        if run.in_flight is not None:
-            return {**base, "kind": "STEP_RUNNING", "retryAt": None}
-        if run.retry_at is not None:
-            return {**base, "kind": "RETRY_WAIT", "retryAt": _iso(run.retry_at)}
-        return None
+        kind = waiting["kind"]
+        return {**base, "kind": kind if kind != "NONE" else "STEP_RUNNING"}
 
     def _workflow_view(self, run: WorkflowExecution) -> dict[str, Any]:
         definition = self._definition(run)
@@ -694,6 +875,12 @@ class QueriesMixin:
             # matching approval steps render as "skipped" once passed.
             "skippedApprovals": self._skip_approvals_of(run),
             "currentActivity": self._current_activity(run, steps),
+            # What the run is waiting for (approval / escalation /
+            # retry / stall) and the drive's own state — the fields
+            # an operator needs before deciding what to do with a
+            # run that is not moving.
+            "waiting": self._waiting(run, status),
+            "driver": self._driver_view(run.id),
             "steps": steps,
             "startedAt": _iso(run.started_at),
             "updatedAt": _iso(run.updated_at),
@@ -717,6 +904,69 @@ class QueriesMixin:
 
     def list_workflows(self) -> list[dict[str, Any]]:
         return [self._workflow_view(run) for run in self._runs()]
+
+    def run_diagnostics(self, run_id: str) -> dict[str, Any] | None:
+        """Everything an operator needs to answer "where is this run,
+        what is it waiting for, and why did it stop" in one payload:
+        stage + kind, the waiting derivation, the in-flight marker
+        with its age, the retry deadline, the fix budget, the last
+        20 history events, the most recent error (redacted), the
+        drive's own state and the suggested next actions.
+        """
+        run = next((item for item in self._runs() if item.id == run_id), None)
+        if run is None:
+            return None
+        status = self._workflow_status(run)
+        waiting = self._waiting(run, status)
+        now = self._service_now(run)
+        events = [
+            {
+                "type": obs.event.event_type,
+                "message": obs.event.message,
+                "at": _iso(obs.event.timestamp),
+                "metadata": {
+                    key: redact_text(value) if isinstance(value, str) else value
+                    for key, value in obs.event.metadata.items()
+                },
+            }
+            for obs in run.observations
+            if obs.event is not None
+        ][-20:]
+        last_error: dict[str, Any] | None = None
+        if run.errors:
+            error = run.errors[-1]
+            last_error = {
+                "code": error.code,
+                "message": redact_text(error.message)[:300],
+                "category": error.category,
+                "retryable": error.retryable,
+                "at": _iso(error.timestamp),
+                "details": error.details or None,
+            }
+        return {
+            "runId": run.id,
+            "taskId": run.task_id,
+            "projectId": run.project_id,
+            "stage": run.state.stage,
+            "stageKind": self._stage_kind(run, run.state.stage),
+            "status": status,
+            "waiting": waiting,
+            "inFlight": (
+                {
+                    "token": run.in_flight,
+                    "ageSeconds": max(0.0, (now - run.updated_at).total_seconds()),
+                }
+                if run.in_flight is not None
+                else None
+            ),
+            "retryAt": _iso(run.retry_at) if run.retry_at is not None else None,
+            "fixBudget": self._fix_budget(run),
+            "revisions": dict(run.state.revisions),
+            "lastEvents": events,
+            "lastError": last_error,
+            "driver": self._driver_view(run.id),
+            "suggestedActions": waiting["suggestedActions"],
+        }
 
     def get_workflow(self, workflow_id: str) -> dict[str, Any] | None:
         runs = self._runs()
@@ -918,6 +1168,23 @@ class QueriesMixin:
             view["projectId"] = event.project_id
         if event.task_id:
             view["taskId"] = event.task_id
+        # Operator-facing event metadata: why an agent failed
+        # (AGENT_FAILED/AGENT_REJECTED) or why a drive stopped
+        # (DRIVE_STOPPED). Other metadata stays server-side.
+        detail = {
+            key: metadata[key]
+            for key in (
+                "errorCode",
+                "errorCategory",
+                "retryable",
+                "errorMessage",
+                "reason",
+                "errorType",
+            )
+            if key in metadata
+        }
+        if detail:
+            view["metadata"] = detail
         return view
 
     def list_activity(

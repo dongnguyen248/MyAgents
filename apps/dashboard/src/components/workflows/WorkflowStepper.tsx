@@ -8,6 +8,7 @@ const ICON: Record<StepState, [string, string]> = {
   failed: ['✕', 'Failed'],
   cancelled: ['⊘', 'Cancelled'],
   skipped: ['»', 'Skipped'],
+  escalated: ['⚠', 'Escalated'],
 };
 
 /** Vertical = full timeline (detail pages). Compact = one-line chips (lists). */

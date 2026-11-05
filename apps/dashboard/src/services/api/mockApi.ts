@@ -9,7 +9,7 @@ import type { ActivityEvent } from '../../types/activity';
 import type { Approval, ApprovalStatus } from '../../types/approval';
 import type { Project } from '../../types/project';
 import type { Task } from '../../types/task';
-import type { StepState, Workflow, WorkflowStep, WorkflowStepId } from '../../types/workflow';
+import type { RunDiagnostics, StepState, Workflow, WorkflowStep, WorkflowStepId } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
 const LATENCY_MS = 150;
@@ -18,10 +18,35 @@ const delay = <T>(value: T): Promise<T> =>
 
 /** Mock parity for the backend's live currentActivity on running workflows. */
 const withLiveActivity = (workflow: Workflow): Workflow => {
-  if (workflow.status !== 'RUNNING') return workflow;
+  const base: Workflow = {
+    ...workflow,
+    waiting: workflow.waiting ?? {
+      kind:
+        workflow.status === 'WAITING_APPROVAL'
+          ? 'APPROVAL'
+          : workflow.status === 'ESCALATED'
+            ? 'ESCALATED'
+            : workflow.status === 'WAITING_RETRY'
+              ? 'RETRY_WAIT'
+              : workflow.status === 'RUNNING'
+                ? 'STEP_RUNNING'
+                : 'NONE',
+      since: workflow.updatedAt,
+      reason: workflow.status === 'ESCALATED' ? 'Escalated — fix budget used, needs operator' : null,
+      retryAt: null,
+      budget: null,
+      suggestedActions: workflow.status === 'ESCALATED' ? ['resume', 'cancel'] : [],
+    },
+    driver: workflow.driver ?? {
+      alive: workflow.status === 'RUNNING',
+      lastTickAt: workflow.status === 'RUNNING' ? workflow.updatedAt : null,
+      lastStopReason: null,
+    },
+  };
+  if (workflow.status !== 'RUNNING') return base;
   const active = workflow.steps.find((s) => s.state === 'active');
   return {
-    ...workflow,
+    ...base,
     currentActivity: {
       kind: 'STEP_RUNNING',
       stepId: active?.id ?? null,
@@ -135,6 +160,50 @@ export const mockApi: FactoryApi = {
   getWorkflow: (id) => {
     const workflow = workflowStore.find((w) => w.id === id);
     return delay(workflow && withLiveActivity(workflow));
+  },
+
+  getRunDiagnostics: (runId) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) return delay(undefined);
+    const view = withLiveActivity(workflow);
+    const diagnostics: RunDiagnostics = {
+      runId: workflow.id,
+      taskId: workflow.taskId,
+      projectId: workflow.projectId,
+      stage: view.currentActivity?.stage ?? workflow.status,
+      stageKind: 'STEP',
+      status: workflow.status,
+      waiting: view.waiting!,
+      inFlight:
+        workflow.status === 'RUNNING'
+          ? { token: 'mock-in-flight', ageSeconds: 5 }
+          : null,
+      retryAt: view.waiting?.retryAt ?? null,
+      fixBudget: view.waiting?.budget ?? { used: 0, max: 3 },
+      revisions: {},
+      lastEvents: activity
+        .filter((e) => e.taskId === workflow.taskId)
+        .slice(-20)
+        .map((e) => ({
+          type: e.sourceKind.toUpperCase(),
+          message: e.message,
+          at: e.timestamp,
+          metadata: e.metadata ?? {},
+        })),
+      lastError: workflow.error
+        ? {
+            code: workflow.error.code,
+            message: workflow.error.message,
+            category: workflow.error.category,
+            retryable: false,
+            at: workflow.error.at ?? workflow.updatedAt,
+            details: workflow.error.details ?? null,
+          }
+        : null,
+      driver: view.driver!,
+      suggestedActions: view.waiting?.suggestedActions ?? [],
+    };
+    return delay(diagnostics);
   },
 
   tickRun: (runId) => {

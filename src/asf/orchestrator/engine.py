@@ -128,6 +128,24 @@ class Orchestrator:
                 self._runs[run_id] = before
                 raise
 
+    def record_event(
+        self,
+        run_id: str,
+        event_type: str,
+        message: str,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Append an activity event to a run outside a dispatch.
+
+        For platform actors that act on a run without running a
+        step — the API service's drive recording why it stopped —
+        so the event lands in the same trail (and outbox) as engine
+        events instead of only in a server log.
+        """
+        with self._edit(run_id) as run:
+            self._event(run, event_type, message, metadata=metadata)
+
     def _event(
         self,
         run: WorkflowExecution,
@@ -761,11 +779,20 @@ class Orchestrator:
     def _request_fix(self, run: WorkflowExecution) -> None:
         run.state = apply(self._graph, run.state, Trigger.REQUEST_CHANGES)
         run.state = apply(self._graph, run.state, Trigger.REVISE)
-        self._event(
-            run,
-            "WORKFLOW_ESCALATED" if run.state.stage == ESCALATED_STAGE else "CODE_FIX_REQUESTED",
-            "Code needs correction; bounded rework policy applied",
-        )
+        used = run.state.revisions.get(FIX_STEP, 0)
+        budget = self._graph.max_revisions.get(FIX_STEP, used)
+        if run.state.stage == ESCALATED_STAGE:
+            self._event(
+                run,
+                "WORKFLOW_ESCALATED",
+                f"Fix budget exhausted ({used}/{budget}) — waiting for operator",
+            )
+        else:
+            self._event(
+                run,
+                "CODE_FIX_REQUESTED",
+                f"Review/Test requested changes — fix {used}/{budget}",
+            )
 
     def _next_item(self, run: WorkflowExecution) -> bool:
         item_id = run.task_order[run.item_index]

@@ -131,6 +131,11 @@ def create_app(service: FactoryService) -> FastAPI:
         workflow = service.get_workflow(workflow_id)
         return workflow if workflow is not None else _not_found("Workflow")
 
+    @app.get("/runs/{run_id}/diagnostics")
+    async def run_diagnostics(run_id: str) -> Any:
+        diagnostics = service.run_diagnostics(run_id)
+        return diagnostics if diagnostics is not None else _not_found("Run")
+
     # -- projects ---------------------------------------------------------
     @app.get("/projects")
     async def list_projects() -> list[dict[str, Any]]:

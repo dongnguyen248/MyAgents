@@ -909,6 +909,7 @@ def build_demo(
         # whole (the failure is shown on the run).
         decomposer=RequirementDecomposer(runtime.models),
         max_concurrent_runs=platform.execution.max_concurrent_runs,
+        stall_seconds=platform.execution.watchdog.stall_seconds,
         on_run_terminal=lambda run_id, project_id, stage: workspace.finish_run(
             project_id, run_id, stage
         ),
