@@ -62,11 +62,17 @@ class ReviewAgent(BaseAgent):
         prompts: ReviewPrompts,
         model: str | None = None,
         parameters: Mapping[str, Any] | None = None,
+        skip_when_tests_pass: bool = False,
+        max_diff_lines: int = 200,
+        report_tail_lines: int = 120,
     ) -> None:
         super().__init__(runtime)
         self._prompts = prompts
         self._model = model
         self._parameters = dict(parameters or {})
+        self._skip_when_tests_pass = skip_when_tests_pass
+        self._max_diff_lines = max_diff_lines
+        self._report_tail_lines = report_tail_lines
         self._metadata = AgentMetadata(
             id="agent-review", name="Review Agent", type="review", version="1.0.0",
             status="IDLE", capabilities=["review-code"], configuration={},
@@ -78,13 +84,70 @@ class ReviewAgent(BaseAgent):
 
     def _check(self, request: AgentRequest) -> list[Issue]:
         return check_code_request(
-            request, self.metadata.id, required={"SPEC", "PLAN", "TASK", "CODE"}
+            request, self.metadata.id, required={"SPEC", "PLAN", "TASK", "CODE"},
+            optional={"TEST_REPORT"},
         )
+
+    def _skipped_review(
+        self, request: AgentRequest, code: Artifact, changes: Any,
+    ) -> tuple[Any, list[Artifact]] | None:
+        """The configured fast path: tests already passed on THIS
+        code version and the change is small, so the LLM review is
+        replaced by a recorded APPROVE (the output says it was
+        skipped, and why). Returns None when the fast path does not
+        apply. Diff size counts content lines of create/modify
+        changes (deletes count 0) — an over-estimate for modifies,
+        which only makes the gate more conservative."""
+        report = next(
+            (
+                artifact for artifact in request.artifacts
+                if artifact.type == "TEST_REPORT"
+                and artifact.metadata.get("codeArtifactId") == code.id
+                and artifact.metadata.get("codeVersion") == code.version
+            ),
+            None,
+        )
+        if report is None or not isinstance(report.content, dict):
+            return None
+        inner = report.content.get("report")
+        if not isinstance(inner, dict) or inner.get("verdict") != "PASS":
+            return None
+        diff_lines = sum(
+            len(change.content.splitlines())
+            for change in changes.changes
+            if change.operation in ("create", "modify") and change.content
+        )
+        if diff_lines > self._max_diff_lines:
+            return None
+        review = ReviewContent(findings=[], verdict="APPROVE")
+        text = render_review_markdown(review, code.id, code.version)
+        payload = review.model_dump(mode="json", by_alias=True, exclude_none=True)
+        artifact = Artifact(
+            id=self._runtime.new_id(), type="CODE_REVIEW", name="CODE_REVIEW.json",
+            version="1",
+            content={"format": "json", "review": payload, "text": text},
+            created_by=self.metadata.id, created_at=self._runtime.clock(),
+            metadata=linked_metadata(request, code),
+        )
+        return {
+            "verdict": "APPROVE", "skipped": True,
+            "skipReason": (
+                f"tests passed for this code version and the change"
+                f" is small ({diff_lines} lines <= {self._max_diff_lines})"
+            ),
+        }, [artifact]
 
     def _run(self, request: AgentRequest) -> tuple[Any, list[Artifact]]:
         code = artifact_of(request, "CODE")
         changes = code_changeset(code)
-        messages = build_review_messages(prompts=self._prompts, request=request)
+        if self._skip_when_tests_pass:
+            skipped = self._skipped_review(request, code, changes)
+            if skipped is not None:
+                return skipped
+        messages = build_review_messages(
+            prompts=self._prompts, request=request,
+            report_tail_lines=self._report_tail_lines,
+        )
         try:
             response = call_model(self._runtime.models, ModelRequest(
                 messages=messages,
@@ -92,6 +155,7 @@ class ReviewAgent(BaseAgent):
                 parameters=dict(self._parameters),
                 metadata={
                     "requestId": request.request_id, "agentId": self.metadata.id,
+                    "cachePrefixMessages": 1,
                     "taskItemId": request.input["taskItemId"],
                     **tier_metadata(request.context),
                 },

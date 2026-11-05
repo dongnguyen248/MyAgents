@@ -21,6 +21,7 @@ from asf.agents._shared.codegen import (
     normalize_changeset_operations,
     validate_changeset,
 )
+from asf.agents._shared.context_slicing import slice_plan, slice_spec
 from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
 from asf.agents._shared.parsing import ParseError, parse_json
 from asf.agents._shared.paths import validate_relative_path
@@ -29,6 +30,8 @@ from asf.agents._shared.repair import (
     run_code_generation,
     summarize_validation_issues,
 )
+from asf.agents._shared.repomap import build_repo_map
+from asf.agents._shared.report_tail import tail_artifact_for_prompt
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
@@ -63,6 +66,8 @@ class FixAgent(BaseAgent):
         parameters: Mapping[str, Any] | None = None,
         edit_format: str = "blocks",
         repair_attempts: int = 1,
+        repo_map_max_chars: int = 6000,
+        report_tail_lines: int = 120,
     ) -> None:
         super().__init__(runtime)
         if edit_format not in ("blocks", "json"):
@@ -79,6 +84,8 @@ class FixAgent(BaseAgent):
         self._parameters = dict(parameters or {})
         self._edit_format = edit_format
         self._repair_attempts = repair_attempts
+        self._repo_map_max_chars = repo_map_max_chars
+        self._report_tail_lines = report_tail_lines
 
     @property
     def metadata(self) -> AgentMetadata:
@@ -188,14 +195,34 @@ class FixAgent(BaseAgent):
             if artifact.type in {"CODE_REVIEW", "TEST_REPORT"}
         ]
         previous_error = request.input.get("previousFixError")
+        item = task_item(task, item_id)
+        spec_text = spec.to_contract()["content"]["text"]
+        plan_text = plan.to_contract()["content"]["text"]
         context = build_fix_context(
-            task_id=item_id, spec_summary=spec.to_contract()["content"]["text"],
-            plan_summary=plan.to_contract()["content"]["text"],
+            task_id=item_id,
+            spec_summary=slice_spec(
+                spec_text,
+                task_title=str(item.get("title", "")),
+                task_description=str(item.get("description", "")),
+            ),
+            plan_summary=slice_plan(
+                plan_text,
+                str(item["milestoneRef"]) if item.get("milestoneRef") else None,
+            ),
             task_summary=task.to_contract()["content"]["text"],
             expected_files=expected, existing_files=existing,
-            review_findings=[artifact.to_contract() for artifact in reports],
+            review_findings=[
+                tail_artifact_for_prompt(
+                    artifact.to_contract(), self._report_tail_lines,
+                )
+                for artifact in reports
+            ],
             previous_changeset=code_changeset(code),
             previous_error=previous_error if isinstance(previous_error, str) else None,
+            repo_map=build_repo_map(
+                self._repository, ref=ref, expected_files=expected,
+                max_chars=self._repo_map_max_chars,
+            ),
         )
         model_request = ModelRequest(            messages=build_fix_messages(
                 self._prompts, request, context, edit_format=self._edit_format,
@@ -203,6 +230,7 @@ class FixAgent(BaseAgent):
             model=self._model, parameters=self._parameters,
             metadata={
                 "agentId": self.metadata.id, "requestId": request.request_id,
+                "cachePrefixMessages": 1,
                 **tier_metadata(request.context),
             },
         )

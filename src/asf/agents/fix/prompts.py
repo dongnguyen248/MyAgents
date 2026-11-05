@@ -50,6 +50,8 @@ def build_fix_messages(
         # Why the previous fix attempt was rejected; the system prompt
         # tells the model to correct this specific failure.
         payload["previousAttemptError"] = context.previous_error
+    if context.repo_map:
+        payload["repoMap"] = context.repo_map
     payload["outputFormat"] = edit_format
     if edit_format == "blocks":
         payload["formatInstructions"] = (

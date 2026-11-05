@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from asf.agents._shared.context_slicing import slice_plan, slice_spec
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
 from asf.contracts.models import ModelMessage
@@ -31,6 +32,7 @@ def build_implement_messages(
     language: str | None,
     project_context: str | dict[str, Any] | None,
     edit_format: str = "blocks",
+    repo_map: str = "",
 ) -> list[ModelMessage]:
     """Build the message list for the ImplementAgent LLM call."""
     system_msg = prompts.system
@@ -70,28 +72,11 @@ def build_implement_messages(
     )
     system_msg += skills_section(project_context, "implement")
 
-    # Build context sections
-    sections: list[str] = []
-
-    # SPEC content
-    spec_text = ""
-    if isinstance(spec_artifact, dict) and isinstance(spec_artifact.get("content"), dict):
-        spec_text = spec_artifact["content"].get("text", "")
-    if spec_text:
-        sections.append("<<<SPEC>>>\n" + spec_text + "\n<<<END SPEC>>>")
-
-    # PLAN content
-    plan_text = ""
-    if isinstance(plan_artifact, dict) and isinstance(plan_artifact.get("content"), dict):
-        plan_text = plan_artifact["content"].get("text", "")
-    if plan_text:
-        sections.append("<<<PLAN>>>\n" + plan_text + "\n<<<END PLAN>>>")
-
-    # TASK content - find the specific task item
-    task_text = ""
+    # Find the task item FIRST: its milestone and vocabulary drive
+    # the SPEC/PLAN slicing below.
+    task_item: dict[str, Any] | None = None
     if isinstance(task_artifact, dict) and isinstance(task_artifact.get("content"), dict):
         content = task_artifact["content"]
-        # Tasks may be in content["tasks"] directly or in content["text"] as JSON string
         tasks = None
         if isinstance(content.get("tasks"), list):
             tasks = content["tasks"]
@@ -105,19 +90,53 @@ def build_implement_messages(
         if tasks:
             for task in tasks:
                 if task.get("id") == task_item_id:
-                    task_text = (
-                        f"ID: {task.get('id')}\n"
-                        f"Title: {task.get('title')}\n"
-                        f"Description: {task.get('description')}\n"
-                        f"Acceptance Criteria:\n"
-                        + "\n".join(f"- {ac}" for ac in task.get("acceptanceCriteria", []))
-                    )
-                    if task.get("expectedFiles"):
-                        task_text += "\nExpected Files:\n" + "\n".join(
-                            f"- {f}" for f in task.get("expectedFiles", [])
-                        )
-                    task_text += f"\nVerification Hint: {task.get('verificationHint', '')}"
+                    task_item = task
                     break
+
+    # Stable sections (identical for every item of the run): the
+    # SPEC, sliced to what this item needs when long, and the PLAN
+    # sliced to the item's milestone.
+    stable_sections: list[str] = []
+    spec_text = ""
+    if isinstance(spec_artifact, dict) and isinstance(spec_artifact.get("content"), dict):
+        spec_text = spec_artifact["content"].get("text", "")
+    if spec_text:
+        spec_text = slice_spec(
+            spec_text,
+            task_title=str(task_item.get("title", "")) if task_item else "",
+            task_description=(
+                str(task_item.get("description", "")) if task_item else ""
+            ),
+        )
+        stable_sections.append("<<<SPEC>>>\n" + spec_text + "\n<<<END SPEC>>>")
+
+    plan_text = ""
+    if isinstance(plan_artifact, dict) and isinstance(plan_artifact.get("content"), dict):
+        plan_text = plan_artifact["content"].get("text", "")
+    if plan_text:
+        milestone_ref = None
+        if task_item and task_item.get("milestoneRef"):
+            milestone_ref = str(task_item["milestoneRef"])
+        plan_text = slice_plan(plan_text, milestone_ref)
+        stable_sections.append("<<<PLAN>>>\n" + plan_text + "\n<<<END PLAN>>>")
+
+    # Changing sections: the task item itself, its files, the repo map.
+    sections: list[str] = []
+    task_text = ""
+    if task_item is not None:
+        task = task_item
+        task_text = (
+            f"ID: {task.get('id')}\n"
+            f"Title: {task.get('title')}\n"
+            f"Description: {task.get('description')}\n"
+            f"Acceptance Criteria:\n"
+            + "\n".join(f"- {ac}" for ac in task.get("acceptanceCriteria", []))
+        )
+        if task.get("expectedFiles"):
+            task_text += "\nExpected Files:\n" + "\n".join(
+                f"- {f}" for f in task.get("expectedFiles", [])
+            )
+        task_text += f"\nVerification Hint: {task.get('verificationHint', '')}"
     if task_text:
         sections.append("<<<TASK ITEM>>>\n" + task_text + "\n<<<END TASK ITEM>>>")
 
@@ -127,6 +146,9 @@ def build_implement_messages(
         for path, content in sorted(existing_files.items()):
             file_sections.append(f"<<<FILE: {path}>>>\n{content}\n<<<END FILE: {path}>>>")
         sections.append("\n".join(file_sections))
+
+    if repo_map:
+        sections.append("<<<REPO MAP>>>\n" + repo_map + "\n<<<END REPO MAP>>>")
 
     context_block = "\n\n".join(sections)
 
@@ -164,14 +186,22 @@ def build_implement_messages(
 
     user_msg = (
         f"Implement the task item {task_item_id} based on the SPEC, "
-        f"PLAN, and TASK ITEM above.\n\n{context_block}\n\n"
+        f"PLAN, and TASK ITEM.\n\n{context_block}\n\n"
         f"{format_block}"
     )
 
-    return [
-        ModelMessage(role="system", content=system_msg),
-        ModelMessage(role="user", content=user_msg),
-    ]
+    # Stable -> changing order, as separate messages so provider
+    # prompt caches can hold the prefix: system, then the SPEC/PLAN
+    # reference message (identical across the run's items), then the
+    # per-item message. Agents declare the stable prefix length via
+    # the cachePrefixMessages request metadata.
+    messages = [ModelMessage(role="system", content=system_msg)]
+    if stable_sections:
+        messages.append(ModelMessage(
+            role="user", content="\n\n".join(stable_sections),
+        ))
+    messages.append(ModelMessage(role="user", content=user_msg))
+    return messages
 
 
 def render_code_markdown(

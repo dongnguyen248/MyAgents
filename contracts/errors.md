@@ -13,6 +13,7 @@ Below is the standard catalog of built-in platform error codes. Each code maps t
 | AGENT_EXECUTION_FAILED | AGENT | true | agent raised or returned a failure |
 | WORKFLOW_INVALID_TRANSITION | WORKFLOW | false | state transition not allowed |
 | WORKFLOW_STEP_TIMEOUT | WORKFLOW | true | step exceeded its timeout |
+| RUN_BUDGET_EXCEEDED | WORKFLOW | false | run's accumulated model usage exceeded the configured RunBudget; stopped before the next dispatch |
 | APPROVAL_EXPIRED | APPROVAL | false | decision arrived after expiresAt |
 | APPROVAL_ALREADY_DECIDED | APPROVAL | false | a decision already exists, or the reviewer already approved |
 | APPROVAL_NOT_AUTHORIZED | APPROVAL | false | reviewer is not allowed to decide this approval |

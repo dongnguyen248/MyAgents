@@ -308,7 +308,7 @@ def test_event_and_metrics_outbox_survives_failure_and_restart(tmp_path):
             seen_events.append(event.id)
 
     class Metrics:
-        def record(self, agent_id, result):
+        def record(self, agent_id, result, *, run_id=None):
             seen_metrics.append((agent_id, result.request_id))
 
     class Broken:

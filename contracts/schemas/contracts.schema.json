@@ -96,6 +96,24 @@
         "attempt": {
           "type": "integer",
           "minimum": 1
+        },
+        "promptTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "model prompt tokens consumed by this run, accumulated by the platform"
+        },
+        "completionTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "model completion tokens produced by this run, accumulated by the platform"
+        },
+        "modelCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "number of model calls made by this run, counted by the platform"
         }
       }
     },

@@ -50,7 +50,10 @@ class AgentRulesTests(unittest.TestCase):
         model-call helper (asf.agents._shared.model_call) is
         allowlisted on the same terms: it is the one place that
         interprets a model response's finish_reason (truncation,
-        provider blocks) for every agent.
+        provider blocks) for every agent. The counting gateway
+        (asf.models.counting) is allowlisted: BaseAgent wraps every
+        agent's gateway in it so usage accounting and step-deadline
+        injection are platform concerns, not agent bookkeeping.
         """
         agents_dir = REPO_ROOT / "src" / "asf" / "agents"
         logic_modules = [
@@ -72,6 +75,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.skills",
             "asf.agents._shared.model_errors",
             "asf.agents._shared.model_call",
+            "asf.models.counting",
             "asf.agents.spec",
             "asf.agents.spec.agent",
             "asf.agents.spec.prompts",

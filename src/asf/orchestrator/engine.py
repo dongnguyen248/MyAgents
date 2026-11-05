@@ -11,6 +11,7 @@ from asf.approval.errors import ApprovalError
 from asf.approval.models import ApprovalDecision, ApprovalPolicy, ApprovalRequest, ApprovalSpec
 from asf.approval.service import ApprovalService
 from asf.contracts.models import ActivityEvent, AgentRequest, AgentResult, PlatformError
+from asf.orchestrator.budget import RunBudget, budget_exceeded_message
 from asf.orchestrator.code_loop import (
     ESCALATED_STAGE,
     FIX_STAGE,
@@ -49,6 +50,7 @@ class Orchestrator:
         approval_policy: ApprovalPolicy | None = None,
         store: ExecutionStore | None = None,
         code_loop: CodeLoopPolicy | None = None,
+        budget: RunBudget | None = None,
         actions: Mapping[str, Callable[[AgentRequest], AgentResult]] | None = None,
         events: EventPublisher | None = None,
         metrics: MetricsRecorder | None = None,
@@ -65,6 +67,7 @@ class Orchestrator:
         self._definition = definition.model_copy(deep=True)
         self._graph = build_graph(self._definition)
         self._code_loop = code_loop.model_copy(deep=True) if code_loop else None
+        self._budget = budget.model_copy(deep=True) if budget else None
         if self._code_loop is not None:
             self._graph = loop_graph(self._graph, self._definition, self._code_loop)
         self._registry = registry
@@ -271,11 +274,20 @@ class Orchestrator:
         # _active guard: the in_flight token and the row version do.
         claimed = run.snapshot()
         pre_dispatch = claimed.snapshot()
-        self._active.add(run_id)
-        try:
-            self._dispatch(claimed)
-        finally:
-            self._active.remove(run_id)
+        exceeded = (
+            budget_exceeded_message(claimed, self._budget)
+            if self._budget is not None else None
+        )
+        if exceeded is not None:
+            # The budget is checked BEFORE dispatch: an over-budget
+            # run fails here and the model is never called again.
+            self._fail(claimed, "RUN_BUDGET_EXCEEDED", exceeded, "WORKFLOW")
+        else:
+            self._active.add(run_id)
+            try:
+                self._dispatch(claimed)
+            finally:
+                self._active.remove(run_id)
         # Phase 3 — commit, in one short transaction: the claim token
         # must still own the run. If it does not (a recover(), or a
         # version-guarded save elsewhere), this dispatch's outcome is
@@ -405,6 +417,12 @@ class Orchestrator:
         types = list(step.consumes)
         if step.id == FIX_STEP and "TEST_REPORT" in run.artifacts:
             types.append("TEST_REPORT")
+        if step.agent_type == "review" and "TEST_REPORT" in run.artifacts:
+            # A re-review after a fix can see the latest test report:
+            # the review prompt tails it, and the configured
+            # skip-when-tests-pass fast path keys off it. The first
+            # review (no report exists yet) is unaffected.
+            types.append("TEST_REPORT")
         if run.feedback:
             types.extend(kind for kind in step.produces if kind not in types)
         artifacts = [run.artifacts[kind] for kind in types if kind in run.artifacts]
@@ -440,12 +458,21 @@ class Orchestrator:
                         error.details, default=str,
                     )[:500]
                 inputs["previousFixError"] = summary
+        request_metadata: dict[str, Any] = {
+            "attempt": attempt, "runId": run.id, "stepId": step.id,
+        }
+        if step.timeout is not None:
+            # The step's configured timeout becomes a live deadline:
+            # BaseAgent turns it into per-call remaining time for the
+            # gateway instead of the timeout only being checked after
+            # the agent returns.
+            request_metadata["stepTimeoutSeconds"] = step.timeout
         request = AgentRequest(
             request_id=run.in_flight or self._new_id(), task_id=run.task_id,
             project_id=run.project_id, workflow_id=self._definition.id, agent_id=agent_id,
             input=inputs, context=deepcopy(run.context),
             artifacts=deepcopy(artifacts), feedback=deepcopy(run.feedback),
-            metadata={"attempt": attempt, "runId": run.id, "stepId": step.id},
+            metadata=request_metadata,
         )
         run.attempts[step.id] = attempt
         return step, agent_id, execute, request
@@ -948,7 +975,10 @@ class Orchestrator:
                 if observation.event is not None and self._events is not None:
                     self._events.publish(observation.event)
                 if observation.result is not None and self._metrics is not None:
-                    self._metrics.record(observation.result.agent_id, observation.result)
+                    self._metrics.record(
+                        observation.result.agent_id, observation.result,
+                        run_id=run_id,
+                    )
             except Exception:
                 failed = True
                 break

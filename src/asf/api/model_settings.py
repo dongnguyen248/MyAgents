@@ -298,6 +298,10 @@ def build_configured_gateway(
     )
     return OpenAICompatibleGateway(
         base_url=base_url, model=model, api_key=api_key, transport=transport,
+        # Anthropic's OpenAI-compatible endpoint understands
+        # cache_control content parts; enable the agents' cache
+        # prefix hint only there.
+        prompt_cache="anthropic" in base_url,
     )
 
 

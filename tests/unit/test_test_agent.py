@@ -46,9 +46,11 @@ class FakeSandbox:
         self.calls: list[tuple[tuple[CommandSpec, ...], ChangeSet, str]] = []
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str
+        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
+        *, fail_fast: bool = True,
     ) -> SandboxResult:
         self.calls.append((tuple(commands), changes, ref))
+        self.fail_fast_seen = fail_fast
         if self.error is not None:
             raise self.error
         return self.result

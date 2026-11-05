@@ -20,6 +20,7 @@ from asf.agents._shared.repair import (
     run_code_generation,
     summarize_validation_issues,
 )
+from asf.agents._shared.repomap import build_repo_map
 from asf.agents._shared.routing import tier_metadata
 from asf.agents._shared.traceability import ArtifactKind, build_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -64,6 +65,7 @@ class ImplementAgent(BaseAgent):
         parameters: Mapping[str, Any] | None = None,
         edit_format: str = "blocks",
         repair_attempts: int = 1,
+        repo_map_max_chars: int = 6000,
     ) -> None:
         super().__init__(runtime)
         if edit_format not in ("blocks", "json"):
@@ -80,6 +82,7 @@ class ImplementAgent(BaseAgent):
         self._parameters = dict(parameters or {})
         self._edit_format = edit_format
         self._repair_attempts = repair_attempts
+        self._repo_map_max_chars = repo_map_max_chars
         self._metadata = AgentMetadata(
             id="agent-implement",
             name="Implementation Agent",
@@ -370,6 +373,10 @@ class ImplementAgent(BaseAgent):
         # Build messages (the output-format contract travels in the
         # user message: edit blocks by default, legacy JSON when the
         # agent is configured with edit_format="json").
+        repo_map = build_repo_map(
+            self._repository, ref=ref, expected_files=expected_files,
+            max_chars=self._repo_map_max_chars,
+        )
         messages = build_implement_messages(
             prompts=self._prompts,
             spec_artifact=spec_artifact_dict,
@@ -380,6 +387,7 @@ class ImplementAgent(BaseAgent):
             language=language,
             project_context=project_context,
             edit_format=self._edit_format,
+            repo_map=repo_map,
         )
 
         model_req = ModelRequest(
@@ -388,6 +396,8 @@ class ImplementAgent(BaseAgent):
             model=self._model,
             metadata={
                 "agentId": self.metadata.id, "requestId": request.request_id,
+                # Stable prefix: system + the SPEC/PLAN message.
+                "cachePrefixMessages": 2 if len(messages) > 2 else 1,
                 **tier_metadata(request.context),
             },
         )

@@ -165,7 +165,9 @@ class MetricsService:
 
     # -- MetricsRecorder port ---------------------------------------------
 
-    def record(self, agent_id: str, result: AgentResult) -> None:
+    def record(
+        self, agent_id: str, result: AgentResult, *, run_id: str | None = None,
+    ) -> None:
         """Record one agent result, deriving quality samples from artifacts."""
         with self._lock:
             recorded_at = self._now()
@@ -181,6 +183,10 @@ class MetricsService:
                 request_id=result.request_id, project_id=project_id, task_id=task_id,
                 status=result.status, duration_seconds=result.metrics.duration_seconds,
                 revision_count=result.metrics.revision_count, attempt=result.metrics.attempt,
+                run_id=run_id,
+                prompt_tokens=result.metrics.prompt_tokens,
+                completion_tokens=result.metrics.completion_tokens,
+                model_calls=result.metrics.model_calls,
             ))
             for artifact in result.artifacts:
                 sample = _artifact_sample(
@@ -258,6 +264,9 @@ class MetricsService:
             ),
             "testPassRate": self._quality_rate_locked(quality, "TEST"),
             "ciPassRate": self._quality_rate_locked(quality, "CI"),
+            "promptTokens": sum(run.prompt_tokens for run in runs),
+            "completionTokens": sum(run.completion_tokens for run in runs),
+            "modelCalls": sum(run.model_calls for run in runs),
         }
         metrics["healthScore"] = _health_score(
             success_rate=metrics["successRate"],
@@ -274,6 +283,20 @@ class MetricsService:
         """Return the dashboard ``AgentMetrics`` shape for one agent."""
         with self._lock:
             return self._agent_metrics_locked(agent_id)
+
+    def run_metrics(self, run_id: str) -> dict[str, Any]:
+        """Token/call totals for one workflow run, across its agents."""
+        with self._lock:
+            runs = [run for run in self._runs if run.run_id == run_id]
+            return {
+                "runId": run_id,
+                "executions": len(runs),
+                "promptTokens": sum(run.prompt_tokens for run in runs),
+                "completionTokens": sum(
+                    run.completion_tokens for run in runs
+                ),
+                "modelCalls": sum(run.model_calls for run in runs),
+            }
 
     def all_agent_metrics(self) -> dict[str, dict[str, Any]]:
         """Return ``AgentMetrics`` for every agent with any recorded data."""

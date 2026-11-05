@@ -59,4 +59,6 @@ class EventPublisher(Protocol):
 
 
 class MetricsRecorder(Protocol):
-    def record(self, agent_id: str, result: AgentResult) -> None: ...
+    def record(
+        self, agent_id: str, result: AgentResult, *, run_id: str | None = None,
+    ) -> None: ...

@@ -222,7 +222,7 @@ def test_prompt_contains_spec_section():
     assert res.status == "SUCCESS"
     assert len(gateway.requests) == 1
     messages = gateway.requests[0].messages
-    user_content = messages[1].content
+    user_content = "\n".join(m.content for m in messages if m.role == "user")
     assert "<<<SPEC>>>" in user_content
     assert "<<<END SPEC>>>" in user_content
 
@@ -237,7 +237,7 @@ def test_prompt_contains_plan_section():
     res = agent.execute(req)
     assert res.status == "SUCCESS"
     messages = gateway.requests[0].messages
-    user_content = messages[1].content
+    user_content = "\n".join(m.content for m in messages if m.role == "user")
     assert "<<<PLAN>>>" in user_content
     assert "<<<END PLAN>>>" in user_content
 
@@ -252,7 +252,7 @@ def test_prompt_contains_task_item_section():
     res = agent.execute(req)
     assert res.status == "SUCCESS"
     messages = gateway.requests[0].messages
-    user_content = messages[1].content
+    user_content = "\n".join(m.content for m in messages if m.role == "user")
     assert "<<<TASK ITEM>>>" in user_content
     assert "<<<END TASK ITEM>>>" in user_content
 
@@ -269,7 +269,7 @@ def test_prompt_contains_existing_files_section():
     res = agent.execute(req)
     assert res.status == "SUCCESS"
     messages = gateway.requests[0].messages
-    user_content = messages[1].content
+    user_content = "\n".join(m.content for m in messages if m.role == "user")
     assert "<<<FILE: src/existing.py>>>" in user_content
     assert "old content" in user_content
     assert "<<<END FILE: src/existing.py>>>" in user_content
@@ -285,7 +285,7 @@ def test_prompt_no_existing_files_when_none():
     res = agent.execute(req)
     assert res.status == "SUCCESS"
     messages = gateway.requests[0].messages
-    user_content = messages[1].content
+    user_content = "\n".join(m.content for m in messages if m.role == "user")
     assert "<<<FILE:" not in user_content
 
 
@@ -299,7 +299,7 @@ def test_prompt_contains_json_schema():
     res = agent.execute(req)
     assert res.status == "SUCCESS"
     messages = gateway.requests[0].messages
-    user_content = messages[1].content
+    user_content = "\n".join(m.content for m in messages if m.role == "user")
     assert '"changes"' in user_content
     assert '"operation"' in user_content
     assert '"content"' in user_content
@@ -315,7 +315,7 @@ def test_prompt_contains_rules():
     res = agent.execute(req)
     assert res.status == "SUCCESS"
     messages = gateway.requests[0].messages
-    user_content = messages[1].content
+    user_content = "\n".join(m.content for m in messages if m.role == "user")
     assert "Full file contents only" in user_content
     assert "No diffs" in user_content
     assert "No NUL bytes" in user_content
@@ -333,9 +333,14 @@ def test_prompt_system_message_present():
     res = agent.execute(req)
     assert res.status == "SUCCESS"
     messages = gateway.requests[0].messages
-    assert len(messages) == 2
+    # Stable -> changing message order: system, the SPEC/PLAN
+    # reference message, then the per-item message (the prompt
+    # caching layout).
+    assert len(messages) == 3
     assert messages[0].role == "system"
     assert messages[1].role == "user"
+    assert messages[2].role == "user"
+    assert "<<<SPEC>>>" in messages[1].content
     assert len(messages[0].content) > 0
 
 

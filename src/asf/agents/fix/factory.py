@@ -28,4 +28,6 @@ def build_fix_agent(
         parameters=profile.parameters if profile else {},
         edit_format=settings.get("editFormat", "blocks"),
         repair_attempts=settings.get("repairAttempts", 1),
+        repo_map_max_chars=settings.get("repoMapMaxChars", 6000),
+        report_tail_lines=settings.get("reportTailLines", 120),
     )

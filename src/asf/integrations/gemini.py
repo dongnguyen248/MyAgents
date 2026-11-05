@@ -19,6 +19,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse, ModelUsage
 from asf.integrations.retry import (
     backoff_delay,
+    effective_timeout,
     http_error_code,
     is_context_too_long,
     parse_retry_after,
@@ -273,7 +274,7 @@ class GeminiModelGateway:
                             "x-goog-api-key": self._api_key,
                         },
                         body=body,
-                        timeout_seconds=self._timeout,
+                        timeout_seconds=effective_timeout(self._timeout, request),
                         max_response_bytes=self._max_response_bytes,
                     )
                 except _ResponseTooLargeError:

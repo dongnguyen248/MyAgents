@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from typing import Any
 
 __all__ = [
     "MAX_BACKOFF_SECONDS",
@@ -114,3 +115,14 @@ def backoff_delay(
         return min(max(retry_after, 0.0), MAX_BACKOFF_SECONDS)
     ceiling = min(MAX_BACKOFF_SECONDS, float(2**attempt))
     return rand(0.0, ceiling)
+
+
+def effective_timeout(configured: float, request: Any) -> float:
+    """The per-call HTTP timeout: the configured value, capped by
+    the step deadline the platform stamped into the request
+    metadata (``deadlineSeconds`` — time remaining in the step).
+    Shared by both provider gateways so the rule exists once."""
+    deadline = request.metadata.get("deadlineSeconds")
+    if isinstance(deadline, (int, float)) and not isinstance(deadline, bool):
+        return min(configured, max(float(deadline), 0.05))
+    return configured

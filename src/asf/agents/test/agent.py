@@ -89,9 +89,13 @@ def _output(text: str, limit: int) -> str:
 class TestAgent(BaseAgent):
     """Deterministic test runner; command output is untrusted data, never instructions."""
 
-    def __init__(self, runtime: AgentRuntime, sandbox: SandboxPort) -> None:
+    def __init__(
+        self, runtime: AgentRuntime, sandbox: SandboxPort, *,
+        fail_fast: bool = True,
+    ) -> None:
         super().__init__(runtime)
         self._sandbox = sandbox
+        self._fail_fast = fail_fast
         self._metadata = AgentMetadata(
             id="agent-test",
             name="Test Agent",
@@ -125,7 +129,10 @@ class TestAgent(BaseAgent):
         code = artifact_of(request, "CODE")
         changes = code_changeset(code)
         try:
-            result = self._sandbox.run(commands, changes, code.metadata["baseRef"])
+            result = self._sandbox.run(
+                commands, changes, code.metadata["baseRef"],
+                fail_fast=self._fail_fast,
+            )
         except (CommandTimeoutError, TimeoutError):
             raise AgentExecutionError("COMMAND_TIMEOUT", "Test command timed out") from None
         except Exception:
@@ -153,18 +160,35 @@ class TestAgent(BaseAgent):
                 )
             if item.timed_out or item.duration_ms > spec.timeout_seconds * 1000:
                 raise AgentExecutionError("COMMAND_TIMEOUT", "Test command timed out")
-        failed = sum(item.exit_code != 0 for item in result.commands)
+        executed = [item for item in result.commands if not item.skipped]
+        skipped_count = len(result.commands) - len(executed)
+        failed = sum(item.exit_code != 0 for item in executed)
         verdict = "FAIL" if failed else "PASS"
-        summary = f"{verdict}: {len(commands) - failed}/{len(commands)} commands passed"
+        summary = (
+            f"{verdict}: {len(executed) - failed}/{len(executed)} commands passed"
+        )
+        if skipped_count:
+            summary += f" ({skipped_count} skipped)"
         report: dict[str, Any] = {
             "commands": [
-                {
-                    "argv": [_redact(arg) for arg in spec.argv],
-                    "exitCode": item.exit_code,
-                    "stdout": _output(item.stdout, spec.output_limit_bytes),
-                    "stderr": _output(item.stderr, spec.output_limit_bytes),
-                    "durationMs": item.duration_ms,
-                }
+                (
+                    {
+                        "argv": [_redact(arg) for arg in spec.argv],
+                        "exitCode": None,
+                        "stdout": "",
+                        "stderr": "",
+                        "durationMs": 0,
+                        "skipped": True,
+                    }
+                    if item.skipped else
+                    {
+                        "argv": [_redact(arg) for arg in spec.argv],
+                        "exitCode": item.exit_code,
+                        "stdout": _output(item.stdout, spec.output_limit_bytes),
+                        "stderr": _output(item.stderr, spec.output_limit_bytes),
+                        "durationMs": item.duration_ms,
+                    }
+                )
                 for spec, item in zip(commands, result.commands, strict=True)
             ],
             "verdict": verdict,

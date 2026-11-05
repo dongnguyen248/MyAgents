@@ -258,6 +258,7 @@ class PlanAgent(BaseAgent):
             model=self._model,
             metadata={
                 "agentId": self.metadata.id, "requestId": request.request_id,
+                "cachePrefixMessages": 1,
                 **tier_metadata(request.context),
             },
         )

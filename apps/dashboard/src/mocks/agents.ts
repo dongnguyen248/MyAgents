@@ -8,7 +8,7 @@ const metrics = (
   avgDurationSec: number, avgRevisions: number, humanApprovalRate: number, testPassRate: number, ciPassRate: number,
 ): AgentMetrics => {
   const total = completed + running + failed + cancelled;
-  return { total, completed, running, failed, cancelled, successRate: completed / total, avgDurationSec, avgRevisions, humanApprovalRate, testPassRate, ciPassRate };
+  return { total, completed, running, failed, cancelled, successRate: completed / total, avgDurationSec, avgRevisions, humanApprovalRate, testPassRate, ciPassRate, promptTokens: total * 4200, completionTokens: total * 1300, modelCalls: total };
 };
 
 const base = (
