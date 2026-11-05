@@ -28,6 +28,10 @@ htmlcov/
 .asf-evidence/
 # Runtime data (the default SQLite run database lives in data/)
 data/
+# Stray agent output from pre-worktree local runs: a calculator.py
+# at the REPO ROOT can only be a run artifact (real code lives in
+# src/; the calculator benchmark case is harness/evaluation/cases/)
+/calculator.py
 *.log
 .DS_Store
 
