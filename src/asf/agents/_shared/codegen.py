@@ -53,6 +53,10 @@ class FixContext:
     existing_files: dict[str, str]
     review_findings: tuple[dict[str, Any], ...]  # serialized findings
     previous_changeset: ChangeSet | None
+    # Why the previous fix attempt was rejected, when this execution
+    # re-attempts a fix (step retry or a resumed run): the model must
+    # correct that specific failure instead of repeating it.
+    previous_error: str | None = None
 
 
 def build_implement_context(
@@ -85,6 +89,7 @@ def build_fix_context(
     existing_files: dict[str, str],
     review_findings: list[dict[str, Any]],
     previous_changeset: ChangeSet | None,
+    previous_error: str | None = None,
 ) -> FixContext:
     """Build context for FixAgent."""
     return FixContext(
@@ -96,6 +101,7 @@ def build_fix_context(
         existing_files=existing_files,
         review_findings=tuple(review_findings),
         previous_changeset=previous_changeset,
+        previous_error=previous_error,
     )
 
 

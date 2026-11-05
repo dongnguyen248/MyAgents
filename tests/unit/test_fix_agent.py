@@ -132,6 +132,48 @@ def test_fix_rejects_invalid_model_reply(reply: str):
     assert not result.artifacts
 
 
+def test_fix_invalid_reply_error_keeps_the_parse_cause():
+    # "Invalid replacement ChangeSet" alone is undiagnosable: the
+    # recorded error must keep WHY the reply was rejected (plus the
+    # reply's size and finish reason), because the next fix attempt is
+    # told this error verbatim and a human reads it on the run page.
+    agent, _ = fix_agent(["not-json"])
+    result = agent.execute(fix_request())
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.message == "Invalid replacement ChangeSet"
+    assert error.details["cause"]
+    assert error.details["replyChars"] == len("not-json")
+    assert error.details["finishReason"] == "stop"
+
+
+def test_fix_previous_attempt_error_reaches_the_prompt():
+    # A re-attempt (step retry / resumed run) carries the previous
+    # rejection in its input; it must reach the model's payload so the
+    # model can correct that specific failure instead of repeating it.
+    agent, gateway = fix_agent([make_valid_changeset_reply()])
+    base = fix_request()
+    request = base.model_copy(update={
+        "input": {
+            **base.input,
+            "previousFixError": (
+                "LLM_INVALID_RESPONSE: Invalid replacement ChangeSet"
+                ' — {"cause": "Invalid JSON"}'
+            ),
+        },
+    })
+    result = agent.execute(request)
+    assert result.status == "SUCCESS"
+    payload = json.loads(gateway.requests[0].messages[1].content)
+    assert "Invalid replacement ChangeSet" in payload["previousAttemptError"]
+
+    agent, gateway = fix_agent([make_valid_changeset_reply()])
+    result = agent.execute(fix_request())
+    assert result.status == "SUCCESS"
+    payload = json.loads(gateway.requests[0].messages[1].content)
+    assert "previousAttemptError" not in payload
+
+
 @pytest.mark.parametrize(
     ("path", "operation"),
     [("src/other.py", "create"), (".env", "create"),

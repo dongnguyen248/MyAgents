@@ -41,6 +41,10 @@ def build_fix_messages(
         "baseFiles": context.existing_files,
         "artifacts": [artifact.to_contract() for artifact in request.artifacts],
     }
+    if context.previous_error:
+        # Why the previous fix attempt was rejected; the system prompt
+        # tells the model to correct this specific failure.
+        payload["previousAttemptError"] = context.previous_error
     return [
         ModelMessage(role="system", content=system),
         ModelMessage(role="user", content=json.dumps(payload, ensure_ascii=True)),
