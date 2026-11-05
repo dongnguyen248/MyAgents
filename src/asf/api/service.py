@@ -626,6 +626,15 @@ class FactoryService:
         }
         if assigned is not None:
             view["assignedAgentId"] = assigned
+        # Split lineage: a part task names its parent so the task
+        # list can nest it under the parent's row (see list_tasks).
+        split = run.context.get("split") if isinstance(run.context, Mapping) else None
+        if isinstance(split, Mapping) and isinstance(split.get("parentTaskId"), str):
+            view["parentTaskId"] = split["parentTaskId"]
+            if isinstance(split.get("index"), int):
+                view["splitIndex"] = split["index"]
+            if isinstance(split.get("total"), int) and split["total"] > 0:
+                view["splitTotal"] = split["total"]
         if run.state.stage in _TERMINAL_STAGES:
             view["durationSec"] = max(
                 0.0, (run.updated_at - run.started_at).total_seconds()
@@ -664,7 +673,42 @@ class FactoryService:
                     v for v in views
                     if datetime.fromisoformat(v["createdAt"]) >= cutoff
                 ]
-        return sorted(views, key=lambda view: view["updatedAt"], reverse=True)
+        views = sorted(views, key=lambda view: view["updatedAt"], reverse=True)
+        return FactoryService._group_split_parts(views)
+
+    @staticmethod
+    def _group_split_parts(views: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Nest auto-split parts directly under their parent row.
+
+        The flat list is sorted by recency, so a split task's parts
+        would scatter across it with no visible link to the parent.
+        Parts whose parent row is present move to directly beneath
+        it, in split order; everything else keeps its sorted place,
+        and a part whose parent was filtered out stays top-level
+        rather than disappearing.
+        """
+        parents = {view["id"] for view in views if view.get("isSplitParent")}
+        if not parents:
+            return views
+        children: dict[str, list[dict[str, Any]]] = {}
+        for view in views:
+            parent = view.get("parentTaskId")
+            if isinstance(parent, str) and parent in parents:
+                children.setdefault(parent, []).append(view)
+        grouped: list[dict[str, Any]] = []
+        for view in views:
+            parent = view.get("parentTaskId")
+            if isinstance(parent, str) and parent in parents:
+                continue  # emitted under its parent below
+            grouped.append(view)
+            if view["id"] in children:
+                grouped.extend(
+                    sorted(
+                        children[view["id"]],
+                        key=lambda child: child.get("splitIndex") or 0,
+                    )
+                )
+        return grouped
 
     def _split_parent_views(
         self, latest: Mapping[str, WorkflowExecution],

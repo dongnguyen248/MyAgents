@@ -26,6 +26,9 @@ export interface Task {
   isSplitParent?: boolean;
   splitTotal?: number;
   splitCompleted?: number;
+  /** Auto-split part: the parent task it belongs to, and its position. */
+  parentTaskId?: string;
+  splitIndex?: number;
   ci?: CiStatus;
   mergeRequest?: string; // e.g. "!214"
 }

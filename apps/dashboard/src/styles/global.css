@@ -72,6 +72,7 @@ ul.list-links { gap: 0; } ul.list-links li { padding: 10px 16px; border-bottom: 
 .table-wrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tr.task-child th { padding-left: 34px; }
 .table thead th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
 .table tbody th { font-weight: 600; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }

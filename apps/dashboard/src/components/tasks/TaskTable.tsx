@@ -26,9 +26,12 @@ export function TaskTable({ tasks, agentNames }: { tasks: Task[]; agentNames: Re
         </thead>
         <tbody>
           {tasks.map((t) => (
-            <tr key={t.id}>
+            <tr key={t.id} className={t.parentTaskId ? 'task-child' : undefined}>
               <th scope="row">
                 <Link to={`/tasks/${t.id}`}>{t.id}</Link>
+                {t.parentTaskId && (
+                  <div className="muted small">↳ Part {t.splitIndex} of {t.splitTotal} · split from {t.parentTaskId}</div>
+                )}
                 <div className="small">{t.title}</div>
                 {t.isSplitParent && (
                   <div className="muted small">Split task · {t.splitCompleted}/{t.splitTotal} parts completed</div>
