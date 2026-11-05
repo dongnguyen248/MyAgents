@@ -19,7 +19,6 @@ from asf.tools.local import (
 from asf.tools.ports import (
     CommandResult,
     CommandSpec,
-    CommandTimeoutError,
     FileNotFoundInRepository,
     FileTooLargeError,
     RepositoryError,
@@ -116,15 +115,21 @@ def test_local_sandbox_validates_before_touching_the_tree(tmp_path: Path):
 def test_local_sandbox_timeout_and_missing_executable(tmp_path: Path):
     sandbox = LocalSandbox(tmp_path)
     changes = _changeset(FileChange(path="a.py", operation="create", content="a = 1\n"))
-    with pytest.raises(CommandTimeoutError):
-        sandbox.run(
-            [CommandSpec(
-                argv=(PYTHON, "-c", "import time; time.sleep(30)"),
-                timeout_seconds=1,
-            )],
-            changes,
-            "main",
-        )
+    # A timeout is reported as a result (timed_out=True, the process
+    # tree already killed), not raised: callers such as the test
+    # agent branch on the flag. (Previously this raised
+    # CommandTimeoutError; the port contract now allows either
+    # shape and this adapter returns the result.)
+    result = sandbox.run(
+        [CommandSpec(
+            argv=(PYTHON, "-c", "import time; time.sleep(30)"),
+            timeout_seconds=1,
+        )],
+        changes,
+        "main",
+    )
+    assert result.commands[0].timed_out is True
+    assert result.commands[0].exit_code != 0
     with pytest.raises(SandboxError):
         sandbox.run(
             [CommandSpec(argv=("definitely-not-a-real-executable-xyz",))],
