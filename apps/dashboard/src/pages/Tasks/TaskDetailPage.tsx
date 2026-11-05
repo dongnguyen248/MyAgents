@@ -186,6 +186,9 @@ export function TaskDetailPage() {
                     {workflow?.parentTaskId && (
                       <Stat label="Split" value={`Part ${workflow.splitIndex} of ${workflow.splitTotal}`} />
                     )}
+                    {workflow?.modelTier === 'complex' && (
+                      <Stat label="Model routing" value="Complex requirement — all agents upgraded to the shared model" />
+                    )}
                   </dl>
                 </Card>
                 <Card title="GitLab / CI">

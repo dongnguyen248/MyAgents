@@ -15,6 +15,7 @@ from asf.agents._shared.limits import (
 )
 from asf.agents._shared.parsing import parse_json
 from asf.agents._shared.paths import validate_relative_path
+from asf.agents._shared.routing import tier_metadata
 from asf.agents._shared.traceability import ArtifactKind, build_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.implement.prompts import (
@@ -370,7 +371,10 @@ class ImplementAgent(BaseAgent):
             messages=messages,
             parameters=dict(self._parameters),
             model=self._model,
-            metadata={"agentId": self.metadata.id, "requestId": request.request_id},
+            metadata={
+                "agentId": self.metadata.id, "requestId": request.request_id,
+                **tier_metadata(request.context),
+            },
         )
 
         response = self._runtime.models.complete(model_req)

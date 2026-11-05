@@ -7,7 +7,10 @@ import json
 import pytest
 
 from asf.contracts.models import ModelMessage, ModelRequest
-from asf.integrations.openai_compatible import OpenAICompatibleGateway
+from asf.integrations.openai_compatible import (
+    DEFAULT_MAX_TOKENS,
+    OpenAICompatibleGateway,
+)
 from asf.models.errors import ModelGatewayError
 
 
@@ -74,6 +77,34 @@ def test_request_model_and_temperature_pass_through():
     _gateway(transport).complete(request)
     assert transport.calls[0]["body"]["model"] == "other-model"
     assert transport.calls[0]["body"]["temperature"] == 0.2
+
+
+def test_max_tokens_defaults_high_and_honours_override():
+    # Dong's messenger run: with no cap sent, the Copilot proxy cut a
+    # spec off after 2 of 7 template sections. The gateway must always
+    # send an explicit, generous cap unless the request overrides it.
+    ok = {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+
+    transport = FakeTransport(200, ok)
+    _gateway(transport).complete(_request())
+    assert transport.calls[0]["body"]["max_tokens"] == DEFAULT_MAX_TOKENS
+
+    transport = FakeTransport(200, ok)
+    request = ModelRequest(
+        messages=[ModelMessage(role="user", content="hi")],
+        parameters={"max_tokens": 2000},
+    )
+    _gateway(transport).complete(request)
+    assert transport.calls[0]["body"]["max_tokens"] == 2000
+
+    # A malformed override falls back to the default, never to absent.
+    transport = FakeTransport(200, ok)
+    request = ModelRequest(
+        messages=[ModelMessage(role="user", content="hi")],
+        parameters={"max_tokens": "lots"},
+    )
+    _gateway(transport).complete(request)
+    assert transport.calls[0]["body"]["max_tokens"] == DEFAULT_MAX_TOKENS
 
 
 def test_http_errors_map_to_gateway_errors():

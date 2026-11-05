@@ -61,6 +61,8 @@ export interface Workflow {
   splitTotal?: number | null;
   /** Set when auto-split was attempted but decomposition failed (run proceeds whole). */
   splitError?: string | null;
+  /** "complex" when the run's oversized requirement auto-upgraded every agent to the shared model. */
+  modelTier?: string | null;
   currentActivity?: WorkflowCurrentActivity | null;
   steps: WorkflowStep[];
   startedAt: string;

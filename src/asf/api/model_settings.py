@@ -143,8 +143,20 @@ class ModelSettings:
         """Per-agent model overrides (agent type -> model); may be empty."""
         return dict(self._agent_models)
 
-    def effective_model(self, agent: str | None = None) -> str:
-        """The model a call from `agent` will use: its override, else shared."""
+    def effective_model(
+        self, agent: str | None = None, tier: str | None = None,
+    ) -> str:
+        """The model a call from `agent` will use.
+
+        Standard runs: the agent's override, else the shared model.
+        A ``complex`` run (oversized requirement, classified at run
+        start) upgrades every agent to the shared model — the
+        strongest the user configured — because the economy per-agent
+        models are the ones that truncate or lose the format on long
+        work. When no shared model is set, the override still applies.
+        """
+        if tier == "complex" and self._data["model"].strip():
+            return self._data["model"]
         key = agent_key(agent)
         if key is not None and key in self._agent_models:
             return self._agent_models[key]
@@ -311,6 +323,7 @@ class SettingsRoutingGateway:
             return self._fallback.complete(request)
         model = self._settings.effective_model(
             agent_key(request.metadata.get("agentId")),
+            request.metadata.get("modelTier"),
         ).strip()
         if model:
             request = request.model_copy(update={"model": model})
