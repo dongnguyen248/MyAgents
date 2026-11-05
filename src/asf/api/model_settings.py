@@ -32,6 +32,7 @@ Test agent never calls a model, so it has no override.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
@@ -41,6 +42,8 @@ from asf.integrations.gemini import GeminiModelGateway
 from asf.integrations.openai_compatible import HttpTransport, OpenAICompatibleGateway
 from asf.models.errors import ModelGatewayError
 from asf.models.ports import ModelGateway
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "MODEL_AGENTS",
@@ -328,7 +331,21 @@ class SettingsRoutingGateway:
         ).strip()
         if model:
             request = request.model_copy(update={"model": model})
-        return gateway.complete(request)
+        try:
+            return gateway.complete(request)
+        except ModelGatewayError as error:
+            # Name the exact model that was sent: a provider's
+            # "model not supported" is unactionable without it, and
+            # the effective model depends on the calling agent and
+            # the run's complexity tier.
+            logger.warning(
+                "model call failed: agent=%s tier=%s model=%s code=%s message=%s",
+                request.metadata.get("agentId"),
+                request.metadata.get("modelTier"),
+                model or "(gateway default)",
+                error.code, error.message,
+            )
+            raise
 
     def _resolve(self, current: dict[str, str]) -> ModelGateway | None:
         if self._cached_for is not None and self._cached_for == current:

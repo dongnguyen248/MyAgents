@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from asf.contracts.models import (
     ModelUsage,
 )
 from asf.integrations.openai_compatible import OpenAICompatibleGateway
+from asf.models.errors import ModelGatewayError
 
 
 def _request(model: str | None = None) -> ModelRequest:
@@ -190,6 +192,31 @@ def test_router_delegates_and_pins_the_configured_model(tmp_path: Path):
     response = router.complete(_request(model="agent-pinned"))
     assert response.content == "real-answer"
     assert real.requests[0].model == "gpt-real"  # settings model wins
+
+
+class _FailingGateway:
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        raise ModelGatewayError(
+            "LLM_INVALID_RESPONSE", "Model provider error (HTTP 400): nope",
+        )
+
+
+def test_router_logs_the_model_sent_on_provider_failure(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+):
+    settings = ModelSettings(tmp_path / "s.json")
+    settings.update({
+        "provider": "openai", "model": "gpt-real", "apiKey": "sk-1",
+    })
+    router = SettingsRoutingGateway(
+        settings, RecordingGateway("scripted"),
+        gateway_factory=lambda s, t: _FailingGateway(),
+    )
+    with caplog.at_level(logging.WARNING, logger="asf.api.model_settings"):
+        with pytest.raises(ModelGatewayError):
+            router.complete(_request())
+    assert "gpt-real" in caplog.text
+    assert "HTTP 400" in caplog.text
 
 
 # ---------------------------------------------------------------------------

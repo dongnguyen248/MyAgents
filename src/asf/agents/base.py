@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +20,8 @@ from asf.contracts.models import (
 )
 from asf.models.errors import ModelGatewayError
 from asf.models.ports import ModelGateway
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["AgentRuntime", "BaseAgent", "Issue", "AgentExecutionError"]
 
@@ -238,6 +242,16 @@ class BaseAgent(ABC):
 
         except (ModelGatewayError, AgentExecutionError) as err:
             t_end = self._runtime.clock()
+            # One console line per failed execution: the dashboard
+            # banner shows only the headline message, so the recorded
+            # details (the actual rejection cause) must reach the
+            # backend terminal to be diagnosable at all.
+            logger.warning(
+                "agent %s failed: task=%s request=%s code=%s message=%s details=%s",
+                self.metadata.id, request.task_id, request.request_id,
+                err.code, err.message,
+                json.dumps(err.details, default=str)[:600] if err.details else "-",
+            )
             p_err = PlatformError.model_validate(err.to_platform_error(t_end))
             events = [
                 ActivityEvent(

@@ -258,6 +258,18 @@ class AgentBaseTests(unittest.TestCase):
 
         validator_for("AgentResult").validate(res.to_contract())
 
+    def test_failure_is_logged_with_code_and_details(self):
+        clock = CountingClock(T_AWARE)
+        runtime = AgentRuntime(models=ScriptedModelGateway([]), clock=clock, new_id=CounterId())
+        gw_err = ModelGatewayError("LLM_RATE_LIMITED", "Throttled", details={"retryAfter": 10})
+        agent = DummyAgent(runtime, run_behavior=gw_err)
+        with self.assertLogs("asf.agents.base", level="WARNING") as logs:
+            agent.execute(make_request())
+        text = "\n".join(logs.output)
+        self.assertIn("test-agent", text)
+        self.assertIn("LLM_RATE_LIMITED", text)
+        self.assertIn("retryAfter", text)
+
     def test_unexpected_exception_redacts_details(self):
         clock = CountingClock(T_AWARE)
         runtime = AgentRuntime(models=ScriptedModelGateway([]), clock=clock, new_id=CounterId())

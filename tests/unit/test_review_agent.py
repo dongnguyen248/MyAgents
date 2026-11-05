@@ -4,6 +4,7 @@ import copy
 import importlib.resources
 import itertools
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -366,6 +367,32 @@ def test_unexpected_port_exception_does_not_expose_exception_text() -> None:
     assert result.status == "FAILED"
     assert result.errors[0].code == "AGENT_EXECUTION_FAILED"
     assert marker not in json.dumps(result.to_contract())
+
+
+def test_provider_invalid_response_message_is_preserved() -> None:
+    # A provider-side failure (HTTP 400) arrives at the agent as a
+    # gateway LLM_INVALID_RESPONSE; replacing it with a generic
+    # "invalid review response" sentence hid the actual cause.
+    agent, _ = make_agent(ModelGatewayError(
+        "LLM_INVALID_RESPONSE",
+        "Model provider error (HTTP 400): The requested model is not supported.",
+    ))
+    result = agent.execute(make_request())
+    assert result.status == "FAILED"
+    assert result.errors[0].code == "LLM_INVALID_RESPONSE"
+    assert "Model provider error (HTTP 400)" in result.errors[0].message
+
+
+def test_schema_rejection_logs_field_problems_without_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    marker = "untrusted-private-diagnostic-marker"
+    agent, _ = make_agent(reply_for([finding(line=marker)]))
+    with caplog.at_level(logging.WARNING, logger="asf.agents.review.agent"):
+        result = agent.execute(make_request())
+    assert_invalid(result)  # the result contract stays echo-free
+    assert "findings.0.line" in caplog.text
+    assert marker not in caplog.text
 
 
 @pytest.mark.parametrize("project", [

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -742,7 +743,30 @@ def _load_dotenv(path: Path) -> bool:
     return True
 
 
+def configure_logging() -> None:
+    """Send ASF's own log lines to this process's console.
+
+    Agent failures and provider errors otherwise surface only as a
+    one-line dashboard banner; the recorded causes (which model was
+    sent, why a reply was rejected) are logged under the ``asf``
+    namespace and would go nowhere without a handler. Idempotent.
+    Level from ASF_LOG_LEVEL (default INFO).
+    """
+    logger = logging.getLogger("asf")
+    if getattr(logger, "_asf_console_configured", False):
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    logger.addHandler(handler)
+    logger.setLevel(os.environ.get("ASF_LOG_LEVEL", "INFO").upper())
+    logger.propagate = False
+    logger._asf_console_configured = True  # type: ignore[attr-defined]
+
+
 def main() -> None:
+    configure_logging()
     dotenv_path = Path(asf.__file__).resolve().parents[2] / ".env"
     if _load_dotenv(dotenv_path):
         print(f"Loaded environment from {dotenv_path}")
