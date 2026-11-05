@@ -50,7 +50,7 @@ __all__ = [
     "build_configured_gateway",
 ]
 
-PROVIDERS = ("scripted", "gemini", "openai", "github-models", "custom")
+PROVIDERS = ("scripted", "gemini", "openai", "github-models", "meta", "custom")
 
 #: Agents that call a model and may carry a per-agent model override,
 #: keyed by agent type. The Test agent is deterministic (no model
@@ -75,6 +75,7 @@ def agent_key(raw: Any) -> str | None:
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
     "github-models": "https://models.github.ai/inference",
+    "meta": "https://api.meta.ai/v1",
 }
 
 _DEFAULTS: dict[str, str] = {

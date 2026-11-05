@@ -7,6 +7,7 @@ const PROVIDERS: { value: string; label: string }[] = [
   { value: 'gemini', label: 'Google Gemini' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'github-models', label: 'GitHub Models (GitHub token)' },
+  { value: 'meta', label: 'Meta Model API (Muse Spark)' },
   { value: 'custom', label: 'Custom OpenAI-compatible endpoint' },
 ];
 
@@ -14,12 +15,14 @@ const MODEL_PLACEHOLDERS: Record<string, string> = {
   gemini: 'gemini-2.0-flash',
   openai: 'gpt-4o',
   'github-models': 'openai/gpt-4o',
+  meta: 'muse-spark-1.3',
   custom: 'model id at your endpoint',
 };
 
 const DEFAULT_BASE_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
   'github-models': 'https://models.github.ai/inference',
+  meta: 'https://api.meta.ai/v1',
 };
 
 /** Agents that call a model and may carry their own model override. */
@@ -205,6 +208,8 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
               : 'No key stored yet.'}
             {provider === 'github-models' &&
               ' Use a GitHub personal access token; models are served by GitHub Models, not the Copilot editor API.'}
+            {provider === 'meta' &&
+              ' API key from the Meta Model API dashboard at dev.meta.ai.'}
           </p>
           {saved.keyConfigured && (
             <label className="field check">
