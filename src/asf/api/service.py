@@ -234,10 +234,12 @@ class FactoryService:
             return None
         return self._model_settings.update(payload)
 
-    def test_model_settings(self) -> dict[str, Any] | None:
+    def test_model_settings(
+        self, agent: str | None = None,
+    ) -> dict[str, Any] | None:
         if self._model_settings is None:
             return None
-        return self._model_settings.test()
+        return self._model_settings.test(agent=agent)
 
     # ------------------------------------------------------------------
     # project normalization

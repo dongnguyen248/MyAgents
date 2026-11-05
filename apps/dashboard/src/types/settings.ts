@@ -5,6 +5,8 @@ export interface ModelSettings {
   provider: string;
   model: string;
   baseUrl: string;
+  /** Per-agent model overrides (agent type -> model); absent = shared model. */
+  agentModels: Record<string, string>;
   /** The API key itself is never returned; only whether one is stored. */
   keyConfigured: boolean;
   /** Last-4 hint for the stored key, e.g. "…ab12"; '' when unknown. */
@@ -15,6 +17,8 @@ export interface ModelSettingsInput {
   provider: string;
   model: string;
   baseUrl: string;
+  /** Full per-agent override map; replaces the stored one when present. */
+  agentModels?: Record<string, string>;
   /** Omit/empty to keep the stored key; set to replace it. */
   apiKey?: string;
   clearKey?: boolean;

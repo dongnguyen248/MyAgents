@@ -292,7 +292,7 @@ class TaskAgentTests(unittest.TestCase):
         gw_req = gateway.requests[0]
         self.assertEqual(gw_req.model, "custom-task-llm")
         self.assertEqual(gw_req.parameters, {"temp": 0.1})
-        self.assertEqual(gw_req.metadata, {"requestId": "req-123"})
+        self.assertEqual(gw_req.metadata, {"agentId": "agent-task", "requestId": "req-123"})
         self.assertEqual(len(gw_req.messages), 2)
         self.assertEqual(gw_req.messages[0].role, "system")
         self.assertEqual(gw_req.messages[1].role, "user")

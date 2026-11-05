@@ -50,5 +50,5 @@ export interface FactoryApi {
 
   getModelSettings(): Promise<ModelSettings>;
   updateModelSettings(input: ModelSettingsInput): Promise<ModelSettings>;
-  testModelSettings(): Promise<ModelTestResult>;
+  testModelSettings(agent?: string): Promise<ModelTestResult>;
 }

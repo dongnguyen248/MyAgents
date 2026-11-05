@@ -22,6 +22,16 @@ const DEFAULT_BASE_URLS: Record<string, string> = {
   'github-models': 'https://models.github.ai/inference',
 };
 
+/** Agents that call a model and may carry their own model override. */
+const AGENT_FIELDS: { key: string; label: string }[] = [
+  { key: 'spec', label: 'Spec agent' },
+  { key: 'plan', label: 'Plan agent' },
+  { key: 'task', label: 'Task agent' },
+  { key: 'implement', label: 'Implement agent' },
+  { key: 'review', label: 'Review agent' },
+  { key: 'fix', label: 'Fix agent' },
+];
+
 /**
  * Provider / model / API key for the agents, stored by the backend.
  * The key is write-only: after saving, only "configured …last4" shows.
@@ -30,6 +40,9 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
   const [provider, setProvider] = useState(initial.provider);
   const [model, setModel] = useState(initial.model);
   const [baseUrl, setBaseUrl] = useState(initial.baseUrl);
+  const [agentModels, setAgentModels] = useState<Record<string, string>>(
+    () => ({ ...(initial.agentModels ?? {}) }),
+  );
   const [apiKey, setApiKey] = useState('');
   const [clearKey, setClearKey] = useState(false);
   const [saved, setSaved] = useState<ModelSettings>(initial);
@@ -37,6 +50,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [test, setTest] = useState<ModelTestResult | null>(null);
+  const [testFor, setTestFor] = useState('');
 
   const needsKey = provider !== 'scripted';
   const showBaseUrl = provider === 'custom' || provider in DEFAULT_BASE_URLS;
@@ -45,6 +59,11 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
     provider,
     model: model.trim(),
     baseUrl: baseUrl.trim(),
+    agentModels: Object.fromEntries(
+      Object.entries(agentModels)
+        .map(([k, v]) => [k, v.trim()] as const)
+        .filter(([, v]) => v),
+    ),
     ...(apiKey ? { apiKey } : {}),
     ...(clearKey ? { clearKey: true } : {}),
   });
@@ -55,6 +74,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
     try {
       const next = await updateModelSettings(buildInput());
       setSaved(next);
+      setAgentModels({ ...(next.agentModels ?? {}) });
       setApiKey('');
       setClearKey(false);
       setNotice('Saved. The new provider applies to the next agent calls — no restart needed.');
@@ -69,11 +89,27 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
 
   const saveAndTest = async () => {
     setTest(null);
+    setTestFor('');
     setNotice('');
     if (!(await save())) return;
     setBusy(true);
     try {
       setTest(await testModelSettings());
+    } catch (e) {
+      setTest({ ok: false, message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveAndTestAgent = async (key: string, label: string) => {
+    setTest(null);
+    setTestFor(label);
+    setNotice('');
+    if (!(await save())) return;
+    setBusy(true);
+    try {
+      setTest(await testModelSettings(key));
     } catch (e) {
       setTest({ ok: false, message: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -99,7 +135,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
           </select>
         </label>
         <label className="field">
-          <span>Model</span>
+          <span>Model (shared default)</span>
           <input
             value={model}
             onChange={(e) => setModel(e.target.value)}
@@ -118,6 +154,39 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
           />
         </label>
       )}
+      <fieldset>
+        <legend>Per-agent models (optional)</legend>
+        <p className="muted small">
+          Leave an agent blank to use the shared model above. An override uses the same
+          provider, endpoint and key — only the model differs. The Test agent never calls
+          a model, so it has no setting here.
+        </p>
+        <div className="form-grid">
+          {AGENT_FIELDS.map((a) => (
+            <div className="field" key={a.key}>
+              <span>{a.label}</span>
+              <div className="agent-model-row">
+                <input
+                  value={agentModels[a.key] ?? ''}
+                  onChange={(e) =>
+                    setAgentModels((prev) => ({ ...prev, [a.key]: e.target.value }))
+                  }
+                  placeholder={model.trim() ? `Shared: ${model.trim()}` : 'Shared model'}
+                  disabled={!needsKey}
+                />
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy || !needsKey}
+                  onClick={() => void saveAndTestAgent(a.key, a.label)}
+                >
+                  Test
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </fieldset>
       {needsKey && (
         <>
           <label className="field block">
@@ -149,7 +218,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
       {notice && <p className="muted small">{notice}</p>}
       {test && (
         <p className={test.ok ? 'muted small' : 'error-text'}>
-          {test.ok ? '✓ ' : '✗ '}{test.message}
+          {test.ok ? '✓ ' : '✗ '}{testFor ? `${testFor}: ` : ''}{test.message}
         </p>
       )}
       <div className="form-actions">
@@ -160,7 +229,8 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
       </div>
       <p className="muted small">
         Settings are stored by the backend on this machine (next to its run database) and take effect
-        immediately for all agents. The model set here is used for every agent.
+        immediately. The shared model is every agent's default; a per-agent model overrides it for
+        that agent only.
       </p>
     </form>
   );

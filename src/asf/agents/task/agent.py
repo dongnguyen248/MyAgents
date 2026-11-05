@@ -472,7 +472,7 @@ class TaskAgent(BaseAgent):
             messages=messages,
             parameters=dict(self._parameters),
             model=self._model,
-            metadata={"requestId": request.request_id},
+            metadata={"agentId": self.metadata.id, "requestId": request.request_id},
         )
 
         response = self._runtime.models.complete(model_req)

@@ -92,6 +92,6 @@ export function createHttpApi(baseUrl: string): FactoryApi {
 
     getModelSettings: () => get('/settings/model'),
     updateModelSettings: (input) => send('/settings/model', 'PUT', input),
-    testModelSettings: () => send('/settings/model/test', 'POST', {}),
+    testModelSettings: (agent) => send('/settings/model/test', 'POST', agent ? { agent } : {}),
   };
 }

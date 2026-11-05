@@ -20,6 +20,13 @@ gateway (the demo's canned replies); with a real provider configured
 it builds that provider's gateway and pins every request to the
 configured model. Settings changes take effect on the next agent call
 — no restart.
+
+On top of the one shared model, the record carries optional
+**per-agent model overrides** (``agentModels``): each AI agent may name
+its own model on the same provider/endpoint/key, and an agent without
+an override uses the shared model. The routing gateway picks the model
+per call from the calling agent's ``agentId`` request metadata. The
+Test agent never calls a model, so it has no override.
 """
 
 from __future__ import annotations
@@ -36,6 +43,7 @@ from asf.models.errors import ModelGatewayError
 from asf.models.ports import ModelGateway
 
 __all__ = [
+    "MODEL_AGENTS",
     "PROVIDERS",
     "ModelSettings",
     "SettingsRoutingGateway",
@@ -43,6 +51,26 @@ __all__ = [
 ]
 
 PROVIDERS = ("scripted", "gemini", "openai", "github-models", "custom")
+
+#: Agents that call a model and may carry a per-agent model override,
+#: keyed by agent type. The Test agent is deterministic (no model
+#: calls), so it is deliberately absent.
+MODEL_AGENTS = ("spec", "plan", "task", "implement", "review", "fix")
+
+
+def agent_key(raw: Any) -> str | None:
+    """Normalize a request-metadata agent id to a MODEL_AGENTS key.
+
+    Agents stamp their full metadata id (``agent-spec``); settings are
+    keyed by the short type (``spec``). Anything unrecognized yields
+    None, i.e. "use the shared model".
+    """
+    if not isinstance(raw, str):
+        return None
+    key = raw.strip()
+    if key.startswith("agent-"):
+        key = key[len("agent-"):]
+    return key if key in MODEL_AGENTS else None
 
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
@@ -60,6 +88,7 @@ class ModelSettings:
     def __init__(self, path: Path | None = None) -> None:
         self._path = path
         self._data: dict[str, str] = dict(_DEFAULTS)
+        self._agent_models: dict[str, str] = {}
         if path is not None and path.is_file():
             try:
                 stored = json.loads(path.read_text(encoding="utf-8"))
@@ -71,10 +100,55 @@ class ModelSettings:
                         self._data[key] = stored[key]
                 if self._data["provider"] not in PROVIDERS:
                     self._data["provider"] = "scripted"
+                self._agent_models = self._clean_agent_models(
+                    stored.get("agentModels"), strict=False,
+                )
+
+    @staticmethod
+    def _clean_agent_models(raw: Any, *, strict: bool) -> dict[str, str]:
+        """Validate/normalize an agentModels mapping.
+
+        Keys are agent types (``agent-spec`` ids are normalized too);
+        blank values mean "no override" and drop out. In strict mode
+        (user input via the API) a malformed mapping or an unknown
+        agent raises ValueError; when loading from disk, bad entries
+        are skipped so one corrupt entry cannot brick the settings.
+        """
+        if raw is None:
+            return {}
+        if not isinstance(raw, Mapping):
+            if strict:
+                raise ValueError("agentModels must be an object keyed by agent")
+            return {}
+        cleaned: dict[str, str] = {}
+        for key, value in raw.items():
+            name = agent_key(key)
+            if name is None or not isinstance(value, str):
+                if strict:
+                    raise ValueError(
+                        f"Unknown agent {key!r} in agentModels; "
+                        f"expected one of {', '.join(MODEL_AGENTS)}",
+                    )
+                continue
+            model = value.strip()
+            if model:
+                cleaned[name] = model
+        return cleaned
 
     # -- reads ---------------------------------------------------------------
     def current(self) -> dict[str, str]:
         return dict(self._data)
+
+    def agent_models(self) -> dict[str, str]:
+        """Per-agent model overrides (agent type -> model); may be empty."""
+        return dict(self._agent_models)
+
+    def effective_model(self, agent: str | None = None) -> str:
+        """The model a call from `agent` will use: its override, else shared."""
+        key = agent_key(agent)
+        if key is not None and key in self._agent_models:
+            return self._agent_models[key]
+        return self._data["model"]
 
     def public(self) -> dict[str, Any]:
         key = self._data["apiKey"]
@@ -82,6 +156,7 @@ class ModelSettings:
             "provider": self._data["provider"],
             "model": self._data["model"],
             "baseUrl": self._data["baseUrl"],
+            "agentModels": dict(self._agent_models),
             "keyConfigured": bool(key),
             "keyHint": f"…{key[-4:]}" if len(key) >= 4 else "",
         }
@@ -102,6 +177,11 @@ class ModelSettings:
                 if not isinstance(value, str):
                     raise ValueError(f"{field} must be a string")
                 data[field] = value.strip()
+        agent_models = self._agent_models
+        if "agentModels" in payload:
+            agent_models = self._clean_agent_models(
+                payload["agentModels"], strict=True,
+            )
         if payload.get("clearKey") is True:
             data["apiKey"] = ""
         api_key = payload.get("apiKey")
@@ -118,12 +198,27 @@ class ModelSettings:
                 "The custom provider needs a base URL (http/https)",
             )
         self._data = data
+        self._agent_models = agent_models
         self._persist()
         return self.public()
 
-    def test(self, transport: HttpTransport | None = None) -> dict[str, Any]:
-        """One tiny completion through the configured provider."""
+    def test(
+        self, transport: HttpTransport | None = None, agent: str | None = None,
+    ) -> dict[str, Any]:
+        """One tiny completion through the configured provider.
+
+        With `agent`, the completion uses that agent's effective model
+        (its override, else the shared model) so a per-agent choice can
+        be verified on its own.
+        """
         settings = self.current()
+        agent_name = agent_key(agent) if agent is not None else None
+        if agent is not None and agent_name is None:
+            return {
+                "ok": False,
+                "message": f"Unknown agent {agent!r}; "
+                           f"expected one of {', '.join(MODEL_AGENTS)}",
+            }
         if settings["provider"] == "scripted":
             return {
                 "ok": True,
@@ -141,7 +236,7 @@ class ModelSettings:
                 messages=[ModelMessage(
                     role="user", content="Reply with the single word OK",
                 )],
-                model=settings["model"] or None,
+                model=self.effective_model(agent_name) or None,
             ))
         except ModelGatewayError as error:
             return {"ok": False, "message": error.message}
@@ -159,8 +254,10 @@ class ModelSettings:
         if self._path is None:
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        record: dict[str, Any] = dict(self._data)
+        record["agentModels"] = dict(self._agent_models)
         self._path.write_text(
-            json.dumps(self._data, indent=2), encoding="utf-8",
+            json.dumps(record, indent=2), encoding="utf-8",
         )
 
 
@@ -212,7 +309,9 @@ class SettingsRoutingGateway:
         gateway = self._resolve(current)
         if gateway is None:
             return self._fallback.complete(request)
-        model = current.get("model", "").strip()
+        model = self._settings.effective_model(
+            agent_key(request.metadata.get("agentId")),
+        ).strip()
         if model:
             request = request.model_copy(update={"model": model})
         return gateway.complete(request)
