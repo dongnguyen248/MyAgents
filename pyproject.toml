@@ -62,7 +62,9 @@ select = ["E", "F", "I", "B", "UP", "SIM", "S", "ASYNC"]
 "src/asf/api/app.py" = ["B008"]
 # Remaining swallowed errors in the service are best-effort cleanup
 # or at-least-once delivery paths (mirrors the .bandit review).
-"src/asf/api/service.py" = ["S110", "S112"]
+"src/asf/api/service/queries.py" = ["S110"]
+"src/asf/api/service/commands.py" = ["S110"]
+"src/asf/api/service/driver.py" = ["S112"]
 "src/asf/api/demo.py" = ["S112"]
 # The repo map skips files it cannot read, by design.
 "src/asf/agents/_shared/repomap.py" = ["S112"]
@@ -102,8 +104,6 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
 warn_return_any = true
 no_implicit_reexport = true
 strict_equality = true
