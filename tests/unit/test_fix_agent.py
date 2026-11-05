@@ -128,7 +128,9 @@ def test_fix_rejects_invalid_model_reply(reply: str):
     result = agent.execute(fix_request())
     assert result.status == "FAILED"
     assert result.errors[0].code == "LLM_INVALID_RESPONSE"
-    assert result.errors[0].retryable is False
+    # Unified policy: invalid model replies are retryable (see
+    # agents/_shared/model_errors); the retry policy decides.
+    assert result.errors[0].retryable is True
     assert not result.artifacts
 
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.plan.milestones import (
@@ -21,7 +22,6 @@ from asf.agents.task.prompts import (
     build_task_messages,
 )
 from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
-from asf.models.errors import ModelGatewayError
 
 __all__ = [
     "MAX_TASK_CHARS",
@@ -490,15 +490,13 @@ class TaskAgent(BaseAgent):
 
         # Raw reply size limit
         if len(reply) > MAX_TASK_REPLY_CHARS:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 f"Raw LLM reply exceeds {MAX_TASK_REPLY_CHARS} characters",
                 details={"charCount": len(reply), "limit": MAX_TASK_REPLY_CHARS},
             )
 
         if not reply:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model returned an empty response",
             )
 
@@ -506,8 +504,7 @@ class TaskAgent(BaseAgent):
         try:
             task_data = TaskContent.model_validate_json(reply)
         except Exception as e:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model response is not valid task JSON",
                 details={"parseError": str(e)},
             )
@@ -623,8 +620,7 @@ class TaskAgent(BaseAgent):
                     )
 
         if task_issues:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model response has invalid task structure",
                 details={"taskIssues": task_issues},
             )
@@ -642,8 +638,7 @@ class TaskAgent(BaseAgent):
 
         # Output size limit
         if len(rendered_text) > MAX_TASK_TEXT_CHARS:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 f"Rendered task output exceeds {MAX_TASK_TEXT_CHARS} characters",
                 details={"charCount": len(rendered_text), "limit": MAX_TASK_TEXT_CHARS},
             )

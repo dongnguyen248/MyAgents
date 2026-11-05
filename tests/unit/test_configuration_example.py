@@ -21,6 +21,13 @@ class ConfigurationExampleTests(unittest.TestCase):
             config = load_platform_config(tmp_dir)
             self.assertEqual(config.version, 1)
             self.assertEqual(config.log_level, "INFO")
+            # The example's retry policy names real gateway codes
+            # (it once shipped TIMEOUT / RATE_LIMITED, which matched
+            # nothing and silently disabled retries).
+            spec_retry = config.agents["spec"].retry_policy
+            self.assertIsNotNone(spec_retry)
+            assert spec_retry is not None
+            self.assertEqual(spec_retry.retry_on, ["LLM_TIMEOUT", "LLM_RATE_LIMITED"])
             self.assertEqual(config.paths.artifacts_dir, "artifacts")
             self.assertEqual(config.models.default, "fast")
             self.assertIn("fast", config.models.profiles)

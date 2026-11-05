@@ -43,7 +43,10 @@ class AgentRulesTests(unittest.TestCase):
         model-request metadata. The skills helper
         (asf.agents._shared.skills) is allowlisted on the same terms:
         pure (json/typing only), it carries the project's enabled
-        skill bodies into agent system prompts.
+        skill bodies into agent system prompts. The model-errors
+        helper (asf.agents._shared.model_errors) is allowlisted on
+        the same terms: it builds the one standard invalid-response
+        error every agent reports for an unusable model reply.
         """
         agents_dir = REPO_ROOT / "src" / "asf" / "agents"
         logic_modules = [
@@ -63,6 +66,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.rules",
             "asf.agents._shared.routing",
             "asf.agents._shared.skills",
+            "asf.agents._shared.model_errors",
             "asf.agents.spec",
             "asf.agents.spec.agent",
             "asf.agents.spec.prompts",

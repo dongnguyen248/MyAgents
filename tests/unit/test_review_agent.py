@@ -106,8 +106,11 @@ def assert_invalid(result: AgentResult) -> None:
     assert result.artifacts == []
     assert len(result.errors) == 1
     error = result.errors[0]
+    # Unified policy (agents/_shared/model_errors): an unusable model
+    # reply is retryable; whether a step retries is the retry policy's
+    # decision, not the agent's.
     assert (error.code, error.category, error.retryable) == (
-        "LLM_INVALID_RESPONSE", "LLM", False,
+        "LLM_INVALID_RESPONSE", "LLM", True,
     )
     assert error.details == {}
     assert result.events[-1].event_type == "AGENT_FAILED"

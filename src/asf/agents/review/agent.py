@@ -17,7 +17,7 @@ from asf.agents._shared.code_agents import (
 )
 from asf.agents._shared.parsing import strip_code_fence
 from asf.agents._shared.routing import tier_metadata
-from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
+from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.review.prompts import (
     MAX_FINDINGS,
     Finding,
@@ -97,15 +97,11 @@ class ReviewAgent(BaseAgent):
             ))
         except ModelGatewayError as exc:
             if exc.code == "LLM_INVALID_RESPONSE":
-                # Preserve the gateway's own message and details. This
-                # branch fires on provider-side failures (e.g. an
-                # HTTP 400 from the provider) at least as often as on
-                # bad model output, and replacing them with a generic
-                # sentence made those failures undiagnosable.
-                raise AgentExecutionError(
-                    "LLM_INVALID_RESPONSE", exc.message,
-                    category="LLM", retryable=False, details=exc.details,
-                ) from None
+                # Preserve the gateway's own message and details: the
+                # gateway raises this code only when a reply arrived
+                # but was unusable, and its message says why. Retryable
+                # per the shared invalid-response policy.
+                raise invalid_response(exc.message, details=exc.details) from None
             raise
 
         raw = response.content

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.plan.prompts import (
@@ -15,7 +16,6 @@ from asf.agents.plan.prompts import (
     validate_milestones,
 )
 from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
-from asf.models.errors import ModelGatewayError
 
 __all__ = ["MAX_PLAN_CHARS", "PlanAgent"]
 
@@ -271,8 +271,7 @@ class PlanAgent(BaseAgent):
                 reply = "\n".join(lines[1:-1]).strip()
 
         if not reply:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model returned an empty response",
             )
 
@@ -287,8 +286,7 @@ class PlanAgent(BaseAgent):
             if sec not in reply_heading_lines
         ]
         if missing_sections:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 f"Model response is missing required template sections: {missing_sections}",
                 details={"missingSections": missing_sections},
             )
@@ -297,8 +295,7 @@ class PlanAgent(BaseAgent):
         try:
             validate_milestones(reply)
         except MilestoneValidationError as e:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model response has invalid milestone structure",
                 details={"milestoneIssues": e.issues},
             )
@@ -306,8 +303,7 @@ class PlanAgent(BaseAgent):
         # Validate "Linked SPEC" section matches the input SPEC artifact
         linked_spec_issues = self._validate_linked_spec_section(reply, spec_art)
         if linked_spec_issues:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model response has invalid Linked SPEC section",
                 details={"linkedSpecIssues": linked_spec_issues},
             )

@@ -13,6 +13,7 @@ runs themselves or from the injected ``clock`` callable.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -26,6 +27,7 @@ from pydantic import ValidationError
 
 from asf.agents._shared.skills import agent_skill_ids
 from asf.api.hosting_tokens import HostingTokens
+from asf.api.scheduler import RunScheduler
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import ProjectProfile
 from asf.configuration.yamlio import deep_merge
@@ -34,9 +36,12 @@ from asf.integrations.hosting.factory import DEFAULT_TOKEN_ENVS
 from asf.orchestrator.code_loop import FIX_STAGE
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
+from asf.orchestrator.ports import ConcurrentModificationError
 from asf.state_machine.graph import build_graph
 from asf.state_machine.status import kind_of
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
+
+logger = logging.getLogger("asf.api.service")
 
 
 class MetricsProtocol(Protocol):
@@ -234,6 +239,14 @@ class FactoryService:
         # The assembly injects a clock; the engine's own clock is the fallback
         # so this service still never reads the system clock directly.
         self._clock = clock or getattr(engine, "_clock", None)
+        # Retry scheduler: wakes runs when their retry_at comes due so
+        # a scheduled retry resumes on its own (see api/scheduler.py).
+        # Its clock resolves lazily so stub engines in tests (which
+        # carry no clock) can still assemble a service.
+        self._scheduler = RunScheduler(
+            clock=self._scheduler_clock,
+            wake=self._drive_in_background,
+        )
         self._projects = {
             pid: self._normalize_project(pid, profile) for pid, profile in projects.items()
         }
@@ -1691,7 +1704,22 @@ class FactoryService:
             before = (run.state.stage, len(run.results))
             try:
                 self._engine.tick(run_id)
+            except ConcurrentModificationError:
+                # Another writer owns this run now (a racing drive, a
+                # manual tick, a second process). Losing the claim is
+                # a normal outcome, not a run failure: stop this drive
+                # and let the owner (or a later drive) carry the run.
+                logger.warning(
+                    "Drive for run %s stopped: the run was claimed by"
+                    " another writer",
+                    run_id,
+                )
+                break
             except Exception:
+                logger.exception(
+                    "Drive for run %s stopped on an unexpected error",
+                    run_id,
+                )
                 break
             if self._apply_requested_cancel(run_id):
                 break
@@ -1710,6 +1738,36 @@ class FactoryService:
             # not flush mid-dispatch. At-least-once delivery; retried
             # on a later flush.
             pass
+        self._sync_retry_schedule(run_id)
+
+    def _scheduler_clock(self) -> datetime:
+        """Clock for the retry scheduler: the service's injected
+        clock, else the engine's, else (stub assemblies only) UTC now."""
+        clock = self._clock or getattr(self._engine, "_clock", None)
+        if clock is not None:
+            return clock()
+        return datetime.now(timezone.utc)
+
+    def _sync_retry_schedule(self, run_id: str) -> None:
+        """Registers a parked run's retry_at with the scheduler.
+
+        Called when a drive parks: if the run is waiting out a retry
+        backoff, the scheduler will drive it again when the backoff
+        expires — no manual tick needed. A run without a pending
+        retry is unregistered (its schedule, if any, is stale).
+        """
+        try:
+            run = self._engine.get(run_id)
+        except Exception:
+            return
+        if run.retry_at is not None:
+            self._scheduler.register(run_id, run.retry_at)
+        else:
+            self._scheduler.unregister(run_id)
+
+    def stop_scheduler(self) -> None:
+        """Stops the retry scheduler thread (tests/shutdown)."""
+        self._scheduler.stop()
 
     def drive_run(self, run_id: str) -> dict[str, Any] | None:
         """Auto-advance a run to its next stopping point; returns its view."""
@@ -1738,6 +1796,11 @@ class FactoryService:
                 except Exception:
                     continue
                 run = self._engine.get(run.id)
+            if run.retry_at is not None:
+                # Parked on a retry backoff when the backend stopped:
+                # the scheduler drives it when the backoff expires
+                # (a retry_at already in the past fires at once).
+                self._scheduler.register(run.id, run.retry_at)
             if self._workflow_status(run) == "RUNNING":
                 self._drive_in_background(run.id)
         # A split part that completed just before the previous backend

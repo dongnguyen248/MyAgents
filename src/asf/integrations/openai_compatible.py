@@ -14,13 +14,20 @@ The transport is injectable, so tests never touch the network.
 from __future__ import annotations
 
 import json
+import random
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
 from asf.contracts.models import ModelRequest, ModelResponse, ModelUsage
+from asf.integrations.retry import (
+    backoff_delay,
+    http_error_code,
+    is_context_too_long,
+    parse_retry_after,
+)
 from asf.models.errors import ModelGatewayError
 
 __all__ = [
@@ -50,8 +57,13 @@ class HttpTransport(Protocol):
     def post(
         self, url: str, *, headers: dict[str, str], body: bytes,
         timeout_seconds: float,
-    ) -> tuple[int, bytes]:
-        """POSTs and returns (status, body); HTTP errors are statuses."""
+    ) -> tuple[int, Mapping[str, str], bytes]:
+        """POSTs and returns (status, headers, body).
+
+        HTTP errors are statuses, not exceptions. Header names are
+        lowercased so callers can look up e.g. ``retry-after``
+        reliably.
+        """
         ...
 
 
@@ -61,20 +73,39 @@ class UrlLibTransport:
     def post(
         self, url: str, *, headers: dict[str, str], body: bytes,
         timeout_seconds: float,
-    ) -> tuple[int, bytes]:
+    ) -> tuple[int, Mapping[str, str], bytes]:
         request = urllib.request.Request(
             url, data=body, headers=headers, method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-                return response.status, response.read()
+                return (
+                    response.status,
+                    _lower_headers(response.headers),
+                    response.read(),
+                )
         except urllib.error.HTTPError as error:
-            return error.code, error.read()
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            return error.code, _lower_headers(error.headers), error.read()
+        except TimeoutError as error:
+            raise ModelGatewayError(
+                "LLM_TIMEOUT", f"Model provider timed out: {error}",
+            ) from None
+        except (urllib.error.URLError, OSError) as error:
+            reason = getattr(error, "reason", None)
+            if isinstance(reason, TimeoutError):
+                raise ModelGatewayError(
+                    "LLM_TIMEOUT", f"Model provider timed out: {error}",
+                ) from None
             raise ModelGatewayError(
                 "INTEGRATION_UNAVAILABLE",
                 f"Model provider unreachable: {error}",
             ) from None
+
+
+def _lower_headers(headers: Any) -> dict[str, str]:
+    if headers is None:
+        return {}
+    return {str(key).lower(): str(value) for key, value in headers.items()}
 
 
 class OpenAICompatibleGateway:
@@ -88,6 +119,7 @@ class OpenAICompatibleGateway:
         timeout_seconds: float = 300.0,
         max_retries: int = DEFAULT_MAX_RETRIES,
         sleep: Callable[[float], None] = time.sleep,
+        rand: Callable[[float, float], float] = random.uniform,
     ) -> None:
         if not base_url.startswith(("https://", "http://")):
             raise ValueError("Base URL must be an http(s) URL")
@@ -104,6 +136,7 @@ class OpenAICompatibleGateway:
         self._timeout = timeout_seconds
         self._max_retries = max_retries
         self._sleep = sleep
+        self._rand = rand
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         model = request.model or self._model
@@ -124,13 +157,12 @@ class OpenAICompatibleGateway:
         ):
             max_tokens = DEFAULT_MAX_TOKENS
         payload["max_tokens"] = max_tokens
-        status, raw = self._post_with_retries(payload)
+        status, _headers, raw = self._post_with_retries(payload)
         if status >= 400:
-            detail = _provider_message(raw)
-            code = (
-                "INTEGRATION_UNAVAILABLE"
-                if status == 429 or status >= 500
-                else "LLM_INVALID_RESPONSE"
+            detail, provider_code = _provider_error(raw)
+            code = http_error_code(
+                status,
+                context_too_long=is_context_too_long(provider_code, detail),
             )
             raise ModelGatewayError(
                 code,
@@ -161,19 +193,24 @@ class OpenAICompatibleGateway:
                 f"Model provider returned an unexpected response: {error}",
             ) from None
 
-    def _post_with_retries(self, payload: dict[str, Any]) -> tuple[int, bytes]:
-        """POST, retrying transient failures with exponential backoff.
+    def _post_with_retries(
+        self, payload: dict[str, Any],
+    ) -> tuple[int, Mapping[str, str], bytes]:
+        """POST, retrying transient failures with shared backoff.
 
-        Transport errors (timeouts, unreachable host) and HTTP 429/5xx
-        are transient by nature; everything else returns at once. After
-        the retries run out, the last transport error is re-raised, or
-        the last error status is returned for the caller to report.
+        Retryable transport errors (timeout, unreachable host) and
+        HTTP 429/5xx are transient by nature; everything else returns
+        at once — a 401 will still be a 401 after a nap. Delays honor
+        the provider's Retry-After header, else full-jitter
+        exponential backoff (see asf.integrations.retry). After the
+        retries run out, the last transport error is re-raised, or
+        the last error status is returned for the caller to classify.
         """
         body = json.dumps(payload).encode("utf-8")
         retries = 0
         while True:
             try:
-                status, raw = self._transport.post(
+                status, headers, raw = self._transport.post(
                     f"{self._base}/chat/completions",
                     headers={
                         "Authorization": f"Bearer {self._api_key}",
@@ -182,28 +219,40 @@ class OpenAICompatibleGateway:
                     body=body,
                     timeout_seconds=self._timeout,
                 )
-            except ModelGatewayError:
-                if retries >= self._max_retries:
+            except ModelGatewayError as error:
+                if not error.retryable or retries >= self._max_retries:
                     raise
-                self._sleep(2**retries)
+                self._sleep(backoff_delay(
+                    retries, retry_after=None, rand=self._rand,
+                ))
                 retries += 1
                 continue
             if (status == 429 or status >= 500) and retries < self._max_retries:
-                self._sleep(2**retries)
+                self._sleep(backoff_delay(
+                    retries,
+                    retry_after=parse_retry_after(headers),
+                    rand=self._rand,
+                ))
                 retries += 1
                 continue
-            return status, raw
+            return status, headers, raw
 
 
-def _provider_message(body: bytes) -> str:
+def _provider_error(body: bytes) -> tuple[str, str]:
+    """(message, code) from a provider error body; ("", "") if opaque."""
     try:
         data = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return ""
+        return "", ""
     if isinstance(data, dict):
         error = data.get("error")
-        if isinstance(error, dict) and isinstance(error.get("message"), str):
-            return error["message"]
+        if isinstance(error, dict):
+            message = error.get("message")
+            code = error.get("code")
+            return (
+                message if isinstance(message, str) else "",
+                code if isinstance(code, str) else "",
+            )
         if isinstance(data.get("message"), str):
-            return data["message"]
-    return ""
+            return data["message"], ""
+    return "", ""

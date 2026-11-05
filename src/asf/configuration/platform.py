@@ -58,6 +58,28 @@ class NotificationChannel(ConfigModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+# Agent/infrastructure codes a retry policy may name, on top of the
+# gateway codes (imported lazily in the validator: asf.models.errors
+# depends on the contracts package, which depends back on this
+# module's package — a module-level import would close a cycle).
+# Anything outside the combined set is a typo that would silently
+# disable retries (the example config once shipped TIMEOUT /
+# RATE_LIMITED, which match nothing).
+_AGENT_RETRY_ON_CODES: frozenset[str] = frozenset({
+    "AGENT_EXECUTION_FAILED",
+    "WORKFLOW_STEP_TIMEOUT",
+    "COMMAND_TIMEOUT",
+    "SANDBOX_ERROR",
+    "REPOSITORY_ERROR",
+    "GIT_OPERATION_FAILED",
+    "CI_UNAVAILABLE",
+    # Hosting actions report these while CI / a merge is in flight;
+    # the shipped development workflow retries on exactly them.
+    "PIPELINE_RUNNING",
+    "MERGE_PENDING",
+})
+
+
 class RetryPolicySettings(ConfigModel):
     max_attempts: int = Field(ge=1)
     backoff_seconds: float | None = Field(default=None, ge=0)
@@ -67,6 +89,20 @@ class RetryPolicySettings(ConfigModel):
     def validate_retry_on_unique(self) -> RetryPolicySettings:
         if self.retry_on is not None and len(self.retry_on) != len(set(self.retry_on)):
             raise ValueError("retryOn items must be unique")
+        return self
+
+    @model_validator(mode="after")
+    def validate_retry_on_codes(self) -> RetryPolicySettings:
+        if self.retry_on:
+            from asf.models.errors import ALLOWED_GATEWAY_ERROR_CODES
+
+            valid = frozenset(ALLOWED_GATEWAY_ERROR_CODES) | _AGENT_RETRY_ON_CODES
+            unknown = [code for code in self.retry_on if code not in valid]
+            if unknown:
+                raise ValueError(
+                    f"Unknown retryOn code(s): {', '.join(unknown)}. "
+                    f"Valid codes: {', '.join(sorted(valid))}"
+                )
         return self
 
 

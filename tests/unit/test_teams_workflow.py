@@ -37,7 +37,7 @@ class FakeTransport:
         self.calls.append((url, headers, json.loads(body), timeout_seconds, max_response_bytes))
         if self.error is not None:
             raise self.error
-        return self.status, b""
+        return self.status, {}, b""
 
 
 @pytest.fixture(autouse=True)
