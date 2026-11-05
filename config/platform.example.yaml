@@ -61,7 +61,7 @@ agents:
       maxAttempts: 2
       backoffSeconds: 1.5
       retryOn:
-        - TIMEOUT
-        - RATE_LIMITED
+        - LLM_TIMEOUT
+        - LLM_RATE_LIMITED
     settings:
       strictMode: true

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -16,7 +17,13 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse, ModelUsage
-from asf.models.errors import ModelGatewayError
+from asf.integrations.retry import (
+    backoff_delay,
+    http_error_code,
+    is_context_too_long,
+    parse_retry_after,
+)
+from asf.models.errors import ALLOWED_GATEWAY_ERROR_CODES, ModelGatewayError
 
 GEMINI_API_HOST = "generativelanguage.googleapis.com"
 GEMINI_API_BASE = f"https://{GEMINI_API_HOST}/v1beta"
@@ -41,7 +48,8 @@ class HttpTransport(Protocol):
         body: bytes,
         timeout_seconds: float,
         max_response_bytes: int,
-    ) -> tuple[int, bytes]:
+    ) -> tuple[int, Mapping[str, str], bytes]:
+        """Returns (status, headers, body); header names lowercased."""
         ...
 
 
@@ -56,7 +64,7 @@ class UrlLibTransport:
         body: bytes,
         timeout_seconds: float,
         max_response_bytes: int,
-    ) -> tuple[int, bytes]:
+    ) -> tuple[int, Mapping[str, str], bytes]:
         request = Request(url, data=body, headers=dict(headers), method="POST")
         opener = build_opener(_NoRedirectHandler)
         try:
@@ -64,12 +72,18 @@ class UrlLibTransport:
                 payload = response.read(max_response_bytes + 1)
                 if len(payload) > max_response_bytes:
                     raise _ResponseTooLargeError
-                return response.status, payload
+                return response.status, _lower_headers(response.headers), payload
         except HTTPError as exc:
             payload = exc.read(max_response_bytes + 1)
             if len(payload) > max_response_bytes:
                 raise _ResponseTooLargeError from None
-            return exc.code, payload
+            return exc.code, _lower_headers(exc.headers), payload
+
+
+def _lower_headers(headers: Any) -> dict[str, str]:
+    if headers is None:
+        return {}
+    return {str(key).lower(): str(value) for key, value in headers.items()}
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -180,6 +194,7 @@ class GeminiModelGateway:
         endpoint: str = GEMINI_API_BASE,
         transport: HttpTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        rand: Callable[[float, float], float] = random.uniform,
         max_requests_per_run: int = DEFAULT_MAX_REQUESTS_PER_RUN,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_MAX_RETRIES,
@@ -207,6 +222,7 @@ class GeminiModelGateway:
         self._endpoint = endpoint.rstrip("/")
         self._transport = transport or UrlLibTransport()
         self._sleep = sleep
+        self._rand = rand
         self._request_budget = request_budget or RequestBudget(max_requests_per_run)
         self._timeout = timeout_seconds
         self._max_retries = max_retries
@@ -250,7 +266,7 @@ class GeminiModelGateway:
                         details={"limit": self._request_budget.limit},
                     )
                 try:
-                    status, raw = self._transport.post(
+                    status, headers, raw = self._transport.post(
                         url,
                         headers={
                             "Content-Type": "application/json",
@@ -268,44 +284,57 @@ class GeminiModelGateway:
                     ) from None
                 except TimeoutError:
                     if retry_count < self._max_retries:
-                        self._sleep(2**retry_count)
+                        self._sleep(backoff_delay(
+                            retry_count, retry_after=None, rand=self._rand,
+                        ))
                         retry_count += 1
                         continue
                     raise ModelGatewayError(
                         "LLM_TIMEOUT",
                         "Gemini request timed out",
                     ) from None
-                except (URLError, OSError):
+                except (URLError, OSError) as error:
+                    timed_out = isinstance(
+                        getattr(error, "reason", None), TimeoutError,
+                    )
                     if retry_count < self._max_retries:
-                        self._sleep(2**retry_count)
+                        self._sleep(backoff_delay(
+                            retry_count, retry_after=None, rand=self._rand,
+                        ))
                         retry_count += 1
                         continue
+                    if timed_out:
+                        raise ModelGatewayError(
+                            "LLM_TIMEOUT",
+                            "Gemini request timed out",
+                        ) from None
                     raise ModelGatewayError(
                         "INTEGRATION_UNAVAILABLE",
                         "Gemini transport failed",
                     ) from None
 
-                if status == 429:
-                    error_code = "LLM_RATE_LIMITED"
-                elif status >= 500:
-                    error_code = "INTEGRATION_UNAVAILABLE"
-                elif status >= 400:
-                    error_code = "LLM_INVALID_RESPONSE"
-                else:
-                    error_code = None
-
-                if 300 <= status < 400:
-                    error_code = "LLM_INVALID_RESPONSE"
-
-                if error_code is not None:
-                    if (
-                        error_code in {"LLM_RATE_LIMITED", "INTEGRATION_UNAVAILABLE"}
-                        and retry_count < self._max_retries
-                    ):
-                        self._sleep(2**retry_count)
+                if status >= 300:
+                    details = _error_details(raw, url, self._api_key)
+                    if status < 400:
+                        error_code = "LLM_INVALID_RESPONSE"
+                        retryable = False
+                    else:
+                        error_code = http_error_code(
+                            status,
+                            context_too_long=is_context_too_long(
+                                details["providerStatus"],
+                                details["providerMessage"],
+                            ),
+                        )
+                        retryable = ALLOWED_GATEWAY_ERROR_CODES[error_code][1]
+                    if retryable and retry_count < self._max_retries:
+                        self._sleep(backoff_delay(
+                            retry_count,
+                            retry_after=parse_retry_after(headers),
+                            rand=self._rand,
+                        ))
                         retry_count += 1
                         continue
-                    details = _error_details(raw, url, self._api_key)
                     raise ModelGatewayError(
                         error_code,
                         _http_error_message(status, details),

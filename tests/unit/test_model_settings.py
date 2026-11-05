@@ -127,7 +127,7 @@ class _MetaRecordingTransport:
             "choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1},
         }
-        return 200, json.dumps(payload).encode()
+        return 200, {}, json.dumps(payload).encode()
 
 
 def test_factory_meta_preset_targets_meta_model_api():
@@ -149,7 +149,7 @@ class _OkTransport:
             "choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 3, "completion_tokens": 1},
         }
-        return 200, json.dumps(payload).encode()
+        return 200, {}, json.dumps(payload).encode()
 
 
 def test_connection_test_paths(tmp_path: Path):
@@ -324,7 +324,7 @@ class _RecordingTransport:
             "choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 3, "completion_tokens": 1},
         }
-        return 200, json.dumps(payload).encode()
+        return 200, {}, json.dumps(payload).encode()
 
 
 def test_connection_test_uses_the_agents_effective_model(tmp_path: Path):

@@ -21,7 +21,12 @@ from asf.orchestrator.code_loop import (
     ordered_task_ids,
 )
 from asf.orchestrator.execution import Observation, WorkflowExecution
-from asf.orchestrator.ports import EventPublisher, ExecutionStore, MetricsRecorder
+from asf.orchestrator.ports import (
+    ConcurrentModificationError,
+    EventPublisher,
+    ExecutionStore,
+    MetricsRecorder,
+)
 from asf.orchestrator.registry import AgentRegistry
 from asf.state_machine.graph import build_graph
 from asf.state_machine.machine import InvalidTransition, RunState, allowed_triggers, apply
@@ -82,17 +87,22 @@ class Orchestrator:
             "codeLoop": self._code_loop.model_dump() if self._code_loop else None,
         }
 
-    def _load(self, run_id: str) -> WorkflowExecution:
-        run = self._store.get_execution(run_id) if self._store else self._runs[run_id]
+    def _load(self, run_id: str, *, for_update: bool = False) -> WorkflowExecution:
+        run = (
+            self._store.get_execution(run_id, for_update=for_update)
+            if self._store else self._runs[run_id]
+        )
         if run.definition != self._definition.to_contract() or run.settings != self._settings():
             raise ValueError("Stored workflow definition or execution policy differs")
         self._runs[run_id] = run
         return run
 
     @contextmanager
-    def _edit(self, run_id: str) -> Iterator[WorkflowExecution]:
+    def _edit(
+        self, run_id: str, *, lock: bool = False,
+    ) -> Iterator[WorkflowExecution]:
         with self._store.transaction() if self._store else nullcontext():
-            run = self._load(run_id)
+            run = self._load(run_id, for_update=lock)
             before = run.snapshot()
             try:
                 yield run
@@ -209,8 +219,11 @@ class Orchestrator:
     def tick(self, run_id: str) -> WorkflowExecution:
         if run_id in self._active:
             raise ValueError("A run cannot be dispatched recursively")
-        dispatch = False
-        with self._edit(run_id) as run:
+        # Phase 1 — claim, in one short transaction: validate the run,
+        # stamp the in_flight token and persist the step-start event.
+        # The store's write lock is released when this block exits.
+        token: str | None = None
+        with self._edit(run_id, lock=True) as run:
             if run.in_flight is not None:
                 raise ValueError("Interrupted dispatch requires explicit recover() before retry")
             kind = kind_of(self._graph, run.state.stage)
@@ -222,9 +235,9 @@ class Orchestrator:
                 if run.retry_at is None or self._now() >= run.retry_at:
                     run.retry_at = None
                     run.in_flight = self._new_id()
-                    dispatch = True
-                    # Record the step start before dispatching: this
-                    # edit is saved when the block exits, so the run's
+                    token = run.in_flight
+                    # Record the step start before dispatching: the
+                    # claim is saved when the block exits, so the run's
                     # log shows what the agent is doing while a long
                     # step (e.g. a minutes-long model call) is still in
                     # flight, not only after it finishes.
@@ -242,29 +255,122 @@ class Orchestrator:
                             "attempt": attempt,
                         },
                     )
-        if not dispatch:
+        if token is None:
             return self.get(run_id)
+        # Phase 2 — execute with NO store transaction held. The agent
+        # call (a model request; potentially minutes) works on the
+        # claimed snapshot while other runs and writers keep using the
+        # store. Correctness no longer relies on this process's
+        # _active guard: the in_flight token and the row version do.
+        claimed = run.snapshot()
+        pre_dispatch = claimed.snapshot()
         self._active.add(run_id)
         try:
-            with self._edit(run_id) as run:
-                self._dispatch(run)
-                run.in_flight = None
+            self._dispatch(claimed)
         finally:
             self._active.remove(run_id)
+        # Phase 3 — commit, in one short transaction: the claim token
+        # must still own the run. If it does not (a recover(), or a
+        # version-guarded save elsewhere), this dispatch's outcome is
+        # stale: drop it and fail loudly instead of overwriting.
+        with self._store.transaction() if self._store else nullcontext():
+            stored = self._load(run_id)
+            if stored.in_flight != token:
+                raise ConcurrentModificationError(
+                    f"Run '{run_id}' changed hands while its dispatch"
+                    " executed; the dispatch result was discarded",
+                )
+            if claimed._pending_approval is not None:
+                # The deferred approval request, created here so it
+                # commits (or rolls back) together with the checkpoint
+                # that references it.
+                spec = claimed._pending_approval
+                claimed._pending_approval = None
+                service, policy = self._approval_dependencies()
+                failure: tuple[
+                    str, str, Literal["VALIDATION", "INTEGRATION"],
+                ] | None = None
+                try:
+                    approval = service.request(spec, policy, self._now())
+                except ApprovalError:
+                    failure = (
+                        "VALIDATION_FAILED",
+                        "Approval request could not be created", "VALIDATION",
+                    )
+                except Exception:
+                    failure = (
+                        "INTEGRATION_UNAVAILABLE",
+                        "Approval repository could not create the request",
+                        "INTEGRATION",
+                    )
+                if failure is None:
+                    claimed.approval_id = approval.id
+                else:
+                    # The step's application is rejected as a whole,
+                    # exactly as when the request was made during the
+                    # dispatch: nothing the step produced is published.
+                    claimed.artifacts = pre_dispatch.artifacts
+                    claimed.artifact_history = pre_dispatch.artifact_history
+                    claimed.state = pre_dispatch.state
+                    claimed.feedback = pre_dispatch.feedback
+                    claimed.retry_attempts = pre_dispatch.retry_attempts
+                    self._fail(claimed, *failure)
+            if claimed.state.stage != stored.state.stage:
+                self._event(
+                    claimed,
+                    "WORKFLOW_COMPLETED" if claimed.state.stage == "COMPLETED"
+                    else "WORKFLOW_STAGE_CHANGED",
+                    "Workflow stage changed",
+                )
+            claimed.in_flight = None
+            claimed.touch(self._now())
+            if self._store:
+                self._store.save_execution(claimed)
+            self._runs[run_id] = claimed
         return self.get(run_id)
 
     def _dispatch(self, run: WorkflowExecution) -> None:
+        """Prepare, execute and apply one step.
+
+        Preparation and application mutate only the (claimed) run copy
+        they are handed; the execute call between them is the one part
+        allowed to take real time, and tick() runs it outside any
+        store transaction.
+        """
+        prepared = self._prepare_dispatch(run)
+        if prepared is None:
+            return
+        step, agent_id, execute, request = prepared
+        try:
+            result = execute(request)
+        except Exception:
+            self._fail(
+                run, "AGENT_EXECUTION_FAILED", "Agent raised outside its result contract", "AGENT",
+            )
+            return
+        self._apply_result(run, step, agent_id, request, result)
+
+    def _prepare_dispatch(
+        self, run: WorkflowExecution,
+    ) -> tuple[
+        WorkflowStepDef, str, Callable[[AgentRequest], AgentResult], AgentRequest,
+    ] | None:
+        """Resolve the step's executor and build its AgentRequest.
+
+        Returns None when preparation itself settles the run (the
+        failure has already been recorded on it via _fail).
+        """
         step = self._step(run)
         if self._code_loop is not None and step.agent_type == "implement":
             if not self._select_item(run, step):
-                return
+                return None
         if step.action is not None and step.agent_type is None:
             execute = self._actions.get(step.action)
             if execute is None:
                 self._fail(
                     run, "INTEGRATION_UNAVAILABLE", "Workflow action has no handler", "INTEGRATION",
                 )
-                return
+                return None
             agent_id = "action:" + step.action
         else:
             if step.type != "AGENT" or step.agent_type is None or step.action is not None:
@@ -272,23 +378,23 @@ class Orchestrator:
                     run, "INTEGRATION_UNAVAILABLE",
                     "Workflow step type is unsupported", "INTEGRATION",
                 )
-                return
+                return None
             try:
                 agent = self._registry.for_type(step.agent_type)
             except KeyError:
                 self._fail(run, "AGENT_NOT_REGISTERED", "No agent registered for step", "AGENT")
-                return
+                return None
             metadata = agent.get_metadata()
             if metadata.status != "IDLE":
                 self._fail(run, "AGENT_EXECUTION_FAILED", "Agent is not available", "AGENT")
-                return
+                return None
             agent_id = metadata.id
             execute = agent.execute
         if any(kind not in run.artifacts for kind in step.consumes):
             self._fail(
                 run, "VALIDATION_FAILED", "Required upstream artifact is missing", "VALIDATION",
             )
-            return
+            return None
         types = list(step.consumes)
         if step.id == FIX_STEP and "TEST_REPORT" in run.artifacts:
             types.append("TEST_REPORT")
@@ -335,13 +441,13 @@ class Orchestrator:
             metadata={"attempt": attempt, "runId": run.id, "stepId": step.id},
         )
         run.attempts[step.id] = attempt
-        try:
-            result = execute(request)
-        except Exception:
-            self._fail(
-                run, "AGENT_EXECUTION_FAILED", "Agent raised outside its result contract", "AGENT",
-            )
-            return
+        return step, agent_id, execute, request
+
+    def _apply_result(
+        self, run: WorkflowExecution, step: WorkflowStepDef, agent_id: str,
+        request: AgentRequest, result: AgentResult,
+    ) -> None:
+        """Validate one execution result and apply it to the run."""
         if (
             not isinstance(result, AgentResult)
             or result.request_id != request.request_id or result.agent_id != agent_id
@@ -410,28 +516,18 @@ class Orchestrator:
         # at all and the run advances straight through it below.
         skipped = step.requires_approval and step.id in self._skip_approvals(run)
         if step.requires_approval and not skipped:
-            service, policy = self._approval_dependencies()
-            spec = ApprovalSpec(
+            # Defer the actual request to tick's commit phase: this
+            # phase runs without a store transaction, so creating the
+            # approval here would orphan a PENDING request whenever
+            # the commit then failed. The commit creates it inside
+            # its own transaction, atomically with the checkpoint.
+            run._pending_approval = ApprovalSpec(
                 task_id=run.task_id, project_id=run.project_id,
                 workflow_id=self._definition.id,
                 artifact_id=result.artifacts[0].id,
                 type=step.produces[0], requested_by="orchestrator",
                 metadata={"runId": run.id, "stepId": step.id},
             )
-            try:
-                approval = service.request(spec, policy, self._now())
-            except ApprovalError:
-                self._fail(
-                    run, "VALIDATION_FAILED", "Approval request could not be created", "VALIDATION",
-                )
-                return
-            except Exception:
-                self._fail(
-                    run, "INTEGRATION_UNAVAILABLE",
-                    "Approval repository could not create the request", "INTEGRATION",
-                )
-                return
-            run.approval_id = approval.id
         if self._code_loop is not None and step.agent_type in ("implement", "fix"):
             if not self._linked_output(run, step, result):
                 return

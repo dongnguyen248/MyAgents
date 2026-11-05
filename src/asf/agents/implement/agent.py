@@ -13,6 +13,7 @@ from asf.agents._shared.codegen import (
 from asf.agents._shared.limits import (
     MAX_FILE_SIZE_BYTES,
 )
+from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.parsing import parse_json
 from asf.agents._shared.paths import validate_relative_path
 from asf.agents._shared.routing import tier_metadata
@@ -306,8 +307,7 @@ class ImplementAgent(BaseAgent):
 
         # task_item is guaranteed to exist due to _check validation
         if task_item is None:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 f"Task item '{task_item_id}' not found in TASK artifact",
                 details={"taskItemId": task_item_id},
             )
@@ -317,8 +317,7 @@ class ImplementAgent(BaseAgent):
         for f in expected_files:
             path_issues = validate_relative_path(f)
             if path_issues:
-                raise ModelGatewayError(
-                    "LLM_INVALID_RESPONSE",
+                raise invalid_response(
                     f"Task item '{task_item_id}' has invalid expectedFiles "
                     f"entry '{f}': {path_issues}",
                     details={"taskItemId": task_item_id, "path": f, "issues": path_issues},
@@ -388,15 +387,13 @@ class ImplementAgent(BaseAgent):
 
         # Raw reply size limit
         if len(reply) > MAX_CODE_REPLY_CHARS:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 f"Raw LLM reply exceeds {MAX_CODE_REPLY_CHARS} characters",
                 details={"charCount": len(reply), "limit": MAX_CODE_REPLY_CHARS},
             )
 
         if not reply:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model returned an empty response",
             )
 
@@ -404,8 +401,7 @@ class ImplementAgent(BaseAgent):
         try:
             data = parse_json(reply)
         except Exception as e:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model response is not valid JSON",
                 details={"parseError": str(e)},
             )
@@ -430,8 +426,7 @@ class ImplementAgent(BaseAgent):
             elif "duplicate" in error_str.lower():
                 details = {"validationError": error_str}
 
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model response does not match ChangeSet schema",
                 details=details,
             )
@@ -448,8 +443,7 @@ class ImplementAgent(BaseAgent):
             self._repository,
         )
         if validation_issues:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Model response has invalid change set",
                 details=validation_issues,
             )
@@ -457,8 +451,7 @@ class ImplementAgent(BaseAgent):
         # Secret scan
         secret_issues = self._scan_changeset_for_secrets(changeset)
         if secret_issues:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 "Generated content contains secrets",
                 details={"secretIssues": secret_issues},
             )
@@ -475,8 +468,7 @@ class ImplementAgent(BaseAgent):
 
         # Output size limit
         if len(rendered_text) > MAX_CODE_TEXT_CHARS:
-            raise ModelGatewayError(
-                "LLM_INVALID_RESPONSE",
+            raise invalid_response(
                 f"Rendered code output exceeds {MAX_CODE_TEXT_CHARS} characters",
                 details={"charCount": len(rendered_text), "limit": MAX_CODE_TEXT_CHARS},
             )

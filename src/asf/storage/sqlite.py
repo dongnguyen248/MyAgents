@@ -170,7 +170,12 @@ class SQLiteExecutionStore:
             if cursor.rowcount != 1:
                 raise KeyError(run.id)
 
-    def get_execution(self, run_id: str) -> WorkflowExecution:
+    def get_execution(
+        self, run_id: str, *, for_update: bool = False,
+    ) -> WorkflowExecution:
+        # for_update is accepted for ExecutionStore compatibility and
+        # ignored: locking reads are a MariaDB-store concern; this
+        # store's transaction() already serializes writers.
         with self._guard():
             row = self._connection().execute(
                 "SELECT payload FROM executions WHERE id = ?", (run_id,),

@@ -20,6 +20,9 @@ Below is the standard catalog of built-in platform error codes. Each code maps t
 | LLM_TIMEOUT | LLM | true | model call timed out |
 | LLM_RATE_LIMITED | LLM | true | model provider throttled the call |
 | LLM_INVALID_RESPONSE | LLM | true | model output unusable or unparsable |
+| LLM_AUTH_FAILED | LLM | false | provider rejected the credentials (HTTP 401/403) |
+| LLM_CONTEXT_TOO_LONG | LLM | false | request exceeds the model's context window |
+| LLM_BAD_REQUEST | LLM | false | provider rejected the request as invalid (other 4xx) |
 | GIT_CONFLICT | GIT | false | merge or push conflict |
 | GIT_OPERATION_FAILED | GIT | true | source-control operation failed |
 | CI_RUN_FAILED | CI | false | pipeline finished with failure |

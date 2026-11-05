@@ -79,7 +79,7 @@ class TeamsWorkflow:
         if self._callback_secret.encode("utf-8") in body or self._url.encode("utf-8") in body:
             raise TeamsDeliveryError("Approval artifact contains configured credential material")
         try:
-            status, _ = self._transport.post(
+            status, _headers, _body = self._transport.post(
                 self._url, headers={"Content-Type": "application/json"}, body=body,
                 timeout_seconds=config.timeout_seconds, max_response_bytes=4096,
             )

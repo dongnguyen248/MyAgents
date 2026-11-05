@@ -192,9 +192,8 @@ class FixAgent(BaseAgent):
             # ChangeSet" alone is undiagnosable (truncated JSON? an
             # extra key? an empty change list?) and the next attempt
             # is told this error verbatim, so it must say what to fix.
-            raise AgentExecutionError(
-                "LLM_INVALID_RESPONSE", "Invalid replacement ChangeSet",
-                category="LLM", retryable=False,
+            raise invalid_response(
+                "Invalid replacement ChangeSet",
                 details={
                     "cause": str(exc)[:400],
                     "replyChars": len(response.content),
@@ -207,15 +206,15 @@ class FixAgent(BaseAgent):
         except RepositoryError:
             raise AgentExecutionError("REPOSITORY_ERROR", "Could not validate base files") from None
         if issues:
-            raise AgentExecutionError(
-                "LLM_INVALID_RESPONSE", "Replacement violates scope or content constraints",
-                category="LLM", retryable=False, details=issues,
+            raise invalid_response(
+                "Replacement violates scope or content constraints",
+                details=issues,
             )
         secret_issues = changeset_secret_issues(changeset)
         if secret_issues:
-            raise AgentExecutionError(
-                "LLM_INVALID_RESPONSE", "Replacement contains secret patterns",
-                category="LLM", retryable=False, details={"secretIssues": secret_issues},
+            raise invalid_response(
+                "Replacement contains secret patterns",
+                details={"secretIssues": secret_issues},
             )
         text = render_code_markdown(
             changeset.model_dump(by_alias=True)["changes"],

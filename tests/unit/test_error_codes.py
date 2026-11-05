@@ -77,6 +77,19 @@ class ErrorCodesTest(unittest.TestCase):
             self.assertTrue(row["meaning"].strip(), f"Meaning for {row['code']} is empty")
         self.assertEqual(len(meanings), len(set(meanings)), "Error code meanings must be unique")
 
+    def test_gateway_failure_codes_are_catalogued(self):
+        # The permanent gateway failures (auth / context / bad request)
+        # are non-retryable so a retry policy can never resurrect them.
+        rows = {row["code"]: row for row in self.parse_table_rows()}
+        for code in ("LLM_AUTH_FAILED", "LLM_CONTEXT_TOO_LONG", "LLM_BAD_REQUEST"):
+            with self.subTest(code=code):
+                self.assertIn(code, rows)
+                self.assertEqual(rows[code]["category"], "LLM")
+                self.assertEqual(rows[code]["retryable"], "false")
+        for code in ("LLM_TIMEOUT", "LLM_RATE_LIMITED", "LLM_INVALID_RESPONSE"):
+            with self.subTest(code=code):
+                self.assertEqual(rows[code]["retryable"], "true")
+
 
 if __name__ == "__main__":
     unittest.main()
