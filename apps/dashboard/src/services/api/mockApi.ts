@@ -16,6 +16,23 @@ const LATENCY_MS = 150;
 const delay = <T>(value: T): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(structuredClone(value)), LATENCY_MS));
 
+/** Mock parity for the backend's live currentActivity on running workflows. */
+const withLiveActivity = (workflow: Workflow): Workflow => {
+  if (workflow.status !== 'RUNNING') return workflow;
+  const active = workflow.steps.find((s) => s.state === 'active');
+  return {
+    ...workflow,
+    currentActivity: {
+      kind: 'STEP_RUNNING',
+      stepId: active?.id ?? null,
+      stepLabel: active?.label ?? null,
+      stage: null,
+      since: workflow.updatedAt,
+      retryAt: null,
+    },
+  };
+};
+
 // Mutable in-memory state so mock approval actions are visible until reload.
 const approvals: Approval[] = structuredClone(approvalSeed);
 const projectStore = structuredClone(projects);
@@ -110,8 +127,11 @@ export const mockApi: FactoryApi = {
     return delay(workflow);
   },
 
-  listWorkflows: () => delay(workflowStore),
-  getWorkflow: (id) => delay(workflowStore.find((w) => w.id === id)),
+  listWorkflows: () => delay(workflowStore.map(withLiveActivity)),
+  getWorkflow: (id) => {
+    const workflow = workflowStore.find((w) => w.id === id);
+    return delay(workflow && withLiveActivity(workflow));
+  },
 
   tickRun: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
