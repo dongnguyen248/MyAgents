@@ -11,7 +11,7 @@ import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBa
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { useAgents } from '../../features/agent-management';
 import { useTaskDetail } from '../../features/task-monitoring';
-import { resumeWorkflow, retryWorkflow } from '../../features/workflow-monitoring';
+import { cancelWorkflow, resumeWorkflow, retryWorkflow } from '../../features/workflow-monitoring';
 import { dateTime, duration, titleCase } from '../../utils/format';
 
 export function TaskDetailPage() {
@@ -21,6 +21,10 @@ export function TaskDetailPage() {
   const [retrying, setRetrying] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [retryError, setRetryError] = useState<string | undefined>();
+  const [cancelling, setCancelling] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const [cancelError, setCancelError] = useState<string | undefined>();
 
   const runAgain = async (runId: string) => {
     setRetryError(undefined);
@@ -47,6 +51,20 @@ export function TaskDetailPage() {
       setResuming(false);
     }
   };
+  const cancel = async (runId: string) => {
+    setCancelError(undefined);
+    setCancelling(true);
+    try {
+      const updated = await cancelWorkflow(runId);
+      setConfirmingCancel(false);
+      if (updated.status !== 'CANCELLED') setCancelRequested(true);
+      detail.reload();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Failed to cancel the run');
+    } finally {
+      setCancelling(false);
+    }
+  };
   return (
     <AsyncView {...detail}>
       {({ task, workflow, events, runs }) =>
@@ -65,12 +83,48 @@ export function TaskDetailPage() {
                   {retrying ? 'Starting…' : 'Run again'}
                 </button>
               )}
+              {workflow && !['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
+                <button type="button" className="btn btn-danger" onClick={() => setConfirmingCancel(true)} disabled={cancelling}>
+                  Cancel run
+                </button>
+              )}
               <TaskStatusBadge status={task.status} />
             </>} />
             {retryError && (
               <p className="alert" role="alert">
                 {retryError}
               </p>
+            )}
+            {workflow && confirmingCancel && (
+              <Card>
+                <div className="filters">
+                  <span className="muted small">
+                    Cancel this run? It cannot be resumed afterwards — you can Run again
+                    from scratch, and this run stays as the record. A step already in
+                    progress finishes first.
+                  </span>
+                  <button type="button" className="btn btn-danger" onClick={() => cancel(workflow.id)} disabled={cancelling}>
+                    {cancelling ? 'Cancelling…' : 'Yes, cancel run'}
+                  </button>
+                  <button type="button" className="btn" onClick={() => setConfirmingCancel(false)} disabled={cancelling}>
+                    Keep running
+                  </button>
+                </div>
+                {cancelError && (
+                  <p className="alert" role="alert">
+                    {cancelError}
+                  </p>
+                )}
+              </Card>
+            )}
+            {workflow && cancelRequested && !confirmingCancel && (
+              <Card>
+                <p className="muted">
+                  Cancellation requested — the run stops as soon as its current step
+                  finishes and then shows as Cancelled. A step already calling the model
+                  cannot be interrupted mid-call.
+                </p>
+              </Card>
             )}
             {workflow && <WorkflowErrorBanner workflow={workflow} />}
             <div className="grid two-col">
