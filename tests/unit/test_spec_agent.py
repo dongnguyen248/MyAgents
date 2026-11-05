@@ -132,6 +132,24 @@ class SpecAgentTests(unittest.TestCase):
         self.assertIn("SECURITY SKILL BODY", system)
         self.assertNotIn("GIT SKILL BODY", system)
 
+    def test_model_request_carries_the_runs_model_tier(self):
+        # A complex run's tier (recorded in the run context by the
+        # service) must reach the routing gateway via request metadata;
+        # a standard run carries no tier key at all.
+        agent, gateway = self._make_agent([self.valid_reply])
+        req = self._make_request()
+        req = req.model_copy(update={
+            "context": {**req.context, "modelTier": "complex"},
+        })
+        res = agent.execute(req)
+        self.assertEqual(res.status, "SUCCESS")
+        self.assertEqual(gateway.requests[0].metadata.get("modelTier"), "complex")
+
+        agent, gateway = self._make_agent([self.valid_reply])
+        res = agent.execute(self._make_request())
+        self.assertEqual(res.status, "SUCCESS")
+        self.assertNotIn("modelTier", gateway.requests[0].metadata)
+
     def test_happy_path_specification_creation(self):
         agent, gateway = self._make_agent(
             [self.valid_reply], model="custom-spec-llm", parameters={"temp": 0.1}

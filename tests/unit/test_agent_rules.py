@@ -37,7 +37,10 @@ class AgentRulesTests(unittest.TestCase):
         They must not import pathlib, importlib, os, shutil, tempfile.
         The shared rules helper (asf.agents._shared.rules) is allowlisted:
         it is pure (json/typing only) and carries the standing project
-        rules into agent system prompts. The skills helper
+        rules into agent system prompts. The routing helper
+        (asf.agents._shared.routing) is allowlisted on the same terms:
+        pure (typing only), it carries the run's model tier into agent
+        model-request metadata. The skills helper
         (asf.agents._shared.skills) is allowlisted on the same terms:
         pure (json/typing only), it carries the project's enabled
         skill bodies into agent system prompts.
@@ -58,6 +61,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents",
             "asf.agents.base",
             "asf.agents._shared.rules",
+            "asf.agents._shared.routing",
             "asf.agents._shared.skills",
             "asf.agents.spec",
             "asf.agents.spec.agent",

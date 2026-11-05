@@ -55,6 +55,8 @@ export interface Workflow {
   type: WorkflowType;
   status: WorkflowStatus;
   error?: WorkflowError | null;
+  /** "complex" when the run's oversized requirement auto-upgraded every agent to the shared model. */
+  modelTier?: string | null;
   currentActivity?: WorkflowCurrentActivity | null;
   steps: WorkflowStep[];
   startedAt: string;

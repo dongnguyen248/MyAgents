@@ -17,6 +17,7 @@ from asf.agents.spec.agent import MAX_REQUIREMENT_CHARS
 from asf.agents.spec.factory import build_spec_agent
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.service import (
+    COMPLEX_REQUIREMENT_CHARS,
     FactoryService,
     ProjectConflictError,
     ProjectExistsError,
@@ -600,6 +601,29 @@ def test_workflow_view_reports_current_activity_while_in_flight():
     assert activity["stepId"] == "spec"
     assert activity["stepLabel"] == "Spec"
     assert activity["since"] == NOW.isoformat()
+
+
+def test_start_run_classifies_oversized_requirement_as_complex():
+    engine = build_engine()
+    service = FactoryService(
+        engine, projects=PROJECTS, metrics=FakeMetrics(), clock=lambda: NOW,
+    )
+    # Dong's messenger case: a pasted requirement far beyond the
+    # threshold — the run is classified complex at start, and the
+    # workflow view shows it so the upgrade is visible, not silent.
+    run = service.start_run(
+        "task-1", "proj-1",
+        inputs={"spec": {"requirement": "x" * (COMPLEX_REQUIREMENT_CHARS + 1)}},
+    )
+    assert engine.get(run.id).context["modelTier"] == "complex"
+    view = service.get_workflow(run.id)
+    assert view is not None and view["modelTier"] == "complex"
+
+    # A normal short requirement stays standard: no tier recorded.
+    run = service.start_run(
+        "task-2", "proj-1", inputs={"spec": {"requirement": "Build a calculator"}},
+    )
+    assert "modelTier" not in engine.get(run.id).context
 
 
 def test_failed_run_does_not_mark_approval_gates_done():
