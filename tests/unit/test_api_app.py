@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from asf.api.app import create_app
+from asf.api.hosting_tokens import HostingTokens
 from tests.unit.test_api_service import build_service
 
 
@@ -102,6 +103,28 @@ def test_create_project_over_http():
     invalid = {key: value for key, value in payload.items() if key != "name"}
     invalid["id"] = "proj-4"
     assert client.post("/projects", json=invalid).status_code == 422
+
+
+def test_project_hosting_token_over_http():
+    tokens = HostingTokens()
+    service, _metrics = build_service(hosting_tokens=tokens)
+    client = TestClient(create_app(service))
+    payload = {
+        "id": "proj-3", "name": "Project Three",
+        "repository": {"provider": "gitlab", "url": "https://gitlab.local/g/p"},
+        "technology": {"backend": ["go"], "frontend": []},
+        "workflow": "software-development",
+        "enabledSkills": ["go"],
+        "configuration": {"approval": {"channel": "teams"}},
+        "hostingToken": "glpat-secret-1234",
+    }
+    created = client.post("/projects", json=payload)
+    assert created.status_code == 201
+    assert created.json()["hostingTokenConfigured"] is True
+    assert created.json()["hostingTokenHint"] == "…1234"
+    # The token itself is never echoed back over the API.
+    assert "glpat-secret-1234" not in created.text
+    assert tokens.get("proj-3") == "glpat-secret-1234"
 
 
 def test_update_and_delete_project_over_http():

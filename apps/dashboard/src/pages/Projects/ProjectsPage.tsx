@@ -21,6 +21,8 @@ const toInput = (p: Project): ProjectProfileInput => ({
     ...(p.approvalChannel ? { approval: { channel: p.approvalChannel } } : {}),
     ...(p.testCommands.length ? { testCommands: p.testCommands } : {}),
   },
+  hostingTokenConfigured: p.hostingTokenConfigured,
+  hostingTokenHint: p.hostingTokenHint,
 });
 
 export function ProjectsPage() {

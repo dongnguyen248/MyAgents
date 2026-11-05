@@ -36,6 +36,9 @@ const withLiveActivity = (workflow: Workflow): Workflow => {
 // Mutable in-memory state so mock approval actions are visible until reload.
 const approvals: Approval[] = structuredClone(approvalSeed);
 const projectStore = structuredClone(projects);
+/** Mock hosting tokens: stored apart from the project views, like the backend. */
+const hostingTokenStore: Record<string, string> = {};
+const tokenHint = (token: string): string => (token.length >= 4 ? `…${token.slice(-4)}` : '…');
 let modelSettings: {
   provider: string; model: string; baseUrl: string; apiKey: string;
   agentModels: Record<string, string>;
@@ -244,17 +247,23 @@ export const mockApi: FactoryApi = {
       enabledSkills: input.enabledSkills,
       technologyGroups: { ...input.technology },
       approvalChannel: input.configuration.approval?.channel ?? '',
+      hostingTokenConfigured: Boolean(input.hostingToken),
+      hostingTokenHint: input.hostingToken ? tokenHint(input.hostingToken) : null,
       agentIds: agents.map((a) => a.id),
       ci: 'UNKNOWN',
       ciFailures24h: 0,
       metrics: { activeAgents: 0, running: 0, completed: 0, failed: 0, successRate: 0, pendingApprovals: 0 },
     };
+    if (input.hostingToken) hostingTokenStore[input.id] = input.hostingToken;
     projectStore.push(project);
     return delay(project);
   },
   updateProject: (id, input) => {
     const index = projectStore.findIndex((p) => p.id === id);
     if (index < 0) return Promise.reject(new Error(`Project '${id}' not found`));
+    if (input.clearHostingToken) delete hostingTokenStore[id];
+    if (input.hostingToken) hostingTokenStore[id] = input.hostingToken;
+    const stored = hostingTokenStore[id];
     const updated: Project = {
       ...projectStore[index],
       name: input.name,
@@ -262,6 +271,8 @@ export const mockApi: FactoryApi = {
       repositoryProvider: input.repository.provider,
       repositoryUrl: input.repository.url ?? '',
       repositoryPath: input.repository.path ?? '',
+      hostingTokenConfigured: Boolean(stored),
+      hostingTokenHint: stored ? tokenHint(stored) : null,
       testCommands: input.configuration.testCommands ?? [],
       technologies: [...input.technology.backend, ...input.technology.frontend],
       workflow: input.workflow,
@@ -276,6 +287,7 @@ export const mockApi: FactoryApi = {
     const index = projectStore.findIndex((p) => p.id === id);
     if (index < 0) return Promise.reject(new Error(`Project '${id}' not found`));
     projectStore.splice(index, 1);
+    delete hostingTokenStore[id];
     return delay(undefined);
   },
 

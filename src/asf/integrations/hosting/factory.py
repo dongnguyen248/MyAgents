@@ -34,6 +34,8 @@ def build_provider(
     repository: Mapping[str, Any] | None,
     environ: Mapping[str, str] | None = None,
     transport: Transport | None = None,
+    *,
+    stored_token: str | None = None,
 ) -> HostingProvider | None:
     if not isinstance(repository, Mapping):
         return None
@@ -56,7 +58,10 @@ def build_provider(
 
     env = os.environ if environ is None else environ
     token_env = str(repository.get("tokenEnv") or DEFAULT_TOKEN_ENVS[provider_name])
-    token = env.get(token_env) or None
+    # A token stored per project (entered in the dashboard) wins over the
+    # environment: different projects carry different credentials, while
+    # the env var stays the deployment-wide fallback.
+    token = (stored_token or "").strip() or env.get(token_env) or None
     if token is None:
         raise HostingError(
             f"No access token for the {provider_name} provider: set the "

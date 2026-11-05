@@ -13,6 +13,7 @@ runs themselves or from the injected ``clock`` callable.
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -22,10 +23,12 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
+from asf.api.hosting_tokens import HostingTokens
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import ProjectProfile
 from asf.configuration.yamlio import deep_merge
 from asf.contracts.models import ActivityEvent
+from asf.integrations.hosting.factory import DEFAULT_TOKEN_ENVS
 from asf.orchestrator.code_loop import FIX_STAGE
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
@@ -188,6 +191,7 @@ class FactoryService:
         on_project_updated: Callable[[ProjectProfile], None] | None = None,
         on_project_deleted: Callable[[str], None] | None = None,
         model_settings: Any = None,
+        hosting_tokens: HostingTokens | None = None,
     ) -> None:
         self._engine = engine
         self._metrics = metrics
@@ -197,6 +201,7 @@ class FactoryService:
         self._on_project_updated = on_project_updated
         self._on_project_deleted = on_project_deleted
         self._model_settings = model_settings
+        self._hosting_tokens = hosting_tokens
         # Raw profile payloads, kept so updates can merge over them and
         # preserve fields the caller did not resend (e.g. repository.url or
         # approval reviewers added by hand in the profile file).
@@ -937,6 +942,7 @@ class FactoryService:
                 "repositoryProvider": profile["repositoryProvider"],
                 "repositoryUrl": profile["repositoryUrl"],
                 "repositoryPath": profile["repositoryPath"],
+                **self._hosting_token_view(project_id),
                 "testCommands": profile["testCommands"],
                 "technologies": profile["technologies"],
                 "description": profile["description"],
@@ -951,6 +957,69 @@ class FactoryService:
             })
         return projects
 
+    # ------------------------------------------------------------------
+    # hosting tokens (per project; write-only, never part of the profile)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_hosting_token(
+        payload: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], str | None, bool]:
+        """Split the write-only hosting-token fields off a project payload.
+
+        ``hostingToken`` / ``clearHostingToken`` are API fields, not
+        profile fields — the profile forbids extras and is persisted to
+        YAML, so a secret must never land in it. A non-blank token
+        replaces the stored one; the clear flag removes it.
+        """
+        data = dict(payload)
+        token = data.pop("hostingToken", None)
+        clear = data.pop("clearHostingToken", False)
+        if token is not None and not isinstance(token, str):
+            raise ValueError("hostingToken must be a string")
+        if not isinstance(clear, bool):
+            raise ValueError("clearHostingToken must be a boolean")
+        return data, (token.strip() or None) if token else None, clear
+
+    def _require_token_store(self, token: str | None, clear: bool) -> None:
+        if (token is not None or clear) and self._hosting_tokens is None:
+            raise ValueError(
+                "This backend has no hosting-token store; provide the "
+                "token through the ASF_GITLAB_TOKEN / ASF_GITHUB_TOKEN "
+                "environment variable instead",
+            )
+
+    def _apply_hosting_token(
+        self, project_id: str, token: str | None, clear: bool,
+    ) -> None:
+        if self._hosting_tokens is None:
+            return
+        if clear:
+            self._hosting_tokens.clear(project_id)
+        if token is not None:
+            self._hosting_tokens.set(project_id, token)
+
+    def _hosting_token_view(self, project_id: str) -> dict[str, Any]:
+        """Token status for the project view: configured? + last-4 hint.
+
+        The hint exists only for dashboard-stored tokens; an env-provided
+        token reports as configured without exposing any of its value.
+        """
+        if self._hosting_tokens is not None:
+            hint = self._hosting_tokens.hint(project_id)
+            if hint is not None:
+                return {"hostingTokenConfigured": True, "hostingTokenHint": hint}
+        profile = self._project_profiles.get(project_id) or {}
+        repository = profile.get("repository")
+        configured = False
+        if isinstance(repository, Mapping):
+            provider = str(repository.get("provider") or "").strip().lower()
+            if provider in DEFAULT_TOKEN_ENVS and repository.get("url"):
+                env_name = str(
+                    repository.get("tokenEnv") or DEFAULT_TOKEN_ENVS[provider],
+                )
+                configured = bool(os.environ.get(env_name))
+        return {"hostingTokenConfigured": configured, "hostingTokenHint": None}
+
     def create_project(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         """Register a new project; returns its dashboard project view.
 
@@ -961,7 +1030,9 @@ class FactoryService:
         ``on_project_created`` hook runs before the project becomes visible,
         so a persistence failure leaves the registry unchanged.
         """
-        profile = self._validate_profile(payload)
+        data, token, clear = self._extract_hosting_token(payload)
+        self._require_token_store(token, clear)
+        profile = self._validate_profile(data)
         if _PROJECT_ID_PATTERN.fullmatch(profile.id) is None:
             raise ValueError(
                 "Project id must be a slug: lowercase letters, digits, '-' or "
@@ -972,6 +1043,7 @@ class FactoryService:
         if self._on_project_created is not None:
             self._on_project_created(profile)
         self._register_project(profile)
+        self._apply_hosting_token(profile.id, token, clear)
         return self._project_view(profile.id)
 
     @staticmethod
@@ -1005,10 +1077,12 @@ class FactoryService:
         project's identity and cannot change; the optional
         ``on_project_updated`` hook runs before the change becomes visible.
         """
+        data, token, clear = self._extract_hosting_token(payload)
+        self._require_token_store(token, clear)
         if project_id not in self._projects:
             raise ProjectNotFoundError(f"Project '{project_id}' not found")
         merged = deep_merge(
-            self._project_profiles.get(project_id, {}), dict(payload),
+            self._project_profiles.get(project_id, {}), data,
         )
         profile = self._validate_profile(merged)
         if profile.id != project_id:
@@ -1016,6 +1090,7 @@ class FactoryService:
         if self._on_project_updated is not None:
             self._on_project_updated(profile)
         self._register_project(profile)
+        self._apply_hosting_token(project_id, token, clear)
         return self._project_view(project_id)
 
     def delete_project(self, project_id: str) -> None:
@@ -1040,6 +1115,8 @@ class FactoryService:
             self._on_project_deleted(project_id)
         del self._projects[project_id]
         self._project_profiles.pop(project_id, None)
+        if self._hosting_tokens is not None:
+            self._hosting_tokens.clear(project_id)
 
     # ------------------------------------------------------------------
     # approvals

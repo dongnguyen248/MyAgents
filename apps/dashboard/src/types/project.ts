@@ -9,6 +9,10 @@ export interface Project {
   repositoryUrl: string;
   /** Local folder the agents work in (profile `repository.path`); '' = none. */
   repositoryPath: string;
+  /** Whether a hosting (GitLab/GitHub) access token is available for this project. */
+  hostingTokenConfigured?: boolean;
+  /** Last-4 hint of the dashboard-stored token; null when it comes from the backend env. */
+  hostingTokenHint?: string | null;
   /** Configured test commands as argv lists (profile `configuration.testCommands`). */
   testCommands: string[][];
   technologies: string[];
@@ -33,4 +37,11 @@ export interface ProjectProfileInput {
   workflow: string;
   enabledSkills: string[];
   configuration: { approval?: { channel: string }; testCommands?: string[][] };
+  /** Write-only: a new hosting token to store on the backend for this project. */
+  hostingToken?: string;
+  /** Write-only: remove the stored hosting token on save. */
+  clearHostingToken?: boolean;
+  /** Read-only status carried into the edit form (never sent back as a change). */
+  hostingTokenConfigured?: boolean;
+  hostingTokenHint?: string | null;
 }
