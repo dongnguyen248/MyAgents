@@ -3,6 +3,10 @@
 .env.*
 *.secret
 *.pem
+/data/hosting-tokens.json
+/data/model-settings.json
+/projects/*.yaml
+/projects/*.yml
 secrets/
 config/*.local.yaml
 
@@ -26,18 +30,14 @@ htmlcov/
 # inside src/ or tests/ are source, not output)
 /artifacts/
 .asf-evidence/
+*.log
 # Runtime data (the default SQLite run database lives in data/)
 data/
-# Stray agent output from pre-worktree local runs: a calculator.py
-# at the REPO ROOT can only be a run artifact (real code lives in
-# src/; the calculator benchmark case is harness/evaluation/cases/)
-/calculator.py
-*.log
-.DS_Store
 
 # Node and editor
 node_modules/
 .idea/
 .vscode/
+.DS_Store
 
 !.env.example

@@ -4,17 +4,54 @@ A reusable, project-independent platform for running an AI software development 
 Projects plug in through **project profiles** in `projects/`;
 agents, workflows and infrastructure stay generic.
 
-> Status: **core modules and Phase 7 agent logic implemented and tested with fakes**.
-> Spec, Plan, Task, Implement, Review, Test and Fix agents exist. A Gemini gateway
-> and separate manual smoke script are available. Phase 6 has a synchronous
-> orchestrator with SQLite checkpoints, approval/revision, bounded retries,
-> dependency-ordered task items, bounded Fix loops and event/metrics delivery ports.
-> Phase 8 now includes Teams Workflows approvals without a custom bot:
-> Reject with feedback revises the artifact; Approve automatically runs the next
-> agent (see `src/asf/integrations/teams/README.md`).
-> Real repository/sandbox adapters, GitLab/CI, distributed execution and
-> backend-connected UI remain unfinished; Teams live deployment is not validated.
-> Passing fake-driven tests does not establish live-chain or production readiness.
+> Status: **local implementation and integration work in progress, not production-ready**.
+> Seven agents are implemented, not just Spec. Tests and the demo use scripted
+> components for some workflows; real integrations exist in code but their
+> presence does not establish end-to-end or production readiness. See the
+> module status below for the implemented scope and its limits.
+
+## Implementation status
+
+**Implemented** means code exists for the scope described, not that every
+integration has been validated live. **Contract only** means an interface or
+placeholder exists without a corresponding implementation in that module.
+**Planned** means the capability is not implemented. Each row describes its
+own scope; a module can still have planned capabilities.
+
+| Module | Status | Current scope and limitations |
+|---|---|---|
+| `agents` | Implemented | Spec, Plan, Task, Implement, Review, Test and Fix. Test runs commands through a sandbox port; other agents use injected ports. Fake-driven tests do not establish live-chain readiness. |
+| `orchestrator` | Implemented | Local synchronous workflow execution, approval/revision, retries, fix loops and checkpoints; no distributed scheduler. |
+| `workflow` | Implemented | Declarative workflow definitions and execution model; additional workflows remain planned. |
+| `state_machine` | Implemented | Workflow-derived stages and transitions. |
+| `approval` | Implemented | Approval policies, decisions and feedback; separate from application authentication. |
+| `configuration` | Implemented | Platform configuration and project profiles. |
+| `contracts` | Implemented | Python models and language-neutral schemas and ports; a port does not imply a live adapter. |
+| `models` | Implemented | Gateway contract and scripted gateway; provider adapters live in `integrations`. |
+| `integrations` | Implemented | LLM, hosting and Teams adapters exist; see the integration status below for their boundaries. |
+| `tools` | Implemented | Repository and sandbox ports, fakes and local workspace adapters. Local commands run in a trusted workspace, not an isolation sandbox. |
+| `execution` | Contract only | Placeholder for execution isolation and runtime runners; no isolated execution implementation in this package. |
+| `storage` | Implemented | In-memory, SQLite and MariaDB execution storage; SQLite is a local single-worker store, not a distributed persistence claim. |
+| `evaluation` | Implemented | Runtime metrics and aggregation; metrics are not a substitute for an independent quality benchmark. |
+| `api` | Implemented | FastAPI REST/SSE adapter and demo assembly for the dashboard; not a production security boundary. |
+| `cli` | Implemented | Minimal console entry point: `asf --version` and `asf serve` (runs the demo server, passing its flags through). A general platform CLI is not implemented. The offline harness has a separate CLI. |
+
+### Integrations and applications
+
+| Capability | Status | Current scope and limitations |
+|---|---|---|
+| LLM | Implemented | Gemini and OpenAI-compatible gateways exist alongside a scripted gateway. Live provider availability and full-chain behavior depend on configuration and have not been established by fake-driven tests. |
+| MCP | Planned | No MCP integration is claimed. |
+| GitLab / CI | Implemented | Hosting adapters and workflow actions exist. The CI action succeeds when hosting is unconfigured or no pipeline exists, so it is not a mandatory quality gate; live behavior and production readiness are not established. |
+| Teams | Implemented | Teams Workflows approval adapter and authenticated callback exist; deploying the external flow and live validation remain outstanding. |
+| Database | Implemented | SQLite and MariaDB execution stores exist; MariaDB requires a configured server. Neither implies distributed execution readiness. |
+| Authentication / authorization | Planned | General API user authentication and authorization are not established; the Teams callback's authentication is specific to that integration. |
+| Dashboard | Implemented | React UI can use mock data or the HTTP/SSE backend. The backend demo and integrations are not a production deployment. |
+| Offline harness | Implemented | Scripted Spec/Plan evaluation and a deterministic fix-cycle experiment exercise orchestration; their scores do not independently establish artifact quality or optimal configuration. |
+| Harness² integration | Contract only | Optional adapter protocol, null default and local rules exist; Google Harness² is not integrated. |
+
+Architecture documents describe both current behavior and intended design; use
+this status table and the linked module documentation to distinguish them.
 
 ## Target workflow
 
@@ -51,24 +88,6 @@ Rejections loop back to the producing agent with feedback.
 6. Agents never perform side effects (shell, git, network including LLM calls, filesystem, database) directly. They act only through ports defined in `contracts/ports.md`.
 
 See [`docs/architecture/README.md`](docs/architecture/README.md).
-
-## Module status
-
-| Area | Status | Notes |
-| --- | --- | --- |
-| Core contracts (`src/asf/contracts/`) | Implemented | JSON Schema + pydantic models kept in lockstep |
-| Configuration (`src/asf/configuration/`) | Implemented | Platform + project profiles, `{env: NAME}` secrets only |
-| Workflow + state machine (`src/asf/workflow/`, `src/asf/state_machine/`) | Implemented | Pure: no I/O, injected clock/IDs |
-| Approval engine (`src/asf/approval/`) | Implemented | Dashboard approvals; Teams adapter exists but is not live-validated |
-| Agents (`src/asf/agents/`) | Implemented | All 7 (spec, plan, task, implement, review, test, fix) |
-| Orchestrator (`src/asf/orchestrator/`) | Implemented | Transactional tick, code-fix loop, budgets, optimistic locking |
-| Model gateways (`src/asf/models/`, `src/asf/integrations/`) | Implemented | Scripted/fake, OpenAI-compatible, Gemini; per-agent routing + usage counting |
-| Tools (`src/asf/tools/`) | Implemented | Local repository/sandbox, per-run git worktrees |
-| Storage (`src/asf/storage/`) | Implemented | SQLite, MariaDB, in-memory |
-| Hosting + CI (`src/asf/integrations/hosting/`) | Implemented | GitHub + GitLab adapters; write paths covered by contract tests, not yet exercised against a live server |
-| HTTP API + dashboard (`src/asf/api/`, `apps/dashboard/`) | Implemented | The dashboard's per-project CI badge is still a hardcoded placeholder |
-| Evaluation + metrics (`src/asf/evaluation/`, `harness/`) | Implemented | Metrics are in-memory; a persisted metrics table is designed, not built |
-| Execution payload splitting | Planned | Large artifact payloads still live in the execution row; the append-only split is designed, not built |
 
 ## Sandbox trust model
 
