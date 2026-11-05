@@ -662,7 +662,8 @@ class FactoryService:
 
     @staticmethod
     def _stage_before_failure(run: WorkflowExecution) -> str | None:
-        """The stage a FAILED run was in when it failed, from its event trail."""
+        """The stage a FAILED/CANCELLED run was in just before it ended,
+        from its event trail."""
         for observation in reversed(run.observations):
             event = observation.event
             if event is None or event.event_type not in (
@@ -686,15 +687,16 @@ class FactoryService:
         stage = run.state.stage
         current_index = sequence.index(stage) if stage in sequence else None
         produced = {artifact.type for artifact in run.artifact_history.values()}
-        # For a cancelled run, the stage the run was in when the cancel
-        # landed (from its event trail): approval steps are judged
-        # against it, since the CANCELLED stage itself sits past every
-        # step in the sequence and would mark them all done.
-        cancelled_from_index: int | None = None
-        if status == "CANCELLED":
+        # For a run that ended (cancelled or failed), the stage it was
+        # in when the terminal transition landed (from its event
+        # trail): approval steps are judged against it, since the
+        # terminal stage itself sits past every step in the sequence
+        # and would mark them all done.
+        terminal_from_index: int | None = None
+        if status in ("CANCELLED", "FAILED"):
             stage_before = self._stage_before_failure(run)
             if stage_before in sequence:
-                cancelled_from_index = sequence.index(stage_before)
+                terminal_from_index = sequence.index(stage_before)
         # The generic FAILED rule below ("first step whose outputs are
         # missing from the artifact history") misattributes any failure
         # that happens after every artifact exists at least once: a run
@@ -773,7 +775,7 @@ class FactoryService:
                     "label": f"{step.name} approval",
                     "state": self._approval_step_state(
                         step, stage, current_index, sequence, status,
-                        cancelled_from_index,
+                        terminal_from_index,
                     ),
                 })
         return steps
@@ -782,24 +784,30 @@ class FactoryService:
     def _approval_step_state(
         step: WorkflowStepDef, stage: str, current_index: int | None,
         sequence: list[str], status: str,
-        cancelled_from_index: int | None = None,
+        terminal_from_index: int | None = None,
     ) -> str:
         if status == "COMPLETED":
             return "done"
-        if status == "CANCELLED":
-            # Done only if the run had already passed this gate when the
-            # cancel landed; the gate it was sitting at, and every later
-            # gate, are cancelled.
-            if cancelled_from_index is None:
-                return "cancelled"
-            approved_index = sequence.index(f"{step.stage}_APPROVED")
-            return "done" if cancelled_from_index >= approved_index else "cancelled"
         if stage == f"{step.stage}_REVIEW" or stage == f"{step.stage}_ESCALATED":
-            return "active"
+            # A run that died while sitting at this gate is failed, not
+            # active — nothing is still being decided on it.
+            return "failed" if status == "FAILED" else "active"
         if stage == f"{step.stage}_REJECTED":
             return "rejected"
         if stage == f"{step.stage}_APPROVED":
             return "done"
+        if status in ("CANCELLED", "FAILED"):
+            # Done only if the run had already passed this gate when it
+            # ended; the gate it died at, and every later gate, were
+            # never approved — a cancelled run shows them cancelled, a
+            # failed run leaves them pending. (Falling through to the
+            # index comparison below would mark every gate done, since
+            # the terminal stage sits past all of them.)
+            fallback = "cancelled" if status == "CANCELLED" else "pending"
+            if terminal_from_index is None:
+                return fallback
+            approved_index = sequence.index(f"{step.stage}_APPROVED")
+            return "done" if terminal_from_index >= approved_index else fallback
         review_index = sequence.index(f"{step.stage}_REVIEW")
         if current_index is not None:
             return "done" if current_index > review_index else "pending"
