@@ -37,7 +37,10 @@ class AgentRulesTests(unittest.TestCase):
         They must not import pathlib, importlib, os, shutil, tempfile.
         The shared rules helper (asf.agents._shared.rules) is allowlisted:
         it is pure (json/typing only) and carries the standing project
-        rules into agent system prompts.
+        rules into agent system prompts. The skills helper
+        (asf.agents._shared.skills) is allowlisted on the same terms:
+        pure (json/typing only), it carries the project's enabled
+        skill bodies into agent system prompts.
         """
         agents_dir = REPO_ROOT / "src" / "asf" / "agents"
         logic_modules = [
@@ -55,6 +58,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents",
             "asf.agents.base",
             "asf.agents._shared.rules",
+            "asf.agents._shared.skills",
             "asf.agents.spec",
             "asf.agents.spec.agent",
             "asf.agents.spec.prompts",

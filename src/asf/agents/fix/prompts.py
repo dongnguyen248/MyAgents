@@ -6,6 +6,7 @@ from typing import Any
 
 from asf.agents._shared.codegen import FixContext
 from asf.agents._shared.rules import rules_section
+from asf.agents._shared.skills import skills_section
 from asf.contracts.models import AgentRequest, ModelMessage
 
 
@@ -32,6 +33,7 @@ def build_fix_messages(
         " them; where they conflict with the output contract above, the"
         " output contract wins:",
     )
+    system += skills_section(project, "fix")
     payload: dict[str, Any] = {
         "taskItemId": context.task_id,
         "baseRef": request.input["ref"],

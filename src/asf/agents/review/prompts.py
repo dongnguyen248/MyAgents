@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from asf.agents._shared.code_agents import artifact_of, code_changeset, task_item
 from asf.agents._shared.rules import rules_section
+from asf.agents._shared.skills import skills_section
 from asf.contracts.models import AgentRequest, ModelMessage
 
 MAX_FINDINGS = 100
@@ -91,6 +92,7 @@ def build_review_messages(
         " win over a language pack, and the output contract above wins"
         " over both:",
     )
+    system += skills_section(project, "review")
     code = artifact_of(request, "CODE")
     payload = {
         "taskItemId": request.input["taskItemId"],

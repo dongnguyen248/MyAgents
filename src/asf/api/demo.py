@@ -202,6 +202,23 @@ class _FallbackMetrics:
         self._decisions.append(kwargs)
 
 
+def _skill_body(text: str) -> str:
+    """A SKILL.md's instruction body: the text minus YAML frontmatter.
+
+    The frontmatter (name/description) is catalogue metadata for
+    humans and tooling; agents consume the body. A file without
+    frontmatter is used as-is.
+    """
+    stripped = text.lstrip()
+    if not stripped.startswith("---"):
+        return text.strip()
+    lines = stripped.splitlines()
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return "\n".join(lines[index + 1:]).strip()
+    return text.strip()
+
+
 def _load_metrics() -> Any:
     """Use asf.evaluation's service when importable; otherwise the fallback."""
     for module_name in ("asf.evaluation", "asf.evaluation.service", "asf.evaluation.metrics"):
@@ -247,10 +264,49 @@ class DemoFactoryService(FactoryService):
     }
 
     def __init__(
-        self, *args: Any, projects_dir: Path | None = None, **kwargs: Any,
+        self, *args: Any, projects_dir: Path | None = None,
+        skills_dir: Path | None = None, **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._projects_dir = projects_dir
+        # The skills catalogue lives at the repository root beside
+        # projects/ and templates/; tests may point it elsewhere.
+        self._skills_dir = (
+            skills_dir if skills_dir is not None
+            else Path(__file__).resolve().parents[3] / "skills"
+        )
+
+    def _project_skills(self, project_id: str) -> list[dict[str, str]]:
+        """The project's enabled skills, resolved from the catalogue.
+
+        Each enabled id names a folder in the skills catalogue whose
+        SKILL.md (Agent Skills format) is read with its frontmatter
+        stripped — the body is what agents consume. A configured
+        skill that cannot be read fails the run start loudly, like a
+        missing review rules file: silently running without a skill
+        the project explicitly enabled would be worse.
+        """
+        profile = self._project_profiles.get(project_id) or {}
+        enabled = profile.get("enabledSkills")
+        if not isinstance(enabled, list):
+            return []
+        resolved: list[dict[str, str]] = []
+        for entry in enabled:
+            if not isinstance(entry, str) or not entry.strip():
+                continue
+            skill_id = entry.strip()
+            path = self._skills_dir / skill_id / "SKILL.md"
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError as error:
+                raise ValueError(
+                    f"Project '{project_id}' enables skill '{skill_id}'"
+                    f" but {path} cannot be read: {error}",
+                ) from error
+            body = _skill_body(text)
+            if body:
+                resolved.append({"id": skill_id, "content": body})
+        return resolved
 
     def _default_test_commands(self, project_id: str) -> list[list[str]]:
         """The project's configured test commands, else the demo default.
@@ -389,6 +445,12 @@ class DemoFactoryService(FactoryService):
         review_rules = self._review_rules(project_id)
         if review_rules:
             merged_context["project"]["reviewRules"] = review_rules
+        skills = self._project_skills(project_id)
+        if skills:
+            merged_context["project"]["skills"] = skills
+            merged_context["project"]["enabledSkills"] = [
+                skill["id"] for skill in skills
+            ]
         for key, value in dict(context or {}).items():
             if key == "project" and isinstance(value, dict):
                 merged_context["project"] = {**merged_context["project"], **value}

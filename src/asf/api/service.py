@@ -23,6 +23,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
+from asf.agents._shared.skills import agent_skill_ids
 from asf.api.hosting_tokens import HostingTokens
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import ProjectProfile
@@ -481,6 +482,10 @@ class FactoryService:
             "status": status,
             "version": metadata.version,
             "model": str(config.get("model") or config.get("modelProfile") or "default"),
+            # The catalogue skills that apply to this agent type —
+            # the same set its prompt builder injects on runs whose
+            # project enables them.
+            "skills": agent_skill_ids(str(metadata.type)),
             "lastActivityAt": _iso(last_activity or self._now() or _EPOCH),
             "metrics": self._agent_metrics(metadata.id),
         }
@@ -515,7 +520,11 @@ class FactoryService:
             "model": agent["model"],
             "modelVersion": str(config.get("modelVersion", "latest")),
             "systemPrompt": str(config.get("systemPrompt", "")),
-            "skills": list(config.get("skills") or metadata.capabilities),
+            "skills": list(
+                config.get("skills")
+                or agent_skill_ids(str(metadata.type))
+                or metadata.capabilities
+            ),
             "tools": list(config.get("tools") or []),
             "allowedProjectIds": list(
                 config.get("allowedProjectIds") or self._projects.keys()

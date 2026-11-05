@@ -15,6 +15,8 @@ export interface Agent {
   currentTaskId?: string;
   currentTaskTitle?: string;
   currentProjectId?: string;
+  /** Catalogue skills that apply to this agent type (injected into its prompt on runs whose project enables them). */
+  skills?: string[];
   startedAt?: string; // ISO, start of the current task
   lastActivityAt: string; // ISO
   metrics: AgentMetrics;

@@ -141,6 +141,39 @@ def test_review_rules_file_cannot_escape_projects_dir(tmp_path: Path):
         service._review_rules("p")
 
 
+def test_project_skills_resolve_from_the_catalogue(tmp_path: Path):
+    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    skills = service._project_skills("vhpc")
+    assert [entry["id"] for entry in skills] == [
+        "java", "spring", "react", "git", "testing", "security",
+    ]
+    by_id = {entry["id"]: entry["content"] for entry in skills}
+    # Bodies arrive with frontmatter stripped and real content.
+    assert by_id["java"].startswith("# Java craft")
+    assert "name: java" not in by_id["java"]
+    assert "placeholder" not in by_id["testing"].lower()
+
+
+def test_project_skills_missing_file_fails_loudly(tmp_path: Path):
+    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service._project_profiles["broken"] = {"enabledSkills": ["no-such-skill"]}
+    with pytest.raises(ValueError, match="no-such-skill"):
+        service._project_skills("broken")
+
+
+def test_run_context_carries_the_projects_enabled_skills(tmp_path: Path):
+    service, engine, _store = build_demo(tmp_path / "demo.sqlite")
+    project_id = service.list_projects()[0]["id"]
+    enabled = service._project_profiles[project_id]["enabledSkills"]
+    run = service.start_run(
+        "skills-task", project_id,
+        inputs={"spec": {"requirement": "Demonstrate skills in context"}},
+    )
+    project = engine.get(run.id).context["project"]
+    assert project["enabledSkills"] == enabled
+    assert [entry["id"] for entry in project["skills"]] == enabled
+
+
 def test_vhpc_rules_reach_the_run_context(tmp_path: Path):
     service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
     rules = service._review_rules("vhpc")

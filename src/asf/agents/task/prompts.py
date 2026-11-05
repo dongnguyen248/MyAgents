@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from asf.agents._shared.rules import rules_section
+from asf.agents._shared.skills import skills_section
 from asf.agents.plan.milestones import (
     MAX_MILESTONES,
     milestone_ancestors,
@@ -165,6 +166,7 @@ def build_task_messages(
         " conflict with the output contract above, the output contract"
         " wins:",
     )
+    system_content += skills_section(project_context, "task")
 
     user_content = build_user_message(
         spec_artifact=spec_artifact,
