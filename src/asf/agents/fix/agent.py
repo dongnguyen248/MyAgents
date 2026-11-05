@@ -24,6 +24,7 @@ from asf.agents._shared.codegen import (
 from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
 from asf.agents._shared.parsing import ParseError, parse_json
 from asf.agents._shared.paths import validate_relative_path
+from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import render_code_markdown
@@ -163,7 +164,10 @@ class FixAgent(BaseAgent):
             ModelRequest(
                 messages=build_fix_messages(self._prompts, request, context),
                 model=self._model, parameters=self._parameters,
-                metadata={"agentId": self.metadata.id, "requestId": request.request_id},
+                metadata={
+                    "agentId": self.metadata.id, "requestId": request.request_id,
+                    **tier_metadata(request.context),
+                },
             )
         )
         if not response.content.strip() or len(response.content) > MAX_REPLY_CHARS:

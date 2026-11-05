@@ -231,6 +231,35 @@ def test_router_pins_per_agent_models(tmp_path: Path):
     assert call("agent-test") == "gpt-shared"   # test never overrides
 
 
+def test_complex_tier_upgrades_every_agent_to_the_shared_model(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    settings.update({
+        "provider": "openai", "model": "gpt-shared", "apiKey": "sk-1",
+        "agentModels": {"implement": "gpt-code", "spec": "gpt-cheap"},
+    })
+    # Resolution: complex ignores the economy overrides, standard keeps them.
+    assert settings.effective_model("implement", "complex") == "gpt-shared"
+    assert settings.effective_model("spec", "complex") == "gpt-shared"
+    assert settings.effective_model("implement") == "gpt-code"
+    assert settings.effective_model("implement", "standard") == "gpt-code"
+
+    real = RecordingGateway("real-answer")
+    router = SettingsRoutingGateway(
+        settings, RecordingGateway("scripted"),
+        gateway_factory=lambda s, t: real,
+    )
+
+    def call(metadata: dict) -> str | None:
+        return router.complete(ModelRequest(
+            messages=[ModelMessage(role="user", content="hi")],
+            metadata=metadata,
+        )).model
+
+    assert call({"agentId": "agent-implement", "modelTier": "complex"}) == "gpt-shared"
+    assert call({"agentId": "agent-implement"}) == "gpt-code"
+    assert call({"agentId": "agent-spec", "modelTier": "complex"}) == "gpt-shared"
+
+
 class _RecordingTransport:
     def __init__(self) -> None:
         self.models: list[str] = []

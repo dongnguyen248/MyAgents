@@ -67,6 +67,14 @@ class ProjectConflictError(Exception):
 
 _PROJECT_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
+# Automatic model routing: a run whose requirement exceeds this many
+# characters is classified "complex" at start (context key modelTier)
+# and every agent call is upgraded to the shared configured model —
+# long requirements produce long specs/plans/code, which are exactly
+# what the economy per-agent models truncate or mis-format. Below the
+# threshold, runs route per agent as configured and stay cheap.
+COMPLEX_REQUIREMENT_CHARS = 6000
+
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 _AGENT_STATUS_MAP = {
@@ -869,6 +877,10 @@ class FactoryService:
             "type": self._workflow_type(run),
             "status": status,
             "error": self._run_error(run, status),
+            # "complex" when the run's requirement was classified as
+            # oversized at start: every agent call is upgraded to the
+            # shared model (see COMPLEX_REQUIREMENT_CHARS).
+            "modelTier": run.context.get("modelTier"),
             "currentActivity": self._current_activity(run, steps),
             "steps": steps,
             "startedAt": _iso(run.started_at),
@@ -1510,6 +1522,25 @@ class FactoryService:
             if self._workflow_status(run) == "RUNNING":
                 self._drive_in_background(run.id)
 
+    @staticmethod
+    def _requirement_tier(inputs: Mapping[str, Any] | None) -> str | None:
+        """Classify a run from its requirement: "complex" or None.
+
+        Deterministic and free (no model call): the requirement's
+        length is the signal — it predicts the size of every document
+        and changeset the run will produce. A caller-provided tier in
+        the run context always wins over this classification.
+        """
+        if not isinstance(inputs, Mapping):
+            return None
+        spec = inputs.get("spec")
+        if not isinstance(spec, Mapping):
+            return None
+        requirement = spec.get("requirement")
+        if isinstance(requirement, str) and len(requirement) > COMPLEX_REQUIREMENT_CHARS:
+            return "complex"
+        return None
+
     def start_run(
         self,
         task_id: str,
@@ -1517,8 +1548,13 @@ class FactoryService:
         inputs: Mapping[str, Any] | None = None,
         context: Mapping[str, Any] | None = None,
     ) -> WorkflowExecution:
+        merged_context = dict(context or {})
+        tier = self._requirement_tier(inputs)
+        if tier is not None:
+            merged_context.setdefault("modelTier", tier)
         run = self._engine.start(
-            task_id=task_id, project_id=project_id, inputs=inputs, context=context,
+            task_id=task_id, project_id=project_id, inputs=inputs,
+            context=merged_context,
         )
         self.track(run.id)
         self._drive_in_background(run.id)
