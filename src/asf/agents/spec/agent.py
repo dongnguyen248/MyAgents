@@ -13,7 +13,10 @@ from asf.models.errors import ModelGatewayError
 
 __all__ = ["MAX_REQUIREMENT_CHARS", "SpecAgent"]
 
-MAX_REQUIREMENT_CHARS: int = 20000
+# Generous on purpose: users paste whole briefs/test-case documents as
+# the requirement. 200k chars matches the task agent's text cap
+# (MAX_TASK_TEXT_CHARS); the old 20k cap failed real first runs.
+MAX_REQUIREMENT_CHARS: int = 200_000
 
 
 class SpecAgent(BaseAgent):
