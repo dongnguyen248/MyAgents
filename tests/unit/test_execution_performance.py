@@ -104,7 +104,9 @@ class _Metrics:
     def __init__(self) -> None:
         self.recorded: list[str] = []
 
-    def record(self, agent_id: str, result: Any) -> None:
+    def record(
+        self, agent_id: str, result: Any, *, run_id: str | None = None,
+    ) -> None:
         self.recorded.append(agent_id)
 
 

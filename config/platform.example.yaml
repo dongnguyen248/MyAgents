@@ -11,6 +11,15 @@ execution:
   maxConcurrentRuns: 2
   maxConcurrentModelCalls: 2
 
+# Per-run model budget (all dimensions optional; omit or leave a
+# dimension out for no limit). The orchestrator checks the run's
+# accumulated usage before every dispatch and fails the run with
+# RUN_BUDGET_EXCEEDED instead of calling the model again.
+# budget:
+#   maxPromptTokens: 500000
+#   maxCompletionTokens: 100000
+#   maxModelCalls: 40
+
 # Filesystem paths
 paths:
   artifactsDir: artifacts
@@ -78,12 +87,33 @@ agents:
   # legacy full-file ChangeSet envelope). repairAttempts (0 or 1,
   # default 1) lets the agent continue the same conversation once
   # with the specific rejection reason when a reply fails to parse
-  # or validate.
+  # or validate. repoMapMaxChars bounds the repository map (tree +
+  # neighbour outlines) added to the prompt; 0 disables it.
+  # reportTailLines bounds how much of a test report's command
+  # output is fed back into fix/review prompts (the artifact keeps
+  # the full output).
   implement:
     settings:
       editFormat: blocks
       repairAttempts: 1
+      repoMapMaxChars: 6000
   fix:
     settings:
       editFormat: blocks
       repairAttempts: 1
+      repoMapMaxChars: 6000
+      reportTailLines: 120
+  # review.skipWhenTestsPass (default false): when a TEST_REPORT
+  # with verdict PASS exists for the exact code version under
+  # review and the change is at most maxDiffLines content lines,
+  # the review is recorded as APPROVE without an LLM call.
+  review:
+    settings:
+      reportTailLines: 120
+      skipWhenTestsPass: false
+      maxDiffLines: 200
+  # test.failFast (default true): stop at the first failing test
+  # command; the rest are recorded as skipped in the report.
+  test:
+    settings:
+      failFast: true

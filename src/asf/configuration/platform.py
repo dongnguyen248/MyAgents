@@ -120,12 +120,26 @@ class ExecutionConfig(ConfigModel):
     max_concurrent_model_calls: int = Field(default=2, ge=1)
 
 
+class RunBudgetSettings(ConfigModel):
+    """Per-run model spending ceiling (None dimension = unlimited).
+
+    Enforced by the orchestrator before every dispatch: a run over
+    budget fails with RUN_BUDGET_EXCEEDED and the model is not
+    called again for it.
+    """
+
+    max_prompt_tokens: int | None = Field(default=None, ge=1)
+    max_completion_tokens: int | None = Field(default=None, ge=1)
+    max_model_calls: int | None = Field(default=None, ge=1)
+
+
 class PlatformConfig(ConfigModel):
     version: Literal[1] = 1
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     paths: PathsConfig = Field(default_factory=PathsConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    budget: RunBudgetSettings = Field(default_factory=RunBudgetSettings)
     source_control: ServiceConfig | None = None
     ci: ServiceConfig | None = None
     notifications: list[NotificationChannel] = Field(default_factory=list)

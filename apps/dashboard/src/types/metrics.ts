@@ -11,6 +11,10 @@ export interface AgentMetrics {
   humanApprovalRate: number;
   testPassRate: number;
   ciPassRate: number;
+  /** Platform-accumulated model usage across this agent's runs. */
+  promptTokens: number;
+  completionTokens: number;
+  modelCalls: number;
   /** 0..100. Computed client-side today; a backend may provide it later. */
   healthScore?: number;
 }

@@ -53,10 +53,10 @@ class RecordingSandbox(ScriptedSandbox):
         self.exits = iter(exits)
         self.calls = []
 
-    def run(self, commands, changes, ref):
+    def run(self, commands, changes, ref, *, fail_fast=True):
         self.calls.append((changes, ref))
         self._default_result = CommandResult(next(self.exits), "fixture output", "", 1)
-        return super().run(commands, changes, ref)
+        return super().run(commands, changes, ref, fail_fast=fail_fast)
 
 
 def harness(

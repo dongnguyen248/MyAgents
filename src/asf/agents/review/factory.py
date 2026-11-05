@@ -24,6 +24,10 @@ def build_review_agent(
         if profile:
             model = profile.model
             parameters = dict(profile.parameters)
+    settings = config.settings if config else {}
     return ReviewAgent(
-        runtime, prompts=load_review_prompts(), model=model, parameters=parameters
+        runtime, prompts=load_review_prompts(), model=model, parameters=parameters,
+        skip_when_tests_pass=bool(settings.get("skipWhenTestsPass", False)),
+        max_diff_lines=settings.get("maxDiffLines", 200),
+        report_tail_lines=settings.get("reportTailLines", 120),
     )

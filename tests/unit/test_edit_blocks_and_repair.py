@@ -195,9 +195,13 @@ def test_repair_succeeds_on_the_second_call_and_sums_usage():
     assert result.output["usage"] == {"promptTokens": 30, "completionTokens": 12}
     assert len(gateway.requests) == 2
     repair_messages = gateway.requests[1].messages
-    assert [m.role for m in repair_messages] == ["system", "user", "assistant", "user"]
+    # The original conversation (system + stable + per-item user
+    # messages), then the bad reply echoed back, then the error.
+    assert [m.role for m in repair_messages] == [
+        "system", "user", "user", "assistant", "user",
+    ]
     assert "matched 0 times" in repair_messages[-1].content
-    assert repair_messages[2].content == bad[:8000]
+    assert repair_messages[3].content == bad[:8000]
 
 
 def test_secret_in_scope_is_not_repaired():

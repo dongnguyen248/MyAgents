@@ -39,6 +39,9 @@ class CommandResult:
     timed_out: bool = False
     stdout_truncated: bool = False
     stderr_truncated: bool = False
+    # True when the command never ran: an earlier command failed
+    # and the sandbox was in fail-fast mode. exit_code is -1 then.
+    skipped: bool = False
 
 
 @dataclass(frozen=True)
@@ -119,9 +122,15 @@ class SandboxPort(Protocol):
     """Port for running commands in an ephemeral sandbox with a change set applied."""
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str
+        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
+        *, fail_fast: bool = True,
     ) -> SandboxResult:
         """Create a workspace at ref, apply changes, run commands, return results.
+
+        With ``fail_fast`` (the default), commands after the first
+        failure are not executed: their results are marked
+        ``skipped`` so the result list always lines up with the
+        command list.
 
         A command that exceeds its timeout is reported either by
         raising :class:`CommandTimeoutError` or by a

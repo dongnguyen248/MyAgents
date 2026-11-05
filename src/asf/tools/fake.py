@@ -91,15 +91,25 @@ class ScriptedSandbox:
         self._timeout_commands.add(tuple(argv))
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str
+        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
+        *, fail_fast: bool = True,
     ) -> SandboxResult:
         outcomes: list[CommandResult] = []
+        failed = False
         for cmd in commands:
+            if failed and fail_fast:
+                outcomes.append(CommandResult(
+                    exit_code=-1, stdout="", stderr="",
+                    duration_ms=0, skipped=True,
+                ))
+                continue
             argv_key = tuple(cmd.argv)
             if argv_key in self._timeout_commands:
                 raise CommandTimeoutError(cmd)
             result = self._results.get(argv_key, self._default_result)
             outcomes.append(result)
+            if result.exit_code != 0:
+                failed = True
         return SandboxResult(commands=tuple(outcomes))
 
 
@@ -121,7 +131,8 @@ class InMemorySandbox:
         self._command_results[tuple(argv)] = result
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str
+        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
+        *, fail_fast: bool = True,
     ) -> SandboxResult:
         # Copy the file tree at ref
         tree = self._repository._trees.get(ref)
@@ -151,9 +162,18 @@ class InMemorySandbox:
 
         # Run commands (simulated - just returns recorded results)
         outcomes: list[CommandResult] = []
+        failed = False
         for cmd in commands:
+            if failed and fail_fast:
+                outcomes.append(CommandResult(
+                    exit_code=-1, stdout="", stderr="",
+                    duration_ms=0, skipped=True,
+                ))
+                continue
             argv_key = tuple(cmd.argv)
             result = self._command_results.get(argv_key, self._default_result)
             outcomes.append(result)
+            if result.exit_code != 0:
+                failed = True
 
         return SandboxResult(commands=tuple(outcomes))

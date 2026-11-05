@@ -24,6 +24,7 @@ from typing import Any, Protocol
 from asf.contracts.models import ModelRequest, ModelResponse, ModelUsage
 from asf.integrations.retry import (
     backoff_delay,
+    effective_timeout,
     http_error_code,
     is_context_too_long,
     parse_retry_after,
@@ -120,6 +121,7 @@ class OpenAICompatibleGateway:
         max_retries: int = DEFAULT_MAX_RETRIES,
         sleep: Callable[[float], None] = time.sleep,
         rand: Callable[[float, float], float] = random.uniform,
+        prompt_cache: bool = False,
     ) -> None:
         if not base_url.startswith(("https://", "http://")):
             raise ValueError("Base URL must be an http(s) URL")
@@ -137,14 +139,34 @@ class OpenAICompatibleGateway:
         self._max_retries = max_retries
         self._sleep = sleep
         self._rand = rand
+        # Prompt caching is opt-in per deployment: only endpoints
+        # that understand Anthropic-style cache_control content
+        # parts may receive them (the assembly enables this for
+        # Anthropic-compatible base URLs). Everywhere else the
+        # agents' cachePrefixMessages hint is ignored, as designed.
+        self._prompt_cache = prompt_cache
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         model = request.model or self._model
+        prefix = 0
+        if self._prompt_cache:
+            hint = request.metadata.get("cachePrefixMessages")
+            if isinstance(hint, int) and not isinstance(hint, bool) and hint > 0:
+                prefix = min(hint, len(request.messages))
         payload: dict[str, Any] = {
             "model": model,
             "messages": [
-                {"role": message.role, "content": message.content}
-                for message in request.messages
+                {
+                    "role": message.role,
+                    "content": (
+                        [{
+                            "type": "text", "text": message.content,
+                            "cache_control": {"type": "ephemeral"},
+                        }]
+                        if index < prefix else message.content
+                    ),
+                }
+                for index, message in enumerate(request.messages)
             ],
         }
         temperature = request.parameters.get("temperature")
@@ -157,7 +179,9 @@ class OpenAICompatibleGateway:
         ):
             max_tokens = DEFAULT_MAX_TOKENS
         payload["max_tokens"] = max_tokens
-        status, _headers, raw = self._post_with_retries(payload)
+        status, _headers, raw = self._post_with_retries(
+            payload, timeout_seconds=effective_timeout(self._timeout, request),
+        )
         if status >= 400:
             detail, provider_code = _provider_error(raw)
             code = http_error_code(
@@ -194,7 +218,7 @@ class OpenAICompatibleGateway:
             ) from None
 
     def _post_with_retries(
-        self, payload: dict[str, Any],
+        self, payload: dict[str, Any], *, timeout_seconds: float,
     ) -> tuple[int, Mapping[str, str], bytes]:
         """POST, retrying transient failures with shared backoff.
 
@@ -217,7 +241,7 @@ class OpenAICompatibleGateway:
                         "Content-Type": "application/json",
                     },
                     body=body,
-                    timeout_seconds=self._timeout,
+                    timeout_seconds=timeout_seconds,
                 )
             except ModelGatewayError as error:
                 if not error.retryable or retries >= self._max_retries:

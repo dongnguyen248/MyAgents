@@ -55,6 +55,12 @@ class RunMetrics(ContractModel):
     duration_seconds: float = Field(ge=0)
     revision_count: int = Field(ge=0)
     attempt: int = Field(ge=1)
+    # Model usage accumulated by the platform (BaseAgent's counting
+    # gateway wrapper), never self-reported by agents. Defaults keep
+    # older payloads valid.
+    prompt_tokens: int = Field(default=0, ge=0)
+    completion_tokens: int = Field(default=0, ge=0)
+    model_calls: int = Field(default=0, ge=0)
 
 
 class Artifact(ContractModel):

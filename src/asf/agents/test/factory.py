@@ -15,4 +15,9 @@ def build_test_agent(
     sandbox: SandboxPort,
 ) -> TestAgent:
     """Build the deterministic runner without loading templates or model profiles."""
-    return TestAgent(runtime, sandbox)
+    config = platform.agents.get("test")
+    settings = config.settings if config else {}
+    return TestAgent(
+        runtime, sandbox,
+        fail_fast=bool(settings.get("failFast", True)),
+    )

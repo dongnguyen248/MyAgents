@@ -18,6 +18,7 @@ from asf.contracts.models import (
     RunMetrics,
     ValidationResult,
 )
+from asf.models.counting import CountingGateway, ModelCallTracker, track_model_calls
 from asf.models.errors import ModelGatewayError
 from asf.models.ports import ModelGateway
 
@@ -88,6 +89,15 @@ class BaseAgent(ABC):
     """Abstract base agent implementing the Agent port."""
 
     def __init__(self, runtime: AgentRuntime) -> None:
+        # Every agent's gateway is wrapped once in the counting
+        # gateway: usage accounting and step-deadline injection are
+        # platform concerns, never the agent's own bookkeeping.
+        if not isinstance(runtime.models, CountingGateway):
+            runtime = AgentRuntime(
+                models=CountingGateway(runtime.models),
+                clock=runtime.clock,
+                new_id=runtime.new_id,
+            )
         self._runtime = runtime
 
     @property
@@ -110,7 +120,12 @@ class BaseAgent(ABC):
         """Subclass hook to compute revision count. Default 0."""
         return 0
 
-    def _compute_metrics(self, request: AgentRequest, duration_seconds: float) -> RunMetrics:
+    def _compute_metrics(
+        self,
+        request: AgentRequest,
+        duration_seconds: float,
+        tracker: ModelCallTracker | None = None,
+    ) -> RunMetrics:
         raw_attempt = request.metadata.get("attempt")
         if isinstance(raw_attempt, int) and not isinstance(raw_attempt, bool) and raw_attempt >= 1:
             attempt = raw_attempt
@@ -122,6 +137,11 @@ class BaseAgent(ABC):
             duration_seconds=duration_seconds,
             revision_count=revision_count,
             attempt=attempt,
+            prompt_tokens=tracker.prompt_tokens if tracker is not None else 0,
+            completion_tokens=(
+                tracker.completion_tokens if tracker is not None else 0
+            ),
+            model_calls=tracker.calls if tracker is not None else 0,
         )
 
     def get_metadata(self) -> AgentMetadata:
@@ -149,8 +169,33 @@ class BaseAgent(ABC):
         return ValidationResult(valid=False, errors=errors)
 
     def execute(self, request: AgentRequest) -> AgentResult:
-        """Executes the agent workflow according to platform rules."""
+        """Executes the agent workflow according to platform rules.
+
+        The whole execution runs inside a model-call tracker: usage
+        lands in the result metrics without agents counting anything
+        themselves, and the step timeout the orchestrator stamped
+        into the request metadata becomes a live deadline the
+        counting gateway forwards to the real gateway per call.
+        """
         t_start = self._runtime.clock()
+        raw_timeout = request.metadata.get("stepTimeoutSeconds")
+        timeout = (
+            float(raw_timeout)
+            if isinstance(raw_timeout, (int, float))
+            and not isinstance(raw_timeout, bool)
+            and raw_timeout > 0
+            else None
+        )
+        with track_model_calls(
+            timeout_seconds=timeout, clock=self._runtime.clock,
+            started_at=t_start,
+        ) as tracker:
+            return self._execute_tracked(request, tracker, t_start)
+
+    def _execute_tracked(
+        self, request: AgentRequest, tracker: ModelCallTracker,
+        t_start: datetime,
+    ) -> AgentResult:
         issues = self._check(request)
 
         if issues:
@@ -167,7 +212,7 @@ class BaseAgent(ABC):
                 for issue in issues
             ]
             duration = max(0.0, (t_end - t_start).total_seconds())
-            metrics = self._compute_metrics(request, duration)
+            metrics = self._compute_metrics(request, duration, tracker)
             return AgentResult(
                 request_id=request.request_id,
                 agent_id=self.metadata.id,
@@ -228,7 +273,7 @@ class BaseAgent(ABC):
             )
 
             duration = max(0.0, (t_end - t_start).total_seconds())
-            metrics = self._compute_metrics(request, duration)
+            metrics = self._compute_metrics(request, duration, tracker)
             return AgentResult(
                 request_id=request.request_id,
                 agent_id=self.metadata.id,
@@ -278,7 +323,7 @@ class BaseAgent(ABC):
                 ),
             ]
             duration = max(0.0, (t_end - t_start).total_seconds())
-            metrics = self._compute_metrics(request, duration)
+            metrics = self._compute_metrics(request, duration, tracker)
             if isinstance(err, AgentExecutionError) and err.status == "REJECTED":
                 events = []
             return AgentResult(
@@ -327,7 +372,7 @@ class BaseAgent(ABC):
                 ),
             ]
             duration = max(0.0, (t_end - t_start).total_seconds())
-            metrics = self._compute_metrics(request, duration)
+            metrics = self._compute_metrics(request, duration, tracker)
             return AgentResult(
                 request_id=request.request_id,
                 agent_id=self.metadata.id,

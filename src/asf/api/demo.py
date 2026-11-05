@@ -64,6 +64,7 @@ from asf.integrations.hosting.actions import build_hosting_actions
 from asf.models.fake import ScriptedModelGateway
 from asf.models.limited import ConcurrencyLimitedGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
+from asf.orchestrator.budget import RunBudget
 from asf.orchestrator.code_loop import CodeLoopPolicy
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
 from asf.storage.sqlite import SQLiteExecutionStore
@@ -177,7 +178,9 @@ class _FallbackMetrics:
         self._events: list[ActivityEvent] = []
         self._decisions: list[dict[str, Any]] = []
 
-    def record(self, agent_id: str, result: AgentResult) -> None:
+    def record(
+        self, agent_id: str, result: AgentResult, *, run_id: str | None = None,
+    ) -> None:
         self._results.append(result)
 
     def publish(self, event: ActivityEvent) -> None:
@@ -198,6 +201,9 @@ class _FallbackMetrics:
             "avgDurationSec": sum(durations) / total if total else 0.0,
             "avgRevisions": 0.0, "humanApprovalRate": 0.0,
             "testPassRate": 0.0, "ciPassRate": 0.0,
+            "promptTokens": sum(r.metrics.prompt_tokens for r in own),
+            "completionTokens": sum(r.metrics.completion_tokens for r in own),
+            "modelCalls": sum(r.metrics.model_calls for r in own),
         }
 
     def overview(self) -> dict[str, Any]:
@@ -798,6 +804,11 @@ def build_demo(
         # quality gate. Without this policy the engine stops the run on the
         # first failing verdict.
         code_loop=CodeLoopPolicy(max_fixes=3),
+        budget=RunBudget(
+            max_prompt_tokens=platform.budget.max_prompt_tokens,
+            max_completion_tokens=platform.budget.max_completion_tokens,
+            max_model_calls=platform.budget.max_model_calls,
+        ),
         actions=build_hosting_actions(
             profiles=profile_of, clock=clock, tokens=hosting_tokens.get,
         ),

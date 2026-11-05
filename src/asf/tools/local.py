@@ -406,7 +406,8 @@ class LocalSandbox:
         self._base_env = base_env
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str
+        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
+        *, fail_fast: bool = True,
     ) -> SandboxResult:
         self._apply(changes)
         # One fresh home per run() call: tools that cache into $HOME
@@ -418,7 +419,19 @@ class LocalSandbox:
                 self._settings.env_extra,
                 home=home,
             )
-            outcomes = [self._run_one(spec, env) for spec in commands]
+            outcomes: list[CommandResult] = []
+            failed = False
+            for spec in commands:
+                if failed and fail_fast:
+                    outcomes.append(CommandResult(
+                        exit_code=-1, stdout="", stderr="",
+                        duration_ms=0, skipped=True,
+                    ))
+                    continue
+                outcome = self._run_one(spec, env)
+                outcomes.append(outcome)
+                if outcome.exit_code != 0:
+                    failed = True
         return SandboxResult(commands=tuple(outcomes))
 
     def _apply(self, changes: ChangeSet) -> None:
@@ -737,15 +750,16 @@ class WorkspaceSandbox:
         self._fallback = fallback
 
     def run(
-        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str
+        self, commands: Sequence[CommandSpec], changes: ChangeSet, ref: str,
+        *, fail_fast: bool = True,
     ) -> SandboxResult:
         root = self._workspace.current_root(ref)
         if root is None:
-            return self._fallback.run(commands, changes, ref)
+            return self._fallback.run(commands, changes, ref, fail_fast=fail_fast)
         # In a managed worktree, a dirty tree holds the previous
         # unpassed change set: reset to the last passing commit
         # before applying the replacement.
         self._workspace.prepare_worktree_for_changes(root)
         return LocalSandbox(
             root, settings=self._workspace.current_sandbox_settings(),
-        ).run(commands, changes, ref)
+        ).run(commands, changes, ref, fail_fast=fail_fast)

@@ -28,6 +28,12 @@ class AgentRunRecord(ConfigModel):
     duration_seconds: float = Field(ge=0)
     revision_count: int = Field(ge=0)
     attempt: int = Field(ge=1)
+    # Platform-accumulated model usage (defaults keep old snapshots
+    # restorable).
+    run_id: str | None = None
+    prompt_tokens: int = Field(default=0, ge=0)
+    completion_tokens: int = Field(default=0, ge=0)
+    model_calls: int = Field(default=0, ge=0)
 
 
 class ApprovalRecord(ConfigModel):

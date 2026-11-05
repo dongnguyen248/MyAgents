@@ -57,6 +57,9 @@ class FixContext:
     # re-attempts a fix (step retry or a resumed run): the model must
     # correct that specific failure instead of repeating it.
     previous_error: str | None = None
+    # Bounded repository map (tree + neighbour outlines); "" when
+    # the assembly disabled it.
+    repo_map: str = ""
 
 
 def build_implement_context(
@@ -90,6 +93,7 @@ def build_fix_context(
     review_findings: list[dict[str, Any]],
     previous_changeset: ChangeSet | None,
     previous_error: str | None = None,
+    repo_map: str = "",
 ) -> FixContext:
     """Build context for FixAgent."""
     return FixContext(
@@ -102,6 +106,7 @@ def build_fix_context(
         review_findings=tuple(review_findings),
         previous_changeset=previous_changeset,
         previous_error=previous_error,
+        repo_map=repo_map,
     )
 
 

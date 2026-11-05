@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from asf.agents._shared.code_agents import artifact_of, code_changeset, task_item
+from asf.agents._shared.report_tail import tail_artifact_for_prompt
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
 from asf.contracts.models import AgentRequest, ModelMessage
@@ -66,7 +67,8 @@ def _project_context(request: AgentRequest) -> dict[str, Any]:
 
 
 def build_review_messages(
-    *, prompts: ReviewPrompts, request: AgentRequest
+    *, prompts: ReviewPrompts, request: AgentRequest,
+    report_tail_lines: int = 120,
 ) -> list[ModelMessage]:
     """Keep instructions separate from untrusted artifact and project data."""
     project = _project_context(request)
@@ -101,8 +103,11 @@ def build_review_messages(
             key: project[key] for key in ("name", "description", "technology") if key in project
         },
         "artifacts": [
-            {"id": artifact.id, "type": artifact.type, "version": artifact.version,
-             "content": artifact.content}
+            tail_artifact_for_prompt(
+                {"id": artifact.id, "type": artifact.type,
+                 "version": artifact.version, "content": artifact.content},
+                report_tail_lines,
+            )
             for artifact in request.artifacts
         ],
         "taskItem": task_item(artifact_of(request, "TASK"), request.input["taskItemId"]),
