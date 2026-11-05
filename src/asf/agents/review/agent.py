@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -16,7 +17,7 @@ from asf.agents._shared.code_agents import (
 )
 from asf.agents._shared.parsing import strip_code_fence
 from asf.agents._shared.routing import tier_metadata
-from asf.agents.base import AgentRuntime, BaseAgent, Issue
+from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
 from asf.agents.review.prompts import (
     MAX_FINDINGS,
     Finding,
@@ -29,6 +30,25 @@ from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelReq
 from asf.models.errors import ModelGatewayError
 
 __all__ = ["MAX_FINDINGS", "Finding", "ReviewAgent", "ReviewContent", "render_review_markdown"]
+
+logger = logging.getLogger(__name__)
+
+
+def _schema_problems(exc: Exception) -> str:
+    """Field locations and error kinds from a validation failure.
+
+    Input values are deliberately excluded (``include_input=False``):
+    the model reply is untrusted content and must not be echoed, but
+    "findings.0.line: int_parsing" is exactly what an operator needs
+    to tell a truncated reply from a wrong-typed field.
+    """
+    if isinstance(exc, ValidationError):
+        parts = []
+        for entry in exc.errors(include_input=False):
+            loc = ".".join(str(part) for part in entry["loc"]) or "(root)"
+            parts.append(f"{loc}: {entry['type']}")
+        return "; ".join(parts[:5])[:400] or "unparseable reply"
+    return type(exc).__name__
 
 
 class ReviewAgent(BaseAgent):
@@ -77,7 +97,15 @@ class ReviewAgent(BaseAgent):
             ))
         except ModelGatewayError as exc:
             if exc.code == "LLM_INVALID_RESPONSE":
-                raise invalid_response("Model returned an invalid review response") from None
+                # Preserve the gateway's own message and details. This
+                # branch fires on provider-side failures (e.g. an
+                # HTTP 400 from the provider) at least as often as on
+                # bad model output, and replacing them with a generic
+                # sentence made those failures undiagnosable.
+                raise AgentExecutionError(
+                    "LLM_INVALID_RESPONSE", exc.message,
+                    category="LLM", retryable=False, details=exc.details,
+                ) from None
             raise
 
         raw = response.content
@@ -85,10 +113,22 @@ class ReviewAgent(BaseAgent):
             raise invalid_response("Review response is empty or exceeds the size limit")
         try:
             review = ReviewContent.model_validate_json(strip_code_fence(raw))
-        except (ValueError, ValidationError, RecursionError):
+        except (ValueError, ValidationError, RecursionError) as exc:
+            # The result keeps its no-echo contract (no model content
+            # in error details), so the specific problem goes to the
+            # backend log instead: field locations and error kinds
+            # only, never input values.
+            logger.warning(
+                "review reply rejected: %s (replyChars=%d finishReason=%s)",
+                _schema_problems(exc), len(raw), response.finish_reason,
+            )
             raise invalid_response("Review response does not match the required schema") from None
         allowed_paths = {change.path for change in changes.changes}
         if any(finding.path not in allowed_paths for finding in review.findings):
+            outside = sorted(
+                {f.path for f in review.findings if f.path not in allowed_paths}
+            )
+            logger.warning("review findings reference paths outside CODE: %s", outside[:5])
             raise invalid_response("Review finding references a path outside CODE")
         text = render_review_markdown(review, code.id, code.version)
         if len(text) > MAX_TEXT_CHARS:

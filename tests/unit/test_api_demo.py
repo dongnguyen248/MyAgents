@@ -561,6 +561,29 @@ def test_start_run_returns_while_a_step_is_still_executing(
     assert view is not None and view["status"] == "WAITING_APPROVAL"
 
 
+def test_configure_logging_is_idempotent() -> None:
+    import logging
+
+    from asf.api.demo import configure_logging
+
+    logger = logging.getLogger("asf")
+    before = list(logger.handlers)
+    level, propagate = logger.level, logger.propagate
+    try:
+        configure_logging()
+        configure_logging()
+        added = [h for h in logger.handlers if h not in before]
+        assert len(added) == 1  # one console handler, not two
+    finally:
+        for handler in list(logger.handlers):
+            if handler not in before:
+                logger.removeHandler(handler)
+        logger.setLevel(level)
+        logger.propagate = propagate
+        if hasattr(logger, "_asf_console_configured"):
+            delattr(logger, "_asf_console_configured")
+
+
 def test_startup_recovers_a_run_left_mid_dispatch(tmp_path: Path):
     """A backend stopped mid-dispatch leaves ``in_flight`` set; startup
     recovers it (nothing can be in flight in a fresh process) and the
