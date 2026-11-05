@@ -11,7 +11,7 @@ from asf.api.demo import build_demo
 
 
 def _client(tmp_path: Path) -> TestClient:
-    service, _engine, _store = build_demo(tmp_path / "demo.sqlite")
+    service, _engine, _store = build_demo(tmp_path, ephemeral=True)
     return TestClient(create_app(service))
 
 

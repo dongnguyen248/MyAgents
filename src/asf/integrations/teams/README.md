@@ -16,7 +16,7 @@ GitLab and CI Gate remain deferred.
 ## What runs where
 
 - **ASF:** renders the card, hosts an authenticated decision callback, persists
-  core approvals in SQLite and automatically ticks the configured workflow.
+  core approvals in the configured store and automatically ticks the workflow.
 - **Your Power Automate flow:** receives the card, posts it to a fixed Teams
   channel, waits for a response, identifies the responder using the connector
   and posts the decision back to ASF.
@@ -202,7 +202,7 @@ After you finish Flow and HTTPS proxy setup:
 ```
 
 `--send` contacts the Flow/Teams, but uses deterministic model replies. The
-demo uses real SpecAgent and PlanAgent classes, SQLite approvals, revision
+demo uses real SpecAgent and PlanAgent classes, stored approvals, revision
 feedback and the automatic dispatcher; it does not demonstrate LLM reasoning.
 The listener is bound to `127.0.0.1:3978` behind your approved HTTPS proxy.
 `GET /health` returns 503 if automatic execution is paused.
@@ -218,8 +218,9 @@ environment setup, then explicitly enable it:
 This last command contacts **both** Power Automate/Teams and Gemini. It shares
 one existing Gemini gateway/budget across SpecAgent and PlanAgent (12 total
 attempts, 120s per attempt, at most two retries). Redacted model evidence goes
-under ignored `.asf-evidence/`; execution/approval state goes under ignored
-`artifacts/teams-workflow-demo.sqlite`.
+under ignored `.asf-evidence/`; execution/approval state goes to MariaDB
+when `ASF_MARIADB_PASSWORD` is set, otherwise to an in-memory store that is
+lost when the demo stops.
 
 The default flow is SPEC -> human approval -> PLAN -> completed. A rejection
 passes the previous SPEC and feedback back to SpecAgent, creates SPEC v2 and a
@@ -262,7 +263,7 @@ repository, sandbox, GitLab or CI implementations.
 - Known configured workflow/callback secrets are blocked from outgoing cards
   and decision feedback. General artifact/comment content is application data,
   not universally secret-free; do not submit credentials, and protect Teams,
-  Flow run history and the unencrypted SQLite database.
+  Flow run history and the unencrypted execution-store database.
 - TLS termination, caller rate limits, Flow licensing/DLP, directory identity
   mapping, owner/co-owner availability and deployment remain operator duties.
 

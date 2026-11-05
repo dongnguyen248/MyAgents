@@ -30,7 +30,7 @@ from asf.storage.mariadb import (
     MariaDbConfig,
     MariaDbExecutionStore,
 )
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryStore
 from asf.workflow.definition import WorkflowDefinition
 from tests.unit.test_api_service import PROJECTS, FakeMetrics, RoutingGateway
 from tests.unit.test_orchestrator_concurrency import InMemoryExecutionStore
@@ -208,8 +208,8 @@ def _execution(run_id: str, task_id: str, stage: str) -> WorkflowExecution:
     )
 
 
-def test_sqlite_summaries_are_light_and_filterable(tmp_path: Path):
-    store = SQLiteExecutionStore(tmp_path / "runs.sqlite")
+def test_inmemory_summaries_are_light_and_filterable():
+    store = InMemoryStore()
     store.create_execution(_execution("run-1", "task-a", "COMPLETED"))
     store.create_execution(_execution("run-2", "task-b", "FAILED"))
     summaries = store.list_execution_summaries("proj-1")
@@ -225,10 +225,10 @@ def test_sqlite_summaries_are_light_and_filterable(tmp_path: Path):
     store.close()
 
 
-class _CountingSQLiteStore:
-    """Delegates to a real SQLite store while counting payload loads."""
+class _DelegatingCountingStore:
+    """Delegates to a real in-memory store while counting payload loads."""
 
-    def __init__(self, inner: SQLiteExecutionStore) -> None:
+    def __init__(self, inner: InMemoryStore) -> None:
         self._inner = inner
         self.get_calls = 0
         self.list_calls = 0
@@ -260,8 +260,8 @@ class _CountingSQLiteStore:
         return self._inner.list_execution_summaries(project_id, **kwargs)
 
 
-def _service_with_50_stored_runs(tmp_path: Path) -> tuple[FactoryService, _CountingSQLiteStore]:
-    inner = SQLiteExecutionStore(tmp_path / "runs.sqlite")
+def _service_with_50_stored_runs(tmp_path: Path) -> tuple[FactoryService, _DelegatingCountingStore]:
+    inner = InMemoryStore()
     for index in range(50):
         inner.create_execution(
             _execution(
@@ -270,7 +270,7 @@ def _service_with_50_stored_runs(tmp_path: Path) -> tuple[FactoryService, _Count
                 "COMPLETED",
             )
         )
-    store = _CountingSQLiteStore(inner)
+    store = _DelegatingCountingStore(inner)
     service = FactoryService(
         build_engine(RoutingGateway()),
         projects=PROJECTS,

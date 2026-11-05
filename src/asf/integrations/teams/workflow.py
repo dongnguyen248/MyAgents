@@ -130,7 +130,7 @@ def create_app(
     *,
     poll_seconds: float = 1,
 ) -> FastAPI:
-    """Run callbacks and automatic agent dispatch on one SQLite-owning event-loop thread."""
+    """Run callbacks and automatic agent dispatch on one store-owning event-loop thread."""
     if poll_seconds <= 0:
         raise ValueError("Polling interval must be positive")
     engine = workflow.approvals.engine

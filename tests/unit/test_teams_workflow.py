@@ -21,7 +21,7 @@ from asf.integrations.teams.workflow import (
     WorkflowDecision,
     create_app,
 )
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryStore
 from tests.unit._fake_secrets import fake_secret
 from tests.unit.test_orchestrator import make_engine, start
 from tests.unit.test_teams_approval import actor, config, setup
@@ -347,7 +347,7 @@ def test_authenticated_reject_rewrites_spec_then_approve_automatically_runs_plan
     tmp_path,
 ):
     async def scenario():
-        store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
+        store = InMemoryStore()
         try:
             models = DemoModels()
             engine = demo_engine(config(), store, models=models)

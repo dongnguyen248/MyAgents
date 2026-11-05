@@ -3,7 +3,7 @@
 The console entry point: ``asf --version`` prints the installed
 package version and ``asf serve`` runs the demo API server (the
 same entry the module form ``python -m asf.api.demo`` uses — all
-of its flags, such as ``--port``/``--db``/``--mariadb``/
+of its flags, such as ``--port``/``--ephemeral``/
 ``--selftest``, are passed through). Serving needs the ``api``
 extra.
 """

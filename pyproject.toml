@@ -76,7 +76,6 @@ select = ["E", "F", "I", "B", "UP", "SIM", "S", "ASYNC"]
 # Store SQL is parameterized; only fixed internal identifiers are
 # interpolated (mirrors the .bandit review).
 "src/asf/storage/mariadb.py" = ["S608"]
-"src/asf/storage/sqlite.py" = ["S608"]
 # urllib transports open configured provider base URLs (http/https)
 # only (mirrors the .bandit review).
 "src/asf/integrations/gemini.py" = ["S310"]

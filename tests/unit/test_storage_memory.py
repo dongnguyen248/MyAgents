@@ -1,135 +1,131 @@
+"""InMemoryStore: the ExecutionStore contract without a database.
+
+This is the store unit tests and ephemeral demos run on. It mirrors
+the MariaDB store's semantics (version-guarded saves, create resets
+the version and refuses duplicates, one transaction covering
+executions AND approval decisions); cross-process durability is
+MariaDB's job and is covered by its integration suite.
+"""
+
 from __future__ import annotations
 
-import unittest
 from datetime import UTC, datetime
 
+import pytest
+
 from asf.approval.models import ApprovalDecision, ApprovalRequest
-from asf.storage.memory import InMemoryApprovalRepository
+from asf.orchestrator.execution import WorkflowExecution
+from asf.orchestrator.ports import ConcurrentModificationError
+from asf.state_machine.machine import RunState
+from asf.storage.memory import InMemoryStore
 
-T1 = datetime(2026, 10, 20, 10, 0, 0, tzinfo=UTC)
-T2 = datetime(2026, 10, 20, 11, 0, 0, tzinfo=UTC)
-T3 = datetime(2026, 10, 20, 12, 0, 0, tzinfo=UTC)
+NOW = datetime(2026, 11, 5, 17, 0, tzinfo=UTC)
 
 
-def make_request(
-    approval_id: str,
-    task_id: str = "task-1",
-    status: str = "PENDING",
-    requested_at: datetime = T1,
-) -> ApprovalRequest:
-    return ApprovalRequest(
-        id=approval_id,
-        task_id=task_id,
-        workflow_id="wf-1",
-        project_id="p-1",
-        artifact_id="art-1",
-        type="SPEC",
-        status=status,  # type: ignore[arg-type]
-        requested_by="orch",
-        requested_at=requested_at,
-        expires_at=None,
-        min_approvals=1,
-        reviewers=["r1"],
-        metadata={"note": "original"},
+def _execution(run_id: str, *, project_id: str = "proj-1") -> WorkflowExecution:
+    return WorkflowExecution(
+        id=run_id,
+        task_id=f"task-{run_id}",
+        project_id=project_id,
+        state=RunState(stage="CREATED"),
+        definition={"id": "software-development"},
+        started_at=NOW,
+        updated_at=NOW,
     )
 
 
-class InMemoryApprovalRepositoryTests(unittest.TestCase):
-    def test_copy_semantics_on_create_and_get(self):
-        repo = InMemoryApprovalRepository()
-        req = make_request("app-1")
-        created = repo.create(req)
+def test_create_resets_version_and_get_returns_a_copy():
+    store = InMemoryStore()
+    run = _execution("run-1")
+    run.version = 7
+    store.create_execution(run)
+    assert run.version == 0
+    fetched = store.get_execution("run-1")
+    fetched.context["project"] = {"name": "mutated"}
+    assert store.get_execution("run-1").context.get("project") is None
 
-        # Mutate the dictionary of the created object
-        created.metadata["note"] = "mutated"
 
-        retrieved = repo.get("app-1")
-        self.assertIsNotNone(retrieved)
-        assert retrieved is not None
-        self.assertEqual(retrieved.metadata["note"], "original")
+def test_create_duplicate_id_is_refused():
+    store = InMemoryStore()
+    store.create_execution(_execution("run-1"))
+    with pytest.raises(ValueError, match="already exists"):
+        store.create_execution(_execution("run-1"))
 
-        # Mutate the retrieved dictionary
-        retrieved.metadata["note"] = "mutated_again"
-        retrieved2 = repo.get("app-1")
-        assert retrieved2 is not None
-        self.assertEqual(retrieved2.metadata["note"], "original")
 
-    def test_update_unknown_id_raises_key_error(self):
-        repo = InMemoryApprovalRepository()
-        req = make_request("unknown-app")
-        with self.assertRaises(KeyError):
-            repo.update(req)
+def test_save_is_version_guarded_like_mariadb():
+    store = InMemoryStore()
+    store.create_execution(_execution("run-1"))
+    first = store.get_execution("run-1")
+    second = store.get_execution("run-1")
+    first.context["n"] = 1
+    store.save_execution(first)
+    assert first.version == 1  # the saved copy's version bumps in place
+    with pytest.raises(ConcurrentModificationError):
+        store.save_execution(second)
+    with pytest.raises(KeyError):
+        store.save_execution(_execution("missing"))
+    with pytest.raises(KeyError):
+        store.get_execution("missing")
 
-    def test_update_copy_semantics(self):
-        repo = InMemoryApprovalRepository()
-        req = make_request("app-1")
-        repo.create(req)
 
-        updated = req.model_copy(update={"status": "APPROVED", "metadata": {"note": "v2"}})
-        returned = repo.update(updated)
-        returned.metadata["note"] = "mutated_returned"
-
-        fetched = repo.get("app-1")
-        assert fetched is not None
-        self.assertEqual(fetched.status, "APPROVED")
-        self.assertEqual(fetched.metadata["note"], "v2")
-
-    def test_ordering_list_pending(self):
-        repo = InMemoryApprovalRepository()
-        # Add in non-sorted order
-        repo.create(make_request("b", requested_at=T2))
-        repo.create(make_request("c", requested_at=T1))
-        repo.create(make_request("a", requested_at=T1))
-        repo.create(make_request("d", status="APPROVED", requested_at=T1))  # Not pending
-
-        pending = repo.list_pending()
-        self.assertEqual([r.id for r in pending], ["a", "c", "b"])
-
-    def test_ordering_list_by_task(self):
-        repo = InMemoryApprovalRepository()
-        repo.create(make_request("b", task_id="task-1", requested_at=T2))
-        repo.create(make_request("other", task_id="task-2", requested_at=T1))
-        repo.create(make_request("c", task_id="task-1", requested_at=T1))
-        repo.create(make_request("a", task_id="task-1", requested_at=T1))
-
-        by_task = repo.list_by_task("task-1")
-        self.assertEqual([r.id for r in by_task], ["a", "c", "b"])
-
-    def test_decisions_kept_per_approval_and_ordered(self):
-        repo = InMemoryApprovalRepository()
-        d1 = ApprovalDecision(
-            approval_id="app-1",
-            decision="REQUEST_CHANGES",
-            reviewer="r1",
-            comment="fix 1",
-            created_at=T1,
+def test_transaction_rolls_back_executions_and_decisions_together():
+    store = InMemoryStore()
+    store.create_execution(_execution("run-1"))
+    approval = ApprovalRequest(
+        id="approval-1",
+        task_id="task-run-1",
+        workflow_id="software-development",
+        project_id="proj-1",
+        artifact_id="artifact-1",
+        type="SPEC",
+        status="PENDING",
+        requested_by="orchestrator",
+        requested_at=NOW,
+        expires_at=None,
+        min_approvals=1,
+        reviewers=["one"],
+        metadata={},
+    )
+    store.approvals.create(approval)
+    with pytest.raises(RuntimeError, match="boom"), store.transaction():
+        changed = store.get_execution("run-1")
+        changed.context["n"] = 99
+        store.save_execution(changed)
+        store.create_execution(_execution("run-2"))
+        store.approvals.add_decision(
+            ApprovalDecision(
+                approval_id="approval-1",
+                reviewer="one",
+                decision="APPROVED",
+                created_at=NOW,
+            )
         )
-        d2 = ApprovalDecision(
-            approval_id="app-2",
-            decision="APPROVED",
-            reviewer="r2",
-            comment="ok",
-            created_at=T2,
-        )
-        d3 = ApprovalDecision(
-            approval_id="app-1",
-            decision="APPROVED",
-            reviewer="r1",
-            comment="fixed",
-            created_at=T3,
-        )
+        raise RuntimeError("boom")
+    assert store.get_execution("run-1").context.get("n") is None
+    with pytest.raises(KeyError):
+        store.get_execution("run-2")
+    assert store.approvals.list_decisions("approval-1") == []
 
-        repo.add_decision(d1)
-        repo.add_decision(d2)
-        repo.add_decision(d3)
 
-        decisions_app1 = repo.list_decisions("app-1")
-        self.assertEqual(len(decisions_app1), 2)
-        self.assertEqual(decisions_app1[0].comment, "fix 1")
-        self.assertEqual(decisions_app1[1].comment, "fixed")
+def test_summaries_are_light_filtered_and_paged():
+    store = InMemoryStore()
+    store.create_execution(_execution("run-1"))
+    failed = _execution("run-2")
+    failed.state = RunState(stage="FAILED")
+    store.create_execution(failed)
+    store.create_execution(_execution("run-3", project_id="other"))
+    rows = store.list_execution_summaries("proj-1")
+    assert {row["id"] for row in rows} == {"run-1", "run-2"}
+    assert all("payload" not in row for row in rows)
+    assert rows[0]["workflowId"] == "software-development"
+    assert [r["id"] for r in store.list_execution_summaries(status="FAILED")] == ["run-2"]
+    assert [r["id"] for r in store.list_execution_summaries(limit=1)] == ["run-1"]
+    assert store.list_execution_summaries("nope") == []
 
-        decisions_app2 = repo.list_decisions("app-2")
-        self.assertEqual(len(decisions_app2), 1)
-        self.assertEqual(decisions_app2[0].comment, "ok")
 
-        self.assertEqual(repo.list_decisions("app-unknown"), [])
+def test_list_executions_filters_by_project_sorted_by_id():
+    store = InMemoryStore()
+    store.create_execution(_execution("run-b"))
+    store.create_execution(_execution("run-a"))
+    store.create_execution(_execution("run-c", project_id="other"))
+    assert [r.id for r in store.list_executions("proj-1")] == ["run-a", "run-b"]

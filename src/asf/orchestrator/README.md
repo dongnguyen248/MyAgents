@@ -11,7 +11,8 @@ one another and do not own approval or workflow transitions.
   result identity/output checks and state-machine transitions.
 - ApprovalService reviewer/quorum, rejection feedback, revision limits, expiry,
   cancellation and explicit escalation `resume`.
-- Optional SQLite persistence with execution/approval transaction boundaries,
+- Optional persistent store (MariaDB for real runs, in-memory for tests)
+  with execution/approval transaction boundaries,
   pinned workflow definitions/policies and restart without replay of completed work.
 - Retryable FAILED results can be retried under the step's `retryPolicy`.
   `maxAttempts` includes the first call. `retryOn`, when supplied, must match every
@@ -43,11 +44,11 @@ globally unique IDs, including across restarts.
 ```python
 from asf.approval.models import ApprovalPolicy
 from asf.orchestrator import CodeLoopPolicy, Orchestrator
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryStore
 
 # definition and registry are prepared by the composition root.
 # The artifacts directory must exist and must not be committed.
-store = SQLiteExecutionStore(r"artifacts\phase6.sqlite")
+store = InMemoryStore()  # tests; real runs use MariaDbExecutionStore
 engine = Orchestrator(
     definition,
     registry,
@@ -103,11 +104,12 @@ are available per item in `item_results`.
   ordering does NOT accumulate a workspace or prove multi-item integration.
   The existing default CI/merge tail receives the last item's current artifacts;
   an aggregate workspace/commit policy must be agreed before live Phase 8 use.
-- SQLite persistence retains original application content. Keep credentials in
+- The execution store retains original application content. Keep credentials in
   environment-backed adapters, never execution context. See the storage README.
-- In-memory mode remains useful for tests but does not make approval/execution
-  changes atomic across failures. Use the store-owned approval service in durable
-  mode; supplying an unrelated ApprovalService is rejected.
+- Running the engine without a store remains useful for tests but does not
+  make approval/execution changes atomic across failures. Use the store-owned
+  approval service in durable mode; supplying an unrelated ApprovalService is
+  rejected.
 - No real repository/sandbox adapter, real model-backed chain, GitLab/CI/Teams,
   backend API, distributed scheduler or Phase 10 analytics is implemented here.
 

@@ -9,8 +9,8 @@ the dashboard Settings page can manage it directly:
 - The API key is only ever written by the user and read by the gateway
   factory. API responses expose ``keyConfigured`` + a last-4 hint,
   never the key itself.
-- The file lives next to the backend's data (the demo puts it beside
-  the SQLite DB, overridable via ``ASF_MODEL_SETTINGS_FILE``). It is a
+- The file lives in the backend's data directory (the demo anchors
+  it there; overridable via ``ASF_MODEL_SETTINGS_FILE``). It is a
   local runtime file, not a project profile: it must never be committed
   or copied into a repository.
 

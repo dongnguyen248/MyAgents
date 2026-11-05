@@ -21,7 +21,7 @@ from asf.contracts.models import AgentResult, RunMetrics
 from asf.models.errors import ModelGatewayError
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, CodeLoopPolicy, Orchestrator
-from asf.storage.sqlite import SQLiteExecutionStore
+from asf.storage.memory import InMemoryStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
 from asf.tools.ports import CommandResult
 from asf.workflow.definition import WorkflowDefinition
@@ -148,7 +148,7 @@ def harness(
     )
     if not with_actions:
         definition = definition.model_copy(update={"steps": definition.steps[:6]})
-    store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
+    store = InMemoryStore()
     ids = count(1)
     engine = Orchestrator(
         definition,
@@ -241,8 +241,10 @@ def test_three_fixes_max_then_persisted_escalation_and_explicit_resume(tmp_path)
     assert len(gateways["review"].requests) == 4
     assert engine.tick(run.id).state.stage == "CODE_FIX_ESCALATED"
     assert len(gateways["fix"].requests) == 3
+    # "Restart": a fresh engine over the same in-memory store
+    # (close() is a no-op; cross-process durability is MariaDB's
+    # job and is covered by its integration suite).
     store.close()
-    store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     engine = Orchestrator(
         engine._definition,
         engine._registry,
@@ -312,8 +314,10 @@ def test_restart_after_failed_report_does_not_reuse_stale_review_or_report(tmp_p
         )
     assert run.state.stage == "CODE_FIX"
     original_code = run.artifacts["CODE"]
+    # "Restart": a fresh engine over the same in-memory store
+    # (close() is a no-op; cross-process durability is MariaDB's
+    # job and is covered by its integration suite).
     store.close()
-    store = SQLiteExecutionStore(tmp_path / "workflow.sqlite")
     engine = Orchestrator(
         engine._definition,
         engine._registry,
