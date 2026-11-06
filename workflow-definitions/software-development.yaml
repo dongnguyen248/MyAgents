@@ -9,6 +9,9 @@ steps:
     stage: SPEC
     agentType: spec
     requiresApproval: true
+    approval:
+      mode: ai
+      maxRevisions: 4
     configuration: {}
     produces:
       - SPEC
@@ -19,6 +22,9 @@ steps:
     stage: PLAN
     agentType: plan
     requiresApproval: true
+    approval:
+      mode: ai
+      maxRevisions: 4
     configuration: {}
     consumes:
       - SPEC
@@ -31,6 +37,9 @@ steps:
     stage: TASK
     agentType: task
     requiresApproval: true
+    approval:
+      mode: ai
+      maxRevisions: 4
     configuration: {}
     consumes:
       - SPEC

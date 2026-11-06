@@ -7,6 +7,7 @@ from pydantic import AwareDatetime, Field, field_validator, model_validator
 from asf.configuration.platform import ConfigModel
 
 __all__ = [
+    "AI_REVIEWER",
     "ApprovalDecision",
     "ApprovalFeedback",
     "ApprovalPolicy",
@@ -19,6 +20,11 @@ __all__ = [
 INVALID_REVIEWER_MESSAGE: str = (
     "Reviewer identifier must be a non-empty string without leading or trailing whitespace"
 )
+
+# The reviewer identity the AI artifact-review loop decides under. It is
+# a normal reviewer identifier: it must appear in a request's snapshotted
+# reviewers list before it may decide that request.
+AI_REVIEWER: str = "ai-reviewer"
 
 
 def validate_reviewer_identifier(r: Any) -> str:
@@ -106,6 +112,7 @@ class ApprovalDecision(ConfigModel):
     approval_id: str = Field(min_length=1)
     decision: Literal["APPROVED", "REJECTED", "REQUEST_CHANGES"]
     reviewer: str = Field(min_length=1)
+    reviewer_kind: Literal["HUMAN", "AI"] = "HUMAN"
     comment: str = ""
     created_at: AwareDatetime
 

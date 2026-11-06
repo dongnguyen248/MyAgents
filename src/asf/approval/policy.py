@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from asf.approval.mode import parse_approval_overrides
 from asf.approval.models import (
     INVALID_REVIEWER_MESSAGE,
     ApprovalPolicy,
@@ -9,6 +10,26 @@ from asf.configuration.errors import ConfigError, ConfigIssue
 from asf.configuration.project import ProjectProfile
 
 __all__ = ["approval_policy_from_project"]
+
+
+def _expires_in_seconds(approval_data: dict, issues: list[ConfigIssue]) -> int | None:
+    if "expiresInSeconds" in approval_data:
+        raw_exp = approval_data["expiresInSeconds"]
+        exp_key = "expiresInSeconds"
+    elif "expires_in_seconds" in approval_data:
+        raw_exp = approval_data["expires_in_seconds"]
+        exp_key = "expires_in_seconds"
+    else:
+        return None
+    if type(raw_exp) is not int or raw_exp < 1:
+        issues.append(
+            ConfigIssue(
+                path=f"configuration.approval.{exp_key}",
+                message="expiresInSeconds must be an integer >= 1",
+            )
+        )
+        return None
+    return raw_exp
 
 
 def approval_policy_from_project(profile: ProjectProfile) -> ApprovalPolicy:
@@ -122,32 +143,12 @@ def approval_policy_from_project(profile: ProjectProfile) -> ApprovalPolicy:
             )
         )
 
-    # expiresInSeconds (default None)
-    expires_in_seconds: int | None = None
-    if "expiresInSeconds" in approval_data:
-        raw_exp = approval_data["expiresInSeconds"]
-        exp_key = "expiresInSeconds"
-    elif "expires_in_seconds" in approval_data:
-        raw_exp = approval_data["expires_in_seconds"]
-        exp_key = "expires_in_seconds"
-    else:
-        raw_exp = None
-        exp_key = "expiresInSeconds"
-
-    if raw_exp is not None:
-        if type(raw_exp) is not int or raw_exp < 1:
-            issues.append(
-                ConfigIssue(
-                    path=f"configuration.approval.{exp_key}",
-                    message="expiresInSeconds must be an integer >= 1",
-                )
-            )
-        else:
-            expires_in_seconds = raw_exp
+    expires_in_seconds = _expires_in_seconds(approval_data, issues)
 
     if issues:
         raise ConfigError(issues=issues, source=None)
 
+    parse_approval_overrides(approval_data)  # Phase 12 keys; the human policy ignores them
     return ApprovalPolicy(
         min_approvals=min_approvals,
         reviewers=reviewers,

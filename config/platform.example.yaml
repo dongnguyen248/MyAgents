@@ -47,6 +47,15 @@ models:
       timeoutSeconds: 45
       parameters:
         temperature: 0.7
+    strong:
+      provider: example-provider
+      model: example-strong-v1
+      endpoint: https://api.example.com/v1
+      credentials:
+        env: EXAMPLE_MODEL_API_KEY
+      timeoutSeconds: 120
+      parameters:
+        temperature: 0.2
 
 # External source control adapter configuration
 sourceControl:
@@ -91,6 +100,22 @@ agents:
         - LLM_RATE_LIMITED
     settings:
       strictMode: true
+  # artifact-review: the AI reviewer that decides SPEC / PLAN / TASK
+  # approval gates in ai mode (Phase 12). It deliberately uses a
+  # different, stronger profile than the producing agents. Its
+  # maxReviewRounds setting caps the total reviewer calls per run
+  # (default 12) so a non-converging loop cannot burn the run budget.
+  artifact-review:
+    modelProfile: strong
+    timeoutSeconds: 300
+    retryPolicy:
+      maxAttempts: 2
+      backoffSeconds: 1.5
+      retryOn:
+        - LLM_TIMEOUT
+        - LLM_RATE_LIMITED
+    settings:
+      maxReviewRounds: 12
   # Code-generating agents: editFormat selects the model's output
   # format — "blocks" (SEARCH/REPLACE edit blocks, the default:
   # far fewer output tokens for small changes) or "json" (the

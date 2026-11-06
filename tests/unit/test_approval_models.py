@@ -10,11 +10,13 @@ from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import ValidationError
 
 from asf.approval.models import (
+    AI_REVIEWER,
     ApprovalDecision,
     ApprovalFeedback,
     ApprovalPolicy,
     ApprovalRequest,
     ApprovalSpec,
+    validate_reviewer_identifier,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -353,3 +355,31 @@ class ApprovalModelsTests(unittest.TestCase):
             metadata={"key": "val"},
         )
         self.assertEqual(spec.metadata["key"], "val")
+
+
+class AiReviewerIdentityTests(unittest.TestCase):
+    def test_ai_reviewer_is_a_valid_reviewer_identifier(self):
+        self.assertEqual(validate_reviewer_identifier(AI_REVIEWER), "ai-reviewer")
+        policy = ApprovalPolicy(reviewers=[AI_REVIEWER], min_approvals=1)
+        self.assertEqual(policy.reviewers, ["ai-reviewer"])
+
+    def test_decision_reviewer_kind_defaults_to_human(self):
+        decision = ApprovalDecision(
+            approval_id="a1",
+            decision="APPROVED",
+            reviewer="reviewer-1",
+            created_at=VALID_AWARE_TIME,
+        )
+        self.assertEqual(decision.reviewer_kind, "HUMAN")
+        self.assertEqual(decision.to_contract()["reviewerKind"], "HUMAN")
+
+    def test_decision_reviewer_kind_accepts_ai(self):
+        decision = ApprovalDecision(
+            approval_id="a1",
+            decision="REQUEST_CHANGES",
+            reviewer=AI_REVIEWER,
+            reviewer_kind="AI",
+            comment="findings attached",
+            created_at=VALID_AWARE_TIME,
+        )
+        self.assertEqual(decision.to_contract()["reviewerKind"], "AI")

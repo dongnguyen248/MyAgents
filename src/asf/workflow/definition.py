@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
 from pydantic_core import InitErrorDetails, ValidationError
@@ -8,14 +8,35 @@ from pydantic_core import InitErrorDetails, ValidationError
 from asf.configuration.platform import ConfigModel, RetryPolicySettings
 
 DEFAULT_MAX_REVISIONS: int = 3
+DEFAULT_AI_MAX_REVISIONS: int = 4
+ApprovalMode = Literal["ai", "human", "none"]
 RESERVED_STAGES = frozenset({"NEW", "COMPLETED", "FAILED", "CANCELLED"})
 
 __all__ = [
+    "DEFAULT_AI_MAX_REVISIONS",
     "DEFAULT_MAX_REVISIONS",
     "RESERVED_STAGES",
+    "ApprovalMode",
     "WorkflowDefinition",
     "WorkflowStepDef",
 ]
+
+
+def _fold_approval_block(data: dict[str, Any]) -> dict[str, Any]:
+    copied = dict(data)
+    block = copied.pop("approval", None)
+    if block is None:
+        return copied
+    if not isinstance(block, dict):
+        raise ValueError("approval must be a mapping with a mode")
+    req = copied.get("requires_approval", copied.get("requiresApproval", False))
+    if not req:
+        raise ValueError("approval can only be specified when requiresApproval is true")
+    copied["approval_mode"] = block.get("mode", "human")
+    block_max = block.get("maxRevisions", block.get("max_revisions"))
+    if block_max is not None:
+        copied["max_revisions"] = block_max
+    return copied
 
 
 class WorkflowStepDef(ConfigModel):
@@ -32,24 +53,26 @@ class WorkflowStepDef(ConfigModel):
     consumes: list[str] = Field(default_factory=list)
     produces: list[str] = Field(default_factory=list)
     max_revisions: int | None = Field(default=None, ge=0)
+    approval_mode: ApprovalMode = "human"
+    max_revisions_explicit: bool = Field(default=False, exclude=True)
 
     @model_validator(mode="before")
     @classmethod
-    def _default_max_revisions(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            req = data.get("requires_approval")
-            if req is None:
-                req = data.get("requiresApproval", False)
-            max_rev = data.get("max_revisions")
-            if max_rev is None and "maxRevisions" in data:
-                max_rev = data.get("maxRevisions")
-            if req and max_rev is None:
-                copied = dict(data)
-                copied.pop("maxRevisions", None)
-                copied.pop("max_revisions", None)
-                copied["max_revisions"] = DEFAULT_MAX_REVISIONS
-                return copied
-        return data
+    def _prepare_step(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        copied = _fold_approval_block(data)
+        if copied.get("max_revisions") is None and "maxRevisions" in copied:
+            copied["max_revisions"] = copied.pop("maxRevisions")
+        req = copied.get("requires_approval", copied.get("requiresApproval", False))
+        if copied.get("max_revisions") is not None:
+            copied["max_revisions_explicit"] = True
+        elif req:
+            copied.pop("max_revisions", None)
+            mode = copied.get("approval_mode", "human")
+            default = DEFAULT_AI_MAX_REVISIONS if mode == "ai" else DEFAULT_MAX_REVISIONS
+            copied["max_revisions"] = default
+        return copied
 
     @model_validator(mode="after")
     def _validate_step(self) -> Self:
@@ -164,6 +187,7 @@ class WorkflowStepDef(ConfigModel):
             res["produces"] = list(self.produces)
         if self.requires_approval:
             res["maxRevisions"] = self.max_revisions
+            res["approval"] = {"mode": self.approval_mode}
         return res
 
 

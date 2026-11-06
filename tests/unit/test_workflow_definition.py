@@ -5,10 +5,12 @@ import unittest
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
+from pydantic import ValidationError
 
 from asf.configuration.errors import ConfigError
 from asf.configuration.loader import load_projects
 from asf.workflow.definition import (
+    DEFAULT_AI_MAX_REVISIONS,
     DEFAULT_MAX_REVISIONS,
     WorkflowDefinition,
     WorkflowStepDef,
@@ -75,12 +77,14 @@ class WorkflowDefinitionTests(unittest.TestCase):
         self.workflow_validator.validate(contract_dict)
 
         # Check resolved maxRevisions on steps 1-3 (approval=true)
-        # and absent on 4-8 (approval=false)
+        # and absent on 4-8 (approval=false). Since Phase 12 the shipped
+        # definition gates spec/plan/task in ai mode with maxRevisions 4.
         for i in range(3):
             step = sd.steps[i]
             self.assertTrue(step.requires_approval)
-            self.assertEqual(step.max_revisions, DEFAULT_MAX_REVISIONS)
-            self.assertEqual(contract_dict["steps"][i]["maxRevisions"], DEFAULT_MAX_REVISIONS)
+            self.assertEqual(step.approval_mode, "ai")
+            self.assertEqual(step.max_revisions, DEFAULT_AI_MAX_REVISIONS)
+            self.assertEqual(contract_dict["steps"][i]["maxRevisions"], DEFAULT_AI_MAX_REVISIONS)
 
         for i in range(3, 8):
             step = sd.steps[i]
@@ -718,3 +722,50 @@ steps:
                 wf = WorkflowDefinition.model_validate(wf_dict)
                 contract_dict = wf.to_contract()
                 self.workflow_validator.validate(contract_dict)
+
+
+class WorkflowStepApprovalBlockTests(unittest.TestCase):
+    """Phase 12: the step-level approval block (mode + maxRevisions)."""
+
+    def _step(self, **extra: object) -> WorkflowStepDef:
+        raw: dict[str, object] = {
+            "id": "spec",
+            "name": "Spec",
+            "type": "AGENT",
+            "stage": "SPEC",
+            "agentType": "spec",
+            "requiresApproval": True,
+        }
+        raw.update(extra)
+        return WorkflowStepDef.model_validate(raw)
+
+    def test_absent_block_defaults_to_human(self):
+        step = self._step()
+        self.assertEqual(step.approval_mode, "human")
+        self.assertEqual(step.to_contract()["approval"], {"mode": "human"})
+
+    def test_ai_block_defaults_to_four_revisions(self):
+        step = self._step(approval={"mode": "ai"})
+        self.assertEqual(step.approval_mode, "ai")
+        self.assertEqual(step.max_revisions, 4)
+        self.assertEqual(step.to_contract()["approval"], {"mode": "ai"})
+        self.assertEqual(step.to_contract()["maxRevisions"], 4)
+
+    def test_block_max_revisions_folds_into_step(self):
+        step = self._step(approval={"mode": "ai", "maxRevisions": 7})
+        self.assertEqual(step.max_revisions, 7)
+        self.assertTrue(step.max_revisions_explicit)
+
+    def test_invalid_mode_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self._step(approval={"mode": "robot"})
+
+    def test_block_on_ungated_step_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self._step(requiresApproval=False, approval={"mode": "ai"})
+
+    def test_shipped_definition_uses_ai_for_gated_steps(self):
+        root = Path(__file__).resolve().parents[2]
+        wf = load_workflow(root / "workflow-definitions" / "software-development.yaml")
+        modes = {step.id: step.approval_mode for step in wf.steps if step.requires_approval}
+        self.assertEqual(modes, {"spec": "ai", "plan": "ai", "task": "ai"})
