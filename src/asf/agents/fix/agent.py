@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
@@ -42,6 +43,7 @@ from asf.contracts.models import (
     Artifact,
     ModelRequest,
     ModelResponse,
+    ModelUsage,
 )
 from asf.tools.changeset import ChangeSet
 from asf.tools.edit_blocks import EditBlockError, parse_edit_blocks
@@ -52,6 +54,196 @@ from asf.tools.ports import (
     RepositoryPort,
 )
 
+_MAX_PREVIOUS_ERROR_CHARS = 2000
+_REPORT_TYPES = {"CODE_REVIEW", "TEST_REPORT"}
+
+
+@dataclass(frozen=True)
+class FixSettings:
+    prompts: FixPrompts
+    model: str | None = None
+    parameters: Mapping[str, Any] | None = None
+    edit_format: str = "blocks"
+    repair_attempts: int = 1
+    repo_map_max_chars: int = 6000
+    report_tail_lines: int = 120
+
+    def __post_init__(self) -> None:
+        if self.edit_format not in ("blocks", "json"):
+            raise ValueError(
+                f"edit_format must be 'blocks' or 'json', got {self.edit_format!r}",
+            )
+        if self.repair_attempts not in (0, 1):
+            raise ValueError(
+                f"repair_attempts must be 0 or 1, got {self.repair_attempts!r}",
+            )
+
+
+@dataclass(frozen=True)
+class _FixRun:
+    request: AgentRequest
+    spec: Artifact
+    plan: Artifact
+    task: Artifact
+    code: Artifact
+    item_id: str
+    ref: str
+    expected: list[str]
+    existing: dict[str, str]
+    reports: list[Artifact]
+    item: dict[str, Any]
+    previous_changeset: ChangeSet
+    effective_existing: dict[str, str]
+
+
+def _reports(request: AgentRequest) -> list[Artifact]:
+    return [artifact for artifact in request.artifacts if artifact.type in _REPORT_TYPES]
+
+
+def _check_previous_error(request: AgentRequest) -> list[Issue]:
+    previous_error = request.input.get("previousFixError")
+    if previous_error is None:
+        return []
+    if (
+        not isinstance(previous_error, str)
+        or not previous_error.strip()
+        or len(previous_error) > _MAX_PREVIOUS_ERROR_CHARS
+    ):
+        message = "previousFixError must be a non-empty string of at most 2000 characters"
+        return [Issue("input.previousFixError", message)]
+    return []
+
+
+def _check_report_links(request: AgentRequest) -> list[Issue]:
+    reports = _reports(request)
+    if not reports:
+        return [Issue("artifacts", "At least one CODE_REVIEW or TEST_REPORT is required")]
+    codes = [artifact for artifact in request.artifacts if artifact.type == "CODE"]
+    if len(codes) != 1:
+        return []
+    return _check_reports_against_code(request, reports, codes[0])
+
+
+def _check_reports_against_code(
+    request: AgentRequest, reports: list[Artifact], code: Artifact
+) -> list[Issue]:
+    issues: list[Issue] = []
+    if request.input.get("ref") != code.metadata.get("baseRef"):
+        issues.append(Issue("input.ref", "Fix ref must equal CODE baseRef"))
+    seen: set[str] = set()
+    for report in reports:
+        issues.extend(_check_report_link(request, report, code, seen))
+    return issues
+
+
+def _check_report_link(
+    request: AgentRequest, report: Artifact, code: Artifact, seen: set[str]
+) -> list[Issue]:
+    issues: list[Issue] = []
+    if (
+        report.metadata.get("codeArtifactId") != code.id
+        or report.metadata.get("codeVersion") != code.version
+        or report.metadata.get("taskItemId") != request.input.get("taskItemId")
+    ):
+        issues.append(Issue("artifacts", "Review/report is stale or for another task"))
+    if report.id in seen:
+        issues.append(Issue("artifacts", "Duplicate review/report artifact"))
+    seen.add(report.id)
+    return issues
+
+
+def _check_project_context(request: AgentRequest) -> list[Issue]:
+    issues: list[Issue] = []
+    project = request.context.get("project")
+    if isinstance(project, str):
+        try:
+            project = json.loads(project)
+        except json.JSONDecodeError:
+            issues.append(Issue("context.project", "Project context must be valid JSON"))
+    if project is not None and not isinstance(project, dict):
+        issues.append(Issue("context.project", "Project context must be a mapping"))
+    if isinstance(project, dict):
+        skills = project.get("enabledSkills", [])
+        if not isinstance(skills, list) or not all(
+            isinstance(skill, str) and skill.strip() for skill in skills
+        ):
+            issues.append(Issue("context.project.enabledSkills", "Invalid enabled skills"))
+    return issues
+
+
+def _check_expected_files(request: AgentRequest) -> list[Issue]:
+    try:
+        expected = task_item(artifact_of(request, "TASK"), request.input["taskItemId"]).get(
+            "expectedFiles"
+        )
+        valid = _expected_files_valid(expected)
+    except (TypeError, ValueError):
+        valid = False
+    if valid:
+        return []
+    return [Issue("artifacts.TASK", "Invalid expectedFiles")]
+
+
+def _expected_files_valid(expected: Any) -> bool:
+    if not isinstance(expected, list) or not expected:
+        return False
+    if any(not isinstance(path, str) or validate_relative_path(path) for path in expected):
+        return False
+    return len(expected) == len(set(expected))
+
+
+def _effective_existing(existing: dict[str, str], previous_changeset: ChangeSet) -> dict[str, str]:
+    # Edit blocks are written against the state the model is
+    # revising: the base files with the previous changeset applied.
+    # Untouched previous changes carry over into the replacement.
+    effective = dict(existing)
+    for change in previous_changeset.changes:
+        if change.operation == "delete":
+            effective.pop(change.path, None)
+        elif change.content is not None:
+            effective[change.path] = change.content
+    return effective
+
+
+def _compose_replacement(
+    previous_changeset: ChangeSet, existing: dict[str, str], edits: ChangeSet
+) -> ChangeSet:
+    merged = {change.path: change for change in previous_changeset.changes}
+    for change in edits.changes:
+        if change.operation == "delete" and change.path not in existing:
+            # Deleting a file the previous changeset created: relative
+            # to the base it simply never exists.
+            merged.pop(change.path, None)
+        else:
+            merged[change.path] = change
+    return ChangeSet(changes=list(merged.values()))
+
+
+def _findings(run: _FixRun, tail_lines: int) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        tail_artifact_for_prompt(artifact.to_contract(), tail_lines) for artifact in run.reports
+    )
+
+
+def _parse_json_changeset(response: ModelResponse, reply: str) -> ChangeSet:
+    try:
+        return ChangeSet.model_validate(parse_json(reply))
+    except (ValueError, ValidationError, ParseError) as error:
+        # Keep the underlying reason: "Invalid replacement ChangeSet"
+        # alone is undiagnosable (truncated JSON? an extra key? an
+        # empty change list?) and the repair prompt is told it
+        # verbatim, so it must say what to fix.
+        cause = str(error)[:400]
+        raise RepairableOutputError(
+            "Invalid replacement ChangeSet",
+            model_message=(f"The reply was not a valid replacement ChangeSet: {cause}"),
+            details={
+                "cause": cause,
+                "replyChars": len(reply),
+                "finishReason": response.finish_reason,
+            },
+        ) from None
+
 
 class FixAgent(BaseAgent):
     """Produces a complete replacement CODE without mutating its base repository."""
@@ -60,32 +252,11 @@ class FixAgent(BaseAgent):
         self,
         runtime: AgentRuntime,
         repository: RepositoryPort,
-        *,
-        prompts: FixPrompts,
-        model: str | None = None,
-        parameters: Mapping[str, Any] | None = None,
-        edit_format: str = "blocks",
-        repair_attempts: int = 1,
-        repo_map_max_chars: int = 6000,
-        report_tail_lines: int = 120,
+        settings: FixSettings,
     ) -> None:
         super().__init__(runtime)
-        if edit_format not in ("blocks", "json"):
-            raise ValueError(
-                f"edit_format must be 'blocks' or 'json', got {edit_format!r}",
-            )
-        if repair_attempts not in (0, 1):
-            raise ValueError(
-                f"repair_attempts must be 0 or 1, got {repair_attempts!r}",
-            )
         self._repository = repository
-        self._prompts = prompts
-        self._model = model
-        self._parameters = dict(parameters or {})
-        self._edit_format = edit_format
-        self._repair_attempts = repair_attempts
-        self._repo_map_max_chars = repo_map_max_chars
-        self._report_tail_lines = report_tail_lines
+        self._settings = settings
 
     @property
     def metadata(self) -> AgentMetadata:
@@ -108,83 +279,52 @@ class FixAgent(BaseAgent):
             require_ref=True,
             extra_input={"previousFixError"},
         )
-        previous_error = request.input.get("previousFixError")
-        if previous_error is not None and (
-            not isinstance(previous_error, str)
-            or not previous_error.strip()
-            or len(previous_error) > 2000
-        ):
-            issues.append(
-                Issue(
-                    "input.previousFixError",
-                    "previousFixError must be a non-empty string of at most 2000 characters",
-                )
-            )
-        reports = [
-            artifact
-            for artifact in request.artifacts
-            if artifact.type in {"CODE_REVIEW", "TEST_REPORT"}
-        ]
-        if not reports:
-            issues.append(Issue("artifacts", "At least one CODE_REVIEW or TEST_REPORT is required"))
-        codes = [artifact for artifact in request.artifacts if artifact.type == "CODE"]
-        if len(codes) == 1:
-            code = codes[0]
-            if request.input.get("ref") != code.metadata.get("baseRef"):
-                issues.append(Issue("input.ref", "Fix ref must equal CODE baseRef"))
-            ids: set[str] = set()
-            for report in reports:
-                if (
-                    report.metadata.get("codeArtifactId") != code.id
-                    or report.metadata.get("codeVersion") != code.version
-                    or report.metadata.get("taskItemId") != request.input.get("taskItemId")
-                ):
-                    issues.append(Issue("artifacts", "Review/report is stale or for another task"))
-                if report.id in ids:
-                    issues.append(Issue("artifacts", "Duplicate review/report artifact"))
-                ids.add(report.id)
+        issues.extend(_check_previous_error(request))
+        issues.extend(_check_report_links(request))
         if not issues:
-            project = request.context.get("project")
-            if isinstance(project, str):
-                try:
-                    project = json.loads(project)
-                except json.JSONDecodeError:
-                    issues.append(Issue("context.project", "Project context must be valid JSON"))
-            if project is not None and not isinstance(project, dict):
-                issues.append(Issue("context.project", "Project context must be a mapping"))
-            if isinstance(project, dict):
-                skills = project.get("enabledSkills", [])
-                if not isinstance(skills, list) or not all(
-                    isinstance(skill, str) and skill.strip() for skill in skills
-                ):
-                    issues.append(Issue("context.project.enabledSkills", "Invalid enabled skills"))
+            issues.extend(_check_project_context(request))
         if not issues:
-            try:
-                expected = task_item(artifact_of(request, "TASK"), request.input["taskItemId"]).get(
-                    "expectedFiles"
-                )
-                if (
-                    not isinstance(expected, list)
-                    or not expected
-                    or any(
-                        not isinstance(path, str) or validate_relative_path(path)
-                        for path in expected
-                    )
-                    or len(expected) != len(set(expected))
-                ):
-                    issues.append(Issue("artifacts.TASK", "Invalid expectedFiles"))
-            except (TypeError, ValueError):
-                issues.append(Issue("artifacts.TASK", "Invalid expectedFiles"))
+            issues.extend(_check_expected_files(request))
         return issues
 
     def _run(self, request: AgentRequest) -> tuple[dict[str, Any], list[Artifact]]:
-        spec = artifact_of(request, "SPEC")
-        plan = artifact_of(request, "PLAN")
+        run = self._gather(request)
+        model_request = self._model_request(run)
+        changeset, usage, repairs = run_code_generation(
+            gateway=self._runtime.models,
+            request=model_request,
+            parse=lambda response: self._parse_reply(run, response),
+            repair_attempts=self._settings.repair_attempts,
+            format_name="edit-block" if self._settings.edit_format == "blocks" else "JSON",
+        )
+        return self._assemble(run, changeset, usage, repairs)
+
+    def _gather(self, request: AgentRequest) -> _FixRun:
         task = artifact_of(request, "TASK")
         code = artifact_of(request, "CODE")
         item_id = request.input["taskItemId"]
         ref = request.input["ref"]
-        expected = task_item(task, item_id)["expectedFiles"]
+        item = task_item(task, item_id)
+        expected = item["expectedFiles"]
+        existing = self._read_existing(expected, ref)
+        previous_changeset = code_changeset(code)
+        return _FixRun(
+            request=request,
+            spec=artifact_of(request, "SPEC"),
+            plan=artifact_of(request, "PLAN"),
+            task=task,
+            code=code,
+            item_id=item_id,
+            ref=ref,
+            expected=expected,
+            existing=existing,
+            reports=_reports(request),
+            item=item,
+            previous_changeset=previous_changeset,
+            effective_existing=_effective_existing(existing, previous_changeset),
+        )
+
+    def _read_existing(self, expected: list[str], ref: str) -> dict[str, str]:
         existing: dict[str, str] = {}
         try:
             for path in expected:
@@ -206,206 +346,137 @@ class FixAgent(BaseAgent):
             raise AgentExecutionError(
                 "REPOSITORY_ERROR", "Could not read the base repository"
             ) from None
-        reports = [
-            artifact
-            for artifact in request.artifacts
-            if artifact.type in {"CODE_REVIEW", "TEST_REPORT"}
-        ]
-        previous_error = request.input.get("previousFixError")
-        item = task_item(task, item_id)
-        spec_text = spec.to_contract()["content"]["text"]
-        plan_text = plan.to_contract()["content"]["text"]
-        context = FixContext(
-            task_id=item_id,
+        return existing
+
+    def _build_context(self, run: _FixRun) -> FixContext:
+        spec_text = run.spec.to_contract()["content"]["text"]
+        plan_text = run.plan.to_contract()["content"]["text"]
+        previous_error = run.request.input.get("previousFixError")
+        return FixContext(
+            task_id=run.item_id,
             spec_summary=slice_spec(
                 spec_text,
-                task_title=str(item.get("title", "")),
-                task_description=str(item.get("description", "")),
+                task_title=str(run.item.get("title", "")),
+                task_description=str(run.item.get("description", "")),
             ),
             plan_summary=slice_plan(
                 plan_text,
-                str(item["milestoneRef"]) if item.get("milestoneRef") else None,
+                str(run.item["milestoneRef"]) if run.item.get("milestoneRef") else None,
             ),
-            task_summary=task.to_contract()["content"]["text"],
-            expected_files=tuple(expected),
-            existing_files=existing,
-            review_findings=tuple(
-                tail_artifact_for_prompt(
-                    artifact.to_contract(),
-                    self._report_tail_lines,
-                )
-                for artifact in reports
-            ),
-            previous_changeset=code_changeset(code),
+            task_summary=run.task.to_contract()["content"]["text"],
+            expected_files=tuple(run.expected),
+            existing_files=run.existing,
+            review_findings=_findings(run, self._settings.report_tail_lines),
+            previous_changeset=run.previous_changeset,
             previous_error=previous_error if isinstance(previous_error, str) else None,
             repo_map=build_repo_map(
                 self._repository,
-                ref=ref,
-                expected_files=expected,
-                max_chars=self._repo_map_max_chars,
+                ref=run.ref,
+                expected_files=run.expected,
+                max_chars=self._settings.repo_map_max_chars,
             ),
         )
-        model_request = ModelRequest(
+
+    def _model_request(self, run: _FixRun) -> ModelRequest:
+        return ModelRequest(
             messages=build_fix_messages(
-                self._prompts,
-                request,
-                context,
-                edit_format=self._edit_format,
+                self._settings.prompts,
+                run.request,
+                self._build_context(run),
+                edit_format=self._settings.edit_format,
             ),
-            model=self._model,
-            parameters=self._parameters,
+            model=self._settings.model,
+            parameters=dict(self._settings.parameters or {}),
             metadata={
                 "agentId": self.metadata.id,
-                "requestId": request.request_id,
+                "requestId": run.request.request_id,
                 "cachePrefixMessages": 1,
-                **tier_metadata(request.context),
+                **tier_metadata(run.request.context),
             },
         )
 
-        previous_changeset = code_changeset(code)
-        # Edit blocks are written against the state the model is
-        # revising: the base files with the previous changeset
-        # applied. Untouched previous changes carry over into the
-        # replacement (the prompt's "preserve all still-required
-        # previous changes" rule).
-        effective_existing = dict(existing)
-        for change in previous_changeset.changes:
-            if change.operation == "delete":
-                effective_existing.pop(change.path, None)
-            elif change.content is not None:
-                effective_existing[change.path] = change.content
+    def _parse_reply(self, run: _FixRun, response: ModelResponse) -> ChangeSet:
+        reply = response.content
+        if not reply.strip() or len(reply) > MAX_REPLY_CHARS:
+            raise invalid_response("Empty or oversized fix reply")
+        changeset = self._parse_edits(run, response, reply)
+        changeset = self._validate_replacement(run, changeset)
+        secret_issues = changeset_secret_issues(changeset)
+        if secret_issues:
+            raise invalid_response(
+                "Replacement contains secret patterns",
+                details={"secretIssues": secret_issues},
+            )
+        return changeset
 
-        def compose_replacement(edits: ChangeSet) -> ChangeSet:
-            merged: dict[str, Any] = {change.path: change for change in previous_changeset.changes}
-            for change in edits.changes:
-                if change.operation == "delete" and change.path not in existing:
-                    # Deleting a file the previous changeset created:
-                    # relative to the base it simply never exists.
-                    merged.pop(change.path, None)
-                else:
-                    merged[change.path] = change
-            return ChangeSet(changes=list(merged.values()))
+    def _parse_edits(self, run: _FixRun, response: ModelResponse, reply: str) -> ChangeSet:
+        if self._settings.edit_format != "blocks":
+            return _parse_json_changeset(response, reply)
+        try:
+            edits = parse_edit_blocks(
+                reply.strip(),
+                existing_files=run.effective_existing,
+                expected_files=run.expected,
+            )
+        except EditBlockError as error:
+            raise RepairableOutputError(
+                str(error),
+                details={
+                    "cause": str(error),
+                    "replyChars": len(reply),
+                    "finishReason": response.finish_reason,
+                },
+            ) from None
+        return _compose_replacement(run.previous_changeset, run.existing, edits)
 
-        def parse_reply(response: ModelResponse) -> ChangeSet:
-            reply = response.content
-            if not reply.strip() or len(reply) > MAX_REPLY_CHARS:
-                raise invalid_response("Empty or oversized fix reply")
-            if self._edit_format == "blocks":
-                try:
-                    edits = parse_edit_blocks(
-                        reply.strip(),
-                        existing_files=effective_existing,
-                        expected_files=expected,
-                    )
-                except EditBlockError as error:
-                    raise RepairableOutputError(
-                        str(error),
-                        details={
-                            "cause": str(error),
-                            "replyChars": len(reply),
-                            "finishReason": response.finish_reason,
-                        },
-                    ) from None
-                changeset = compose_replacement(edits)
-            else:
-                try:
-                    changeset = ChangeSet.model_validate(parse_json(reply))
-                except (ValueError, ValidationError, ParseError) as exc:
-                    # Keep the underlying reason: "Invalid replacement
-                    # ChangeSet" alone is undiagnosable (truncated
-                    # JSON? an extra key? an empty change list?) and
-                    # the repair prompt / next attempt is told it
-                    # verbatim, so it must say what to fix.
-                    cause = str(exc)[:400]
-                    raise RepairableOutputError(
-                        "Invalid replacement ChangeSet",
-                        model_message=(f"The reply was not a valid replacement ChangeSet: {cause}"),
-                        details={
-                            "cause": cause,
-                            "replyChars": len(reply),
-                            "finishReason": response.finish_reason,
-                        },
-                    ) from None
-            try:
-                changeset = normalize_changeset_operations(
-                    changeset,
-                    ref,
-                    self._repository,
-                )
-                issues = validate_changeset(changeset, expected, ref, self._repository)
-            except RepositoryError:
-                raise AgentExecutionError(
-                    "REPOSITORY_ERROR",
-                    "Could not validate base files",
-                ) from None
-            if issues:
-                raise RepairableOutputError(
-                    "Replacement violates scope or content constraints",
-                    model_message=(
-                        "Replacement violates scope or content"
-                        " constraints: " + summarize_validation_issues(issues)
-                    ),
-                    details=issues,
-                )
-            secret_issues = changeset_secret_issues(changeset)
-            if secret_issues:
-                raise invalid_response(
-                    "Replacement contains secret patterns",
-                    details={"secretIssues": secret_issues},
-                )
-            return changeset
+    def _validate_replacement(self, run: _FixRun, changeset: ChangeSet) -> ChangeSet:
+        try:
+            changeset = normalize_changeset_operations(
+                changeset,
+                run.ref,
+                self._repository,
+            )
+            issues = validate_changeset(changeset, run.expected, run.ref, self._repository)
+        except RepositoryError:
+            raise AgentExecutionError(
+                "REPOSITORY_ERROR",
+                "Could not validate base files",
+            ) from None
+        if issues:
+            raise RepairableOutputError(
+                "Replacement violates scope or content constraints",
+                model_message=(
+                    "Replacement violates scope or content"
+                    " constraints: " + summarize_validation_issues(issues)
+                ),
+                details=issues,
+            )
+        return changeset
 
-        changeset, usage, repairs = run_code_generation(
-            gateway=self._runtime.models,
-            request=model_request,
-            parse=parse_reply,
-            repair_attempts=self._repair_attempts,
-            format_name="edit-block" if self._edit_format == "blocks" else "JSON",
-        )
+    def _assemble(
+        self,
+        run: _FixRun,
+        changeset: ChangeSet,
+        usage: ModelUsage,
+        repairs: int,
+    ) -> tuple[dict[str, Any], list[Artifact]]:
         text = render_code_markdown(
             CodeMarkdownContext(
                 changes=changeset.model_dump(by_alias=True)["changes"],
-                spec_id=spec.id,
-                spec_version=spec.version,
-                plan_id=plan.id,
-                plan_version=plan.version,
-                task_item_id=item_id,
+                spec_id=run.spec.id,
+                spec_version=run.spec.version,
+                plan_id=run.plan.id,
+                plan_version=run.plan.version,
+                task_item_id=run.item_id,
             )
         )
         if len(text) > MAX_TEXT_CHARS:
             raise invalid_response("Rendered CODE exceeds the size limit")
-        version = str(int(code.version) + 1)
-        metadata = {
-            "taskItemId": item_id,
-            "specArtifactId": spec.id,
-            "specVersion": spec.version,
-            "planArtifactId": plan.id,
-            "planVersion": plan.version,
-            "taskArtifactId": task.id,
-            "taskVersion": task.version,
-            "baseRef": ref,
-            "revisionOf": code.id,
-            "fixedReviewIds": [a.id for a in reports if a.type == "CODE_REVIEW"],
-            "fixedTestReportIds": [a.id for a in reports if a.type == "TEST_REPORT"],
-        }
-        artifact = Artifact(
-            id=self._runtime.new_id(),
-            type="CODE",
-            name="CODE.json",
-            version=version,
-            content={
-                "format": "json",
-                "changeSet": changeset.model_dump(by_alias=True),
-                "text": text,
-            },
-            created_by=self.metadata.id,
-            created_at=self._runtime.clock(),
-            metadata=metadata,
-        )
+        artifact = self._code_artifact(run, changeset, text)
         return {
             "summary": "Replacement code created",
             "artifactId": artifact.id,
-            "version": version,
+            "version": artifact.version,
             "usage": {
                 "promptTokens": usage.prompt_tokens,
                 "completionTokens": usage.completion_tokens,
@@ -413,8 +484,40 @@ class FixAgent(BaseAgent):
             "repairs": repairs,
         }, [artifact]
 
+    def _code_artifact(self, run: _FixRun, changeset: ChangeSet, text: str) -> Artifact:
+        return Artifact(
+            id=self._runtime.new_id(),
+            type="CODE",
+            name="CODE.json",
+            version=str(int(run.code.version) + 1),
+            content={
+                "format": "json",
+                "changeSet": changeset.model_dump(by_alias=True),
+                "text": text,
+            },
+            created_by=self.metadata.id,
+            created_at=self._runtime.clock(),
+            metadata=_fix_metadata(run),
+        )
+
     def _compute_revision_count(self, request: AgentRequest) -> int:
         codes = [artifact for artifact in request.artifacts if artifact.type == "CODE"]
         if len(codes) == 1 and codes[0].version.isdecimal():
             return int(codes[0].version)
         return 0
+
+
+def _fix_metadata(run: _FixRun) -> dict[str, Any]:
+    return {
+        "taskItemId": run.item_id,
+        "specArtifactId": run.spec.id,
+        "specVersion": run.spec.version,
+        "planArtifactId": run.plan.id,
+        "planVersion": run.plan.version,
+        "taskArtifactId": run.task.id,
+        "taskVersion": run.task.version,
+        "baseRef": run.ref,
+        "revisionOf": run.code.id,
+        "fixedReviewIds": [a.id for a in run.reports if a.type == "CODE_REVIEW"],
+        "fixedTestReportIds": [a.id for a in run.reports if a.type == "TEST_REPORT"],
+    }

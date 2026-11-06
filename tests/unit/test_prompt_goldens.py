@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 
 from asf.agents.base import AgentRuntime
-from asf.agents.fix.agent import FixAgent
+from asf.agents.fix.agent import FixAgent, FixSettings
 from asf.agents.implement.agent import ImplementAgent, ImplementSettings
 from asf.agents.loading import (
     load_fix_prompts,
@@ -301,9 +301,11 @@ def capture_fix() -> ModelRequest:
     agent = FixAgent(
         runtime_for(gateway),
         InMemoryRepository(),
-        prompts=load_fix_prompts(),
-        model="test-model",
-        parameters={"temperature": 0.3},
+        FixSettings(
+            prompts=load_fix_prompts(),
+            model="test-model",
+            parameters={"temperature": 0.3},
+        ),
     )
     result = agent.execute(fix_request)
     assert result.status == "SUCCESS", result.errors
