@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/common/Layout';
 import { ProjectCard } from '../../components/projects/ProjectCard';
 import { ProjectForm } from '../../components/projects/ProjectForm';
 import { createProject, deleteProject, updateProject, useProjects } from '../../features/project-management';
+import { projectConfigurationInput } from '../../lib/approvalSettings';
 import type { Project, ProjectProfileInput } from '../../types/project';
 
 const toInput = (p: Project): ProjectProfileInput => ({
@@ -23,10 +24,7 @@ const toInput = (p: Project): ProjectProfileInput => ({
   },
   workflow: p.workflow || 'software-development',
   enabledSkills: p.enabledSkills,
-  configuration: {
-    ...(p.approvalChannel ? { approval: { channel: p.approvalChannel } } : {}),
-    ...(p.testCommands.length ? { testCommands: p.testCommands } : {}),
-  },
+  configuration: projectConfigurationInput(p),
   hostingTokenConfigured: p.hostingTokenConfigured,
   hostingTokenHint: p.hostingTokenHint,
 });

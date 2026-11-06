@@ -32,5 +32,6 @@ def build_artifact_review_agent(
             model=model,
             parameters=parameters,
             max_tasks=settings.get("maxTasks", 50),
+            model_profile=config.model_profile if config else None,
         ),
     )

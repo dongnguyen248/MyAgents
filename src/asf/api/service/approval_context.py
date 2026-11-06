@@ -9,15 +9,118 @@ the mixin does not grow with the Phase 12 wiring.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
+from contextlib import suppress
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any
 
 from asf.approval.mode import parse_approval_overrides
 from asf.approval.policy import approval_policy_from_project
 from asf.configuration.project import ProjectProfile
+from asf.evaluation.models import ApprovalDecisionRecord
 
-__all__ = ["approval_context_for", "bake_approval_context", "merge_approval_context"]
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "DecisionRecord",
+    "approval_context_for",
+    "approval_settings_view",
+    "bake_approval_context",
+    "merge_approval_context",
+    "record_decision",
+]
+
+
+def approval_settings_view(approval: Any) -> dict[str, Any]:
+    """The dashboard-facing approval fields of a profile approval block.
+
+    Reads both the camelCase keys the dashboard writes and the
+    snake_case keys a hand-written profile may use; anything
+    missing or mistyped degrades to the empty default instead of
+    breaking the project view.
+    """
+    block = approval if isinstance(approval, Mapping) else {}
+    channel = block.get("channel")
+    mode = block.get("mode")
+    max_revisions = block.get("maxRevisions", block.get("max_revisions"))
+    on_exhausted = block.get("onExhausted", block.get("on_exhausted"))
+    valid_revisions = (
+        max_revisions
+        if isinstance(max_revisions, int) and not isinstance(max_revisions, bool)
+        else None
+    )
+    return {
+        "approvalChannel": channel if isinstance(channel, str) else "",
+        "approvalMode": mode if isinstance(mode, str) else "",
+        "approvalMaxRevisions": valid_revisions,
+        "approvalOnExhausted": on_exhausted if isinstance(on_exhausted, str) else "",
+    }
+
+
+@dataclass(frozen=True)
+class DecisionRecord:
+    """One approval decision to forward to the metrics sink."""
+
+    project_id: str
+    task_id: str | None
+    agent_id: str | None
+    decision: str
+    reviewer_kind: str = "HUMAN"
+
+
+def record_decision(metrics: Any, item: DecisionRecord) -> None:
+    """Forward one approval decision to the metrics sink, if it takes them.
+
+    Older sinks without the ``reviewer_kind`` parameter are retried
+    without it; a failing sink never breaks the decision itself.
+    """
+    if not item.agent_id:
+        return
+    if metrics is None or not hasattr(metrics, "record_approval_decision"):
+        return
+    _call_sink(metrics.record_approval_decision, item)
+
+
+def _call_sink(record: Any, item: DecisionRecord) -> None:
+    try:
+        record(
+            ApprovalDecisionRecord(
+                project_id=item.project_id,
+                task_id=item.task_id,
+                agent_id=item.agent_id or "",
+                decision=item.decision,
+                reviewer_kind=item.reviewer_kind,
+            )
+        )
+    except TypeError:
+        _call_sink_kwargs(record, item)
+    except Exception:
+        logger.exception("Approval metrics sink failed; decision itself already applied")
+
+
+def _call_sink_kwargs(record: Any, item: DecisionRecord) -> None:
+    """Fallback for sinks that still take the decision as keywords."""
+    try:
+        record(
+            project_id=item.project_id,
+            task_id=item.task_id,
+            agent_id=item.agent_id,
+            decision=item.decision,
+            reviewer_kind=item.reviewer_kind,
+            at=None,
+        )
+    except TypeError:
+        with suppress(Exception):
+            record(
+                project_id=item.project_id,
+                task_id=item.task_id,
+                agent_id=item.agent_id,
+                decision=item.decision,
+            )
+    except Exception:
+        logger.exception("Approval metrics sink failed; decision itself already applied")
 
 
 def bake_approval_context(

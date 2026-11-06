@@ -16,6 +16,8 @@ const base = (
   lastMin: number, m: AgentMetrics, extra: Partial<Agent> = {},
 ): Agent => ({ id, name, type, status, model, version, lastActivityAt: minutesAgo(lastMin), metrics: m, ...extra });
 
+const fixMetrics = metrics(64, 0, 9, 1, 460, 1.7, 0.78, 0.9, 0.88);
+
 export const agents: Agent[] = [
   base('spec-agent', 'Spec Agent', 'spec', 'ONLINE', 'claude-sonnet-4.6', '1.4.2', 1,
     metrics(124, 1, 7, 2, 412, 1.3, 0.88, 0.96, 0.95),
@@ -36,7 +38,10 @@ export const agents: Agent[] = [
     metrics(288, 0, 62, 3, 540, 1.8, 0.72, 0.82, 0.8),
     { statusDetail: 'Integration test runner timed out (600s) on ERP-3320' }),
   base('fix-agent', 'Fix Agent', 'fix', 'IDLE', 'qwen-coder (local)', '0.9.4', 55,
-    metrics(64, 0, 9, 1, 460, 1.7, 0.78, 0.9, 0.88)),
+    fixMetrics),
+  base('artifact-review-agent', 'Artifact Review Agent', 'artifact-review', 'ONLINE', 'strong', '1.0.0', 2,
+    fixMetrics,
+    { statusDetail: 'Reviews SPEC / PLAN / TASK artifacts in ai approval mode (model profile: strong)' }),
 ];
 
 const prompts: Record<AgentType, string> = {
@@ -47,6 +52,7 @@ const prompts: Record<AgentType, string> = {
   review: 'You review code changes against the TASK, SPEC and enabled skills and produce a CODE_REVIEW.md.',
   test: 'You create and run tests for the change and produce a TEST_REPORT.md.',
   fix: 'You resolve review findings, failing tests and CI failures with minimal changes.',
+  'artifact-review': 'You independently review SPEC, PLAN and TASK artifacts and return findings; the verdict is computed in code.',
 };
 const skillSets: Record<AgentType, string[]> = {
   spec: ['general', 'software-development'],
@@ -56,6 +62,7 @@ const skillSets: Record<AgentType, string[]> = {
   review: ['code-review', 'security', 'git'],
   test: ['testing', 'java', 'python'],
   fix: ['java', 'spring', 'git', 'testing'],
+  'artifact-review': ['general'],
 };
 const toolSets: Record<AgentType, string[]> = {
   spec: ['read_repo', 'read_template'],
@@ -65,6 +72,7 @@ const toolSets: Record<AgentType, string[]> = {
   review: ['read_repo', 'git_diff', 'comment'],
   test: ['read_repo', 'write_file', 'run_tests'],
   fix: ['read_repo', 'write_file', 'run_tests', 'git_diff'],
+  'artifact-review': ['read_repo'],
 };
 
 export const agentConfigs: AgentConfig[] = agents.map((a) => ({

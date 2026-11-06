@@ -546,6 +546,20 @@ the gateway; persisted as JSONL in the run dir; rendered to text by
 - **H6 — first real experiment** (needs real API budget and ≥ 10
   real cases from Dong). Not started.
 
+Later registration (Phase 12 Stage E, not an H stage): the
+`artifact-review` agent joined the surface as the seventh agent. Its
+extra editable files — the three stage checklists — travel in
+`HarnessComponents.extras` (part of the fingerprint, outside the
+generic assembly order; the agent reads its own extras), and the
+round-trip wiring test covers it like the other six. Caps measured
+the H1 way: the largest assembled system prompt over the three
+stages, with every rule pack in `projects/rules/` concatenated as
+the maximal project fixture, is 40,109 chars, so
+`always_on_max = 61,000` and `tree_max = 61,000 − 36,805` (the rules
+overhead) `= 24,195`. Labelled offline fixtures (≥ 6 per stage) live
+in `harness/harness2/fixtures/artifact-review/`; no rollout adapter
+consumes them yet, and the optimiser has not run on this agent.
+
 ## 8. Open questions
 
 1. **Frozen-lines check scope.** The check protects enforced

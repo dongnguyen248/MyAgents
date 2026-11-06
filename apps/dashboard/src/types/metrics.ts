@@ -8,7 +8,10 @@ export interface AgentMetrics {
   successRate: number;
   avgDurationSec: number;
   avgRevisions: number;
-  humanApprovalRate: number;
+  /** Null when the agent has no human decisions (AI-reviewed gates). */
+  humanApprovalRate: number | null;
+  humanDecisions?: number;
+  aiDecisions?: number;
   testPassRate: number;
   ciPassRate: number;
   /** Platform-accumulated model usage across this agent's runs. */
@@ -42,17 +45,30 @@ export interface AgentComparisonRow {
   successRate: number;
   avgDurationSec: number;
   avgRevisions: number;
-  humanApprovalRate: number;
+  humanApprovalRate: number | null;
   healthScore: number;
+}
+
+/** AI review loop metrics (Phase 12), computed from review events. */
+export interface AiReviewMetrics {
+  firstPassRate: number;
+  avgRounds: number;
+  escalationRate: number;
+  stagnationRate: number;
+  gates: number;
+  escalations: number;
 }
 
 export interface MetricsOverview {
   daily: DailyPoint[];
   human: {
-    approvalRate: number;
-    rejectionRate: number;
+    /** Null when there are no human decisions at all. */
+    approvalRate: number | null;
+    rejectionRate: number | null;
     avgRevisions: number;
     avgApprovalMinutes: number;
+    decisions?: number;
+    aiDecisions?: number;
     daily: { date: string; approvalRate: number; rejectionRate: number }[];
   };
   quality: {
@@ -63,6 +79,7 @@ export interface MetricsOverview {
     daily: { date: string; testPassRate: number; ciPassRate: number; reworkRate: number }[];
   };
   agents: AgentComparisonRow[];
+  aiReview: AiReviewMetrics;
 }
 
 /** KPI summary for the main dashboard. */

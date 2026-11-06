@@ -12,7 +12,7 @@ export interface WorkflowStep {
   state: StepState;
 }
 
-export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'WAITING_RETRY' | 'ESCALATED' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'AI_REVIEWING' | 'WAITING_RETRY' | 'ESCALATED' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 /** The failure that ended a FAILED workflow run (absent otherwise). */
 export interface WorkflowError {
@@ -51,12 +51,60 @@ export interface WorkflowCurrentActivity {
 
 /** What a non-terminal run is waiting for, in operator terms. */
 export interface WorkflowWaiting {
-  kind: 'APPROVAL' | 'ESCALATED' | 'RETRY_WAIT' | 'STEP_RUNNING' | 'STALLED' | 'PAUSED' | 'NONE';
+  kind: 'APPROVAL' | 'AI_REVIEW' | 'ESCALATED' | 'RETRY_WAIT' | 'STEP_RUNNING' | 'STALLED' | 'PAUSED' | 'NONE';
   since: string;
   reason?: string | null;
   retryAt?: string | null;
   budget?: { used: number; max: number } | null;
   suggestedActions: string[];
+  /** For AI_REVIEW: the gated stage under review (e.g. 'SPEC'). */
+  stage?: string;
+  /** For AI_REVIEW: the current review round (1-based). */
+  round?: number;
+  /** For AI_REVIEW: the effective revision cap the loop escalates at. */
+  maxRounds?: number;
+  /** For ESCALATED: MAX_REVISIONS | NO_PROGRESS | REVIEWER_FAILED | BUDGET, when known. */
+  escalationReason?: string | null;
+  /** For ESCALATED: open BLOCKER findings in the latest AI review of the stage. */
+  openBlockers?: number;
+}
+
+/** One finding of an AI artifact review (GET /runs/{id}/reviews). */
+export interface ReviewFinding {
+  id: string;
+  severity: 'BLOCKER' | 'MAJOR' | 'MINOR' | 'NIT';
+  category: string;
+  location: string;
+  problem: string;
+  requiredChange: string;
+  status: 'NEW' | 'STILL_OPEN' | 'RESOLVED' | 'WAIVED';
+  source: 'ai' | 'mechanical';
+  waiverReason?: string | null;
+}
+
+/** One AI review round of a gated stage. */
+export interface ReviewRound {
+  round: number;
+  verdict: 'APPROVE' | 'REQUEST_CHANGES';
+  reviewArtifactId: string;
+  reviewedArtifactId?: string | null;
+  reviewedArtifactVersion?: string | null;
+  counts: { BLOCKER: number; MAJOR: number; MINOR: number; NIT: number };
+  summary?: string | null;
+  findings: ReviewFinding[];
+}
+
+/** One gated stage's AI review rounds. */
+export interface ReviewStage {
+  stage: string;
+  stepId: string;
+  rounds: ReviewRound[];
+}
+
+/** GET /runs/{id}/reviews — the AI review history of a run, per stage. */
+export interface RunReviews {
+  runId: string;
+  stages: ReviewStage[];
 }
 
 /** The background drive's own state for a run (kept in backend RAM). */

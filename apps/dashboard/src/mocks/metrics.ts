@@ -33,4 +33,5 @@ export const metricsOverview: MetricsOverview = {
       agentId: a.id, name: a.name, successRate: a.metrics.successRate, avgDurationSec: a.metrics.avgDurationSec,
       avgRevisions: a.metrics.avgRevisions, humanApprovalRate: a.metrics.humanApprovalRate, healthScore: healthScore(a.metrics),
     })),
+  aiReview: { firstPassRate: 0.62, avgRounds: 1.6, escalationRate: 0.08, stagnationRate: 0.03, gates: 128, escalations: 10 },
 };

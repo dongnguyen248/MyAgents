@@ -63,6 +63,43 @@ Internal records are the pydantic models in `models.py`
 0.15*testPassRate + 0.15*max(0, 1 - (avgRevisions - 1) / 3)))`, with halves
 rounded up as `Math.round` does.
 
+## Human vs AI decisions (Phase 12)
+
+Every recorded decision carries `reviewer_kind` (`HUMAN | AI`).
+`humanApprovalRate` is computed over HUMAN decisions only; AI review
+decisions (recorded automatically from `AI_REVIEW_COMPLETED` events,
+attributed to the reviewer agent) never enter it. When an agent has
+**no human decisions at all**, `humanApprovalRate` is `null` — not
+`0.0` — and the health score re-normalises without the human term:
+
+`healthScore = round(100 * (0.30*successRate + 0.20*ciPassRate +
+0.15*testPassRate + 0.15*revisionScore) / 0.80)`
+
+The same rule applies to the overview's `human.approvalRate` /
+`rejectionRate`: with no human decisions they are `null` (undefined),
+so downstream consumers that treat `null` as "no data" — including the
+Harness² improvement trigger — do not fire on AI-reviewed work.
+`agent_metrics` also reports `humanDecisions` / `aiDecisions` counts,
+and the overview's `human` section reports `decisions` / `aiDecisions`.
+
+## AI review metrics
+
+`overview()` includes an `aiReview` block computed from the published
+review events. A *gate* is one (run, step) with at least one completed
+AI review round (`AI_REVIEW_COMPLETED`):
+
+- `aiReviewFirstPassRate` — gates whose first completed round approved,
+  over all gates.
+- `aiReviewAvgRounds` — mean completed rounds per gate.
+- `aiReviewEscalationRate` — gates escalated with an AI reason
+  (`MAX_REVISIONS`, `NO_PROGRESS`, `REVIEWER_FAILED`, `BUDGET`) over
+  gates that reached an outcome (approved or escalated; an
+  escalation-only gate, e.g. a budget stop at claim time, still counts).
+- `aiReviewStagnationRate` — gates with at least one
+  `AI_REVIEW_STAGNATION` event, over all gates.
+
+The block also carries the raw `gates` and `escalations` counts.
+
 ## Aggregation choices
 
 - Agent `successRate = completed / total`, where `total` is every recorded

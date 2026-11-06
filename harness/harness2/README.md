@@ -29,6 +29,14 @@ source. Its output is a patch + report for a human to apply.
   frozen paths, always-on character caps, tree validation.
 - `bundle.py` — converts between an agent's repo files and a harness
   `Tree` (round-trip tested).
+
+Seven agents are registered on the surface: the original six plus
+`artifact-review` (Phase 12 Stage E), whose extra editable files are
+its three stage checklists (`HarnessComponents.extras`); its
+`prompts/contract.md` is frozen and its Python modules are never
+harness files. Labelled offline fixtures for that agent live in
+`fixtures/artifact-review/` (data only — no rollout adapter consumes
+them yet).
 - `adapter.py` — the `TaskAdapter` protocol the loop drives an agent
   through (tasks, execution, trajectories, deliverables, scoring).
 - `trajectory.py` — recording gateway decorator and the

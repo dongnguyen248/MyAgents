@@ -35,7 +35,13 @@ from asf.api.service import (
     _camelize,
     _iso,
 )
-from asf.api.service.review_state import review_status
+from asf.api.service.review_state import (
+    ai_review_waiting,
+    approval_view_fields,
+    escalation_waiting,
+    project_approval_fields,
+    review_status,
+)
 from asf.approval.errors import ApprovalError
 from asf.contracts.models import ActivityEvent
 from asf.orchestrator.code_loop import ESCALATED_STAGE, FIX_STAGE, FIX_STEP, REWORK_STAGE
@@ -416,7 +422,9 @@ class QueriesMixin:
         # which the old mapping flattened to RUNNING — an escalated
         # run looked identical to a healthy one. They are distinct
         # operator states and nothing should tick them pointlessly.
-        if run.state.stage == ESCALATED_STAGE:
+        # Any ESCALATED-kind stage counts: the code loop's
+        # CODE_FIX_ESCALATED and every gated step's X_ESCALATED.
+        if self._stage_kind(run, run.state.stage) == "ESCALATED":
             return "ESCALATED"
         if run.retry_at is not None:
             return "WAITING_RETRY"
@@ -497,26 +505,11 @@ class QueriesMixin:
             else:
                 waiting["reason"] = "Waiting for approval"
             return waiting
+        if status == "AI_REVIEWING":
+            return ai_review_waiting(run, self._step_for_stage(run, run.state.stage), waiting)
         if status == "ESCALATED":
-            budget = self._fix_budget(run)
-            waiting["kind"] = "ESCALATED"
-            waiting["budget"] = budget
-            waiting["suggestedActions"] = ["resume", "cancel"]
-            waiting["reason"] = (
-                f"Escalated — fix budget used ({budget['used']}/{budget['max']}), needs operator"
-            )
-            escalated = next(
-                (
-                    obs.event
-                    for obs in reversed(run.observations)
-                    if obs.event is not None and obs.event.event_type == "WORKFLOW_ESCALATED"
-                ),
-                None,
-            )
-            if escalated is not None:
-                waiting["since"] = _iso(escalated.timestamp)
-                waiting["reason"] = escalated.message
-            return waiting
+            step = self._step_for_stage(run, run.state.stage)
+            return escalation_waiting(run, step, waiting, self._fix_budget(run))
         if status == "WAITING_RETRY":
             waiting["kind"] = "RETRY_WAIT"
             waiting["retryAt"] = _iso(run.retry_at)
@@ -1081,7 +1074,7 @@ class QueriesMixin:
                     "workflow": profile["workflow"],
                     "enabledSkills": profile["enabledSkills"],
                     "technologyGroups": profile["technologyGroups"],
-                    "approvalChannel": profile["approvalChannel"],
+                    **project_approval_fields(profile),
                     "agentIds": agent_ids,
                     "ci": "UNKNOWN",
                     "ciFailures24h": 0,
@@ -1137,29 +1130,21 @@ class QueriesMixin:
 
     def _approval_view(self, run: WorkflowExecution, request: Any) -> dict[str, Any]:
         artifact = run.artifact_history.get(request.artifact_id)
+        step_id = (request.metadata or {}).get("stepId")
+        definition = self._definition(run)
+        step = None
+        if definition is not None:
+            step = next((item for item in definition.steps if item.id == step_id), None)
         if artifact is not None:
             requested_by = artifact.created_by
             artifact_name = artifact.name
         else:
-            step_id = (request.metadata or {}).get("stepId")
-            definition = self._definition(run)
-            step = (
-                next(
-                    (item for item in definition.steps if item.id == step_id),
-                    None,
-                )
-                if definition is not None
-                else None
-            )
             requested_by = (
                 self._agent_id_for_type(step.agent_type) if step is not None else None
             ) or request.requested_by
             artifact_name = request.artifact_id
-        requested_at = getattr(request, "requested_at", None) or getattr(
-            request,
-            "created_at",
-            None,
-        )
+        fallback_at = getattr(request, "created_at", None)
+        requested_at = getattr(request, "requested_at", None) or fallback_at
         view: dict[str, Any] = {
             "id": request.id,
             "projectId": run.project_id,
@@ -1171,6 +1156,7 @@ class QueriesMixin:
             "artifact": artifact_name,
             "summary": self._artifact_summary(artifact),
             "comments": [],
+            **approval_view_fields(run, request, step),
         }
         content = self._artifact_text(artifact)
         if content:

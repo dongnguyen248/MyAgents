@@ -26,6 +26,8 @@ from asf.contracts.models import AgentMetadata, Artifact
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
+from asf.orchestrator.gate_ops import approve_anyway, deliver_guidance
+from asf.state_machine.machine import InvalidTransition
 from asf.storage.memory import InMemoryApprovalRepository, InMemoryStore
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 from tests.unit.test_agent_base import DummyAgent
@@ -134,6 +136,7 @@ class Harness:
         contents: dict[str, list[dict[str, Any]]],
         store: InMemoryStore | None = None,
         gateway_wrapper: Callable[[ScriptedModelGateway], Any] | None = None,
+        definition: WorkflowDefinition | None = None,
     ) -> None:
         self.clock = Clock()
         self.ids = count(1)
@@ -157,7 +160,7 @@ class Harness:
         )
         registry.register(reviewer)
         self.repo = InMemoryApprovalRepository()
-        workflow = WorkflowDefinition(
+        workflow = definition or WorkflowDefinition(
             id="development", name="Development", version="1", steps=steps
         )
         kwargs: dict[str, Any] = {}
@@ -279,7 +282,7 @@ def test_happy_path_all_gates_ai_approved_without_human_actions() -> None:
     assert len(harness.gateway.requests) == 3
     requests = harness.approval_requests()
     assert len(requests) == 3
-    assert all(request.reviewers == ["ai-reviewer"] for request in requests)
+    assert all(request.reviewers == ["ai-reviewer", "dashboard"] for request in requests)
     assert all(request.min_approvals == 1 for request in requests)
     assert all(request.status == "APPROVED" for request in requests)
     decisions = harness.decisions()
@@ -550,7 +553,212 @@ def test_profile_policy_and_ai_policy_reach_the_request() -> None:
     }
     run = ai.start(context=ai_context)
     ai.drive(run.id)
-    # Even with a human policy baked in, an ai-mode step's request is
-    # addressed to the AI reviewer alone.
-    assert ai.approval_requests()[0].reviewers == ["ai-reviewer"]
+    # An ai-mode step's request is addressed to the AI reviewer first,
+    # then the profile's human reviewers (who may override manually).
+    assert ai.approval_requests()[0].reviewers == ["ai-reviewer", "alice"]
     assert ai.approval_requests()[0].min_approvals == 1
+
+
+def test_human_approve_on_an_ai_gate_advances_without_a_reviewer_call() -> None:
+    steps = [gated("spec", "spec", "SPEC", []), plain("plan", "plan", "PLAN", ["SPEC"])]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[APPROVE_REPLY], contents=contents)
+    run = harness.start()
+    harness.engine.tick(run.id)
+    assert harness.engine.get(run.id).state.stage == "SPEC_REVIEW"
+    harness.engine.decide(
+        run.id,
+        reviewer="dashboard",
+        decision="APPROVED",
+        comment="Read it myself; ship it.",
+    )
+    run = harness.drive(run.id)
+    assert run.state.stage == "COMPLETED"
+    assert harness.gateway.requests == []
+    decisions = harness.decisions()
+    assert len(decisions) == 1
+    assert decisions[0].reviewer == "dashboard"
+    assert decisions[0].reviewer_kind == "HUMAN"
+    assert decisions[0].decision == "APPROVED"
+
+
+def test_human_reject_on_an_ai_gate_revises_with_the_human_comment() -> None:
+    steps = [gated("spec", "spec", "SPEC", []), plain("plan", "plan", "PLAN", ["SPEC"])]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[APPROVE_REPLY], contents=contents)
+    run = harness.start()
+    harness.engine.tick(run.id)
+    harness.engine.decide(
+        run.id,
+        reviewer="dashboard",
+        decision="REQUEST_CHANGES",
+        comment="Tighten the REQ-2 acceptance criteria.",
+    )
+    run = harness.drive(run.id)
+    assert run.state.stage == "COMPLETED"
+    feedback = harness.requests["spec"][1].feedback
+    assert any(
+        item.reviewer == "dashboard" and "Tighten the REQ-2" in item.comment for item in feedback
+    )
+    decisions = harness.decisions()
+    human = [d for d in decisions if d.reviewer_kind == "HUMAN"]
+    assert len(human) == 1 and human[0].decision == "REQUEST_CHANGES"
+    assert any(d.reviewer == "ai-reviewer" and d.decision == "APPROVED" for d in decisions)
+    assert len(harness.gateway.requests) == 1
+
+
+def test_reviewer_result_after_a_human_reject_stands_down() -> None:
+    steps = [gated("spec", "spec", "SPEC", []), plain("plan", "plan", "PLAN", ["SPEC"])]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    holder: dict[str, Any] = {}
+
+    def decide_first(gateway: ScriptedModelGateway) -> Any:
+        class Wrapper:
+            requests = gateway.requests
+
+            def complete(self, request: Any) -> Any:
+                if not holder.get("decided"):
+                    holder["decided"] = True
+                    harness = holder["harness"]
+                    run = harness.engine.get(holder["run_id"])
+                    holder["service"].decide(
+                        ApprovalDecision(
+                            approval_id=run.approval_id or "",
+                            reviewer="dashboard",
+                            decision="REQUEST_CHANGES",
+                            comment="Human veto: the scope is wrong.",
+                            created_at=harness.clock(),
+                        )
+                    )
+                return gateway.complete(request)
+
+        return Wrapper()
+
+    harness = Harness(
+        steps,
+        replies=[rc_reply(), RESOLVED_REPLY],
+        contents=contents,
+        gateway_wrapper=decide_first,
+    )
+    holder["harness"] = harness
+    holder["service"] = ApprovalService(harness.repo, id_factory=lambda: "unused")
+    run = harness.start()
+    holder["run_id"] = run.id
+    run = harness.drive(run.id)
+    assert run.state.stage == "COMPLETED"
+    first = harness.approval_requests()[0]
+    first_decisions = harness.repo.list_decisions(first.id)
+    assert len(first_decisions) == 1
+    assert first_decisions[0].reviewer == "dashboard"
+    assert first_decisions[0].reviewer_kind == "HUMAN"
+    feedback = harness.requests["spec"][1].feedback
+    assert any("Human veto" in item.comment for item in feedback)
+
+
+def test_approve_anyway_advances_an_escalated_gate_with_a_human_decision() -> None:
+    steps = [
+        gated("spec", "spec", "SPEC", [], max_revisions=1),
+        plain("plan", "plan", "PLAN", ["SPEC"]),
+    ]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[rc_reply(), rc_reply()], contents=contents)
+    run = harness.drive(harness.start().id)
+    assert run.state.stage == "SPEC_ESCALATED"
+    artifact_id = harness.engine.get(run.id).artifacts["SPEC"].id
+    run = approve_anyway(
+        harness.engine, run.id, reviewer="dashboard", comment="Business accepted the risk."
+    )
+    assert run.state.stage == "PLAN"
+    run = harness.drive(run.id)
+    assert run.state.stage == "COMPLETED"
+    requests = harness.approval_requests()
+    assert len(requests) == 3
+    override = requests[2]
+    assert override.artifact_id == artifact_id
+    assert override.status == "APPROVED"
+    decisions = harness.repo.list_decisions(override.id)
+    assert len(decisions) == 1
+    assert decisions[0].reviewer == "dashboard"
+    assert decisions[0].reviewer_kind == "HUMAN"
+    assert decisions[0].comment == "Business accepted the risk."
+    assert harness.events(run.id, "APPROVAL_APPROVED_ANYWAY")
+
+
+def test_approve_anyway_requires_an_escalated_gate() -> None:
+    steps = [gated("spec", "spec", "SPEC", []), plain("plan", "plan", "PLAN", ["SPEC"])]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[APPROVE_REPLY], contents=contents)
+    run = harness.start()
+    harness.engine.tick(run.id)
+    assert harness.engine.get(run.id).state.stage == "SPEC_REVIEW"
+    with pytest.raises(InvalidTransition):
+        approve_anyway(harness.engine, run.id, reviewer="dashboard", comment="Too early.")
+
+
+def test_approve_anyway_works_on_a_pre_phase12_pinned_definition() -> None:
+    pinned = WorkflowDefinition.model_validate(
+        {
+            "id": "development",
+            "name": "Development",
+            "version": "1",
+            "steps": [
+                {
+                    "id": "spec",
+                    "name": "Spec",
+                    "type": "AGENT",
+                    "stage": "SPEC",
+                    "agentType": "spec",
+                    "requiresApproval": True,
+                    "consumes": [],
+                    "produces": ["SPEC"],
+                },
+                {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "AGENT",
+                    "stage": "PLAN",
+                    "agentType": "plan",
+                    "requiresApproval": False,
+                    "consumes": ["SPEC"],
+                    "produces": ["PLAN"],
+                },
+            ],
+        }
+    )
+    steps = [plain("spec", "spec", "SPEC", []), plain("plan", "plan", "PLAN", ["SPEC"])]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[], contents=contents, definition=pinned)
+    run = harness.start()
+    for _ in range(4):
+        harness.drive(run.id)
+        run = harness.engine.get(run.id)
+        if run.state.stage.endswith("_ESCALATED"):
+            break
+        harness.engine.decide(
+            run.id, reviewer="dashboard", decision="REQUEST_CHANGES", comment="Not yet."
+        )
+    harness.drive(run.id)
+    run = harness.engine.get(run.id)
+    assert run.state.stage == "SPEC_ESCALATED"
+    run = approve_anyway(harness.engine, run.id, reviewer="dashboard", comment="Ship it.")
+    run = harness.drive(run.id)
+    assert run.state.stage == "COMPLETED"
+
+
+def test_resume_guidance_reaches_the_producer_as_feedback() -> None:
+    steps = [
+        gated("spec", "spec", "SPEC", [], max_revisions=1),
+        plain("plan", "plan", "PLAN", ["SPEC"]),
+    ]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[rc_reply(), rc_reply(), RESOLVED_REPLY], contents=contents)
+    run = harness.drive(harness.start().id)
+    assert run.state.stage == "SPEC_ESCALATED"
+    harness.engine.resume(run.id, reason="operator resume")
+    deliver_guidance(harness.engine, run.id, guidance="Focus on REQ-2 only.", operator="dashboard")
+    run = harness.drive(run.id)
+    assert run.state.stage == "COMPLETED"
+    feedback = harness.requests["spec"][-1].feedback
+    assert any(
+        item.reviewer == "dashboard" and item.comment == "Focus on REQ-2 only." for item in feedback
+    )

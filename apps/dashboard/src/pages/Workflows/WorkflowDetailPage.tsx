@@ -4,6 +4,8 @@ import { ActivityFeed } from '../../components/activity/ActivityFeed';
 import { AsyncView } from '../../components/common/AsyncView';
 import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
+import { EscalatedPanel } from '../../components/workflows/EscalatedPanel';
+import { ReviewTimeline } from '../../components/workflows/ReviewTimeline';
 import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkspaceInfo } from '../../components/workflows/WorkspaceInfo';
 import { WorkflowDiagnostics } from '../../components/workflows/WorkflowDiagnostics';
@@ -11,12 +13,13 @@ import { OperatorControls } from '../../components/workflows/OperatorControls';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
 import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
-import { cancelWorkflow, resumeWorkflow, retryWorkflow, useRunLiveRefetch, useWorkflowDetail } from '../../features/workflow-monitoring';
+import { cancelWorkflow, resumeWorkflow, retryWorkflow, useRunLiveRefetch, useRunReviews, useWorkflowDetail } from '../../features/workflow-monitoring';
 import { titleCase } from '../../utils/format';
 
 export function WorkflowDetailPage() {
   const { workflowId = '' } = useParams();
   const detail = useWorkflowDetail(workflowId);
+  const reviews = useRunReviews(workflowId);
   const navigate = useNavigate();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | undefined>();
@@ -30,10 +33,17 @@ export function WorkflowDetailPage() {
   // activity stream reports an event for this task, with a slow
   // watchdog poll only if the stream itself goes silent.
   const workflowStatus = detail.data?.workflow?.status;
+  const reloadAll = () => {
+    detail.reload();
+    reviews.reload();
+  };
   useRunLiveRefetch(
     detail.data?.workflow?.taskId,
-    workflowStatus === 'RUNNING' || workflowStatus === 'WAITING_RETRY',
-    detail.reload,
+    workflowStatus === 'RUNNING' ||
+      workflowStatus === 'WAITING_RETRY' ||
+      workflowStatus === 'AI_REVIEWING' ||
+      workflowStatus === 'ESCALATED',
+    reloadAll,
   );
 
   const runAgain = async () => {
@@ -92,6 +102,12 @@ export function WorkflowDetailPage() {
               actions={<><WorkflowStatusBadge status={workflow.status} /><Link className="btn" to={`/tasks/${workflow.taskId}`}>Open task</Link></>}
             />
             <WorkflowErrorBanner workflow={workflow} />
+            <EscalatedPanel
+              workflow={workflow}
+              onChanged={detail.reload}
+              onCancel={cancel}
+              cancelBusy={cancelling}
+            />
             {['CANCELLED', 'COMPLETED'].includes(workflow.status) && (
               <Card>
                 <div className="filters">
@@ -154,6 +170,11 @@ export function WorkflowDetailPage() {
               <Card title="Execution history"><ActivityFeed events={events} showTask={false} /></Card>
             </div>
             <WorkflowDiagnostics runId={workflow.id} />
+            {reviews.data && reviews.data.stages.length > 0 && (
+              <Card title="AI review rounds">
+                <ReviewTimeline reviews={reviews.data} />
+              </Card>
+            )}
             <WorkflowArtifacts artifacts={workflow.artifacts} />
           </>
         )

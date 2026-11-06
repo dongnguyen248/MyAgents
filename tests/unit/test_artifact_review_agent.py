@@ -163,3 +163,18 @@ def test_agent_request_validation() -> None:
     missing = make_request(artifacts=[])
     assert agent.execute(missing).status == "REJECTED"
     assert gateway.requests == []
+
+
+def test_metadata_carries_the_model_profile_when_configured() -> None:
+    gateway = ScriptedModelGateway([])
+    ids = itertools.count(1)
+    runtime = AgentRuntime(
+        models=gateway,
+        clock=lambda: NOW,
+        new_id=lambda: f"review-{next(ids)}",
+    )
+    settings = ArtifactReviewSettings(
+        prompts=load_artifact_review_prompts(), model_profile="strong"
+    )
+    agent = ArtifactReviewAgent(runtime, settings)
+    assert agent.get_metadata().configuration == {"modelProfile": "strong"}

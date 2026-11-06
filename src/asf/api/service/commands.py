@@ -33,7 +33,12 @@ from asf.api.service import (
     ProjectNotFoundError,
     _iso,
 )
-from asf.api.service.approval_context import bake_approval_context
+from asf.api.service.approval_context import (
+    DecisionRecord,
+    bake_approval_context,
+    record_decision,
+)
+from asf.api.service.escalation_ops import EscalationResume, resume_escalated_run
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import (
     NEW_PROJECT_WORKSPACE_MODE,
@@ -47,7 +52,7 @@ from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
 from asf.orchestrator.ports import ConcurrentModificationError
 from asf.state_machine.machine import InvalidTransition
-from asf.workflow.definition import WorkflowDefinition
+from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 
 
 class CommandsMixin:
@@ -66,6 +71,7 @@ class CommandsMixin:
     _cancel_requested: set[str]
     _stall_seconds: float
     _stage_kind: Callable[[WorkflowExecution, str], str | None]
+    _step_for_stage: Callable[[WorkflowExecution, str], WorkflowStepDef | None]
     _workflow_status: Callable[[WorkflowExecution], str]
     _is_stalled: Callable[[WorkflowExecution, str], bool]
     _service_now: Callable[[WorkflowExecution], Any]
@@ -335,30 +341,18 @@ class CommandsMixin:
         run: WorkflowExecution,
         agent_id: str | None,
         decision: str,
+        reviewer_kind: str = "HUMAN",
     ) -> None:
-        if not agent_id:
-            return
-        if self._metrics is None or not hasattr(self._metrics, "record_approval_decision"):
-            return
-        record = self._metrics.record_approval_decision
-        try:
-            record(
+        record_decision(
+            self._metrics,
+            DecisionRecord(
                 project_id=run.project_id,
                 task_id=run.task_id,
                 agent_id=agent_id,
                 decision=decision,
-                at=None,
-            )
-        except TypeError:
-            with suppress(Exception):
-                record(
-                    project_id=run.project_id,
-                    task_id=run.task_id,
-                    agent_id=agent_id,
-                    decision=decision,
-                )
-        except Exception:  # nosec B110
-            pass
+                reviewer_kind=reviewer_kind,
+            ),
+        )
 
     # ------------------------------------------------------------------
     # activity
@@ -642,26 +636,17 @@ class CommandsMixin:
         return self.get_workflow(run_id)
 
     def resume_escalation(
-        self, run_id: str, *, reason: str, operator: str = "operator"
+        self,
+        run_id: str,
+        *,
+        reason: str,
+        operator: str = "operator",
+        guidance: str | None = None,
     ) -> dict[str, Any] | None:
-        """Grant an escalated run a fresh fix budget and drive it on.
-
-        Only a run whose stage kind is ESCALATED qualifies — the
-        engine enforces the same rule; the service check exists to
-        answer with a clear operator-facing message.
-        """
-        run = self._operator_target(run_id)
-        if self._stage_kind(run, run.state.stage) != "ESCALATED":
-            raise ValueError(
-                f"Run '{run_id}' is not escalated (stage {run.state.stage}); "
-                "only an escalated run can be resumed with a new fix budget"
-            )
-        view = self._operator_call(
-            "escalation resume",
-            lambda: self._engine.resume(run_id, reason=reason, operator=operator),
+        return resume_escalated_run(
+            self,
+            EscalationResume(run_id=run_id, reason=reason, operator=operator, guidance=guidance),
         )
-        self._drive_in_background(run_id)
-        return view
 
     def recover_run(
         self,

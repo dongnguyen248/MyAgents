@@ -10,6 +10,7 @@ import pytest
 
 from asf.contracts.models import ActivityEvent, AgentResult, Artifact, RunMetrics
 from asf.evaluation import MetricsService
+from asf.evaluation.models import ApprovalDecisionRecord
 
 DAY1 = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 DAY2 = datetime(2026, 11, 3, 9, 0, tzinfo=UTC)
@@ -87,17 +88,21 @@ def test_empty_service_returns_zeroed_dashboard_shapes() -> None:
     assert metrics["successRate"] == 0.0
     assert metrics["avgDurationSec"] == 0.0
     assert metrics["avgRevisions"] == 0.0
-    assert metrics["humanApprovalRate"] == 0.0
+    # Phase 12 (Stage D): with no human decisions the rate is None,
+    # not 0.0, so AI-reviewed agents are not scored as human-rejected.
+    assert metrics["humanApprovalRate"] is None
     assert metrics["testPassRate"] == 0.0
     assert metrics["ciPassRate"] == 0.0
-    # Dashboard formula at avgRevisions == 0: the revision term alone is
-    # 0.15 * (1 - (0 - 1) / 3) = 0.20, so an empty agent scores 20, not 0.
-    assert metrics["healthScore"] == 20
+    # Re-normalised formula at avgRevisions == 0: the revision term
+    # alone is 0.15 * (1 - (0 - 1) / 3) = 0.20, divided by the
+    # remaining weight 0.80 -> an empty agent scores 25, not 20.
+    assert metrics["healthScore"] == 25
     assert service.all_agent_metrics() == {}
 
     overview = service.overview()
     assert overview["daily"] == []
-    assert overview["human"]["approvalRate"] == 0.0
+    # No human decisions: the rate is undefined (None), not zero.
+    assert overview["human"]["approvalRate"] is None
     assert overview["human"]["avgApprovalMinutes"] == 0.0
     assert overview["quality"]["reworkRate"] == 0.0
     assert overview["agents"] == []
@@ -130,16 +135,14 @@ def test_aggregation_math_and_health_formula() -> None:
             ),
         )
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="APPROVED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-spec", decision="APPROVED"
+        )
     )
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="REJECTED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-spec", decision="REJECTED"
+        )
     )
     service.record_quality(
         project_id="project-1",
@@ -188,10 +191,9 @@ def test_health_formula_perfect_and_zero_rates() -> None:
     service = MetricsService(clock=MutableClock())
     service.record("agent-spec", make_result(revisions=1))
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="APPROVED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-spec", decision="APPROVED"
+        )
     )
     service.record_quality(
         project_id="project-1",
@@ -376,10 +378,9 @@ def test_approval_rates_and_overview_human_section() -> None:
     service = MetricsService(clock=MutableClock())
     for decision in ("APPROVED", "REJECTED", "REQUEST_CHANGES"):
         service.record_approval_decision(
-            project_id="project-1",
-            task_id="task-1",
-            agent_id="agent-spec",
-            decision=decision,
+            ApprovalDecisionRecord(
+                project_id="project-1", task_id="task-1", agent_id="agent-spec", decision=decision
+            )
         )
     service.record("agent-spec", make_result(revisions=2))
 
@@ -402,10 +403,9 @@ def test_invalid_decision_kind_and_naive_times_are_rejected() -> None:
     service = MetricsService(clock=MutableClock())
     with pytest.raises(ValueError):
         service.record_approval_decision(
-            project_id="project-1",
-            task_id=None,
-            agent_id="agent-spec",
-            decision="MAYBE",
+            ApprovalDecisionRecord(
+                project_id="project-1", task_id=None, agent_id="agent-spec", decision="MAYBE"
+            )
         )
     with pytest.raises(ValueError):
         service.record_quality(
@@ -417,11 +417,13 @@ def test_invalid_decision_kind_and_naive_times_are_rejected() -> None:
         )
     with pytest.raises(ValueError):
         service.record_approval_decision(
-            project_id="project-1",
-            task_id=None,
-            agent_id="agent-spec",
-            decision="APPROVED",
-            at=datetime(2026, 11, 2, 9, 0),
+            ApprovalDecisionRecord(
+                project_id="project-1",
+                task_id=None,
+                agent_id="agent-spec",
+                decision="APPROVED",
+                at=datetime(2026, 11, 2, 9, 0),
+            )
         )
     naive = MetricsService(clock=lambda: datetime(2026, 11, 2, 9, 0))
     with pytest.raises(ValueError):
@@ -576,7 +578,8 @@ def test_getters_return_fresh_dicts() -> None:
 
     overview = service.overview()
     overview["human"]["approvalRate"] = 9.9
-    assert service.overview()["human"]["approvalRate"] == 0.0
+    # Fresh dict each call; with no human decisions the rate is None.
+    assert service.overview()["human"]["approvalRate"] is None
 
 
 def test_snapshot_round_trip_is_json_safe_and_restores_everything() -> None:
@@ -593,10 +596,9 @@ def test_snapshot_round_trip_is_json_safe_and_restores_everything() -> None:
         ),
     )
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-test",
-        decision="APPROVED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-test", decision="APPROVED"
+        )
     )
     service.record_quality(
         project_id="project-1",
@@ -648,3 +650,117 @@ def test_thread_smoke_concurrent_recording() -> None:
 
     assert service.agent_metrics("agent-spec")["total"] == workers * per_worker
     assert len(service.events()) == workers * per_worker
+
+
+def _ai_event(
+    event_type: str,
+    *,
+    verdict: str | None = None,
+    reason: str | None = None,
+    step: str = "spec",
+    run: str = "run-1",
+) -> ActivityEvent:
+    metadata: dict = {"stepId": step}
+    if verdict is not None:
+        metadata["verdict"] = verdict
+    if reason is not None:
+        metadata["reason"] = reason
+    return ActivityEvent(
+        id=f"evt-{event_type}-{step}-{verdict or reason or ''}",
+        timestamp=DAY1,
+        project_id="project-1",
+        task_id="task-1",
+        workflow_id=run,
+        event_type=event_type,
+        message=event_type,
+        metadata=metadata,
+    )
+
+
+def test_ai_decisions_never_enter_the_human_rate() -> None:
+    service = MetricsService(clock=MutableClock())
+    service.record("agent-spec", make_result(revisions=1))
+    service.record_approval_decision(
+        ApprovalDecisionRecord(
+            project_id="project-1",
+            task_id="task-1",
+            agent_id="agent-spec",
+            decision="APPROVED",
+            reviewer_kind="AI",
+        )
+    )
+    service.record_approval_decision(
+        ApprovalDecisionRecord(
+            project_id="project-1",
+            task_id="task-1",
+            agent_id="agent-spec",
+            decision="REQUEST_CHANGES",
+            reviewer_kind="AI",
+        )
+    )
+    metrics = service.agent_metrics("agent-spec")
+    assert metrics["humanApprovalRate"] is None
+    assert metrics["humanDecisions"] == 0
+    assert metrics["aiDecisions"] == 2
+    human = service.overview()["human"]
+    assert human["approvalRate"] is None
+    assert human["decisions"] == 0
+    assert human["aiDecisions"] == 2
+    # A human decision afterwards defines the rate on its own.
+    service.record_approval_decision(
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-spec", decision="APPROVED"
+        )
+    )
+    metrics = service.agent_metrics("agent-spec")
+    assert metrics["humanApprovalRate"] == 1.0
+    assert metrics["humanDecisions"] == 1
+
+
+def test_ai_review_metrics_from_published_events() -> None:
+    service = MetricsService(clock=MutableClock())
+    # Gate A: REQUEST_CHANGES then APPROVE (2 rounds, not first pass).
+    service.publish(_ai_event("AI_REVIEW_COMPLETED", verdict="REQUEST_CHANGES"))
+    service.publish(_ai_event("AI_REVIEW_COMPLETED", verdict="APPROVE"))
+    # Gate B: first-pass approve on another run/step.
+    service.publish(_ai_event("AI_REVIEW_COMPLETED", verdict="APPROVE", step="plan", run="run-2"))
+    # Gate C: stagnates and escalates.
+    service.publish(
+        _ai_event("AI_REVIEW_COMPLETED", verdict="REQUEST_CHANGES", step="task", run="run-3")
+    )
+    service.publish(_ai_event("AI_REVIEW_STAGNATION", step="task", run="run-3"))
+    service.publish(_ai_event("WORKFLOW_ESCALATED", reason="NO_PROGRESS", step="task", run="run-3"))
+    ai = service.overview()["aiReview"]
+    assert ai["gates"] == 3
+    assert ai["firstPassRate"] == pytest.approx(1 / 3)
+    assert ai["avgRounds"] == pytest.approx(4 / 3)
+    assert ai["escalationRate"] == pytest.approx(1 / 3)
+    assert ai["stagnationRate"] == pytest.approx(1 / 3)
+    assert ai["escalations"] == 1
+    # The published rounds were also recorded as AI decisions,
+    # attributed to the reviewer agent, never to a human rate.
+    reviewer_metrics = service.agent_metrics("agent-artifact-review")
+    assert reviewer_metrics["aiDecisions"] == 4
+    assert reviewer_metrics["humanApprovalRate"] is None
+
+
+def test_harness_trigger_does_not_fire_without_human_decisions() -> None:
+    from harness.harness2.trigger import MetricsImprovementTrigger, MetricsOverview
+
+    service = MetricsService(clock=MutableClock())
+    service.record("agent-spec", make_result(revisions=1))
+    service.record_approval_decision(
+        ApprovalDecisionRecord(
+            project_id="project-1",
+            task_id="task-1",
+            agent_id="agent-spec",
+            decision="REQUEST_CHANGES",
+            reviewer_kind="AI",
+        )
+    )
+    overview = MetricsOverview.model_validate(service.overview())
+    trigger = MetricsImprovementTrigger()
+    suggestions = trigger.assess(overview)
+    assert all(
+        item.metric not in ("humanApprovalRate", "human.approvalRate") for item in suggestions
+    )

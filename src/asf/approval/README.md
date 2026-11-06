@@ -64,6 +64,24 @@ For the orchestrator in Phase 6:
 - Request status `CHANGES_REQUESTED` -> Trigger `REQUEST_CHANGES`
 - Statuses `PENDING`, `EXPIRED`, `CANCELLED` -> No trigger emitted (orchestrator decides what expiry means).
 
+## AI review mode (Phase 12)
+
+`mode.py` resolves a gated step's approval mode (`ai | human | none`)
+from the project profile's `configuration.approval` block, per-step
+overrides and the step definition, and resolves the effective max
+revisions, `onExhausted` behaviour and blocking severities. In `ai`
+mode the orchestrator addresses the request to `ai-reviewer` **plus**
+the profile's human reviewers (default `dashboard`), `min_approvals`
+1: the AI reviewer decides automatically, and a human may still
+approve or reject manually — that decision is recorded with
+`reviewer_kind` HUMAN and wins over any in-flight AI round. AI
+decisions are recorded with reviewer `ai-reviewer` and
+`reviewer_kind` AI, so evaluation can keep `humanApprovalRate`
+human-only. When a review loop escalates, exhaustion is evaluated
+before stagnation: the final-round escalation reason is
+`MAX_REVISIONS` even if the open blockers did not shrink (see the
+orchestrator README's AI review section).
+
 ## What Is NOT Here
 - No storage backends (database, disk): only the in-memory repository protocol is used.
 - No Teams, Slack, email, or notification channel adapters (Phase 8).

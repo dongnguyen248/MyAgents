@@ -24,6 +24,11 @@ import pytest
 
 from asf.agents._shared.codegen import FixContext
 from asf.agents._shared.harness import HarnessComponents, fingerprint
+from asf.agents.artifact_review.prompts import (
+    ArtifactReviewPrompts,
+    build_artifact_review_messages,
+    review_target,
+)
 from asf.agents.fix.prompts import FixMessageOptions, FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import (
     ImplementPromptContext,
@@ -32,8 +37,10 @@ from asf.agents.implement.prompts import (
 )
 from asf.agents.loading import (
     _load_agent_prompts,
+    _load_checklists,
     _load_prompt_pair,
     _PromptSource,
+    load_artifact_review_prompts,
     load_fix_prompts,
     load_implement_prompts,
     load_plan_prompts,
@@ -72,22 +79,31 @@ PUBLIC_LOADERS = {
     "implement": load_implement_prompts,
     "review": load_review_prompts,
     "fix": load_fix_prompts,
+    "artifact-review": load_artifact_review_prompts,
 }
 
 
+def _load_artifact_review(package: str) -> ArtifactReviewPrompts:
+    source = _PromptSource(package, "artifact-review", strict=True, tool_guidance=False)
+
+    def build(**kwargs: Any) -> ArtifactReviewPrompts:
+        return ArtifactReviewPrompts(checklists=_load_checklists(package), **kwargs)
+
+    return _load_agent_prompts(source, build)
+
+
 def _load_from_package(agent: str, package: str) -> Any:
-    if agent == "spec":
-        return _load_prompt_pair(package, agent, SpecPrompts)
-    if agent == "plan":
-        return _load_prompt_pair(package, agent, PlanPrompts)
-    if agent == "task":
-        return _load_prompt_pair(package, agent, TaskPrompts)
+    pair_classes = {"spec": SpecPrompts, "plan": PlanPrompts, "task": TaskPrompts}
+    if agent in pair_classes:
+        return _load_prompt_pair(package, agent, pair_classes[agent])
     if agent == "implement":
         source = _PromptSource(package, agent, strict=False, tool_guidance=True)
         return _load_agent_prompts(source, ImplementPrompts)
     if agent == "review":
         source = _PromptSource(package, agent, strict=True, tool_guidance=False)
         return _load_agent_prompts(source, ReviewPrompts)
+    if agent == "artifact-review":
+        return _load_artifact_review(package)
     source = _PromptSource(package, agent, strict=True, tool_guidance=True)
     return _load_agent_prompts(source, FixPrompts)
 
@@ -188,6 +204,7 @@ def _assemble(agent: str, prompts: Any, harness: HarnessComponents | None, revis
         "implement": _assemble_implement,
         "review": _assemble_review,
         "fix": _assemble_fix,
+        "artifact-review": _assemble_artifact_review,
     }
     return builders[agent](prompts, harness, revision)
 
@@ -258,6 +275,23 @@ def _assemble_fix(prompts: Any, harness: HarnessComponents | None, revision: boo
     options = FixMessageOptions(harness=harness)
     messages = build_fix_messages(prompts, _request("agent-fix"), _fix_context(), options)
     return "\n".join(message.content for message in messages)
+
+
+def _assemble_artifact_review(
+    prompts: Any, harness: HarnessComponents | None, revision: bool
+) -> str:
+    texts: list[str] = []
+    for stage in ("spec", "plan", "task"):
+        request = _request("agent-artifact-review")
+        request = request.model_copy(update={"input": {"stage": stage, "round": 1}})
+        messages = build_artifact_review_messages(
+            prompts=prompts,
+            request=request,
+            target=review_target(request),
+            harness=harness,
+        )
+        texts.extend(message.content for message in messages)
+    return "\n".join(texts)
 
 
 @pytest.mark.parametrize("agent", AGENTS)

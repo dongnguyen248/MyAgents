@@ -4,6 +4,7 @@ import { Badge, type Tone } from '../common/Badge';
 
 const MAP: Record<WorkflowStatus, [Tone, string]> = {
   RUNNING: ['info', '◐'],
+  AI_REVIEWING: ['info', '◐'],
   WAITING_APPROVAL: ['warn', '◔'],
   WAITING_RETRY: ['warn', '◔'],
   ESCALATED: ['danger', '⚠'],

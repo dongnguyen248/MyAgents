@@ -123,7 +123,9 @@ class AiReviewStage:
         """The approval policy a new request for this run must snapshot."""
         step = self._step_of(spec)
         if step is not None and self.resolved(run, step).mode == "ai":
-            return ApprovalPolicy(reviewers=[AI_REVIEWER], min_approvals=1)
+            human = approval_policy_from_context(run.context) or base_policy
+            reviewers = [AI_REVIEWER, *(r for r in human.reviewers if r != AI_REVIEWER)]
+            return ApprovalPolicy(reviewers=reviewers, min_approvals=1)
         return approval_policy_from_context(run.context) or base_policy
 
     def claim(self, run: WorkflowExecution) -> str | None:

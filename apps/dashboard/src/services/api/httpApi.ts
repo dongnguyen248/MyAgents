@@ -60,12 +60,18 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     listWorkflows: () => get('/workflows'),
     getWorkflow: (id) => getOpt(`/workflows/${id}`),
     getRunDiagnostics: (runId) => getOpt(`/runs/${runId}/diagnostics`),
+    getRunReviews: (runId) => getOpt(`/runs/${runId}/reviews`),
     tickRun: (runId) => send<Workflow>(`/runs/${runId}/tick`, 'POST'),
     retryRun: (runId) => send<Workflow>(`/runs/${runId}/retry`, 'POST'),
     resumeRun: (runId) => send<Workflow>(`/runs/${runId}/resume`, 'POST'),
     cancelRun: (runId) => send<Workflow>(`/runs/${runId}/cancel`, 'POST'),
-    resumeEscalation: (runId, reason) =>
-      send<Workflow>(`/runs/${runId}/escalation/resume`, 'POST', { reason }),
+    resumeEscalation: (runId, reason, guidance) =>
+      send<Workflow>(`/runs/${runId}/escalation/resume`, 'POST', {
+        reason,
+        ...(guidance ? { guidance } : {}),
+      }),
+    approveEscalation: (runId, reason) =>
+      send<Workflow>(`/runs/${runId}/escalation/approve`, 'POST', { reason }),
     recoverRun: (runId, reason, retryInterrupted) =>
       send<Workflow>(`/runs/${runId}/recover`, 'POST', { reason, retryInterrupted }),
     driveRun: (runId) => send<Workflow>(`/runs/${runId}/drive`, 'POST'),

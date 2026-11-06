@@ -1,4 +1,4 @@
-export const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
+export const pct = (v: number | null, digits = 1) => (v === null ? '—' : `${(v * 100).toFixed(digits)}%`);
 
 export function duration(sec: number): string {
   const s = Math.max(0, Math.round(sec));

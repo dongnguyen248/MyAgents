@@ -37,7 +37,13 @@ __all__ = [
 
 @dataclass(frozen=True)
 class HarnessComponents:
-    """One agent's harness: the editable surface of design decision D5."""
+    """One agent's harness: the editable surface of design decision D5.
+
+    `extras` carries an agent's additional editable files by
+    repo-relative path (the artifact-review agent's stage checklists);
+    it is part of the fingerprint but never enters the generic
+    assembly order above — the owning agent reads its own extras.
+    """
 
     contract: str = ""
     system: str = ""
@@ -46,6 +52,7 @@ class HarnessComponents:
     memory: str = ""
     tool_guidance: str = ""
     skills: Mapping[str, str] = field(default_factory=dict)
+    extras: Mapping[str, str] = field(default_factory=dict)
 
 
 def assemble_base_prompt(components: HarnessComponents, *, revision: bool = False) -> str:
@@ -86,6 +93,7 @@ def fingerprint(components: HarnessComponents) -> str:
         "memory": components.memory,
         "tool_guidance": components.tool_guidance,
         "skills": dict(sorted(components.skills.items())),
+        "extras": dict(sorted(components.extras.items())),
     }
     text = json.dumps(payload, ensure_ascii=True, sort_keys=True)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()

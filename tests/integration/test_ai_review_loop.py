@@ -9,6 +9,8 @@ or escalations) after a restart.
 
 from __future__ import annotations
 
+import time
+from contextlib import suppress
 from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
@@ -19,6 +21,8 @@ from asf.agents.base import AgentRuntime
 from asf.agents.loading import load_artifact_review_prompts
 from asf.agents.spec.factory import build_spec_agent
 from asf.api.service import FactoryService
+from asf.api.service.escalation_ops import approve_escalated_run
+from asf.api.service.reviews_view import run_reviews
 from asf.approval.models import ApprovalPolicy
 from asf.approval.service import ApprovalService
 from asf.configuration.platform import PlatformConfig
@@ -164,7 +168,7 @@ def test_run_started_from_a_real_profile_honours_its_approval_mode() -> None:
     ai_view = service.get_workflow(ai_run.id)
     assert ai_view is not None and ai_view["status"] == "COMPLETED"
     ai_requests = [r for r in harness.repo.list_by_task("task-ai")]
-    assert ai_requests and ai_requests[0].reviewers == ["ai-reviewer"]
+    assert ai_requests and ai_requests[0].reviewers == ["ai-reviewer", "dashboard"]
 
     human_run = service.start_run("task-human", "human-proj", inputs={"spec": {"requirement": "x"}})
     service.wait_for_drives()
@@ -217,3 +221,217 @@ def test_adopt_orphans_resumes_ai_review_but_not_human_or_escalated() -> None:
     assert engine.get(ai_run.id).state.stage == "COMPLETED"
     assert engine.get(human_run.id).state.stage == "SPEC_REVIEW"
     assert engine.get(escalated.id).state.stage == "SPEC_ESCALATED"
+
+
+def _status_of(service: FactoryService, run_id: str) -> str | None:
+    view = service.get_workflow(run_id)
+    return view["status"] if view is not None else None
+
+
+def _wait_for_status(service: FactoryService, run_id: str, status: str) -> None:
+    # The runs cache (1.5s TTL) can lag the drive; poll briefly.
+    for _ in range(60):
+        if _status_of(service, run_id) == status:
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"run {run_id} never reached {status}: {_status_of(service, run_id)}")
+
+
+def _escalated_service(replies: list[str]) -> tuple[Harness, FactoryService, Any]:
+    steps = [
+        gated("spec", "spec", "SPEC", [], max_revisions=1),
+        plain("plan", "plan", "PLAN", ["SPEC"]),
+    ]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=replies, contents=contents)
+    projects = {"ai-proj": _profile("ai-proj", {"mode": "ai", "reviewers": ["alice"]})}
+    service = FactoryService(
+        harness.engine, projects=projects, clock=harness.clock, reviewer="alice"
+    )
+    run = service.start_run("task-esc", "ai-proj", inputs={"spec": {"requirement": "x"}})
+    service.wait_for_drives()
+    _wait_for_status(service, run.id, "ESCALATED")
+    return harness, service, run
+
+
+def test_service_approve_escalation_approves_anyway_and_completes() -> None:
+    harness, service, run = _escalated_service([rc_reply(), rc_reply()])
+    view = approve_escalated_run(service, run.id, reason="Ship it as-is", operator="alice")
+    assert view is not None
+    service.wait_for_drives()
+    _wait_for_status(service, run.id, "COMPLETED")
+    requests = harness.repo.list_by_task("task-esc")
+    override = requests[-1]
+    assert override.status == "APPROVED"
+    decisions = harness.repo.list_decisions(override.id)
+    assert len(decisions) == 1
+    assert decisions[0].reviewer == "alice"
+    assert decisions[0].reviewer_kind == "HUMAN"
+    assert decisions[0].comment == "Ship it as-is"
+
+
+def test_service_resume_with_guidance_feeds_the_producer_and_completes() -> None:
+    harness, service, run = _escalated_service([rc_reply(), rc_reply(), RESOLVED_REPLY])
+    view = service.resume_escalation(
+        run.id, reason="one more round", operator="alice", guidance="Focus on REQ-2 only."
+    )
+    assert view is not None
+    service.wait_for_drives()
+    _wait_for_status(service, run.id, "COMPLETED")
+    feedback = harness.requests["spec"][-1].feedback
+    assert any(
+        item.reviewer == "alice" and item.comment == "Focus on REQ-2 only." for item in feedback
+    )
+
+
+def test_waiting_block_describes_an_escalated_gate() -> None:
+    _harness, service, run = _escalated_service([rc_reply(), rc_reply()])
+    view = service.get_workflow(run.id)
+    assert view is not None
+    waiting = view["waiting"]
+    assert waiting["kind"] == "ESCALATED"
+    assert waiting["escalationReason"] == "MAX_REVISIONS"
+    assert waiting["openBlockers"] == 1
+    assert waiting["suggestedActions"] == ["resume", "approve", "cancel"]
+
+
+def test_waiting_block_describes_an_ai_review_in_progress() -> None:
+    import threading
+
+    gate = threading.Event()
+
+    class BlockingGateway:
+        def __init__(self, inner: Any) -> None:
+            self._inner = inner
+            self.requests = inner.requests
+
+        def complete(self, request: Any) -> Any:
+            gate.wait(timeout=30)
+            return self._inner.complete(request)
+
+    steps = [
+        gated("spec", "spec", "SPEC", [], max_revisions=4),
+        plain("plan", "plan", "PLAN", ["SPEC"]),
+    ]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(
+        steps, replies=[APPROVE_REPLY], contents=contents, gateway_wrapper=BlockingGateway
+    )
+    projects = {"ai-proj": _profile("ai-proj", {"mode": "ai"})}
+    service = FactoryService(
+        harness.engine, projects=projects, clock=harness.clock, reviewer="alice"
+    )
+    run = service.start_run("task-wait", "ai-proj", inputs={"spec": {"requirement": "x"}})
+    try:
+        for _ in range(100):
+            view = service.get_workflow(run.id)
+            if view is not None and view["status"] == "AI_REVIEWING":
+                break
+            time.sleep(0.05)
+        assert view is not None and view["status"] == "AI_REVIEWING"
+        waiting = view["waiting"]
+        assert waiting["kind"] == "AI_REVIEW"
+        assert waiting["stage"] == "SPEC"
+        assert waiting["round"] == 1
+        assert waiting["maxRounds"] == 4
+        assert waiting["suggestedActions"] == ["approve", "reject", "cancel"]
+    finally:
+        gate.set()
+    service.wait_for_drives()
+    _wait_for_status(service, run.id, "COMPLETED")
+
+
+def test_run_reviews_view_groups_rounds_per_stage() -> None:
+    steps = [
+        gated("spec", "spec", "SPEC", [], max_revisions=3),
+        plain("plan", "plan", "PLAN", ["SPEC"]),
+    ]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[rc_reply(), RESOLVED_REPLY], contents=contents)
+    projects = {"ai-proj": _profile("ai-proj", {"mode": "ai"})}
+    service = FactoryService(
+        harness.engine, projects=projects, clock=harness.clock, reviewer="alice"
+    )
+    run = service.start_run("task-rev", "ai-proj", inputs={"spec": {"requirement": "x"}})
+    service.wait_for_drives()
+    _wait_for_status(service, run.id, "COMPLETED")
+    view = run_reviews(service, run.id)
+    assert view is not None and view["runId"] == run.id
+    assert [stage["stage"] for stage in view["stages"]] == ["spec"]
+    rounds = view["stages"][0]["rounds"]
+    assert [item["round"] for item in rounds] == [1, 2]
+    assert [item["verdict"] for item in rounds] == ["REQUEST_CHANGES", "APPROVE"]
+    first = rounds[0]
+    assert first["counts"]["BLOCKER"] == 1
+    assert first["reviewedArtifactVersion"] == "1"
+    finding = first["findings"][0]
+    assert finding["id"] == "F-001"
+    assert finding["requiredChange"] == "Add an acceptance criterion for REQ-2."
+    assert run_reviews(service, "no-such-run") is None
+
+
+def test_manual_ticks_never_double_dispatch_a_reviewer_round() -> None:
+    import threading
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    class FirstCallBlockingGateway:
+        """Blocks the first reviewer call; counts every dispatch."""
+
+        def __init__(self, inner: Any) -> None:
+            self._inner = inner
+            self.requests = inner.requests
+            self.calls = 0
+
+        def complete(self, request: Any) -> Any:
+            self.calls += 1
+            if self.calls == 1:
+                entered.set()
+                release.wait(timeout=30)
+            return self._inner.complete(request)
+
+    holder: dict[str, Any] = {}
+
+    def wrap(inner: Any) -> Any:
+        holder["gateway"] = FirstCallBlockingGateway(inner)
+        return holder["gateway"]
+
+    steps = [
+        gated("spec", "spec", "SPEC", [], max_revisions=4),
+        plain("plan", "plan", "PLAN", ["SPEC"]),
+    ]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[APPROVE_REPLY], contents=contents, gateway_wrapper=wrap)
+    projects = {"ai-proj": _profile("ai-proj", {"mode": "ai"})}
+    service = FactoryService(
+        harness.engine, projects=projects, clock=harness.clock, reviewer="alice"
+    )
+    run = service.start_run("task-race", "ai-proj", inputs={"spec": {"requirement": "x"}})
+    try:
+        # The background driver claims round 1 and blocks inside the
+        # reviewer call, holding the run's in-flight token.
+        assert entered.wait(timeout=10), "background driver never dispatched the reviewer"
+        gateway = holder["gateway"]
+        assert gateway.calls == 1
+        # Manual ticks (the endpoint path) while round 1 is in
+        # flight: they may be rejected by the claim guard, but they
+        # must never dispatch a second reviewer call for the same
+        # (run, stage, revision).
+        for _ in range(3):
+            with suppress(Exception):
+                service.tick_run(run.id)
+        assert gateway.calls == 1
+    finally:
+        release.set()
+    service.wait_for_drives()
+    _wait_for_status(service, run.id, "COMPLETED")
+    assert gateway.calls == 1
+    reviews = [
+        item
+        for item in harness.engine.get(run.id).artifact_history.values()
+        if item.type == "ARTIFACT_REVIEW"
+    ]
+    assert len(reviews) == 1
+    requests = harness.repo.list_by_task("task-race")
+    assert len(harness.repo.list_decisions(requests[0].id)) == 1

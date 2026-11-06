@@ -179,7 +179,7 @@ _ZERO_AGENT_METRICS: dict[str, Any] = {
     "successRate": 0.0,
     "avgDurationSec": 0.0,
     "avgRevisions": 0.0,
-    "humanApprovalRate": 0.0,
+    "humanApprovalRate": None,
     "testPassRate": 0.0,
     "ciPassRate": 0.0,
 }
@@ -262,6 +262,7 @@ def _camelize(key: str) -> str:
 
 # The mixins import the shared names defined above from this
 # package, so they can only be imported after those definitions.
+from asf.api.service.approval_context import approval_settings_view  # noqa: E402
 from asf.api.service.commands import CommandsMixin  # noqa: E402
 from asf.api.service.driver import DriverMixin  # noqa: E402
 from asf.api.service.queries import QueriesMixin  # noqa: E402
@@ -423,7 +424,6 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
                     if isinstance(value, str) and value not in technologies:
                         technologies.append(value)
             approval = profile.configuration.get("approval")
-            channel = approval.get("channel") if isinstance(approval, Mapping) else None
             return {
                 "id": profile.id,
                 "name": profile.name,
@@ -440,7 +440,7 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
                 "workflow": profile.workflow,
                 "enabledSkills": [str(skill) for skill in profile.enabled_skills],
                 "technologyGroups": groups,
-                "approvalChannel": channel if isinstance(channel, str) else "",
+                **approval_settings_view(approval),
             }
         data = dict(profile)
         repository = data.get("repository") or {}
@@ -466,7 +466,6 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
                 groups[str(group)] = [str(item) for item in items if isinstance(item, str)]
         configuration = data.get("configuration") or {}
         approval = configuration.get("approval") if isinstance(configuration, Mapping) else None
-        channel = approval.get("channel") if isinstance(approval, Mapping) else None
         raw_skills = data.get("enabledSkills", data.get("enabled_skills"))
         return {
             "id": str(data.get("id", project_id)),
@@ -496,7 +495,7 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
                 else []
             ),
             "technologyGroups": groups,
-            "approvalChannel": channel if isinstance(channel, str) else "",
+            **approval_settings_view(approval),
         }
 
     # ------------------------------------------------------------------

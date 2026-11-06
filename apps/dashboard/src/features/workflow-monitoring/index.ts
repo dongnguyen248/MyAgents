@@ -9,6 +9,8 @@ export const retryWorkflow = svc.retryWorkflow;
 export const resumeWorkflow = svc.resumeWorkflow;
 export const cancelWorkflow = svc.cancelWorkflow;
 export const resumeEscalation = svc.resumeEscalation;
+export const approveEscalation = svc.approveEscalation;
+export const useRunReviews = (id: string) => useAsync(() => svc.getRunReviews(id), [id]);
 export const recoverWorkflow = svc.recoverWorkflow;
 export const driveWorkflow = svc.driveWorkflow;
 export const failWorkflow = svc.failWorkflow;

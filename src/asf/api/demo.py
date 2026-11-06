@@ -23,7 +23,6 @@ import os
 import sys
 import tempfile
 from collections.abc import Callable, Mapping
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,12 +44,12 @@ from asf.agents.test.factory import build_test_agent
 from asf.api.app import create_app
 from asf.api.decomposer import RequirementDecomposer
 from asf.api.demo_gateway import DemoRoutingGateway
+from asf.api.demo_selftest import run_selftest
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
 from asf.api.service import FactoryService
-from asf.approval.errors import ApprovalError
 from asf.approval.mode import DEFAULT_MAX_REVIEW_ROUNDS
-from asf.approval.models import AI_REVIEWER, ApprovalPolicy
+from asf.approval.models import ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
 from asf.configuration.platform import PlatformConfig
 from asf.configuration.project import (
@@ -73,7 +72,6 @@ from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.orchestrator.budget import RunBudget
 from asf.orchestrator.code_loop import CodeLoopPolicy
 from asf.orchestrator.ports import ExecutionStore
-from asf.state_machine.machine import InvalidTransition
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
 from asf.storage.memory import InMemoryStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
@@ -130,7 +128,7 @@ class _FallbackMetrics:
             "successRate": completed / total if total else 0.0,
             "avgDurationSec": sum(durations) / total if total else 0.0,
             "avgRevisions": 0.0,
-            "humanApprovalRate": 0.0,
+            "humanApprovalRate": None,
             "testPassRate": 0.0,
             "ciPassRate": 0.0,
             "promptTokens": sum(r.metrics.prompt_tokens for r in own),
@@ -156,6 +154,14 @@ class _FallbackMetrics:
                 "daily": [],
             },
             "agents": [],
+            "aiReview": {
+                "firstPassRate": 0.0,
+                "avgRounds": 0.0,
+                "escalationRate": 0.0,
+                "stagnationRate": 0.0,
+                "gates": 0,
+                "escalations": 0,
+            },
         }
 
     def events(self) -> list[ActivityEvent]:
@@ -958,61 +964,6 @@ def build_demo(
     except Exception:
         logger.exception("Journal orphan sweep failed at startup")
     return service, engine, store
-
-
-def _selftest_advance(service: FactoryService, engine: Orchestrator, run: Any) -> None:
-    """One selftest step: tick, or approve a human-addressed gate."""
-    if run.approval_id is None:
-        service.tick_run(run.id)
-        return
-    pending = engine.pending_approval(run.id)
-    if AI_REVIEWER in pending.reviewers:
-        service.tick_run(run.id)
-    else:
-        service.decide_approval(pending.id, decision="APPROVE")
-
-
-def run_selftest(service: FactoryService, engine: Orchestrator) -> int:
-    """Drive one run to completion.
-
-    AI-mode gates are decided by the review loop itself (just tick);
-    only a gate addressed to human reviewers is approved directly,
-    as 'dashboard'.
-    """
-    project_id = service.list_projects()[0]["id"]
-    run = service.start_run(
-        "demo-task",
-        project_id,
-        inputs={
-            "spec": {"requirement": "Demonstrate the dashboard backend end to end"},
-            "implement": {"taskItemId": "T1", "ref": "main"},
-            "review": {"taskItemId": "T1", "ref": "main"},
-            "test": {"taskItemId": "T1", "ref": "main"},
-        },
-        context={"project": {"testCommands": [["python", "-m", "pytest", "-q"]]}},
-    )
-    for _ in range(100):
-        run = engine.get(run.id)
-        print(f"stage: {run.state.stage}")
-        if run.state.stage in ("COMPLETED", "FAILED", "CANCELLED"):
-            break
-        # The background drive advances the run concurrently (with AI
-        # gates it no longer parks), so an action can lose the race
-        # against a run that just completed or was just decided:
-        # re-read and continue instead of failing the selftest.
-        with suppress(InvalidTransition, ApprovalError):
-            _selftest_advance(service, engine, run)
-    service.wait_for_drives()
-    run = engine.get(run.id)
-    artifact_types = {artifact.type for artifact in run.artifact_history.values()}
-    missing = {"SPEC", "PLAN", "TASK", "CODE"} - artifact_types
-    if run.state.stage != "COMPLETED" or missing:
-        print(f"SELFTEST FAILED: stage={run.state.stage} missing={sorted(missing)}")
-        for error in run.errors:
-            print(f"error: {error.code}: {error.message}")
-        return 1
-    print(f"SELFTEST OK - final stage: {run.state.stage}")
-    return 0
 
 
 DB_CONFIG_GUIDANCE = """\

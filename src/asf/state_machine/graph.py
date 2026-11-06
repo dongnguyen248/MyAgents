@@ -13,6 +13,14 @@ from asf.workflow.definition import (
 
 Guard = Literal["none", "within_limit", "limit_reached"]
 
+_GATED_STAGE_KINDS = (
+    ("DRAFT", StageKind.DRAFT),
+    ("REVIEW", StageKind.REVIEW),
+    ("REJECTED", StageKind.REJECTED),
+    ("APPROVED", StageKind.APPROVED),
+    ("ESCALATED", StageKind.ESCALATED),
+)
+
 
 @dataclass(frozen=True)
 class StageInfo:
@@ -49,19 +57,8 @@ def build_graph(definition: WorkflowDefinition) -> StageGraph:
     for step in definition.steps:
         if step.requires_approval:
             s_name = step.stage
-            stages.append(StageInfo(name=f"{s_name}_DRAFT", kind=StageKind.DRAFT, step_id=step.id))
-            stages.append(
-                StageInfo(name=f"{s_name}_REVIEW", kind=StageKind.REVIEW, step_id=step.id)
-            )
-            stages.append(
-                StageInfo(name=f"{s_name}_REJECTED", kind=StageKind.REJECTED, step_id=step.id)
-            )
-            stages.append(
-                StageInfo(name=f"{s_name}_APPROVED", kind=StageKind.APPROVED, step_id=step.id)
-            )
-            stages.append(
-                StageInfo(name=f"{s_name}_ESCALATED", kind=StageKind.ESCALATED, step_id=step.id)
-            )
+            for suffix, kind in _GATED_STAGE_KINDS:
+                stages.append(StageInfo(name=f"{s_name}_{suffix}", kind=kind, step_id=step.id))
             max_revisions[step.id] = (
                 step.max_revisions if step.max_revisions is not None else DEFAULT_MAX_REVISIONS
             )
@@ -124,6 +121,9 @@ def build_graph(definition: WorkflowDefinition) -> StageGraph:
 
             # S_ESCALATED --RESUME--> S_DRAFT
             edges.append(Edge(source=escalated, trigger=Trigger.RESUME, target=draft))
+
+            # S_ESCALATED --APPROVED--> S_APPROVED (operator approve-anyway)
+            edges.append(Edge(source=escalated, trigger=Trigger.APPROVED, target=approved))
 
             # S_APPROVED --ADVANCE--> entry(next step)
             edges.append(Edge(source=approved, trigger=Trigger.ADVANCE, target=next_target))

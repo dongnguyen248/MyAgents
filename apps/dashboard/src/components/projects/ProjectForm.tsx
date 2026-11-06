@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { parseMaxRevisions, validateApprovalSettings } from '../../lib/approvalSettings';
 import type { ProjectProfileInput } from '../../types/project';
 import { Card } from '../common/Layout';
 
@@ -52,6 +53,11 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
   const [channel, setChannel] = useState(
     initial ? (initial.configuration.approval?.channel ?? 'none') || 'none' : 'teams',
   );
+  const [approvalMode, setApprovalMode] = useState(initial?.configuration.approval?.mode ?? '');
+  const [maxRevisions, setMaxRevisions] = useState(
+    initial?.configuration.approval?.maxRevisions?.toString() ?? '',
+  );
+  const [onExhausted, setOnExhausted] = useState(initial?.configuration.approval?.onExhausted ?? '');
   const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
 
@@ -75,8 +81,37 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(undefined);
+    // Same bounds the server enforces on configuration.approval.
+    const settingsErrors = validateApprovalSettings({
+      mode: approvalMode,
+      maxRevisions,
+      onExhausted,
+    });
+    if (settingsErrors.length) {
+      setError(settingsErrors.join(' '));
+      return;
+    }
     setSubmitting(true);
     const testCommands = testCommand.trim() ? [testCommand.trim().split(/\s+/)] : [];
+    const maxRevisionsValue = parseMaxRevisions(maxRevisions);
+    const approval: { channel: string; mode?: string; maxRevisions?: number; onExhausted?: string } = {
+      channel: channel === 'none' ? '' : channel,
+    };
+    if (approvalMode) {
+      approval.mode = approvalMode;
+    }
+    if (maxRevisionsValue !== undefined) {
+      approval.maxRevisions = maxRevisionsValue;
+    }
+    if (onExhausted) {
+      approval.onExhausted = onExhausted;
+    }
+    const sendApproval =
+      channel !== 'none' ||
+      approvalMode !== '' ||
+      maxRevisionsValue !== undefined ||
+      onExhausted !== '' ||
+      editing;
     try {
       await onCreate({
         id: id.trim(),
@@ -95,11 +130,7 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
         enabledSkills: list(skills),
         // In edit mode an explicit empty channel clears a stored one on merge.
         configuration: {
-          ...(channel === 'none'
-            ? editing
-              ? { approval: { channel: '' } }
-              : {}
-            : { approval: { channel } }),
+          ...(sendApproval ? { approval } : {}),
           // In edit mode an empty test command clears the stored one.
           ...(testCommands.length || editing ? { testCommands } : {}),
         },
@@ -162,6 +193,39 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
             </select>
           </label>
         </div>
+        <div className="form-grid">
+          <label className="field">
+            <span>Approval mode (SPEC / PLAN / TASK gates)</span>
+            <select value={approvalMode} onChange={(e) => setApprovalMode(e.target.value)}>
+              <option value="">Workflow default</option>
+              <option value="ai">AI review</option>
+              <option value="human">Human approval</option>
+              <option value="none">No approval</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Max revisions (1-10, blank = default)</span>
+            <input
+              value={maxRevisions}
+              onChange={(e) => setMaxRevisions(e.target.value)}
+              inputMode="numeric"
+              placeholder="4"
+            />
+          </label>
+          <label className="field">
+            <span>When revisions run out</span>
+            <select value={onExhausted} onChange={(e) => setOnExhausted(e.target.value)}>
+              <option value="">Default (escalate to a human)</option>
+              <option value="escalate">Escalate to a human</option>
+              <option value="accept_with_warnings">Accept with warnings</option>
+            </select>
+          </label>
+        </div>
+        <p className="muted small">
+          Approval mode decides who clears the SPEC, PLAN and TASK gates: the AI reviewer
+          (artifact-review agent), a human on the Approvals page, or nobody. Max revisions bounds
+          the AI review loop before it escalates; the server enforces the same 1-10 range.
+        </p>
         <div className="form-grid">
           <label className="field">
             <span>Backend technologies (comma separated)</span>

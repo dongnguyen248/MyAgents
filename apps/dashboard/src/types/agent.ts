@@ -1,6 +1,6 @@
 import type { AgentMetrics } from './metrics';
 
-export type AgentType = 'spec' | 'plan' | 'task' | 'implement' | 'review' | 'test' | 'fix';
+export type AgentType = 'spec' | 'plan' | 'task' | 'implement' | 'review' | 'test' | 'fix' | 'artifact-review';
 
 export type AgentStatus = 'ONLINE' | 'BUSY' | 'IDLE' | 'WAITING' | 'ERROR' | 'DISABLED' | 'OFFLINE';
 

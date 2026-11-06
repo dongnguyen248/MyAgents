@@ -25,6 +25,7 @@ from asf.agents._shared.security import scan_secrets
 __all__ = [
     "AGENT_SURFACES",
     "BANNED_PREFIXES",
+    "CHECKLIST_PATHS",
     "CONTRACT_PATH",
     "GUARDRAILS_PATH",
     "LEAK_MARKERS",
@@ -48,6 +49,11 @@ REVISION_PATH = "prompts/revision.md"
 GUARDRAILS_PATH = "instructions/guardrails.md"
 MEMORY_PATH = "instructions/memory.md"
 TOOL_GUIDANCE_PATH = "tools/tool_guidance.md"
+CHECKLIST_PATHS = (
+    "instructions/checklist_spec.md",
+    "instructions/checklist_plan.md",
+    "instructions/checklist_task.md",
+)
 
 LEAK_MARKERS = ("CHANGES_REQUESTED", "TEST_REPORT", "CODE_REVIEW")
 BANNED_PREFIXES = ("scripts/", "subagents/", "plugins/")
@@ -72,6 +78,7 @@ class SurfaceSpec:
     has_revision: bool
     has_tool_guidance: bool
     frozen_lines: tuple[str, ...] = ()
+    extra_editable: tuple[str, ...] = ()
 
     def fixed_paths(self) -> dict[str, bool]:
         """Known non-skill paths mapped to their frozen flag."""
@@ -85,6 +92,8 @@ class SurfaceSpec:
             paths[REVISION_PATH] = True
         if self.has_tool_guidance:
             paths[TOOL_GUIDANCE_PATH] = False
+        for path in self.extra_editable:
+            paths[path] = False
         return paths
 
     def editable_paths(self) -> set[str]:
@@ -150,6 +159,14 @@ AGENT_SURFACES: dict[str, SurfaceSpec] = {
         tree_max=33_336,
         has_revision=False,
         has_tool_guidance=True,
+    ),
+    "artifact-review": SurfaceSpec(
+        agent="artifact-review",
+        always_on_max=61_000,
+        tree_max=24_195,
+        has_revision=False,
+        has_tool_guidance=False,
+        extra_editable=CHECKLIST_PATHS,
     ),
 }
 

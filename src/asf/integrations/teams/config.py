@@ -22,6 +22,10 @@ class TeamsConfig(ConfigModel):
     callback_secret: SecretRef
     reviewers: dict[UUID, str] = Field(min_length=1)
     timeout_seconds: float = Field(default=30, gt=0, le=120)
+    # Existing channel setting (Phase 12): when true, an escalated
+    # run posts ONE informational message (no approval card, no
+    # actions) so a human learns a gate needs them. Default off.
+    notify_on_escalation: bool = False
 
     @field_validator("channel_id")
     @classmethod
