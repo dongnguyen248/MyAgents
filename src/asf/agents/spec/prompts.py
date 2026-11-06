@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from asf.agents._shared.harness import (
     HarnessComponents,
     agent_skills_section,
     assemble_base_prompt,
-    components_from_prompts,
     guardrails_memory_section,
 )
 from asf.agents._shared.prompt_context import project_context_section, revision_sections
@@ -38,6 +37,20 @@ class SpecPrompts:
     system: str
     revision: str
     contract: str = ""
+    guardrails: str = ""
+    memory: str = ""
+    skills: Mapping[str, str] = field(default_factory=dict)
+
+    def to_components(self) -> HarnessComponents:
+        """The harness these loaded prompt files represent on their own."""
+        return HarnessComponents(
+            contract=self.contract,
+            system=self.system,
+            revision=self.revision,
+            guardrails=self.guardrails,
+            memory=self.memory,
+            skills=self.skills,
+        )
 
 
 @dataclass(frozen=True)
@@ -84,12 +97,7 @@ def build_user_message(context: SpecPromptContext) -> str:
 def _components(context: SpecPromptContext) -> HarnessComponents:
     if context.harness is not None:
         return context.harness
-    prompts = context.prompts
-    return components_from_prompts(
-        contract=prompts.contract,
-        system=prompts.system,
-        revision=prompts.revision,
-    )
+    return context.prompts.to_components()
 
 
 def _system_content(context: SpecPromptContext) -> str:

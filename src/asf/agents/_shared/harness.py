@@ -55,13 +55,19 @@ def components_from_prompts(
     system: str,
     revision: str = "",
     tool_guidance: str = "",
+    guardrails: str = "",
+    memory: str = "",
+    skills: Mapping[str, str] | None = None,
 ) -> HarnessComponents:
     """The components an agent's loaded prompts represent on their own."""
     return HarnessComponents(
         contract=contract,
         system=system,
         revision=revision,
+        guardrails=guardrails,
+        memory=memory,
         tool_guidance=tool_guidance,
+        skills=skills if skills is not None else {},
     )
 
 

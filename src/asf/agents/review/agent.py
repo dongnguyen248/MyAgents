@@ -17,7 +17,7 @@ from asf.agents._shared.code_agents import (
     invalid_response,
     linked_metadata,
 )
-from asf.agents._shared.harness import HarnessComponents, components_from_prompts, fingerprint
+from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.parsing import strip_code_fence
 from asf.agents._shared.routing import tier_metadata
@@ -203,11 +203,7 @@ class ReviewAgent(BaseAgent):
         return {"verdict": review.verdict}, [artifact]
 
     def _harness_fingerprint(self) -> str:
-        prompts = self._settings.prompts
-        components = self._settings.harness or components_from_prompts(
-            contract=prompts.contract,
-            system=prompts.system,
-        )
+        components = self._settings.harness or self._settings.prompts.to_components()
         return fingerprint(components)
 
     def _review_artifact(

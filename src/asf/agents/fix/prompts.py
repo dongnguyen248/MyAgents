@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from asf.agents._shared.codegen import FixContext
@@ -9,7 +10,6 @@ from asf.agents._shared.harness import (
     HarnessComponents,
     agent_skills_section,
     assemble_base_prompt,
-    components_from_prompts,
     guardrails_memory_section,
 )
 from asf.agents._shared.rules import rules_section
@@ -22,6 +22,21 @@ from asf.tools.edit_blocks import BLOCKS_FORMAT_INSTRUCTIONS
 class FixPrompts:
     system: str
     contract: str = ""
+    tool_guidance: str = ""
+    guardrails: str = ""
+    memory: str = ""
+    skills: Mapping[str, str] = field(default_factory=dict)
+
+    def to_components(self) -> HarnessComponents:
+        """The harness these loaded prompt files represent on their own."""
+        return HarnessComponents(
+            contract=self.contract,
+            system=self.system,
+            guardrails=self.guardrails,
+            memory=self.memory,
+            tool_guidance=self.tool_guidance,
+            skills=self.skills,
+        )
 
 
 _RULES_INTRO = (
@@ -30,17 +45,6 @@ _RULES_INTRO = (
     " them; where they conflict with the output contract above, the"
     " output contract wins:"
 )
-
-_BLOCKS_EXTRA = (
-    "\n- Your blocks apply to the PREVIOUS GENERATED files"
-    " (the base files with the previous change set applied),"
-    " not to the raw base: SEARCH text must match the"
-    " previous generated content where a file was changed"
-    " before.\n"
-    "- Files you do not mention keep their previous generated"
-    " content — the replacement stays complete."
-)
-
 
 @dataclass(frozen=True)
 class FixMessageOptions:
@@ -55,7 +59,8 @@ def build_fix_messages(
     options: FixMessageOptions | None = None,
 ) -> list[ModelMessage]:
     opts = options if options is not None else FixMessageOptions()
-    payload = _payload(request, context, opts.edit_format, opts.harness)
+    components = _components(prompts, opts.harness)
+    payload = _payload(request, context, opts.edit_format, components.tool_guidance)
     return [
         ModelMessage(role="system", content=_system_message(prompts, request, opts.harness)),
         ModelMessage(role="user", content=json.dumps(payload, ensure_ascii=True)),
@@ -65,11 +70,7 @@ def build_fix_messages(
 def _components(prompts: FixPrompts, harness: HarnessComponents | None) -> HarnessComponents:
     if harness is not None:
         return harness
-    return components_from_prompts(
-        contract=prompts.contract,
-        system=prompts.system,
-        tool_guidance=_BLOCKS_EXTRA,
-    )
+    return prompts.to_components()
 
 
 def _system_message(
@@ -97,7 +98,7 @@ def _payload(
     request: AgentRequest,
     context: FixContext,
     edit_format: str,
-    harness: HarnessComponents | None = None,
+    tool_guidance: str,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "taskItemId": context.task_id,
@@ -114,6 +115,5 @@ def _payload(
         payload["repoMap"] = context.repo_map
     payload["outputFormat"] = edit_format
     if edit_format == "blocks":
-        extra = _BLOCKS_EXTRA if harness is None else harness.tool_guidance
-        payload["formatInstructions"] = BLOCKS_FORMAT_INSTRUCTIONS + extra
+        payload["formatInstructions"] = BLOCKS_FORMAT_INSTRUCTIONS + tool_guidance
     return payload

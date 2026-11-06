@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from asf.agents._shared.code_agents import task_items_from_content
@@ -11,7 +12,6 @@ from asf.agents._shared.harness import (
     HarnessComponents,
     agent_skills_section,
     assemble_base_prompt,
-    components_from_prompts,
     guardrails_memory_section,
 )
 from asf.agents._shared.rules import rules_section
@@ -26,14 +26,6 @@ _RULES_INTRO = (
     " must follow. Write code that complies with them; where they"
     " conflict with the output contract above, the output contract"
     " wins:"
-)
-
-_BLOCKS_EXTRA_RULES = (
-    "\n- For modify/delete: the file must exist at the given ref\n"
-    "- For create: the file must not exist at the given ref\n"
-    "- No NUL bytes, valid UTF-8 only\n"
-    "- No secrets in generated content\n"
-    "- An empty reply is not allowed"
 )
 
 _JSON_FORMAT_BLOCK = (
@@ -89,6 +81,21 @@ class ImplementPrompts:
 
     system: str
     contract: str = ""
+    tool_guidance: str = ""
+    guardrails: str = ""
+    memory: str = ""
+    skills: Mapping[str, str] = field(default_factory=dict)
+
+    def to_components(self) -> HarnessComponents:
+        """The harness these loaded prompt files represent on their own."""
+        return HarnessComponents(
+            contract=self.contract,
+            system=self.system,
+            guardrails=self.guardrails,
+            memory=self.memory,
+            tool_guidance=self.tool_guidance,
+            skills=self.skills,
+        )
 
 
 @dataclass(frozen=True)
@@ -130,12 +137,7 @@ def build_implement_messages(context: ImplementPromptContext) -> list[ModelMessa
 def _components(context: ImplementPromptContext) -> HarnessComponents:
     if context.harness is not None:
         return context.harness
-    prompts = context.prompts
-    return components_from_prompts(
-        contract=prompts.contract,
-        system=prompts.system,
-        tool_guidance=_BLOCKS_EXTRA_RULES,
-    )
+    return context.prompts.to_components()
 
 
 def _system_message(context: ImplementPromptContext) -> str:
@@ -231,8 +233,7 @@ def _sliced_plan(plan_text: str, task_item: dict[str, Any] | None) -> str:
 
 def _user_message(context: ImplementPromptContext, task_item: dict[str, Any] | None) -> str:
     context_block = "\n\n".join(_changing_sections(context, task_item))
-    guidance = context.harness.tool_guidance if context.harness is not None else None
-    format_block = _format_block(context.edit_format, guidance)
+    format_block = _format_block(context.edit_format, _components(context).tool_guidance)
     return (
         f"Implement the task item {context.task_item_id} based on the SPEC, "
         f"PLAN, and TASK ITEM.\n\n{context_block}\n\n"
@@ -279,10 +280,9 @@ def _files_section(existing_files: dict[str, str]) -> str:
     return "\n".join(file_sections)
 
 
-def _format_block(edit_format: str, tool_guidance: str | None = None) -> str:
+def _format_block(edit_format: str, tool_guidance: str) -> str:
     if edit_format == "blocks":
-        extra = _BLOCKS_EXTRA_RULES if tool_guidance is None else tool_guidance
-        return BLOCKS_FORMAT_INSTRUCTIONS + extra
+        return BLOCKS_FORMAT_INSTRUCTIONS + tool_guidance
     return _JSON_FORMAT_BLOCK
 
 

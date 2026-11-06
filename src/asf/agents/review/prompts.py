@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -11,7 +12,6 @@ from asf.agents._shared.harness import (
     HarnessComponents,
     agent_skills_section,
     assemble_base_prompt,
-    components_from_prompts,
     guardrails_memory_section,
 )
 from asf.agents._shared.report_tail import tail_artifact_for_prompt
@@ -62,6 +62,19 @@ class ReviewContent(BaseModel):
 class ReviewPrompts:
     system: str
     contract: str = ""
+    guardrails: str = ""
+    memory: str = ""
+    skills: Mapping[str, str] = field(default_factory=dict)
+
+    def to_components(self) -> HarnessComponents:
+        """The harness these loaded prompt files represent on their own."""
+        return HarnessComponents(
+            contract=self.contract,
+            system=self.system,
+            guardrails=self.guardrails,
+            memory=self.memory,
+            skills=self.skills,
+        )
 
 
 def _project_context(request: AgentRequest) -> dict[str, Any]:
@@ -106,7 +119,7 @@ def build_review_messages(
 def _components(prompts: ReviewPrompts, harness: HarnessComponents | None) -> HarnessComponents:
     if harness is not None:
         return harness
-    return components_from_prompts(contract=prompts.contract, system=prompts.system)
+    return prompts.to_components()
 
 
 def _system_message(
