@@ -37,6 +37,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from asf.api.model_ids import checked_model_id, normalize_stored_model_id
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse
 from asf.integrations.gemini import GeminiModelGateway
 from asf.integrations.openai_compatible import HttpTransport, OpenAICompatibleGateway
@@ -76,6 +77,34 @@ def agent_key(raw: Any) -> str | None:
     return key if key in MODEL_AGENTS else None
 
 
+def _load_agent_models(raw: Any) -> dict[str, str]:
+    """Stored per-agent models, normalised on load; never raises.
+
+    Entries with an unknown agent or a non-string value are skipped
+    (one corrupt entry cannot brick the settings); each kept id goes
+    through the stored-id normalisation, which logs a WARNING when
+    it changes or cannot fix the value.
+    """
+    if not isinstance(raw, Mapping):
+        return {}
+    cleaned: dict[str, str] = {}
+    for key, value in raw.items():
+        name = agent_key(key)
+        if name is None or not isinstance(value, str):
+            continue
+        model = normalize_stored_model_id(f"agentModels.{name}", value)
+        if model:
+            cleaned[name] = model
+    return cleaned
+
+
+def _clean_field_value(field: str, value: str) -> str:
+    """The stored form of a settings text field (model ids are checked)."""
+    if field == "model":
+        return checked_model_id("model", value)
+    return value.strip()
+
+
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
     "github-models": "https://models.github.ai/inference",
@@ -108,10 +137,11 @@ class ModelSettings:
                         self._data[key] = stored[key]
                 if self._data["provider"] not in PROVIDERS:
                     self._data["provider"] = "scripted"
-                self._agent_models = self._clean_agent_models(
-                    stored.get("agentModels"),
-                    strict=False,
+                self._data["model"] = normalize_stored_model_id(
+                    "model",
+                    self._data["model"],
                 )
+                self._agent_models = _load_agent_models(stored.get("agentModels"))
 
     @staticmethod
     def _clean_agent_models(raw: Any, *, strict: bool) -> dict[str, str]:
@@ -139,7 +169,7 @@ class ModelSettings:
                         f"expected one of {', '.join(MODEL_AGENTS)}",
                     )
                 continue
-            model = value.strip()
+            model = checked_model_id(f"agentModels.{name}", value) if strict else value.strip()
             if model:
                 cleaned[name] = model
         return cleaned
@@ -198,7 +228,7 @@ class ModelSettings:
                 value = payload[field]
                 if not isinstance(value, str):
                     raise ValueError(f"{field} must be a string")
-                data[field] = value.strip()
+                data[field] = _clean_field_value(field, value)
         agent_models = self._agent_models
         if "agentModels" in payload:
             agent_models = self._clean_agent_models(

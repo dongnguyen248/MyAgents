@@ -411,3 +411,83 @@ def test_connection_test_uses_the_agents_effective_model(tmp_path: Path):
     unknown = settings.test(transport, agent="test")
     assert unknown["ok"] is False
     assert "Unknown agent" in unknown["message"]
+
+
+# ---------------------------------------------------------------------------
+# model id normalisation on save and load (FIX-1 Stage 1)
+# ---------------------------------------------------------------------------
+
+
+def test_update_normalises_model_ids_and_returns_them(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    updated = settings.update(
+        {
+            "provider": "custom",
+            "baseUrl": "http://127.0.0.1:4141/v1",
+            "apiKey": "key-1",
+            "model": "\ufeffclaude-sonnet-5.5 ",
+            "agentModels": {"plan": "claude\u2011haiku\u20114.5"},
+        }
+    )
+    assert updated["model"] == "claude-sonnet-5.5"
+    assert updated["agentModels"] == {"plan": "claude-haiku-4.5"}
+    assert settings.current()["model"] == "claude-sonnet-5.5"
+    assert settings.agent_models() == {"plan": "claude-haiku-4.5"}
+
+
+def test_update_rejects_invalid_and_doubled_ids(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    with pytest.raises(ValueError) as caught:
+        settings.update({"provider": "custom", "baseUrl": "http://x/v1", "model": "bad@id"})
+    assert "U+0040" in str(caught.value)
+    with pytest.raises(ValueError) as caught:
+        settings.update(
+            {
+                "provider": "custom",
+                "baseUrl": "http://x/v1",
+                "model": "gpt-shared",
+                "agentModels": {"review": "gpt-4.1gpt-4.1"},
+            }
+        )
+    assert "'gpt-4.1' alone" in str(caught.value)
+    # A rejected save leaves the previous settings untouched.
+    assert settings.current()["provider"] == "scripted"
+
+
+def test_load_normalises_stored_ids_and_warns(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+):
+    path = tmp_path / "model-settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "provider": "custom",
+                "model": "claude\u2011sonnet\u20115.5",
+                "baseUrl": "http://127.0.0.1:4141/v1",
+                "apiKey": "key-1",
+                "agentModels": {"plan": "claude\u2011haiku\u20114.5"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with caplog.at_level(logging.WARNING, logger="asf.api.model_ids"):
+        settings = ModelSettings(path)
+    assert settings.current()["model"] == "claude-sonnet-5.5"
+    assert settings.agent_models() == {"plan": "claude-haiku-4.5"}
+    assert caplog.text.count("normalised on load") == 2
+
+
+def test_load_keeps_an_invalid_id_and_still_starts(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+):
+    path = tmp_path / "model-settings.json"
+    path.write_text(
+        json.dumps({"provider": "custom", "model": "bad@id"}),
+        encoding="utf-8",
+    )
+    with caplog.at_level(logging.WARNING, logger="asf.api.model_ids"):
+        settings = ModelSettings(path)
+    assert settings.current()["model"] == "bad@id"
+    assert "invalid" in caplog.text
