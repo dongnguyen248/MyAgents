@@ -5,6 +5,7 @@ import { AsyncView } from '../../components/common/AsyncView';
 import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
+import { WorkspaceInfo } from '../../components/workflows/WorkspaceInfo';
 import { WorkflowDiagnostics } from '../../components/workflows/WorkflowDiagnostics';
 import { OperatorControls } from '../../components/workflows/OperatorControls';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
@@ -118,6 +119,7 @@ export function WorkflowDetailPage() {
               </Card>
             )}
             <RunLiveActivity workflow={workflow} />
+            <WorkspaceInfo workflow={workflow} />
             {cancelRequested && (
               <Card>
                 <p className="muted">

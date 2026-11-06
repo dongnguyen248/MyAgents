@@ -64,6 +64,45 @@ configuration:
 status: ACTIVE
 ```
 
+## Local folder and workspace mode
+
+`repository.path` points at a local folder on the machine running the
+backend. When it is set, agents read the project's real files there,
+generated code is written there, and the project's test commands run
+there. Two optional keys under `repository` steer how runs use it:
+
+- `workspaceMode` (string, one of `direct`, `worktree`, `auto`):
+  - `direct`: agents edit the folder itself. Before a run first
+    writes a file, an **undo journal** records its original bytes (or
+    that it was absent) under the backend's data directory
+    (`journals/<project-id>/<run-id>.json`). A replacement change set
+    from the Fix agent first reverts the journal to the last green
+    state, exactly like a worktree reset. A run that ends FAILED or
+    CANCELLED is reverted; a COMPLETED run keeps its files and the
+    journal is discarded. Reverting never overwrites a file the user
+    edited after ASF wrote it — such files are skipped and reported
+    as conflicts in the run's events. In a git folder, a run refuses
+    to start writing when a file its change set touches has
+    uncommitted changes. Nothing is ever auto-committed.
+  - `worktree`: every run works in its own git worktree
+    (`asf/<run-id>` branch) and the folder itself stays untouched. A
+    folder that is not a git repository cannot use worktrees and
+    falls back to direct mode with a warning.
+  - `auto` (the default for profiles that do not declare the key):
+    `worktree` for git folders, `direct` for the rest — the
+    historical behaviour.
+  - Projects created through the dashboard default to `direct` when
+    the key is not sent; existing profiles keep `auto` until the key
+    is added.
+- `keepChangesOnFailure` (boolean, default `false`; direct mode
+  only): when `true`, a FAILED or CANCELLED run leaves its files in
+  the folder instead of reverting the undo journal, so the operator
+  can inspect or salvage them.
+
+The remote hosting integration (`repository.url` + `provider`, used
+by the CI and merge steps) is independent of these keys and of
+whether the folder is edited directly or through a worktree.
+
 ## Approval settings
 
 Project profiles can configure human approval policies under `configuration.approval`:

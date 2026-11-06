@@ -380,6 +380,8 @@ export const mockApi: FactoryApi = {
       repositoryProvider: input.repository.provider,
       repositoryUrl: input.repository.url ?? '',
       repositoryPath: input.repository.path ?? '',
+      workspaceMode: input.repository.workspaceMode ?? 'direct',
+      keepChangesOnFailure: input.repository.keepChangesOnFailure ?? false,
       testCommands: input.configuration.testCommands ?? [],
       technologies: [...input.technology.backend, ...input.technology.frontend],
       description: input.description ?? '',
@@ -411,6 +413,9 @@ export const mockApi: FactoryApi = {
       repositoryProvider: input.repository.provider,
       repositoryUrl: input.repository.url ?? '',
       repositoryPath: input.repository.path ?? '',
+      workspaceMode: input.repository.workspaceMode ?? projectStore[index].workspaceMode,
+      keepChangesOnFailure:
+        input.repository.keepChangesOnFailure ?? projectStore[index].keepChangesOnFailure,
       hostingTokenConfigured: Boolean(stored),
       hostingTokenHint: stored ? tokenHint(stored) : null,
       testCommands: input.configuration.testCommands ?? [],
