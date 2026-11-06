@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.resources
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
 
 from asf.agents.fix.prompts import FixPrompts
 from asf.agents.implement.prompts import ImplementPrompts
@@ -25,12 +24,8 @@ __all__ = [
     "load_fix_prompts",
 ]
 
-T = TypeVar("T")
 
-
-def _load_prompt_pair(
-    package: str, agent: str, build: Callable[..., T]
-) -> T:
+def _load_prompt_pair[T](package: str, agent: str, build: Callable[..., T]) -> T:
     try:
         traversable = importlib.resources.files(package).joinpath("prompts")
         system_text = traversable.joinpath("system.md").read_text(encoding="utf-8")
@@ -59,12 +54,10 @@ def _load_system_prompt_strict(package: str, agent: str) -> str:
         resource = importlib.resources.files(package).joinpath("prompts", "system.md")
         return resource.read_text(encoding="utf-8")
     except (OSError, ModuleNotFoundError) as exc:
-        raise ConfigError(
-            f"Failed to load {agent} prompts", source=f"{package}.prompts"
-        ) from exc
+        raise ConfigError(f"Failed to load {agent} prompts", source=f"{package}.prompts") from exc
 
 
-def _load_template(
+def _load_template[T](
     templates_dir: Path, agent: str, filename: str, build: Callable[[str], T]
 ) -> T:
     template_path = templates_dir / agent / filename
