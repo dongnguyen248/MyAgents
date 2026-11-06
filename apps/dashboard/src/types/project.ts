@@ -25,6 +25,12 @@ export interface Project {
   enabledSkills: string[];
   technologyGroups: Record<string, string[]>;
   approvalChannel: string;
+  /** Profile `configuration.approval.mode`: '' = workflow default. */
+  approvalMode: string;
+  /** Profile `configuration.approval.maxRevisions`; null = default. */
+  approvalMaxRevisions: number | null;
+  /** Profile `configuration.approval.onExhausted`: '' = default (escalate). */
+  approvalOnExhausted: string;
   agentIds: string[];
   ci: CiStatus;
   ciFailures24h: number;
@@ -36,11 +42,20 @@ export interface ProjectProfileInput {
   id: string;
   name: string;
   description?: string;
-  repository: { provider: string; path?: string; url?: string; workspaceMode?: string; keepChangesOnFailure?: boolean };
+  repository: {
+    provider: string;
+    path?: string;
+    url?: string;
+    workspaceMode?: string;
+    keepChangesOnFailure?: boolean;
+  };
   technology: { backend: string[]; frontend: string[] };
   workflow: string;
   enabledSkills: string[];
-  configuration: { approval?: { channel: string }; testCommands?: string[][] };
+  configuration: {
+    approval?: { channel: string; mode?: string; maxRevisions?: number; onExhausted?: string };
+    testCommands?: string[][];
+  };
   /** Write-only: a new hosting token to store on the backend for this project. */
   hostingToken?: string;
   /** Write-only: remove the stored hosting token on save. */

@@ -65,8 +65,13 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     retryRun: (runId) => send<Workflow>(`/runs/${runId}/retry`, 'POST'),
     resumeRun: (runId) => send<Workflow>(`/runs/${runId}/resume`, 'POST'),
     cancelRun: (runId) => send<Workflow>(`/runs/${runId}/cancel`, 'POST'),
-    resumeEscalation: (runId, reason) =>
-      send<Workflow>(`/runs/${runId}/escalation/resume`, 'POST', { reason }),
+    resumeEscalation: (runId, reason, guidance) =>
+      send<Workflow>(`/runs/${runId}/escalation/resume`, 'POST', {
+        reason,
+        ...(guidance ? { guidance } : {}),
+      }),
+    approveEscalation: (runId, reason) =>
+      send<Workflow>(`/runs/${runId}/escalation/approve`, 'POST', { reason }),
     recoverRun: (runId, reason, retryInterrupted) =>
       send<Workflow>(`/runs/${runId}/recover`, 'POST', { reason, retryInterrupted }),
     driveRun: (runId) => send<Workflow>(`/runs/${runId}/drive`, 'POST'),

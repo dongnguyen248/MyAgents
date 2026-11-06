@@ -15,7 +15,14 @@ export const resumeWorkflow = (id: string) => api.resumeRun(id);
 export const cancelWorkflow = (id: string) => api.cancelRun(id);
 
 /** Grant an escalated run a fresh fix budget; resolves to its workflow. */
-export const resumeEscalation = (id: string, reason: string) => api.resumeEscalation(id, reason);
+export const resumeEscalation = (id: string, reason: string, guidance?: string) =>
+  api.resumeEscalation(id, reason, guidance);
+
+/** Approve an escalated gate's artifact anyway; resolves to its workflow. */
+export const approveEscalation = (id: string, reason: string) => api.approveEscalation(id, reason);
+
+/** The run's AI review rounds per gated stage (Phase 12). */
+export const getRunReviews = (id: string) => api.getRunReviews(id);
 
 /** Recover an interrupted run (replay the step or fail the run). */
 export const recoverWorkflow = (id: string, reason: string, retryInterrupted: boolean) =>

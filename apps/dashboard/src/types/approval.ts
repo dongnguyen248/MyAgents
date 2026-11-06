@@ -8,6 +8,8 @@ export interface ApprovalComment {
   text: string;
 }
 
+export type ApprovalMode = 'ai' | 'human' | 'none';
+
 export interface Approval {
   id: string;
   projectId: string;
@@ -21,6 +23,12 @@ export interface Approval {
   /** Full artifact text (or JSON rendering) so reviewers can read before deciding. */
   artifactContent?: string;
   comments: ApprovalComment[];
+  /** The run this gate belongs to (Phase 12; links to the run view). */
+  workflowId?: string;
+  /** Who the gate is addressed to; ai-mode gates include "ai-reviewer". */
+  reviewers?: string[];
+  /** Resolved gate mode: human gates wait for a person, ai gates are reviewed by the AI reviewer. */
+  mode?: ApprovalMode;
 }
 
 export interface ApprovalDecisionInput {

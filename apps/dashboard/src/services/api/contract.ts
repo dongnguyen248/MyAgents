@@ -37,8 +37,10 @@ export interface FactoryApi {
   resumeRun(runId: string): Promise<Workflow>;
   /** Cancel an active run; a run mid-step stops once that step returns. */
   cancelRun(runId: string): Promise<Workflow>;
-  /** Grant an escalated run a fresh fix budget and drive it on (reason required). */
-  resumeEscalation(runId: string, reason: string): Promise<Workflow>;
+  /** Grant an escalated run a fresh fix budget and drive it on (reason required; guidance reaches the producer as feedback). */
+  resumeEscalation(runId: string, reason: string, guidance?: string): Promise<Workflow>;
+  /** Approve an escalated gate's artifact anyway (reason required, recorded as the decision comment). */
+  approveEscalation(runId: string, reason: string): Promise<Workflow>;
   /** Recover a run whose step was interrupted; replay it or fail the run. */
   recoverRun(runId: string, reason: string, retryInterrupted: boolean): Promise<Workflow>;
   /** (Re)start the run's background driver; idempotent. */

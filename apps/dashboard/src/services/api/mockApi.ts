@@ -7,7 +7,7 @@ import { tasks } from '../../mocks/tasks';
 import { workflows } from '../../mocks/workflows';
 import type { ActivityEvent } from '../../types/activity';
 import type { Approval, ApprovalStatus } from '../../types/approval';
-import type { Project } from '../../types/project';
+import type { Project, ProjectProfileInput } from '../../types/project';
 import type { Task } from '../../types/task';
 import type { RunDiagnostics, StepState, Workflow, WorkflowStep, WorkflowStepId } from '../../types/workflow';
 import type { FactoryApi } from './contract';
@@ -329,6 +329,7 @@ export const mockApi: FactoryApi = {
     return delay(workflow);
   },
 
+
   recoverRun: (runId, reason, retryInterrupted) => {
     const workflow = workflowStore.find((w) => w.id === runId);
     if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
@@ -395,7 +396,7 @@ export const mockApi: FactoryApi = {
       workflow: input.workflow,
       enabledSkills: input.enabledSkills,
       technologyGroups: { ...input.technology },
-      approvalChannel: input.configuration.approval?.channel ?? '',
+      ...approvalFieldsOf(input),
       hostingTokenConfigured: Boolean(input.hostingToken),
       hostingTokenHint: input.hostingToken ? tokenHint(input.hostingToken) : null,
       agentIds: agents.map((a) => a.id),
@@ -430,7 +431,7 @@ export const mockApi: FactoryApi = {
       workflow: input.workflow,
       enabledSkills: input.enabledSkills,
       technologyGroups: { ...input.technology },
-      approvalChannel: input.configuration.approval?.channel ?? '',
+      ...approvalFieldsOf(input),
     };
     projectStore[index] = updated;
     return delay(updated);
@@ -542,4 +543,37 @@ export const mockApi: FactoryApi = {
     const effective = (agent && modelSettings.agentModels[agent]) || modelSettings.model;
     return delay({ ok: true, message: `Mock check passed for '${effective}' (no real network call in mock mode).` });
   },
+
+  approveEscalation: (runId, reason) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
+    if (!reason.trim()) {
+      return Promise.reject(new Error('reason is required'));
+    }
+    if (workflow.status !== 'ESCALATED') {
+      return Promise.reject(new Error('Only an escalated approval gate can be approved anyway'));
+    }
+    workflow.status = 'RUNNING';
+    workflow.waiting = {
+      kind: 'STEP_RUNNING',
+      since: new Date().toISOString(),
+      reason: null,
+      retryAt: null,
+      budget: null,
+      suggestedActions: [],
+    };
+    workflow.updatedAt = new Date().toISOString();
+    return delay(workflow);
+  },
 };
+
+function approvalFieldsOf(input: ProjectProfileInput) {
+  return {
+    approvalChannel: input.configuration.approval?.channel ?? '',
+    approvalMode: input.configuration.approval?.mode ?? '',
+    approvalMaxRevisions: input.configuration.approval?.maxRevisions ?? null,
+    approvalOnExhausted: input.configuration.approval?.onExhausted ?? '',
+  };
+}

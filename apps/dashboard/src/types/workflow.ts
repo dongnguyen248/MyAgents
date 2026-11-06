@@ -94,10 +94,17 @@ export interface ReviewRound {
   findings: ReviewFinding[];
 }
 
+/** One gated stage's AI review rounds. */
+export interface ReviewStage {
+  stage: string;
+  stepId: string;
+  rounds: ReviewRound[];
+}
+
 /** GET /runs/{id}/reviews — the AI review history of a run, per stage. */
 export interface RunReviews {
   runId: string;
-  stages: { stage: string; stepId: string; rounds: ReviewRound[] }[];
+  stages: ReviewStage[];
 }
 
 /** The background drive's own state for a run (kept in backend RAM). */
