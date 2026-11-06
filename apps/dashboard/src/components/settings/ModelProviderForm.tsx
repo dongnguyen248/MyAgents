@@ -94,7 +94,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
     setTest(null);
     setTestFor('');
     setNotice('');
-    if (!(await save())) return;
+    if (!(await save())) {return;}
     setBusy(true);
     try {
       setTest(await testModelSettings());
@@ -109,7 +109,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
     setTest(null);
     setTestFor(label);
     setNotice('');
-    if (!(await save())) return;
+    if (!(await save())) {return;}
     setBusy(true);
     try {
       setTest(await testModelSettings(key));

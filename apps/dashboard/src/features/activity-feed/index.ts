@@ -28,10 +28,10 @@ export function useActivityFeed(filter: ActivityFilter = {}, live = true) {
   }, [key]);
 
   useEffect(() => {
-    if (!live) return;
+    if (!live) {return;}
     return svc.subscribeActivity((e) => {
       const f = filterRef.current;
-      if ((f.agentId && e.sourceId !== f.agentId) || (f.taskId && e.taskId !== f.taskId) || (f.projectId && e.projectId !== f.projectId)) return;
+      if ((f.agentId && e.sourceId !== f.agentId) || (f.taskId && e.taskId !== f.taskId) || (f.projectId && e.projectId !== f.projectId)) {return;}
       setEvents((prev) => [e, ...prev].slice(0, 300));
     });
   }, [live, key]);

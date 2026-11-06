@@ -22,11 +22,11 @@ export function useRunLiveRefetch(
   const lastStreamEventAt = useRef(0);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) {return;}
     lastStreamEventAt.current = Date.now();
     const unsubscribe = subscribeActivity((event) => {
       lastStreamEventAt.current = Date.now();
-      if (taskId && event.taskId === taskId) reloadRef.current();
+      if (taskId && event.taskId === taskId) {reloadRef.current();}
     });
     const watchdog = setInterval(() => {
       if (Date.now() - lastStreamEventAt.current >= 30_000) {

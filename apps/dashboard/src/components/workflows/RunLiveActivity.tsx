@@ -14,7 +14,7 @@ import { Card } from '../common/Layout';
  */
 export function RunLiveActivity({ workflow }: { workflow: Workflow }) {
   const activity = workflow.currentActivity;
-  if (!activity || ['COMPLETED', 'FAILED', 'CANCELLED'].includes(workflow.status)) return null;
+  if (!activity || ['COMPLETED', 'FAILED', 'CANCELLED'].includes(workflow.status)) {return null;}
   const label = activity.stepLabel ?? activity.stage ?? 'Current step';
   const waiting = workflow.waiting;
   return (

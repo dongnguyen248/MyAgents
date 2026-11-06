@@ -21,7 +21,7 @@ const CI: Record<CiStatus, [Tone, string, string]> = {
 };
 
 export function CiBadge({ status }: { status?: CiStatus }) {
-  if (!status) return <span className="muted">–</span>;
+  if (!status) {return <span className="muted">–</span>;}
   const [tone, icon, label] = CI[status];
   return (
     <Badge tone={tone} icon={icon}>

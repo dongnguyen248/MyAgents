@@ -47,7 +47,7 @@ const CANCEL: OperatorAction = {
 
 export function operatorActionsFor(workflow: Workflow): OperatorAction[] {
   const { status } = workflow;
-  if (status === 'COMPLETED' || status === 'CANCELLED') return [];
+  if (status === 'COMPLETED' || status === 'CANCELLED') {return [];}
   if (status === 'ESCALATED') {
     return [
       { id: 'resume-escalation', label: 'Resume with new fix budget', needsReason: true },

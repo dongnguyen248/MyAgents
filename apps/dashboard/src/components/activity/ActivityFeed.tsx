@@ -11,7 +11,7 @@ const LEVEL: Record<ActivityLevel, [string, string]> = {
 };
 
 export function ActivityFeed({ events, showTask = true }: { events: ActivityEvent[]; showTask?: boolean }) {
-  if (!events.length) return <EmptyState>No events recorded.</EmptyState>;
+  if (!events.length) {return <EmptyState>No events recorded.</EmptyState>;}
   return (
     <ul className="feed" aria-live="off">
       {events.map((e) => {

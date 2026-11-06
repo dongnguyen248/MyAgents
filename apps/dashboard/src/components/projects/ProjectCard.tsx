@@ -16,7 +16,7 @@ export function ProjectCard({ project: p, onEdit, onDelete }: Props) {
   const [error, setError] = useState<string | undefined>();
 
   const remove = async () => {
-    if (!onDelete) return;
+    if (!onDelete) {return;}
     setBusy(true);
     setError(undefined);
     try {

@@ -15,7 +15,7 @@ export function createHttpApi(baseUrl: string): FactoryApi {
   };
   const request = async (path: string, init?: RequestInit): Promise<Response> => {
     const res = await fetch(baseUrl + path, { headers: { 'Content-Type': 'application/json' }, ...init });
-    if (!res.ok && res.status !== 404) throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
+    if (!res.ok && res.status !== 404) {throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);}
     return res;
   };
   const send = async <T>(path: string, method: string, body?: unknown): Promise<T> => {

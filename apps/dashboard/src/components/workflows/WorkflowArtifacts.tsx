@@ -23,7 +23,7 @@ function ArtifactRow({ artifact }: { artifact: WorkflowArtifact }) {
 }
 
 export function WorkflowArtifacts({ artifacts }: { artifacts?: WorkflowArtifact[] }) {
-  if (!artifacts || artifacts.length === 0) return null;
+  if (!artifacts || artifacts.length === 0) {return null;}
   return (
     <Card title="Artifacts">
       <div className="stack">

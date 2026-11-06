@@ -25,25 +25,25 @@ function stepsFor(t: Task): WorkflowStep[] {
   return STEPS.map(([id, label], i): WorkflowStep => {
     let state: StepState = i < pos ? 'done' : i === pos ? 'active' : 'pending';
     if (i === pos) {
-      if (t.status.endsWith('_REJECTED')) state = 'rejected';
-      else if (t.status === 'FAILED') state = 'failed';
-      else if (t.status === 'CANCELLED') state = 'cancelled';
+      if (t.status.endsWith('_REJECTED')) {state = 'rejected';}
+      else if (t.status === 'FAILED') {state = 'failed';}
+      else if (t.status === 'CANCELLED') {state = 'cancelled';}
     }
-    if (t.status === 'CANCELLED' && i > pos) state = 'cancelled';
+    if (t.status === 'CANCELLED' && i > pos) {state = 'cancelled';}
     return { id, label, state };
   });
 }
 
 function statusFor(t: Task): WorkflowStatus {
-  if (t.status === 'COMPLETED') return 'COMPLETED';
-  if (t.status === 'FAILED') return 'FAILED';
-  if (t.status === 'CANCELLED') return 'CANCELLED';
+  if (t.status === 'COMPLETED') {return 'COMPLETED';}
+  if (t.status === 'FAILED') {return 'FAILED';}
+  if (t.status === 'CANCELLED') {return 'CANCELLED';}
   return t.status.endsWith('_REVIEW') || t.status === 'READY_TO_MERGE' ? 'WAITING_APPROVAL' : 'RUNNING';
 }
 
 /** Mock-only failure reasons for FAILED tasks, mirroring backend errors. */
 function errorFor(t: Task): WorkflowError | undefined {
-  if (t.status !== 'FAILED') return undefined;
+  if (t.status !== 'FAILED') {return undefined;}
   return t.id === 'ERP-3324'
     ? { code: 'AGENT_EXECUTION_FAILED', message: 'Agent raised outside its result contract', category: 'AGENT', at: t.updatedAt }
     : { code: 'VALIDATION_FAILED', message: 'Agent output artifacts are invalid', category: 'VALIDATION', at: t.updatedAt };
