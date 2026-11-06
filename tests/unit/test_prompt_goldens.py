@@ -37,7 +37,7 @@ from asf.agents.loading import (
     load_task_prompts,
     load_task_template,
 )
-from asf.agents.plan.agent import PlanAgent
+from asf.agents.plan.agent import PlanAgent, PlanSettings
 from asf.agents.review.agent import ReviewAgent
 from asf.agents.spec.agent import SpecAgent, SpecSettings
 from asf.agents.task.agent import TaskAgent
@@ -205,10 +205,12 @@ def capture_plan() -> ModelRequest:
     gateway = ScriptedModelGateway([plan_valid_reply(template.required_sections)])
     agent = PlanAgent(
         runtime_for(gateway),
-        prompts=load_plan_prompts(),
-        template=template,
-        model="test-model",
-        parameters={"temperature": 0.3},
+        PlanSettings(
+            prompts=load_plan_prompts(),
+            template=template,
+            model="test-model",
+            parameters={"temperature": 0.3},
+        ),
     )
     request = base_request("agent-plan", input={"language": "en"}, artifacts=[SPEC_ARTIFACT])
     result = agent.execute(request)

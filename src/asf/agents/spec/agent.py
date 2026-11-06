@@ -225,10 +225,7 @@ class SpecAgent(BaseAgent):
         response: ModelResponse,
     ) -> tuple[dict[str, Any], list[Artifact]]:
         is_revision = previous is not None
-        if previous is not None:
-            version = str(int(previous.version) + 1)
-        else:
-            version = "1"
+        version = str(int(previous.version) + 1) if previous is not None else "1"
         art_metadata = self._artifact_metadata(request, previous, response)
         artifact = Artifact(
             id=self._runtime.new_id(),

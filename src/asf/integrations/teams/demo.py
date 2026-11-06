@@ -28,7 +28,7 @@ from asf.agents.loading import (
     load_spec_prompts,
     load_spec_template,
 )
-from asf.agents.plan.agent import PlanAgent
+from asf.agents.plan.agent import PlanAgent, PlanSettings
 from asf.agents.spec.agent import SpecAgent, SpecSettings
 from asf.approval.models import ApprovalPolicy
 from asf.configuration import load_platform_config
@@ -106,8 +106,10 @@ def demo_engine(
     registry.register(
         PlanAgent(
             runtime,
-            prompts=load_plan_prompts(),
-            template=load_plan_template(Path("templates")),
+            PlanSettings(
+                prompts=load_plan_prompts(),
+                template=load_plan_template(Path("templates")),
+            ),
         )
     )
     return Orchestrator(

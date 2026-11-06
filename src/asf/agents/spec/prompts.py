@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from asf.agents._shared.prompt_context import project_context_section, revision_sections
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
 from asf.contracts.models import ApprovalFeedback, ModelMessage
@@ -16,8 +16,6 @@ __all__ = [
     "build_spec_messages",
     "build_user_message",
 ]
-
-_PROJECT_CONTEXT_KEYS = ("name", "description", "technology")
 
 _RULES_INTRO = (
     "Project standards — where these standards govern what the"
@@ -60,26 +58,6 @@ class SpecPromptContext:
     feedback: Sequence[ApprovalFeedback] = ()
 
 
-def _project_context_section(context: SpecPromptContext) -> str:
-    project = context.project_context
-    if not project:
-        return "## Project context\nnone"
-    whitelisted = {key: project[key] for key in _PROJECT_CONTEXT_KEYS if key in project}
-    proj_str = json.dumps(whitelisted, indent=2) if whitelisted else "none"
-    return f"## Project context\n{proj_str}"
-
-
-def _revision_sections(context: SpecPromptContext) -> list[str]:
-    if context.previous_spec is None:
-        return []
-    prev_version, prev_text = context.previous_spec
-    sections = [f"## Previous specification (version {prev_version})\n{prev_text}"]
-    feedback_lines = [f"- [{fb.decision}] {fb.reviewer}: {fb.comment}" for fb in context.feedback]
-    feedback_str = "\n".join(feedback_lines) if feedback_lines else "none"
-    sections.append(f"## Reviewer feedback\n{feedback_str}")
-    return sections
-
-
 def build_user_message(context: SpecPromptContext) -> str:
     """Builds the user prompt message with fixed sections."""
     language = context.language
@@ -87,9 +65,11 @@ def build_user_message(context: SpecPromptContext) -> str:
     sections = [
         f"## Requirement\n{context.requirement}",
         f"## Output language\n{lang_str}",
-        _project_context_section(context),
+        project_context_section(context.project_context),
         f"## Template\n{context.template.text}",
-        *_revision_sections(context),
+        *revision_sections(
+            context.previous_spec, "Previous specification", context.feedback
+        ),
     ]
     return "\n\n".join(sections)
 

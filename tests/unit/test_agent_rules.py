@@ -57,7 +57,11 @@ class AgentRulesTests(unittest.TestCase):
         security helper (asf.agents._shared.security) is allowlisted
         on the same terms: pure (re/dataclasses only), it redacts
         secret-shaped spans from the error messages BaseAgent puts
-        on AGENT_FAILED events. The request-checks helper
+        on AGENT_FAILED events. The prompt-context helper
+        (asf.agents._shared.prompt_context) is allowlisted on the
+        same terms: pure (json/typing only), it builds the project
+        context and revision sections the text agents' prompts
+        share. The request-checks helper
         (asf.agents._shared.request_checks) is allowlisted on the
         same terms: pure (re/typing only), it holds the request
         validators the agents' _check methods compose. The reply-text
@@ -88,6 +92,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.model_call",
             "asf.agents._shared.request_checks",
             "asf.agents._shared.reply_text",
+            "asf.agents._shared.prompt_context",
             "asf.models.counting",
             "asf.agents.spec",
             "asf.agents.spec.agent",

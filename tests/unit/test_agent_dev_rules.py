@@ -17,7 +17,12 @@ from asf.agents._shared.codegen import FixContext
 from asf.agents._shared.rules import project_rules, rules_section
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import ImplementPrompts, build_implement_messages
-from asf.agents.plan.prompts import PlanPrompts, PlanTemplate, build_plan_messages
+from asf.agents.plan.prompts import (
+    PlanPromptContext,
+    PlanPrompts,
+    PlanTemplate,
+    build_plan_messages,
+)
 from asf.agents.spec.prompts import (
     SpecPromptContext,
     SpecPrompts,
@@ -119,11 +124,13 @@ def test_spec_messages_carry_the_rules() -> None:
 
 def test_plan_messages_carry_the_rules() -> None:
     messages = build_plan_messages(
-        prompts=PlanPrompts(system="system", revision="revision"),
-        template=PlanTemplate.from_text("template"),
-        spec_artifact={},
-        language=None,
-        project_context=PROJECT,
+        PlanPromptContext(
+            prompts=PlanPrompts(system="system", revision="revision"),
+            template=PlanTemplate.from_text("template"),
+            spec_artifact={},
+            language=None,
+            project_context=PROJECT,
+        )
     )
     assert "Project development rules" in messages[0].content
     assert RULES in messages[0].content
@@ -147,10 +154,12 @@ def test_agents_without_rules_keep_their_plain_system_prompt(
     project_context: Any,
 ) -> None:
     messages = build_plan_messages(
-        prompts=PlanPrompts(system="system", revision="revision"),
-        template=PlanTemplate.from_text("template"),
-        spec_artifact={},
-        language=None,
-        project_context=project_context,
+        PlanPromptContext(
+            prompts=PlanPrompts(system="system", revision="revision"),
+            template=PlanTemplate.from_text("template"),
+            spec_artifact={},
+            language=None,
+            project_context=project_context,
+        )
     )
     assert messages[0].content == "system"

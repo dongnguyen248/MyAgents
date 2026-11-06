@@ -71,3 +71,62 @@ def check_no_feedback(request: AgentRequest, message: str) -> list[Issue]:
     if request.feedback:
         return [Issue("feedback", message)]
     return []
+
+
+def check_required_artifact(request: AgentRequest, kind: str) -> list[Issue]:
+    arts = artifacts_of(request, kind)
+    if len(arts) != 1:
+        return [Issue("artifacts", f"Exactly one artifact of type {kind} is required")]
+    index = request.artifacts.index(arts[0])
+    return [
+        *_artifact_text_issue(request, index, kind),
+        *_artifact_version_issue(request, index, kind),
+    ]
+
+
+def check_revision_artifact(
+    request: AgentRequest, kind: str, feedback_message: str
+) -> list[Issue]:
+    arts = artifacts_of(request, kind)
+    if len(arts) > 1:
+        return [Issue("artifacts", f"At most one artifact of type {kind} is permitted")]
+    if not arts:
+        return []
+    index = request.artifacts.index(arts[0])
+    issues: list[Issue] = []
+    if not request.feedback:
+        issues.append(Issue("feedback", feedback_message))
+    issues.extend(_artifact_text_issue(request, index, kind))
+    issues.extend(_artifact_version_issue(request, index, kind))
+    return issues
+
+
+def _artifact_text_issue(request: AgentRequest, index: int, kind: str) -> list[Issue]:
+    if artifact_has_text(request.artifacts[index]):
+        return []
+    message = f"{kind} artifact must have inline content mapping with non-empty 'text'"
+    return [Issue(f"artifacts[{index}].content.text", message)]
+
+
+def _artifact_version_issue(request: AgentRequest, index: int, kind: str) -> list[Issue]:
+    version = request.artifacts[index].version
+    if is_positive_version(version):
+        return []
+    message = f"{kind} artifact version '{version}' must match '^[1-9][0-9]*$'"
+    return [Issue(f"artifacts[{index}].version", message)]
+
+
+def check_orphan_feedback(request: AgentRequest, kind: str) -> list[Issue]:
+    if request.feedback and not artifacts_of(request, kind):
+        message = f"feedback provided without a previous {kind} artifact to revise"
+        return [Issue("artifacts", message)]
+    return []
+
+
+def check_artifact_types(request: AgentRequest, allowed: set[str]) -> list[Issue]:
+    issues: list[Issue] = []
+    for index, artifact in enumerate(request.artifacts):
+        if artifact.type not in allowed:
+            message = f"Unknown artifact type '{artifact.type}'; allowed: {sorted(allowed)}"
+            issues.append(Issue(f"artifacts[{index}].type", message))
+    return issues
