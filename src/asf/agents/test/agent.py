@@ -5,6 +5,7 @@ from typing import Any
 
 from asf.agents._shared import security
 from asf.agents._shared.code_agents import (
+    CodeRequestRules,
     artifact_of,
     check_code_request,
     code_changeset,
@@ -112,7 +113,8 @@ class TestAgent(BaseAgent):
         return self._metadata
 
     def _check(self, request: AgentRequest) -> list[Issue]:
-        issues = check_code_request(request, self.metadata.id, {"TASK", "CODE"})
+        rules = CodeRequestRules(agent_id=self.metadata.id, required={"TASK", "CODE"})
+        issues = check_code_request(request, rules)
         if not issues:
             metadata = linked_metadata(request, artifact_of(request, "CODE"))
             if any(not isinstance(value, str) or not value.strip() for value in metadata.values()):

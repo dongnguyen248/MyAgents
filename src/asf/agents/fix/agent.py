@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from asf.agents._shared.code_agents import (
     MAX_REPLY_CHARS,
     MAX_TEXT_CHARS,
+    CodeRequestRules,
     artifact_of,
     check_code_request,
     code_changeset,
@@ -273,11 +274,13 @@ class FixAgent(BaseAgent):
     def _check(self, request: AgentRequest) -> list[Issue]:
         issues = check_code_request(
             request,
-            self.metadata.id,
-            {"SPEC", "PLAN", "TASK", "CODE"},
-            optional={"CODE_REVIEW", "TEST_REPORT"},
-            require_ref=True,
-            extra_input={"previousFixError"},
+            CodeRequestRules(
+                agent_id=self.metadata.id,
+                required={"SPEC", "PLAN", "TASK", "CODE"},
+                optional={"CODE_REVIEW", "TEST_REPORT"},
+                require_ref=True,
+                extra_input={"previousFixError"},
+            ),
         )
         issues.extend(_check_previous_error(request))
         issues.extend(_check_report_links(request))

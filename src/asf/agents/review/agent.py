@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from asf.agents._shared.code_agents import (
     MAX_REPLY_CHARS,
     MAX_TEXT_CHARS,
+    CodeRequestRules,
     artifact_of,
     check_code_request,
     code_changeset,
@@ -90,9 +91,11 @@ class ReviewAgent(BaseAgent):
     def _check(self, request: AgentRequest) -> list[Issue]:
         return check_code_request(
             request,
-            self.metadata.id,
-            required={"SPEC", "PLAN", "TASK", "CODE"},
-            optional={"TEST_REPORT"},
+            CodeRequestRules(
+                agent_id=self.metadata.id,
+                required={"SPEC", "PLAN", "TASK", "CODE"},
+                optional={"TEST_REPORT"},
+            ),
         )
 
     def _skipped_review(

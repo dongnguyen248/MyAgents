@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from asf.agents._shared.code_agents import check_code_request
+from asf.agents._shared.code_agents import CodeRequestRules, check_code_request
 from asf.agents.base import Issue
 from asf.agents.plan.milestones import (
     Milestone,
@@ -87,11 +87,13 @@ def check_fix(request: AgentRequest) -> list[Issue]:
     """The Fix agent's calling profile of check_code_request."""
     return check_code_request(
         request,
-        FIX_AGENT,
-        FIX_REQUIRED,
-        optional=FIX_OPTIONAL,
-        require_ref=True,
-        extra_input={"previousFixError"},
+        CodeRequestRules(
+            agent_id=FIX_AGENT,
+            required=FIX_REQUIRED,
+            optional=FIX_OPTIONAL,
+            require_ref=True,
+            extra_input={"previousFixError"},
+        ),
     )
 
 
@@ -315,12 +317,14 @@ def test_traceability_checks_are_skipped_when_other_issues_exist() -> None:
 def test_test_agent_profile_accepts_task_and_code_only() -> None:
     artifacts = [a for a in valid_artifacts() if a.type in ("TASK", "CODE")]
     request = make_request(agent_id="agent-test", input={"taskItemId": "T1"}, artifacts=artifacts)
-    assert check_code_request(request, "agent-test", {"TASK", "CODE"}) == []
+    rules = CodeRequestRules(agent_id="agent-test", required={"TASK", "CODE"})
+    assert check_code_request(request, rules) == []
 
 
 def test_test_agent_profile_rejects_upstream_artifacts_as_unsupported() -> None:
     request = make_request(agent_id="agent-test", input={"taskItemId": "T1"})
-    assert pairs(check_code_request(request, "agent-test", {"TASK", "CODE"})) == [
+    rules = CodeRequestRules(agent_id="agent-test", required={"TASK", "CODE"})
+    assert pairs(check_code_request(request, rules)) == [
         ("artifacts[0]", "Unsupported artifact type"),
         ("artifacts[1]", "Unsupported artifact type"),
     ]
