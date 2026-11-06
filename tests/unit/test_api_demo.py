@@ -224,6 +224,10 @@ def test_vhpc_rules_reach_the_run_context(tmp_path: Path):
         inputs={"spec": {"requirement": "Check the review rules wiring"}},
     )
     assert "Constants and Magic Values" in run.context["project"]["reviewRules"]
+    # The shared code-structure rulebook ships with the profile too,
+    # so Implement writes to it and Review judges against it.
+    assert "Code Structure Rules" in run.context["project"]["reviewRules"]
+    assert "Max 30 lines per function" in run.context["project"]["reviewRules"]
 
 
 def write_pack(tmp_path: Path, pack: str, text: str) -> None:

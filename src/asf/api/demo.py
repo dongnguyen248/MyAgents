@@ -53,7 +53,11 @@ from asf.approval.mode import DEFAULT_MAX_REVIEW_ROUNDS
 from asf.approval.models import AI_REVIEWER, ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
 from asf.configuration.platform import PlatformConfig
-from asf.configuration.project import ProjectProfile
+from asf.configuration.project import (
+    ProjectProfile,
+    keep_changes_on_failure_of,
+    workspace_mode_of,
+)
 from asf.configuration.secrets import SecretRef
 from asf.configuration.yamlio import scan_secrets
 from asf.contracts.models import (
@@ -73,8 +77,12 @@ from asf.state_machine.machine import InvalidTransition
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
 from asf.storage.memory import InMemoryStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
+from asf.tools.journal import JournalStore
 from asf.tools.local import (
+    DirectWorkspace,
     LocalWorkspace,
+    ProjectWorkspaceSettings,
+    RunWorkspaceOutcome,
     SandboxResourceLimits,
     SandboxSettings,
     WorkspaceRepository,
@@ -475,7 +483,8 @@ class _WorkspaceBindingAgent:
     that project's lock: two runs of the same project never apply
     change sets or run commands against one working tree at once.
 
-    The test wrapper additionally commits the run's worktree when the
+    The test wrapper additionally records the run's green state (a
+    worktree commit, or a journal baseline advance in direct mode) when the
     step's TEST_REPORT verdict is PASS, so the next item and the fix
     loop build on the last green state (see asf.tools.worktree).
     """
@@ -545,13 +554,13 @@ class _WorkspaceBindingAgent:
             f"v{code.version if code is not None else '?'} (tests passed)"
         )
         try:
-            self._workspace.commit_current_worktree(message)
+            self._workspace.record_green_state(message)
         except Exception:
-            # The tests passed; losing the green-state commit must not
+            # The tests passed; losing the green-state record must not
             # fail the step — but it must be loud: the fix loop's
             # baseline guarantee degrades without it.
             logger.exception(
-                "Could not commit the worktree of project %s after "
+                "Could not record the green state of project %s after "
                 "passing tests; the passing state is uncommitted",
                 request.project_id,
             )
@@ -560,6 +569,19 @@ class _WorkspaceBindingAgent:
 def _profile_root(profile: ProjectProfile) -> str | None:
     path = profile.repository.get("path")
     return path if isinstance(path, str) and path.strip() else None
+
+
+def _profile_workspace_settings(profile: ProjectProfile) -> ProjectWorkspaceSettings:
+    """The profile's local-folder behaviour (repository.workspaceMode).
+
+    The shared configuration helpers validate the keys, so a bad
+    value in a profile file fails the assembly loudly, exactly like
+    the sandbox settings below.
+    """
+    return ProjectWorkspaceSettings(
+        mode=workspace_mode_of(profile.repository),
+        keep_changes_on_failure=keep_changes_on_failure_of(profile.repository),
+    )
 
 
 def _profile_sandbox_settings(profile: ProjectProfile) -> SandboxSettings | None:
@@ -759,9 +781,10 @@ def build_demo(
     # real filesystem repository/sandbox adapters (agents read the actual
     # files, change sets land in the folder, test commands really run);
     # every other project keeps the in-memory/scripted fakes.
-    # Git projects get a per-run worktree under the data directory
-    # instead of writes into the user's own
-    # working tree; see asf.tools.worktree for the state convention.
+    # Per repository.workspaceMode, a run either gets a per-run git
+    # worktree under the data directory or edits the folder directly
+    # under an undo journal kept beside it; see asf.tools.worktree
+    # and asf.tools.journal for the state conventions.
     worktrees = GitWorktreeWorkspace(data_dir / "worktrees")
     workspace = LocalWorkspace(
         {
@@ -775,6 +798,12 @@ def build_demo(
             if (settings := _profile_sandbox_settings(profile)) is not None
         },
         worktrees=worktrees,
+        direct=DirectWorkspace(
+            journals=JournalStore(data_dir / "journals"),
+            settings={
+                profile.id: _profile_workspace_settings(profile) for profile in projects.values()
+            },
+        ),
     )
     repository = WorkspaceRepository(workspace, InMemoryRepository())
     sandbox = WorkspaceSandbox(workspace, ScriptedSandbox())
@@ -832,6 +861,7 @@ def build_demo(
             profile.id,
             _profile_sandbox_settings(profile),
         )
+        workspace.set_workspace_settings(profile.id, _profile_workspace_settings(profile))
 
     def on_updated(profile: ProjectProfile) -> None:
         _project_writer(projects_dir, overwrite=True)(profile)
@@ -840,10 +870,39 @@ def build_demo(
             profile.id,
             _profile_sandbox_settings(profile),
         )
+        workspace.set_workspace_settings(profile.id, _profile_workspace_settings(profile))
 
     def on_deleted(project_id: str) -> None:
         _project_remover(projects_dir)(project_id)
         workspace.remove(project_id)
+
+    def record_journal_outcome(outcome: RunWorkspaceOutcome) -> None:
+        """Lands a direct-mode journal outcome on the run's event trail."""
+        message = (
+            f"Direct workspace journal {outcome.journal_state} "
+            f"({len(outcome.files_written)} file(s) written)"
+        )
+        if outcome.conflicts:
+            message += (
+                "; not reverted because the user edited them after ASF "
+                f"wrote them: {', '.join(outcome.conflicts)}"
+            )
+        engine.record_event(
+            outcome.run_id,
+            "WORKSPACE_JOURNAL",
+            message,
+            metadata={
+                "workspaceMode": outcome.mode,
+                "journalState": outcome.journal_state,
+                "filesWritten": list(outcome.files_written),
+                "conflicts": list(outcome.conflicts),
+            },
+        )
+
+    def on_terminal(run_id: str, project_id: str, stage: str) -> None:
+        outcome = workspace.finish_run(project_id, run_id, stage)
+        if outcome is not None:
+            record_journal_outcome(outcome)
 
     service = DemoFactoryService(
         engine,
@@ -866,16 +925,18 @@ def build_demo(
         decomposer=RequirementDecomposer(runtime.models),
         max_concurrent_runs=platform.execution.max_concurrent_runs,
         stall_seconds=platform.execution.watchdog.stall_seconds,
-        on_run_terminal=lambda run_id, project_id, stage: workspace.finish_run(
-            project_id, run_id, stage
-        ),
+        on_run_terminal=on_terminal,
+        workspace_view=workspace.run_workspace_view,
     )
     service._max_review_rounds = _max_review_rounds_of(platform)
     service_ref["service"] = service
 
     # Startup sweep: worktrees whose run ended FAILED/CANCELLED (or
     # whose run the store no longer knows) while the backend was down
-    # are orphans — remove them before anything drives again.
+    # are orphans — remove them before anything drives again. Direct
+    # mode journals get the same treatment: an active journal whose
+    # run is unknown or ended FAILED/CANCELLED is closed (reverted,
+    # or kept when the project keeps changes on failure).
     def _stage_of(run_id: str) -> str | None:
         try:
             execution = store.get_execution(run_id)
@@ -890,6 +951,12 @@ def build_demo(
         workspace.sweep_orphans(_stage_of)
     except Exception:
         logger.exception("Worktree orphan sweep failed at startup")
+    try:
+        for swept in workspace.sweep_journals(_stage_of):
+            if store.get_execution(swept.run_id) is not None:
+                record_journal_outcome(swept)
+    except Exception:
+        logger.exception("Journal orphan sweep failed at startup")
     return service, engine, store
 
 

@@ -35,7 +35,12 @@ from asf.api.service import (
 )
 from asf.api.service.approval_context import bake_approval_context
 from asf.approval.errors import ApprovalError
-from asf.configuration.project import ProjectProfile
+from asf.configuration.project import (
+    NEW_PROJECT_WORKSPACE_MODE,
+    ProjectProfile,
+    keep_changes_on_failure_of,
+    workspace_mode_of,
+)
 from asf.configuration.yamlio import deep_merge
 from asf.integrations.hosting.factory import DEFAULT_TOKEN_ENVS
 from asf.orchestrator.engine import Orchestrator
@@ -152,7 +157,7 @@ class CommandsMixin:
         """
         data, token, clear = self._extract_hosting_token(payload)
         self._require_token_store(token, clear)
-        profile = self._validate_profile(data)
+        profile = self._validate_profile(self._with_new_project_defaults(data))
         if _PROJECT_ID_PATTERN.fullmatch(profile.id) is None:
             raise ValueError(
                 "Project id must be a slug: lowercase letters, digits, '-' or "
@@ -167,15 +172,39 @@ class CommandsMixin:
         return self._project_view(profile.id)
 
     @staticmethod
+    def _with_new_project_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Applies creation-time defaults to a new project's profile.
+
+        A project created without ``repository.workspaceMode`` starts
+        in direct mode; profiles that already exist (files, updates)
+        are never rewritten by this default — for them a missing key
+        keeps meaning "auto".
+        """
+        data = dict(payload)
+        repository = data.get("repository")
+        if isinstance(repository, Mapping) and "workspaceMode" not in repository:
+            data["repository"] = {
+                **repository,
+                "workspaceMode": NEW_PROJECT_WORKSPACE_MODE,
+            }
+        return data
+
+    @staticmethod
     def _validate_profile(payload: Mapping[str, Any]) -> ProjectProfile:
         try:
-            return ProjectProfile.model_validate(dict(payload))
+            profile = ProjectProfile.model_validate(dict(payload))
         except ValidationError as error:
             details = "; ".join(
                 f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
                 for item in error.errors()
             )
             raise ValueError(f"Invalid project profile: {details}") from error
+        # repository is a free-form map in the profile model; the keys
+        # the platform interprets are validated here so a bad value
+        # fails creation/update exactly like a schema error.
+        workspace_mode_of(profile.repository)
+        keep_changes_on_failure_of(profile.repository)
+        return profile
 
     def _register_project(self, profile: ProjectProfile) -> None:
         self._projects[profile.id] = self._normalize_project(profile.id, profile)

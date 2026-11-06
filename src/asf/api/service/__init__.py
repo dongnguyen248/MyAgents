@@ -29,7 +29,11 @@ from typing import Any, Protocol
 
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.scheduler import RunScheduler
-from asf.configuration.project import ProjectProfile
+from asf.configuration.project import (
+    ProjectProfile,
+    keep_changes_on_failure_of,
+    workspace_mode_of,
+)
 from asf.contracts.models import ActivityEvent
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
@@ -291,6 +295,7 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
         decomposer: Any = None,
         max_concurrent_runs: int = 2,
         on_run_terminal: Callable[[str, str, str], None] | None = None,
+        workspace_view: Callable[[str, str], dict[str, Any] | None] | None = None,
         stall_seconds: float = 900,
     ) -> None:
         # Watchdog: a step in flight longer than this (or a run
@@ -313,6 +318,11 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
         # clean up the run's git worktree. Best-effort: failures are
         # logged, never allowed to break a drive.
         self._on_run_terminal = on_run_terminal
+        # Optional assembly hook describing a run's local workspace
+        # (project_id, run_id) -> view dict: effective mode, folder
+        # path, files written, undo-journal state. The demo wires it
+        # to the LocalWorkspace; other assemblies leave it None.
+        self._workspace_view = workspace_view
         self._engine = engine
         self._metrics = metrics
         self._store = store
@@ -420,6 +430,8 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
                 "repositoryProvider": str(profile.repository.get("provider", "")),
                 "repositoryUrl": str(profile.repository.get("url") or ""),
                 "repositoryPath": str(profile.repository.get("path") or ""),
+                "workspaceMode": workspace_mode_of(profile.repository),
+                "keepChangesOnFailure": keep_changes_on_failure_of(profile.repository),
                 "testCommands": _valid_test_commands(
                     profile.configuration.get("testCommands"),
                 ),
@@ -465,6 +477,12 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
             ),
             "repositoryPath": (
                 str(repository.get("path") or "") if isinstance(repository, Mapping) else ""
+            ),
+            "workspaceMode": (
+                workspace_mode_of(repository) if isinstance(repository, Mapping) else "auto"
+            ),
+            "keepChangesOnFailure": (
+                keep_changes_on_failure_of(repository) if isinstance(repository, Mapping) else False
             ),
             "testCommands": _valid_test_commands(
                 configuration.get("testCommands") if isinstance(configuration, Mapping) else None

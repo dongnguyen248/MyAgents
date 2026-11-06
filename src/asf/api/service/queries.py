@@ -63,6 +63,7 @@ class QueriesMixin:
     _skip_approvals_of: Callable[[WorkflowExecution], list[str]]
     _stage_kind: Callable[[WorkflowExecution, str], str | None]
     _step_for_stage: Callable[[WorkflowExecution, str], WorkflowStepDef | None]
+    _workspace_view: Callable[[str, str], dict[str, Any] | None] | None
 
     def _agent_metrics(self, agent_id: str) -> dict[str, Any]:
         raw: Any = None
@@ -545,6 +546,42 @@ class QueriesMixin:
             "lastStopReason": info.get("lastStopReason"),
         }
 
+    def _workspace_info(self, run: WorkflowExecution) -> dict[str, Any] | None:
+        """The run's local-workspace block for the workflow view.
+
+        The assembly hook reports the live state (mode, folder, files
+        written, journal state). A finished direct-mode run's journal
+        is discarded or closed, so the terminal WORKSPACE_JOURNAL
+        event the hook recorded fills in the final journal state and
+        file list when the live view no longer has them.
+        """
+        if self._workspace_view is None:
+            return None
+        try:
+            info = self._workspace_view(run.project_id, run.id)
+        except Exception:
+            return None
+        if info is None:
+            return None
+        info = dict(info)
+        if info.get("journalState") is None:
+            event = self._journal_event(run)
+            if event is not None:
+                info["journalState"] = event.get("journalState")
+                if not info.get("filesWritten"):
+                    info["filesWritten"] = event.get("filesWritten") or []
+                if event.get("conflicts"):
+                    info["conflicts"] = event["conflicts"]
+        return info
+
+    @staticmethod
+    def _journal_event(run: WorkflowExecution) -> dict[str, Any] | None:
+        for observation in reversed(run.observations):
+            event = observation.event
+            if event is not None and event.event_type == "WORKSPACE_JOURNAL":
+                return dict(event.metadata)
+        return None
+
     @staticmethod
     def _trail_stages(run: WorkflowExecution) -> list[str]:
         """The run's stage trail, newest first, terminal stages removed."""
@@ -898,6 +935,10 @@ class QueriesMixin:
             # run that is not moving.
             "waiting": self._waiting(run, status),
             "driver": self._driver_view(run.id),
+            # Local workspace of the run (direct/worktree mode, folder,
+            # files written, undo-journal state) when the assembly
+            # provides it and the project has a local folder.
+            "workspace": self._workspace_info(run),
             "steps": steps,
             "startedAt": _iso(run.started_at),
             "updatedAt": _iso(run.updated_at),
@@ -1031,6 +1072,8 @@ class QueriesMixin:
                     "repositoryProvider": profile["repositoryProvider"],
                     "repositoryUrl": profile["repositoryUrl"],
                     "repositoryPath": profile["repositoryPath"],
+                    "workspaceMode": profile["workspaceMode"],
+                    "keepChangesOnFailure": profile["keepChangesOnFailure"],
                     **self._hosting_token_view(project_id),
                     "testCommands": profile["testCommands"],
                     "technologies": profile["technologies"],
