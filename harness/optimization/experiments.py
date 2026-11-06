@@ -44,6 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = REPO_ROOT / "templates"
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 REVIEWER = "harness"
+_HUMAN_GATE = {"approval": {"overrides": {"mode": "human"}}}
 TERMINAL_STAGES = {"COMPLETED", "FAILED", "CANCELLED", "CODE_FIX_ESCALATED"}
 MAX_TICKS = 50
 
@@ -209,7 +210,10 @@ def _run_code_loop(max_fixes: int) -> ConfigResult:
             task_id="experiment-1",
             project_id="harness",
             inputs={"spec": {"requirement": _CASE.requirement}, "implement": {"ref": "main"}},
-            context={"project": {"testCommands": [["pytest", "-q"]]}},
+            # The experiment approves the gates itself, so the run is
+            # pinned to human approval (the shipped workflow's gates
+            # otherwise default to the Phase 12 ai review loop).
+            context={"project": {"testCommands": [["pytest", "-q"]]}, **_HUMAN_GATE},
         )
         for _ in range(MAX_TICKS):
             if run.state.stage in TERMINAL_STAGES:

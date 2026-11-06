@@ -385,14 +385,16 @@ def test_resume_run_continues_from_the_failed_step(
     assert engine.get(run.id).state.stage == "FAILED"
     monkeypatch.undo()
 
-    # Resume re-runs the spec step and auto-advances to its approval gate.
+    # Resume re-runs the spec step and auto-advances through its
+    # AI-reviewed gate (Phase 12: the shipped workflow defaults to ai
+    # mode, so no human approval parks the run anymore).
     view = service.resume_run(run.id)
     service.wait_for_drives()
     view = service.get_workflow(view["id"]) if view is not None else None
     assert view is not None
-    assert view["id"] != run.id and view["status"] == "WAITING_APPROVAL"
+    assert view["id"] != run.id and view["status"] == "COMPLETED"
     resumed = engine.get(view["id"])
-    assert resumed.state.stage == "SPEC_REVIEW"
+    assert resumed.state.stage == "COMPLETED"
     assert resumed.inputs["spec"]["requirement"] == "Resume me"
     assert engine.get(run.id).state.stage == "FAILED"
 
@@ -409,27 +411,34 @@ def test_resume_run_rejects_a_run_that_has_not_failed(tmp_path: Path):
 
 
 def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
-    service, engine, _store = build_demo(tmp_path, ephemeral=True)
+    service, engine, store = build_demo(tmp_path, ephemeral=True)
     run = service.start_run(
         "hands-free",
         "vhpc",
         inputs={"spec": {"requirement": "No ticking"}},
     )
-    # Creation alone already produced the spec and parked at its gate.
+    # Phase 12: the shipped workflow's gates are ai-mode, so the AI
+    # review loop decides them — creation alone carries the run to
+    # completion with no human input and no manual tick at all.
     service.wait_for_drives()
-    view = service.get_workflow(run.id)
-    assert view is not None and view["status"] == "WAITING_APPROVAL"
-    # From here the only human input is approvals — never a tick — and
-    # each approval carries the run to the next gate on its own.
-    for _ in range(5):
-        pending = service.list_approvals()
-        if not pending:
-            break
-        service.decide_approval(pending[0]["id"], decision="APPROVE")
-        service.wait_for_drives()
     view = service.get_workflow(run.id)
     assert view is not None and view["status"] == "COMPLETED"
     assert engine.get(run.id).state.stage == "COMPLETED"
+    requests = store.approvals.list_by_task("hands-free")
+    assert len(requests) == 3
+    assert all(request.status == "APPROVED" for request in requests)
+    assert all(request.reviewers == ["ai-reviewer"] for request in requests)
+    decisions = [
+        decision for request in requests for decision in store.approvals.list_decisions(request.id)
+    ]
+    assert decisions and all(decision.reviewer == "ai-reviewer" for decision in decisions)
+    assert all(decision.reviewer_kind == "AI" for decision in decisions)
+    review_events = [
+        obs.event
+        for obs in engine.get(run.id).observations
+        if obs.event is not None and obs.event.event_type == "AI_REVIEW_COMPLETED"
+    ]
+    assert {event.metadata["stage"] for event in review_events} == {"spec", "plan", "task"}
 
 
 def test_run_with_all_approvals_skipped_needs_no_approvals(tmp_path: Path):
@@ -633,7 +642,7 @@ def test_start_run_returns_while_a_step_is_still_executing(
     gate.set()
     service.wait_for_drives()
     view = service.get_workflow(run.id)
-    assert view is not None and view["status"] == "WAITING_APPROVAL"
+    assert view is not None and view["status"] == "COMPLETED"
 
 
 def test_configure_logging_is_idempotent() -> None:
@@ -668,7 +677,13 @@ def test_startup_recovers_a_run_left_mid_dispatch(tmp_path: Path):
     run = engine.start(
         task_id="wedged-task",
         project_id="vhpc",
-        inputs={"spec": {"requirement": "Heal me"}},
+        inputs={
+            "spec": {"requirement": "Heal me"},
+            "implement": {"taskItemId": "T1", "ref": "main"},
+            "review": {"taskItemId": "T1", "ref": "main"},
+            "test": {"taskItemId": "T1", "ref": "main"},
+        },
+        context={"project": {"testCommands": [["python", "-m", "pytest", "-q"]]}},
     )
     service.track(run.id)
     wedged = engine.get(run.id)
@@ -678,7 +693,7 @@ def test_startup_recovers_a_run_left_mid_dispatch(tmp_path: Path):
     service.drive_active_runs()
     service.wait_for_drives()
     view = service.get_workflow(run.id)
-    assert view is not None and view["status"] == "WAITING_APPROVAL"
+    assert view is not None and view["status"] == "COMPLETED"
     assert engine.get(run.id).in_flight is None
 
 

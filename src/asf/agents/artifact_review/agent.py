@@ -31,8 +31,8 @@ from asf.agents.artifact_review.prompts import (
 from asf.agents.artifact_review.render import render_review_markdown
 from asf.agents.artifact_review.verdict import (
     DEFAULT_BLOCK_ON,
-    carry_forward_findings,
     derive_verdict,
+    merge_findings,
 )
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.contracts.models import (
@@ -138,7 +138,7 @@ class ArtifactReviewAgent(BaseAgent):
         )
         review = _parse_review(self._call_model(request, messages))
         previous = _previous_ai_findings(target)
-        merged = carry_forward_findings(previous, list(review.findings))
+        merged = merge_findings(previous, list(review.findings))
         content = ArtifactReviewContent.model_construct(
             findings=_cap_findings([*mechanical, *merged]),
             summary=review.summary,
@@ -170,7 +170,9 @@ class ArtifactReviewAgent(BaseAgent):
         self, request: AgentRequest, target: ReviewTarget, content: ArtifactReviewContent
     ) -> tuple[Any, list[Artifact]]:
         verdict = derive_verdict(
-            list(content.findings), self._settings.block_on, round_number=target.round_number
+            list(content.findings),
+            _block_on_of(request, self._settings.block_on),
+            round_number=target.round_number,
         )
         text = render_review_markdown(content, target=target, verdict=verdict)
         if len(text) > MAX_TEXT_CHARS:
@@ -225,6 +227,23 @@ def _previous_ai_findings(target: ReviewTarget) -> list[Finding]:
     # Mechanical findings are recomputed every round; carrying them
     # forward would duplicate them under the same deterministic ids.
     return [finding for finding in target.previous.findings if finding.source == "ai"]
+
+
+def _block_on_of(request: AgentRequest, fallback: tuple[str, ...]) -> tuple[str, ...]:
+    """Per-request blocking severities from the orchestrator, if valid.
+
+    The resolved project configuration travels in the request input
+    because the agent's own settings are platform-wide; an unusable
+    value falls back to the settings rather than failing the review.
+    """
+    raw = request.input.get("blockOn")
+    if not isinstance(raw, list) or not raw:
+        return fallback
+    known = ("BLOCKER", "MAJOR", "MINOR", "NIT")
+    if any(item not in known for item in raw):
+        return fallback
+    severities = tuple(dict.fromkeys(raw))
+    return ("BLOCKER", *(item for item in severities if item != "BLOCKER"))
 
 
 def _cap_findings(findings: list[Finding]) -> list[Finding]:

@@ -24,13 +24,46 @@ from asf.api.service import (
     _TERMINAL_STAGES,
     logger,
 )
+from asf.api.service.review_state import is_human_wait
 from asf.orchestrator.engine import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
 from asf.orchestrator.ports import ConcurrentModificationError
+from asf.workflow.definition import WorkflowStepDef
 
 # Drive-specific log channel: why drives stop is the first thing an
 # operator needs when a run stalls, so it gets its own logger name.
 drive_logger = logging.getLogger("asf.api.drive")
+
+
+def _drive_stop_reason(status: str) -> str:
+    """The DRIVE_STOPPED reason for a status a drive cannot advance."""
+    if status == "WAITING_APPROVAL":
+        return "awaiting_approval"
+    return {"ESCALATED": "escalated", "WAITING_RETRY": "retry_wait"}.get(status, "terminal")
+
+
+def _adoptable(
+    run: WorkflowExecution,
+    drive_active: set[str],
+    step: WorkflowStepDef | None,
+    status: str,
+) -> bool:
+    """True when nobody owns this run and a drive should resume it.
+
+    Terminal, in-flight, retry-scheduled and already-driving runs
+    are owned elsewhere; a human gate is owned by its reviewers —
+    but an AI review stage is owned by the review loop, so adoption
+    resumes it like any running step.
+    """
+    if run.state.stage in ("COMPLETED", "FAILED", "CANCELLED"):
+        return False
+    if run.in_flight is not None or run.retry_at is not None:
+        return False
+    if run.id in drive_active:
+        return False
+    if is_human_wait(run, step):
+        return False
+    return status in ("RUNNING", "AI_REVIEWING")
 
 
 class DriverMixin:
@@ -70,6 +103,7 @@ class DriverMixin:
     _invalidate_runs_cache: Callable[[], None]
     _runs: Callable[[], list[WorkflowExecution]]
     _workflow_status: Callable[[WorkflowExecution], str]
+    _step_for_stage: Callable[[WorkflowExecution, str], WorkflowStepDef | None]
     get_workflow: Callable[[str], dict[str, Any] | None]
 
     def _drive_in_background(self, run_id: str) -> None:
@@ -134,9 +168,9 @@ class DriverMixin:
 
         A run can be orphaned by a backend restart between drives, a
         lost wake-up, or a drive that died with its thread. Adoption
-        is deliberately narrow — status RUNNING only, no step in
-        flight, no scheduled retry (the retry scheduler owns those),
-        no approval/escalation (a human owns those), and no drive
+        is deliberately narrow — status RUNNING or AI_REVIEWING,
+        no step in flight, no scheduled retry (the retry scheduler
+        owns those), no human approval/escalation, and no drive
         already active — and bounded: a run that makes no progress
         is adopted at most _ADOPT_LIMIT times in a row, then left
         alone (the workflow view reports it STALLED) with the
@@ -148,14 +182,9 @@ class DriverMixin:
             if self._adopt_seen.get(run_id) != progress:
                 self._adopt_seen[run_id] = progress
                 self._adopt_attempts[run_id] = 0
-            if (
-                run.state.stage in ("COMPLETED", "FAILED", "CANCELLED")
-                or run.in_flight is not None
-                or run.retry_at is not None
-                or run_id in self._drive_active
-            ):
-                continue
-            if self._workflow_status(run) != "RUNNING":
+            step = self._step_for_stage(run, run.state.stage)
+            status = self._workflow_status(run)
+            if not _adoptable(run, self._drive_active, step, status):
                 continue
             attempts = self._adopt_attempts.get(run_id, 0)
             if attempts >= self._ADOPT_LIMIT:
@@ -281,12 +310,8 @@ class DriverMixin:
                 and run.retry_at is not None
                 and self._scheduler_clock() >= run.retry_at
             )
-            if status != "RUNNING" and not retry_due:
-                stop_reason = {
-                    "WAITING_APPROVAL": "awaiting_approval",
-                    "ESCALATED": "escalated",
-                    "WAITING_RETRY": "retry_wait",
-                }.get(status, "terminal")
+            if status not in ("RUNNING", "AI_REVIEWING") and not retry_due:
+                stop_reason = _drive_stop_reason(status)
                 break
             before = (run.state.stage, len(run.results))
             try:
@@ -426,7 +451,7 @@ class DriverMixin:
                 # the scheduler drives it when the backoff expires
                 # (a retry_at already in the past fires at once).
                 self._scheduler.register(run.id, run.retry_at)
-            if self._workflow_status(run) == "RUNNING":
+            if self._workflow_status(run) in ("RUNNING", "AI_REVIEWING"):
                 self._drive_in_background(run.id)
         # A split part that completed just before the previous backend
         # stopped may never have started its successor; the chain

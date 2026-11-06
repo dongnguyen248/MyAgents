@@ -19,22 +19,19 @@ from asf.contracts.models import Artifact
 __all__ = [
     "DEFAULT_BLOCK_ON",
     "OPEN_STATUSES",
-    "STAGNATION_CHANGE_THRESHOLD",
     "RoundOutcome",
     "artifact_hash",
     "carry_forward_findings",
     "derive_verdict",
     "detect_regression",
     "detect_stagnation",
+    "merge_findings",
     "open_blocking",
 ]
 
 DEFAULT_BLOCK_ON = ("BLOCKER", "MAJOR")
 OPEN_STATUSES = ("NEW", "STILL_OPEN")
 MINOR_SEVERITIES = ("MINOR", "NIT")
-# Below this fraction of changed content, a round counts as
-# "the artifact barely moved" for stagnation purposes.
-STAGNATION_CHANGE_THRESHOLD = 0.02
 # The bias guard applies from the second review round onward.
 BIAS_GUARD_MIN_ROUND = 2
 
@@ -103,6 +100,36 @@ def carry_forward_findings(previous: list[Finding], current: list[Finding]) -> l
     return merged
 
 
+def _match_key(finding: Finding) -> tuple[str, str]:
+    """Soft identity of a finding: what it is about, not its id."""
+    location = " ".join(finding.location.casefold().split())
+    return (finding.category, location)
+
+
+def merge_findings(previous: list[Finding], current: list[Finding]) -> list[Finding]:
+    """Merge a round's findings with the previous round's.
+
+    A NEW finding whose (category, location) matches an unlisted open
+    previous finding is that same problem renumbered: it keeps the old
+    id as STILL_OPEN instead of duplicating it (and inflating the
+    blocking count) while the original is carried forward. Everything
+    still unmentioned is carried forward as in carry_forward_findings.
+    """
+    mentioned = {finding.id for finding in current}
+    unlisted: dict[tuple[str, str], Finding] = {}
+    for finding in previous:
+        if finding.id not in mentioned and finding.status in OPEN_STATUSES:
+            unlisted.setdefault(_match_key(finding), finding)
+    merged: list[Finding] = []
+    for finding in current:
+        match = unlisted.pop(_match_key(finding), None) if finding.status == "NEW" else None
+        if match is None:
+            merged.append(finding)
+        else:
+            merged.append(finding.model_copy(update={"id": match.id, "status": "STILL_OPEN"}))
+    return carry_forward_findings(previous, merged)
+
+
 def detect_regression(previous: list[Finding], current: list[Finding]) -> list[str]:
     """Ids of findings that were RESOLVED before and are open again."""
     resolved_before = {finding.id for finding in previous if finding.status == "RESOLVED"}
@@ -120,11 +147,17 @@ def detect_stagnation(
     *,
     block_on: tuple[str, ...] = DEFAULT_BLOCK_ON,
 ) -> bool:
-    """True when a round made no real progress on the blocking set."""
+    """True when a round made no progress on the blocking set.
+
+    Progress means the set of open blocking finding ids SHRANK: at
+    least one previously blocking problem was closed. A changed
+    artifact alone is not progress — a trivial edit that leaves every
+    blocker open is stagnation, as is a byte-identical artifact.
+    """
     if current.artifact_hash == previous.artifact_hash:
         return True
-    if current.change_ratio >= STAGNATION_CHANGE_THRESHOLD:
-        return False
     previous_ids = _open_blocking_ids(previous, block_on)
+    if not previous_ids:
+        return False
     current_ids = _open_blocking_ids(current, block_on)
-    return bool(previous_ids) and previous_ids == current_ids
+    return previous_ids <= current_ids

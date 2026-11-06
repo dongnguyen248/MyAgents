@@ -25,8 +25,14 @@ _TASK_REPLY = json.dumps(
                 "id": "T1",
                 "title": "Create the demo module",
                 "milestoneRef": "M1",
-                "description": "Implement the demo module described by the SPEC",
-                "acceptanceCriteria": ["The demo module exists and imports cleanly"],
+                "description": (
+                    "Implement the demo module described by the SPEC, covering "
+                    "REQ-1 and REQ-2; run the project tests"
+                ),
+                "acceptanceCriteria": [
+                    "REQ-1: The demo module exists and imports cleanly",
+                    "REQ-2: Invalid input is rejected with a clear error",
+                ],
                 "dependsOn": [],
                 "expectedFiles": ["calculator.py"],
                 "verificationHint": "Run the project test commands",
@@ -95,8 +101,18 @@ class DemoRoutingGateway:
         template = load_spec_template(self._templates_dir)
         revised = "## Reviewer feedback" in user
         body = "Revised demo specification." if revised else "Initial demo specification."
+        sections = {
+            "## Functional requirements": (
+                "- REQ-1: Provide the demo calculation.\n"
+                "- REQ-2: Reject invalid input with a clear error."
+            ),
+            "## Acceptance criteria": (
+                "- REQ-1: The demo calculation returns the expected result.\n"
+                "- REQ-2: Invalid input is rejected with a clear error."
+            ),
+        }
         return "# SPEC: Demo\n\n" + "\n\n".join(
-            f"{heading}\n{body}" for heading in template.required_sections
+            f"{heading}\n{sections.get(heading, body)}" for heading in template.required_sections
         )
 
     def _plan_reply(self, user: str) -> str:
@@ -107,6 +123,7 @@ class DemoRoutingGateway:
         )
         sections = {
             "## Linked SPEC": linked_text,
+            "## Approach / architecture": "Demo approach covering REQ-1 and REQ-2.",
             "## Milestones": (
                 "### M1: Demonstrate the approved SPEC handoff\n"
                 "- Deliverables: Demo PLAN\n"

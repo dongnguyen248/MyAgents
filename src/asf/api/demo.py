@@ -23,6 +23,7 @@ import os
 import sys
 import tempfile
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,7 +48,9 @@ from asf.api.demo_gateway import DemoRoutingGateway
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
 from asf.api.service import FactoryService
-from asf.approval.models import ApprovalPolicy
+from asf.approval.errors import ApprovalError
+from asf.approval.mode import DEFAULT_MAX_REVIEW_ROUNDS
+from asf.approval.models import AI_REVIEWER, ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
 from asf.configuration.platform import PlatformConfig
 from asf.configuration.project import ProjectProfile
@@ -66,6 +69,7 @@ from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.orchestrator.budget import RunBudget
 from asf.orchestrator.code_loop import CodeLoopPolicy
 from asf.orchestrator.ports import ExecutionStore
+from asf.state_machine.machine import InvalidTransition
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
 from asf.storage.memory import InMemoryStore
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
@@ -225,6 +229,10 @@ class DemoFactoryService(FactoryService):
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
+        # Set by build_demo from the platform config (the artifact-
+        # review agent's maxReviewRounds setting); kept off the
+        # constructor to stay within the parameter limit.
+        self._max_review_rounds: int | None = None
         self._projects_dir = projects_dir
         # The skills catalogue lives at the repository root beside
         # projects/ and templates/; tests may point it elsewhere.
@@ -409,7 +417,7 @@ class DemoFactoryService(FactoryService):
             task_id,
             project_id,
             inputs=merged_inputs,
-            context=merged_context,
+            context=_with_review_rounds(merged_context, self._max_review_rounds),
         )
 
 
@@ -624,6 +632,22 @@ def _profile_sandbox_settings(profile: ProjectProfile) -> SandboxSettings | None
         env_extra=extra,
         resource_limits=limits,
     )
+
+
+def _max_review_rounds_of(platform: PlatformConfig) -> int:
+    """The per-run AI review round cap from the reviewer agent's settings."""
+    agent = platform.agents.get("artifact-review")
+    raw = agent.settings.get("maxReviewRounds") if agent is not None else None
+    return raw if type(raw) is int and raw >= 1 else DEFAULT_MAX_REVIEW_ROUNDS
+
+
+def _with_review_rounds(context: dict[str, Any], rounds: int | None) -> dict[str, Any]:
+    """The run context with the AI review round cap baked in."""
+    if rounds is None:
+        return context
+    approval = dict(context.get("approval") or {})
+    approval["maxReviewRounds"] = rounds
+    return {**context, "approval": approval}
 
 
 @dataclass(frozen=True)
@@ -846,6 +870,7 @@ def build_demo(
             project_id, run_id, stage
         ),
     )
+    service._max_review_rounds = _max_review_rounds_of(platform)
     service_ref["service"] = service
 
     # Startup sweep: worktrees whose run ended FAILED/CANCELLED (or
@@ -868,8 +893,25 @@ def build_demo(
     return service, engine, store
 
 
+def _selftest_advance(service: FactoryService, engine: Orchestrator, run: Any) -> None:
+    """One selftest step: tick, or approve a human-addressed gate."""
+    if run.approval_id is None:
+        service.tick_run(run.id)
+        return
+    pending = engine.pending_approval(run.id)
+    if AI_REVIEWER in pending.reviewers:
+        service.tick_run(run.id)
+    else:
+        service.decide_approval(pending.id, decision="APPROVE")
+
+
 def run_selftest(service: FactoryService, engine: Orchestrator) -> int:
-    """Drive one run to completion, approving every artifact as 'dashboard'."""
+    """Drive one run to completion.
+
+    AI-mode gates are decided by the review loop itself (just tick);
+    only a gate addressed to human reviewers is approved directly,
+    as 'dashboard'.
+    """
     project_id = service.list_projects()[0]["id"]
     run = service.start_run(
         "demo-task",
@@ -887,11 +929,12 @@ def run_selftest(service: FactoryService, engine: Orchestrator) -> int:
         print(f"stage: {run.state.stage}")
         if run.state.stage in ("COMPLETED", "FAILED", "CANCELLED"):
             break
-        if run.approval_id is not None:
-            pending = engine.pending_approval(run.id)
-            service.decide_approval(pending.id, decision="APPROVE")
-        else:
-            service.tick_run(run.id)
+        # The background drive advances the run concurrently (with AI
+        # gates it no longer parks), so an action can lose the race
+        # against a run that just completed or was just decided:
+        # re-read and continue instead of failing the selftest.
+        with suppress(InvalidTransition, ApprovalError):
+            _selftest_advance(service, engine, run)
     service.wait_for_drives()
     run = engine.get(run.id)
     artifact_types = {artifact.type for artifact in run.artifact_history.values()}

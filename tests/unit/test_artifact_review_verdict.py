@@ -12,6 +12,8 @@ from asf.agents.artifact_review.verdict import (
     derive_verdict,
     detect_regression,
     detect_stagnation,
+    merge_findings,
+    open_blocking,
 )
 
 
@@ -102,14 +104,70 @@ def test_stagnation_same_blocking_set_and_barely_changed() -> None:
     assert detect_stagnation(previous, current) is True
 
 
-def test_no_stagnation_when_artifact_moved_or_blockers_changed() -> None:
+def test_stagnation_trivial_edit_same_blockers_still_open() -> None:
+    # A large content change alone is not progress: every blocker from
+    # the previous round is still open, so the round stagnated.
     previous = _outcome([finding("F-001", "BLOCKER")], "hash-a", 0.0)
-    moved = _outcome([finding("F-001", "BLOCKER", "STILL_OPEN")], "hash-b", 0.5)
-    assert detect_stagnation(previous, moved) is False
-    changed = _outcome([finding("F-002", "BLOCKER")], "hash-b", 0.01)
-    assert detect_stagnation(previous, changed) is False
+    current = _outcome([finding("F-001", "BLOCKER", "STILL_OPEN")], "hash-b", 0.9)
+    assert detect_stagnation(previous, current) is True
+
+
+def test_no_stagnation_when_the_blocking_set_shrank() -> None:
+    previous = _outcome([finding("F-001", "BLOCKER"), finding("F-002", "MAJOR")], "hash-a", 0.0)
+    shrank = _outcome([finding("F-002", "MAJOR", "STILL_OPEN")], "hash-b", 0.01)
+    assert detect_stagnation(previous, shrank) is False
+    replaced = _outcome([finding("F-002", "BLOCKER")], "hash-b", 0.01)
+    assert detect_stagnation(previous, replaced) is False
     cleared = _outcome([], "hash-b", 0.01)
     assert detect_stagnation(previous, cleared) is False
+
+
+def test_merge_findings_soft_matches_a_renumbered_finding() -> None:
+    previous = [finding("F-001", "BLOCKER", "STILL_OPEN")]
+    renumbered = finding("F-007", "BLOCKER", "NEW")
+    merged = merge_findings(previous, [renumbered])
+    assert [item.id for item in merged] == ["F-001"]
+    assert merged[0].status == "STILL_OPEN"
+    # The blocking count is not inflated by the renumbering, and the
+    # unresolved blocker is not hidden either.
+    assert len(open_blocking(merged, ("BLOCKER", "MAJOR"))) == 1
+    assert derive_verdict(merged) == "REQUEST_CHANGES"
+
+
+def test_merge_findings_soft_match_uses_category_and_normalized_location() -> None:
+    previous = [finding("F-001", "MAJOR", "STILL_OPEN")]
+    moved = Finding(
+        id="F-009",
+        severity="MAJOR",
+        category="CLARITY",
+        location="REQ-1",
+        problem="same place, different category",
+        required_change="a concrete change",
+        status="NEW",
+    )
+    merged = merge_findings(previous, [moved])
+    # Different category: not the same finding, so the old one is
+    # carried forward alongside the new one.
+    assert [item.id for item in merged] == ["F-009", "F-001"]
+
+
+def test_merge_findings_still_carries_forward_unmatched_findings() -> None:
+    previous = [
+        finding("F-001", "BLOCKER", "STILL_OPEN"),
+        finding("F-002", "MAJOR", "RESOLVED"),
+    ]
+    unrelated = Finding(
+        id="F-003",
+        severity="MINOR",
+        category="TRACEABILITY",
+        location="REQ-9",
+        problem="a different place entirely",
+        required_change="a concrete change",
+        status="NEW",
+    )
+    merged = merge_findings(previous, [unrelated])
+    assert [item.id for item in merged] == ["F-003", "F-001"]
+    assert merged[1].status == "STILL_OPEN"
 
 
 def test_content_validation_waived_rules() -> None:

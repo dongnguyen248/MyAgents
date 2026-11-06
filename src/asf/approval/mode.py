@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from asf.approval.models import ApprovalPolicy
 from asf.configuration.errors import ConfigError, ConfigIssue
 
 __all__ = [
@@ -26,6 +27,9 @@ __all__ = [
     "ApprovalOverrides",
     "ResolvedApproval",
     "StepGate",
+    "approval_overrides_from_context",
+    "approval_policy_from_context",
+    "max_review_rounds_from_context",
     "parse_approval_overrides",
     "resolve_approval_mode",
 ]
@@ -49,10 +53,17 @@ DEFAULT_AI_MAX_REVISIONS = 4
 class StepGate(Protocol):
     """The step fields the resolver reads; WorkflowStepDef satisfies it."""
 
-    id: str
-    approval_mode: str
-    max_revisions: int | None
-    max_revisions_explicit: bool
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def approval_mode(self) -> str: ...
+
+    @property
+    def max_revisions(self) -> int | None: ...
+
+    @property
+    def max_revisions_explicit(self) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -184,6 +195,51 @@ def _step_max_revisions(step: StepGate, mode: str) -> int:
 
 def _with_blocker(block_on: tuple[str, ...]) -> tuple[str, ...]:
     return ("BLOCKER", *(item for item in block_on if item != "BLOCKER"))
+
+
+def approval_overrides_from_context(context: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """The profile approval block baked into a run's context at start.
+
+    The API service stores the project's raw ``configuration.approval``
+    mapping under context key ``approval`` / ``overrides`` when a run is
+    created, so gate resolution at run time needs no profile access.
+    """
+    approval = context.get("approval")
+    if not isinstance(approval, Mapping):
+        return None
+    overrides = approval.get("overrides")
+    return overrides if isinstance(overrides, Mapping) else None
+
+
+def approval_policy_from_context(context: Mapping[str, Any]) -> ApprovalPolicy | None:
+    """The project's human approval policy baked into the run context.
+
+    Resolved from the profile at run start (see
+    ``approval_policy_from_project``); None when the project configured
+    no reviewers, in which case the engine's base policy applies.
+    """
+    approval = context.get("approval")
+    if not isinstance(approval, Mapping):
+        return None
+    raw = approval.get("policy")
+    if not isinstance(raw, Mapping) or not isinstance(raw.get("reviewers"), list):
+        return None
+    expires = raw.get("expiresInSeconds")
+    return ApprovalPolicy(
+        reviewers=[str(item) for item in raw["reviewers"]],
+        min_approvals=int(raw.get("minApprovals") or 1),
+        expires_in_seconds=expires if type(expires) is int else None,
+    )
+
+
+def max_review_rounds_from_context(context: Mapping[str, Any]) -> int:
+    """The per-run AI review round cap baked into the run context."""
+    approval = context.get("approval")
+    if isinstance(approval, Mapping):
+        raw = approval.get("maxReviewRounds")
+        if type(raw) is int and raw >= 1:
+            return raw
+    return DEFAULT_MAX_REVIEW_ROUNDS
 
 
 def resolve_approval_mode(step: StepGate, approval: Mapping[str, Any] | None) -> ResolvedApproval:

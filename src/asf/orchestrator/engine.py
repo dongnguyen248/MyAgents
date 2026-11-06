@@ -11,6 +11,8 @@ from asf.approval.errors import ApprovalError
 from asf.approval.models import ApprovalDecision, ApprovalPolicy, ApprovalRequest, ApprovalSpec
 from asf.approval.service import ApprovalService
 from asf.contracts.models import ActivityEvent, AgentRequest, AgentResult, PlatformError
+from asf.orchestrator.ai_review import ai_stage, dispatch_claimed
+from asf.orchestrator.ai_review_apply import apply_review_result
 from asf.orchestrator.budget import RunBudget, budget_exceeded_message
 from asf.orchestrator.code_loop import (
     ESCALATED_STAGE,
@@ -291,6 +293,25 @@ class Orchestrator:
         )
         return next(step for step in self._definition.steps if step.id == step_id)
 
+    def _announce_step_start(self, run: WorkflowExecution) -> None:
+        step = self._step(run)
+        attempt = run.attempts.get(step.id, 0) + 1
+        message = f"{step.name} started"
+        if step.agent_type == "implement" and run.task_order:
+            message += f" · item {run.task_order[run.item_index]}"
+        if attempt > 1:
+            message += f" (attempt {attempt})"
+        self._event(
+            run,
+            "STEP_STARTED",
+            message,
+            metadata={
+                "stepId": step.id,
+                "agentType": step.agent_type,
+                "attempt": attempt,
+            },
+        )
+
     def _fail(
         self,
         run: WorkflowExecution,
@@ -327,6 +348,7 @@ class Orchestrator:
                 raise InvalidTransition(run.state.stage, Trigger.COMPLETE.value)
             if kind == StageKind.REVIEW:
                 self._sync_approval(run)
+                token = ai_stage(self).claim(run)
             elif kind != StageKind.ESCALATED and (
                 run.retry_at is None or self._now() >= run.retry_at
             ):
@@ -338,23 +360,7 @@ class Orchestrator:
                 # log shows what the agent is doing while a long
                 # step (e.g. a minutes-long model call) is still in
                 # flight, not only after it finishes.
-                step = self._step(run)
-                attempt = run.attempts.get(step.id, 0) + 1
-                message = f"{step.name} started"
-                if step.agent_type == "implement" and run.task_order:
-                    message += f" · item {run.task_order[run.item_index]}"
-                if attempt > 1:
-                    message += f" (attempt {attempt})"
-                self._event(
-                    run,
-                    "STEP_STARTED",
-                    message,
-                    metadata={
-                        "stepId": step.id,
-                        "agentType": step.agent_type,
-                        "attempt": attempt,
-                    },
-                )
+                self._announce_step_start(run)
         if token is None:
             return self.get(run_id)
         # Phase 2 — execute with NO store transaction held. The agent
@@ -364,6 +370,7 @@ class Orchestrator:
         # _active guard: the in_flight token and the row version do.
         claimed = run.snapshot()
         pre_dispatch = claimed.snapshot()
+        review_result: AgentResult | None = None
         exceeded = (
             budget_exceeded_message(claimed, self._budget) if self._budget is not None else None
         )
@@ -374,7 +381,7 @@ class Orchestrator:
         else:
             self._active.add(run_id)
             try:
-                self._dispatch(claimed)
+                review_result = dispatch_claimed(self, claimed)
             finally:
                 self._active.remove(run_id)
         # Phase 3 — commit, in one short transaction: the claim token
@@ -388,6 +395,7 @@ class Orchestrator:
                     f"Run '{run_id}' changed hands while its dispatch"
                     " executed; the dispatch result was discarded",
                 )
+            apply_review_result(self, claimed, review_result)
             if claimed._pending_approval is not None:
                 # The deferred approval request, created here so it
                 # commits (or rolls back) together with the checkpoint
@@ -404,7 +412,9 @@ class Orchestrator:
                     | None
                 ) = None
                 try:
-                    approval = service.request(spec, policy, self._now())
+                    approval = service.request(
+                        spec, ai_stage(self).policy_for(claimed, spec, policy), self._now()
+                    )
                 except ApprovalError:
                     failure = (
                         "VALIDATION_FAILED",
@@ -688,7 +698,7 @@ class Orchestrator:
         # Per-task approval skips (context key skipApprovals, chosen
         # when the task was created): a skipped gate is not requested
         # at all and the run advances straight through it below.
-        skipped = step.requires_approval and step.id in self._skip_approvals(run)
+        skipped = step.requires_approval and ai_stage(self).gate_skipped(run, step)
         if step.requires_approval and not skipped:
             # Defer the actual request to tick's commit phase: this
             # phase runs without a store transaction, so creating the
@@ -866,19 +876,6 @@ class Orchestrator:
         run.retry_at = self._now() + timedelta(seconds=delay)
         self._event(run, "WORKFLOW_RETRY_SCHEDULED", "Retryable step failure scheduled")
         return True
-
-    @staticmethod
-    def _skip_approvals(run: WorkflowExecution) -> set[str]:
-        """Approval steps this run skips, from its context.
-
-        Set at task creation (context key ``skipApprovals``: step ids
-        such as "spec"/"plan"/"task"); validated against the workflow
-        definition by the API service before the run starts.
-        """
-        raw = run.context.get("skipApprovals")
-        if isinstance(raw, list):
-            return {item for item in raw if isinstance(item, str)}
-        return set()
 
     def _approval_dependencies(self) -> tuple[ApprovalService, ApprovalPolicy]:
         if self._approvals is None or self._approval_policy is None:
