@@ -28,6 +28,7 @@ class FakeProvider:
         self.pipeline: PipelineRef | None = PipelineRef("9", "PASS", "https://ci/9")
         self.change_request_state = "merged"
         self.push_error: HostingError | None = None
+        self.description: str | None = None
         self.calls: list[str] = []
 
     def push_changeset(self, *, branch, base_branch, changes, message):  # noqa: ANN001, ANN202
@@ -38,6 +39,7 @@ class FakeProvider:
 
     def open_change_request(self, *, branch, base_branch, title, description):  # noqa: ANN001, ANN202
         self.calls.append(f"open:{branch}")
+        self.description = description
         return ChangeRequestRef("4", "https://mr/4", "open", branch)
 
     def change_request(self, *, branch):  # noqa: ANN001, ANN202
@@ -217,3 +219,35 @@ def test_branch_for_task_sanitizes():
     assert branch_for_task("task-1") == "asf/task-1"
     assert branch_for_task("My Task #2") == "asf/My-Task-2"
     assert branch_for_task("a..b") == "asf/a.b"
+
+
+def test_opened_change_request_carries_a_rule_shaped_description(provider: FakeProvider):
+    from asf.integrations.hosting.description import (
+        SECTION_HEADINGS,
+        validate_description,
+    )
+
+    result = _actions()["run-pipeline"](_request("run-pipeline"))
+    assert result.status == "SUCCESS"
+    description = provider.description
+    assert description is not None
+    assert validate_description(description) == []
+    for heading in SECTION_HEADINGS:
+        assert heading in description
+    assert "task-1" in description
+    assert "`a.py` - created by the implement step" in description
+
+
+def test_run_pipeline_refuses_to_open_when_description_is_invalid(
+    provider: FakeProvider, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(
+        actions_module, "validate_description", lambda text: ["missing heading: ## Why"]
+    )
+    result = _actions()["run-pipeline"](_request("run-pipeline"))
+    assert result.status == "FAILED"
+    assert result.errors[0].code == "VALIDATION_FAILED"
+    assert "missing heading: ## Why" in result.errors[0].message
+    # Nothing was pushed and nothing was opened.
+    assert provider.calls == []
+    assert provider.description is None
