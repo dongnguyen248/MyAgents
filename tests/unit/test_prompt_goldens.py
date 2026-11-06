@@ -40,7 +40,7 @@ from asf.agents.loading import (
 from asf.agents.plan.agent import PlanAgent, PlanSettings
 from asf.agents.review.agent import ReviewAgent
 from asf.agents.spec.agent import SpecAgent, SpecSettings
-from asf.agents.task.agent import TaskAgent
+from asf.agents.task.agent import TaskAgent, TaskSettings
 from asf.contracts.models import AgentRequest, Artifact, ModelRequest
 from asf.models.fake import ScriptedModelGateway
 from asf.tools.fake import InMemoryRepository
@@ -233,10 +233,12 @@ def capture_task() -> ModelRequest:
     )
     agent = TaskAgent(
         runtime_for(gateway),
-        prompts=load_task_prompts(),
-        template=load_task_template(REPO_ROOT / "templates"),
-        model="test-model",
-        parameters={"temperature": 0.3},
+        TaskSettings(
+            prompts=load_task_prompts(),
+            template=load_task_template(REPO_ROOT / "templates"),
+            model="test-model",
+            parameters={"temperature": 0.3},
+        ),
     )
     request = base_request(
         "agent-task",

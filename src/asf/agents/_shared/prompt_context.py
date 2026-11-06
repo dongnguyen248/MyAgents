@@ -34,3 +34,16 @@ def revision_sections(
     feedback_str = "\n".join(feedback_lines) if feedback_lines else "none"
     sections.append(f"## Reviewer feedback\n{feedback_str}")
     return sections
+
+
+def linked_artifact_section(artifact: dict[str, Any], heading: str) -> str:
+    artifact_id = artifact.get("id", "unknown")
+    version = artifact.get("version", "unknown")
+    content = artifact.get("content")
+    if isinstance(content, dict):
+        text = content.get("text", "")
+    elif isinstance(content, str):
+        text = content
+    else:
+        text = ""
+    return f"## {heading}\nID: {artifact_id}\nVersion: {version}\n\n{text}"

@@ -29,7 +29,12 @@ from asf.agents.spec.prompts import (
     SpecTemplate,
     build_spec_messages,
 )
-from asf.agents.task.prompts import TaskPrompts, TaskTemplate, build_task_messages
+from asf.agents.task.prompts import (
+    TaskPromptContext,
+    TaskPrompts,
+    TaskTemplate,
+    build_task_messages,
+)
 from asf.contracts.models import AgentRequest
 
 RULES = "Never hardcode an HTTP status code."
@@ -138,12 +143,14 @@ def test_plan_messages_carry_the_rules() -> None:
 
 def test_task_messages_carry_the_rules() -> None:
     messages = build_task_messages(
-        prompts=TaskPrompts(system="system", revision="revision"),
-        template=TaskTemplate.from_text("template"),
-        spec_artifact={},
-        plan_artifact={},
-        language=None,
-        project_context=PROJECT,
+        TaskPromptContext(
+            prompts=TaskPrompts(system="system", revision="revision"),
+            template=TaskTemplate.from_text("template"),
+            spec_artifact={},
+            plan_artifact={},
+            language=None,
+            project_context=PROJECT,
+        )
     )
     assert "Project development rules" in messages[0].content
     assert RULES in messages[0].content

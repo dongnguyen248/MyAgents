@@ -4,7 +4,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from asf.agents._shared.prompt_context import project_context_section, revision_sections
+from asf.agents._shared.prompt_context import (
+    linked_artifact_section,
+    project_context_section,
+    revision_sections,
+)
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
 from asf.agents.plan.milestones import (
@@ -84,25 +88,12 @@ def validate_milestones(plan_text: str) -> None:
     parse_milestones(plan_text)  # raises MilestoneValidationError on issues
 
 
-def _spec_section(spec_artifact: dict[str, Any]) -> str:
-    spec_id = spec_artifact.get("id", "unknown")
-    spec_version = spec_artifact.get("version", "unknown")
-    content = spec_artifact.get("content")
-    if isinstance(content, dict):
-        spec_text = content.get("text", "")
-    elif isinstance(content, str):
-        spec_text = content
-    else:
-        spec_text = ""
-    return f"## Linked SPEC\nID: {spec_id}\nVersion: {spec_version}\n\n{spec_text}"
-
-
 def build_user_message(context: PlanPromptContext) -> str:
     """Builds the user prompt message with fixed sections."""
     language = context.language
     lang_str = language if language else "same language as the SPEC"
     sections = [
-        _spec_section(context.spec_artifact),
+        linked_artifact_section(context.spec_artifact, "Linked SPEC"),
         f"## Output language\n{lang_str}",
         project_context_section(context.project_context),
         f"## Template\n{context.template.text}",

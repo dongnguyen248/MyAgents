@@ -130,3 +130,19 @@ def check_artifact_types(request: AgentRequest, allowed: set[str]) -> list[Issue
             message = f"Unknown artifact type '{artifact.type}'; allowed: {sorted(allowed)}"
             issues.append(Issue(f"artifacts[{index}].type", message))
     return issues
+
+
+def check_text_size(
+    request: AgentRequest, kinds: set[str], limit: int, message: str
+) -> list[Issue]:
+    total = 0
+    for artifact in request.artifacts:
+        if artifact.type not in kinds:
+            continue
+        if isinstance(artifact.content, dict) and isinstance(
+            artifact.content.get("text"), str
+        ):
+            total += len(artifact.content["text"])
+    if total > limit:
+        return [Issue("artifacts", message)]
+    return []
