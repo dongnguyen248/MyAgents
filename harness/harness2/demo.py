@@ -22,7 +22,14 @@ from asf.contracts.models import ModelRequest, ModelResponse, ModelUsage
 from asf.tools.edit_blocks import parse_edit_blocks
 from harness.harness2.adapters import PlanTaskAdapter, SpecTaskAdapter
 from harness.harness2.context import EvidenceBundle
-from harness.harness2.recursion import FinalCandidate, ModeResult, run_parallel, run_sequential
+from harness.harness2.improver import ImproverReply, StageContext, apply_changeset
+from harness.harness2.recursion import (
+    FinalCandidate,
+    ModeOptions,
+    ModeResult,
+    run_parallel,
+    run_sequential,
+)
 from harness.harness2.surface import SYSTEM_PATH, Tree, diff_summary
 
 __all__ = [
@@ -121,11 +128,17 @@ class HarnessAwareGateway:
 class ScriptedMarkerImprover:
     """Scripted improver: adds the solver marker line to system.md."""
 
-    def improve(self, mission: str, evidence: EvidenceBundle, harness: Tree) -> Tree:
+    def improve(
+        self,
+        mission: str,
+        evidence: EvidenceBundle,
+        harness: Tree,
+        context: StageContext | None = None,
+    ) -> ImproverReply:
         tree = dict(harness)
         system = tree.get(SYSTEM_PATH, "")
         if SOLVER_MARKER in system:
-            return tree
+            return ImproverReply(tree=tree, notes="marker already present; nothing to add")
         anchor = next(line for line in reversed(system.splitlines()) if line.strip())
         reply = (
             f"FILE: {SYSTEM_PATH}\n"
@@ -137,12 +150,10 @@ class ScriptedMarkerImprover:
             ">>>>>>> REPLACE\n"
         )
         changeset = parse_edit_blocks(reply, existing_files=tree, expected_files={SYSTEM_PATH})
-        for change in changeset.changes:
-            if change.operation == "delete":
-                tree.pop(change.path, None)
-            else:
-                tree[change.path] = change.content or ""
-        return tree
+        return ImproverReply(
+            tree=apply_changeset(tree, changeset),
+            notes="added the complete-output marker line to prompts/system.md",
+        )
 
 
 @dataclass(frozen=True)
@@ -167,10 +178,11 @@ def run_demo(options: DemoOptions) -> DemoResult:
     adapter_type = PlanTaskAdapter if options.agent == "plan" else SpecTaskAdapter
     adapter = adapter_type(runs_root=root, gateway_factory=HarnessAwareGateway)
     improver = ScriptedMarkerImprover()
+    mode_options = ModeOptions(k=options.k)
     if options.mode == "sequential":
-        result = run_sequential(adapter, options.task_id, k=options.k, improver=improver)
+        result = run_sequential(adapter, options.task_id, improver=improver, options=mode_options)
     else:
-        result = run_parallel(adapter, options.task_id, k=options.k, improver=improver)
+        result = run_parallel(adapter, options.task_id, improver=improver, options=mode_options)
     adopted = next((final for final in result.finals if final.delivered), None)
     diff = diff_summary(adapter.base_harness(), adopted.tree) if adopted else []
     return DemoResult(run=result, adopted=adopted, adopted_diff=diff)

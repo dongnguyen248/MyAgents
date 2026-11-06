@@ -46,6 +46,7 @@ _RULES_INTRO = (
     " output contract wins:"
 )
 
+
 @dataclass(frozen=True)
 class FixMessageOptions:
     edit_format: str = "blocks"

@@ -1,34 +1,41 @@
-"""Parallel(k) / Sequential(k): the task-level recursion (H2 structure).
+"""Parallel(k) / Sequential(k): the task-level recursion (H2 structure, H3 engine).
 
 One Stage is one improver session: build an evidence bundle from
 rollout trajectories, ask the improver for an edited harness tree,
-validate it. A rejected edit is retried once with the validator's
-message appended to the mission; a second rejection falls back to
-the current harness (`fell_back`). An edit that changes nothing is
-`kept_base`. A rollout that raises is recorded in the ledger as
-dead and the run continues — rollouts are never raised.
+validate it. A rejected edit — or an improver that raises — is
+retried once with the rejection message fed back; a second failure
+falls back to the current harness (`fell_back`). An edit that
+changes nothing is `kept_base`. A rollout that raises is recorded
+in the ledger as dead and the run continues — rollouts are never
+raised.
 
-In H2 the improver is scripted (see `demo.py`); the real
-`GatewayImprover` is H3. Execution here is serial; concurrency
-limits from config arrive with the real improver.
+Composition stages receive the candidate stages' notes as
+`decisions` (what each session says it did, or how it ended), so
+the composer merges claims against probe trajectories instead of
+re-deriving them. Independent work inside a phase may run on a
+bounded thread pool (`workers`); the default is serial, and phase
+barriers keep the ledger identity exact either way. Wiring
+`workers` to run configuration arrives with the runner (H4).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
 
 from harness.harness2.adapter import TaskAdapter
 from harness.harness2.context import EvidenceBundle, EvidenceItem, build_evidence
+from harness.harness2.improver import ImproverPort, ImproverReply, StageContext
 from harness.harness2.ledger import Ledger
 from harness.harness2.surface import Tree
 from harness.harness2.trajectory import MIN_OBSERVATION_CHARS
 
 __all__ = [
     "FinalCandidate",
-    "ImproverPort",
     "Loop",
+    "ModeOptions",
     "ModeResult",
     "StageRequest",
     "StageResult",
@@ -40,12 +47,12 @@ __all__ = [
 MAX_STAGE_ATTEMPTS = 2
 
 
-class ImproverPort(Protocol):
-    """Anything that can propose a harness edit from evidence."""
+@dataclass(frozen=True)
+class ModeOptions:
+    """One mode run's shape: the budget factor k and the phase pool size."""
 
-    def improve(self, mission: str, evidence: EvidenceBundle, harness: Tree) -> Tree:
-        """Return a candidate tree (may equal `harness` for a no-op)."""
-        ...
+    k: int
+    workers: int = 1
 
 
 @dataclass(frozen=True)
@@ -56,6 +63,7 @@ class StageRequest:
     mission: str
     evidence: EvidenceBundle
     base_tree: Tree
+    decisions: Mapping[str, str] | None = None
 
 
 @dataclass
@@ -65,6 +73,7 @@ class Loop:
     adapter: TaskAdapter
     improver: ImproverPort
     ledger: Ledger
+    workers: int = 1
 
 
 @dataclass(frozen=True)
@@ -74,6 +83,8 @@ class StageResult:
     fell_back: bool = False
     kept_base: bool = False
     attempts: int = 1
+    notes: str = ""
+    error: str = ""
 
 
 @dataclass(frozen=True)
@@ -96,28 +107,40 @@ class ModeResult:
 
 
 def run_stage(loop: Loop, request: StageRequest) -> StageResult:
-    """One improver session with one validator-guided retry."""
+    """One improver session with one rejection-guided retry."""
     loop.ledger.record_session(request.label)
-    mission = request.mission
+    feedback = ""
     for attempt in range(1, MAX_STAGE_ATTEMPTS + 1):
-        candidate = loop.improver.improve(mission, request.evidence, dict(request.base_tree))
         try:
-            loop.adapter.validate_tree(candidate)
-        except ValueError as error:
+            reply = _improve(loop, request, feedback)
+            loop.adapter.validate_tree(reply.tree)
+        except Exception as error:
             if attempt < MAX_STAGE_ATTEMPTS:
-                mission = (
-                    f"{request.mission}\nThe validator rejected the previous attempt:\n{error}"
-                )
+                feedback = f"The previous attempt was rejected:\n{error}"
                 continue
             return StageResult(
                 label=request.label,
                 tree=dict(request.base_tree),
                 fell_back=True,
                 attempts=attempt,
+                error=str(error),
             )
-        kept = candidate == request.base_tree
-        return StageResult(label=request.label, tree=candidate, kept_base=kept, attempts=attempt)
+        kept = reply.tree == request.base_tree
+        return StageResult(
+            label=request.label,
+            tree=reply.tree,
+            kept_base=kept,
+            attempts=attempt,
+            notes=reply.notes,
+        )
     raise AssertionError("unreachable: stage loop always returns")
+
+
+def _improve(loop: Loop, request: StageRequest, feedback: str) -> ImproverReply:
+    context = StageContext(decisions=request.decisions, feedback=feedback)
+    return loop.improver.improve(
+        request.mission, request.evidence, dict(request.base_tree), context
+    )
 
 
 def _rollout(loop: Loop, task_id: str, tree: Tree | None, label: str) -> Path | None:
@@ -158,26 +181,74 @@ def _final(loop: Loop, task_id: str, label: str, tree: Tree) -> FinalCandidate:
     )
 
 
+def _decision_note(stage: StageResult) -> str:
+    if stage.notes:
+        return stage.notes
+    if stage.fell_back:
+        return f"fell back to the current harness ({stage.error})"
+    if stage.kept_base:
+        return "kept the current harness (no edit proposed)"
+    return "edit adopted; the session left no notes"
+
+
+def _decisions(stages: list[StageResult]) -> dict[str, str]:
+    return {stage.label: _decision_note(stage) for stage in stages}
+
+
+def _phase[T](workers: int, items: list[T], work: Callable[[T], object]) -> None:
+    if workers <= 1 or len(items) <= 1:
+        for item in items:
+            work(item)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(work, items))
+
+
+def _probe_candidates(
+    loop: Loop,
+    result: ModeResult,
+    task_id: str,
+    requests: list[StageRequest],
+) -> tuple[list[StageResult], list[tuple[str, Path | None]]]:
+    stages: list[StageResult | None] = [None] * len(requests)
+    probes: list[tuple[str, Path | None] | None] = [None] * len(requests)
+
+    def probe(index: int) -> None:
+        request = requests[index]
+        stage = run_stage(loop, request)
+        stages[index] = stage
+        probes[index] = (request.label, _rollout(loop, task_id, stage.tree, request.label))
+
+    _phase(loop.workers, list(range(len(requests))), probe)
+    ordered = [stage for stage in stages if stage is not None]
+    result.stages.extend(ordered)
+    return ordered, [run for run in probes if run is not None]
+
+
 def run_parallel(
-    adapter: TaskAdapter, task_id: str, *, k: int, improver: ImproverPort
+    adapter: TaskAdapter, task_id: str, *, improver: ImproverPort, options: ModeOptions
 ) -> ModeResult:
     """Parallel(k): k base, k INV + k DOM probes, k compositions."""
+    k = options.k
     ledger = Ledger()
-    loop = Loop(adapter=adapter, improver=improver, ledger=ledger)
+    loop = Loop(adapter=adapter, improver=improver, ledger=ledger, workers=options.workers)
     result = ModeResult(task_id=task_id, mode="parallel", k=k, ledger=ledger)
     base_tree = adapter.base_harness()
     base_runs = [(f"base{i}", _rollout(loop, task_id, None, f"base{i}")) for i in range(k)]
     evidence = build_evidence(task_id, _evidence_items(adapter, base_runs))
     probes: list[tuple[str, Path | None]] = list(base_runs)
-    for prefix, mission in (("inv", "invariant"), ("dom", "domain")):
-        for i in range(k):
-            request = StageRequest(f"{prefix}{i}", mission, evidence, base_tree)
-            stage = run_stage(loop, request)
-            result.stages.append(stage)
-            probes.append((f"{prefix}{i}", _rollout(loop, task_id, stage.tree, f"{prefix}{i}")))
+    requests = [
+        StageRequest(f"{prefix}{i}", mission, evidence, base_tree)
+        for prefix, mission in (("inv", "invariant"), ("dom", "domain"))
+        for i in range(k)
+    ]
+    candidates, candidate_runs = _probe_candidates(loop, result, task_id, requests)
+    probes.extend(candidate_runs)
     pool = build_evidence(task_id, _evidence_items(adapter, probes))
+    decisions = _decisions(candidates)
     for i in range(k):
-        stage = run_stage(loop, StageRequest(f"agg{i}", "compose", pool, base_tree))
+        request = StageRequest(f"agg{i}", "aggregate", pool, base_tree, decisions)
+        stage = run_stage(loop, request)
         result.stages.append(stage)
         result.finals.append(_final(loop, task_id, f"agg{i}", stage.tree))
     ledger.assert_identity(k)
@@ -185,11 +256,12 @@ def run_parallel(
 
 
 def run_sequential(
-    adapter: TaskAdapter, task_id: str, *, k: int, improver: ImproverPort
+    adapter: TaskAdapter, task_id: str, *, improver: ImproverPort, options: ModeOptions
 ) -> ModeResult:
     """Sequential(k): k rounds of propose/probe/compose from a checkpoint."""
+    k = options.k
     ledger = Ledger()
-    loop = Loop(adapter=adapter, improver=improver, ledger=ledger)
+    loop = Loop(adapter=adapter, improver=improver, ledger=ledger, workers=options.workers)
     result = ModeResult(task_id=task_id, mode="sequential", k=k, ledger=ledger)
     checkpoint = adapter.base_harness()
     runs: list[tuple[str, Path | None]] = [
@@ -197,18 +269,20 @@ def run_sequential(
     ]
     for round_index in range(k):
         evidence = build_evidence(task_id, _evidence_items(adapter, runs))
-        for prefix, mission in (("inv", "invariant"), ("dom", "domain")):
-            label = f"{prefix}{round_index}"
-            stage = run_stage(loop, StageRequest(label, mission, evidence, checkpoint))
-            result.stages.append(stage)
-            runs.append((label, _rollout(loop, task_id, stage.tree, label)))
-        compose_label = f"c{round_index}"
+        requests = [
+            StageRequest(f"{prefix}{round_index}", mission, evidence, checkpoint)
+            for prefix, mission in (("inv", "invariant"), ("dom", "domain"))
+        ]
+        candidates, candidate_runs = _probe_candidates(loop, result, task_id, requests)
+        runs.extend(candidate_runs)
         pool = build_evidence(task_id, _evidence_items(adapter, runs))
-        stage = run_stage(loop, StageRequest(compose_label, "compose", pool, checkpoint))
+        label = f"c{round_index}"
+        request = StageRequest(label, "compose_round", pool, checkpoint, _decisions(candidates))
+        stage = run_stage(loop, request)
         result.stages.append(stage)
         checkpoint = stage.tree
-        final = _final(loop, task_id, compose_label, checkpoint)
+        final = _final(loop, task_id, label, checkpoint)
         result.finals.append(final)
-        runs.append((compose_label, None if final.dead else final.run_dir))
+        runs.append((label, None if final.dead else final.run_dir))
     ledger.assert_identity(k)
     return result

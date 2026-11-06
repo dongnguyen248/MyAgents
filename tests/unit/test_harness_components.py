@@ -9,7 +9,6 @@ from asf.agents._shared.harness import (
     HarnessComponents,
     agent_skills_section,
     assemble_base_prompt,
-    components_from_prompts,
     fingerprint,
     guardrails_memory_section,
 )
@@ -112,13 +111,7 @@ def test_spec_agent_stamps_default_harness_fingerprint():
     result = agent.execute(_spec_request())
     assert result.status == "SUCCESS", result.errors
     prompts = load_spec_prompts()
-    expected = fingerprint(
-        components_from_prompts(
-            contract=prompts.contract,
-            system=prompts.system,
-            revision=prompts.revision,
-        )
-    )
+    expected = fingerprint(prompts.to_components())
     assert result.artifacts[0].metadata["harnessFingerprint"] == expected
 
 

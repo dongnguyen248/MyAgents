@@ -33,6 +33,7 @@ from asf.agents.implement.prompts import (
 from asf.agents.loading import (
     _load_agent_prompts,
     _load_prompt_pair,
+    _PromptSource,
     load_fix_prompts,
     load_implement_prompts,
     load_plan_prompts,
@@ -82,14 +83,13 @@ def _load_from_package(agent: str, package: str) -> Any:
     if agent == "task":
         return _load_prompt_pair(package, agent, TaskPrompts)
     if agent == "implement":
-        return _load_agent_prompts(
-            package, agent, strict=False, tool_guidance=True, build=ImplementPrompts
-        )
+        source = _PromptSource(package, agent, strict=False, tool_guidance=True)
+        return _load_agent_prompts(source, ImplementPrompts)
     if agent == "review":
-        return _load_agent_prompts(
-            package, agent, strict=True, tool_guidance=False, build=ReviewPrompts
-        )
-    return _load_agent_prompts(package, agent, strict=True, tool_guidance=True, build=FixPrompts)
+        source = _PromptSource(package, agent, strict=True, tool_guidance=False)
+        return _load_agent_prompts(source, ReviewPrompts)
+    source = _PromptSource(package, agent, strict=True, tool_guidance=True)
+    return _load_agent_prompts(source, FixPrompts)
 
 
 def _load_from_tree(root: Path, monkeypatch: pytest.MonkeyPatch, agent: str, tree: Tree) -> Any:
@@ -144,7 +144,9 @@ def _review_artifacts() -> list[Artifact]:
             "CODE",
             code_link,
             changeSet={
-                "changes": [{"path": "src/unit.py", "operation": "create", "content": "value = 1\n"}]
+                "changes": [
+                    {"path": "src/unit.py", "operation": "create", "content": "value = 1\n"}
+                ]
             },
         ),
     ]

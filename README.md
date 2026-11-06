@@ -48,7 +48,7 @@ own scope; a module can still have planned capabilities.
 | Authentication / authorization | Planned | General API user authentication and authorization are not established; the Teams callback's authentication is specific to that integration. |
 | Dashboard | Implemented | React UI can use mock data or the HTTP/SSE backend. The backend demo and integrations are not a production deployment. |
 | Offline harness | Implemented | Scripted Spec/Plan evaluation and a deterministic fix-cycle experiment exercise orchestration; their scores do not independently establish artifact quality or optimal configuration. |
-| Harness² integration | Partial (stage H2) | Harness²-style loop implemented up to stage H2 (see `docs/architecture/harness2.md`): harness objects with fingerprints, rollout plumbing, offline demo; the metrics trigger is not the method; Google's runtime is not integrated. |
+| Harness² integration | Partial (stage H3) | Harness²-style loop implemented up to stage H3 (see `docs/architecture/harness2.md`): harness objects with fingerprints, rollout plumbing, offline demo, the real GatewayImprover and the full Parallel/Sequential engine; the metrics trigger is not the method; Google's runtime is not integrated. |
 
 Architecture documents describe both current behavior and intended design; use
 this status table and the linked module documentation to distinguish them.

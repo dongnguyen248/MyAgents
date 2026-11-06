@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.resources
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -106,21 +107,22 @@ def _load_contract_and_system(package: str, agent: str, *, strict: bool) -> tupl
         ) from exc
 
 
-def _load_agent_prompts[T](
-    package: str,
-    agent: str,
-    *,
-    strict: bool,
-    tool_guidance: bool,
-    build: Callable[..., T],
-) -> T:
-    contract, system = _load_contract_and_system(package, agent, strict=strict)
+@dataclass(frozen=True)
+class _PromptSource:
+    package: str
+    agent: str
+    strict: bool
+    tool_guidance: bool
+
+
+def _load_agent_prompts[T](source: _PromptSource, build: Callable[..., T]) -> T:
+    contract, system = _load_contract_and_system(source.package, source.agent, strict=source.strict)
     try:
-        extras = _load_extras(package, tool_guidance=tool_guidance)
+        extras = _load_extras(source.package, tool_guidance=source.tool_guidance)
     except Exception as exc:
         raise ConfigError(
-            f"Failed to load {agent} harness files from package: {exc}",
-            source=f"{package}",
+            f"Failed to load {source.agent} harness files from package: {exc}",
+            source=f"{source.package}",
         ) from exc
     return build(system=system, contract=contract, **extras)
 
@@ -164,22 +166,15 @@ def load_task_template(templates_dir: Path) -> TaskTemplate:
 
 
 def load_implement_prompts() -> ImplementPrompts:
-    return _load_agent_prompts(
-        "asf.agents.implement",
-        "implement",
-        strict=False,
-        tool_guidance=True,
-        build=ImplementPrompts,
-    )
+    source = _PromptSource("asf.agents.implement", "implement", strict=False, tool_guidance=True)
+    return _load_agent_prompts(source, ImplementPrompts)
 
 
 def load_review_prompts() -> ReviewPrompts:
-    return _load_agent_prompts(
-        "asf.agents.review", "review", strict=True, tool_guidance=False, build=ReviewPrompts
-    )
+    source = _PromptSource("asf.agents.review", "review", strict=True, tool_guidance=False)
+    return _load_agent_prompts(source, ReviewPrompts)
 
 
 def load_fix_prompts() -> FixPrompts:
-    return _load_agent_prompts(
-        "asf.agents.fix", "fix", strict=True, tool_guidance=True, build=FixPrompts
-    )
+    source = _PromptSource("asf.agents.fix", "fix", strict=True, tool_guidance=True)
+    return _load_agent_prompts(source, FixPrompts)
