@@ -16,7 +16,7 @@ from asf.agents._shared.code_agents import (
     task_item,
 )
 from asf.agents._shared.codegen import (
-    build_fix_context,
+    FixContext,
     changeset_secret_issues,
     normalize_changeset_operations,
     validate_changeset,
@@ -35,7 +35,7 @@ from asf.agents._shared.report_tail import tail_artifact_for_prompt
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
-from asf.agents.implement.prompts import render_code_markdown
+from asf.agents.implement.prompts import CodeMarkdownContext, render_code_markdown
 from asf.contracts.models import (
     AgentMetadata,
     AgentRequest,
@@ -215,7 +215,7 @@ class FixAgent(BaseAgent):
         item = task_item(task, item_id)
         spec_text = spec.to_contract()["content"]["text"]
         plan_text = plan.to_contract()["content"]["text"]
-        context = build_fix_context(
+        context = FixContext(
             task_id=item_id,
             spec_summary=slice_spec(
                 spec_text,
@@ -227,15 +227,15 @@ class FixAgent(BaseAgent):
                 str(item["milestoneRef"]) if item.get("milestoneRef") else None,
             ),
             task_summary=task.to_contract()["content"]["text"],
-            expected_files=expected,
+            expected_files=tuple(expected),
             existing_files=existing,
-            review_findings=[
+            review_findings=tuple(
                 tail_artifact_for_prompt(
                     artifact.to_contract(),
                     self._report_tail_lines,
                 )
                 for artifact in reports
-            ],
+            ),
             previous_changeset=code_changeset(code),
             previous_error=previous_error if isinstance(previous_error, str) else None,
             repo_map=build_repo_map(
@@ -363,12 +363,14 @@ class FixAgent(BaseAgent):
             format_name="edit-block" if self._edit_format == "blocks" else "JSON",
         )
         text = render_code_markdown(
-            changeset.model_dump(by_alias=True)["changes"],
-            spec.id,
-            spec.version,
-            plan.id,
-            plan.version,
-            item_id,
+            CodeMarkdownContext(
+                changes=changeset.model_dump(by_alias=True)["changes"],
+                spec_id=spec.id,
+                spec_version=spec.version,
+                plan_id=plan.id,
+                plan_version=plan.version,
+                task_item_id=item_id,
+            )
         )
         if len(text) > MAX_TEXT_CHARS:
             raise invalid_response("Rendered CODE exceeds the size limit")

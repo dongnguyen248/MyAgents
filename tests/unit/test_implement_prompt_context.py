@@ -5,19 +5,25 @@ import logging
 
 import pytest
 
-from asf.agents.implement.prompts import ImplementPrompts, build_implement_messages
+from asf.agents.implement.prompts import (
+    ImplementPromptContext,
+    ImplementPrompts,
+    build_implement_messages,
+)
 
 
 def build_messages(project_context):
     return build_implement_messages(
-        prompts=ImplementPrompts(system="system"),
-        spec_artifact={},
-        plan_artifact={},
-        task_artifact={},
-        task_item_id="T1",
-        existing_files={},
-        language=None,
-        project_context=project_context,
+        ImplementPromptContext(
+            prompts=ImplementPrompts(system="system"),
+            spec_artifact={},
+            plan_artifact={},
+            task_artifact={},
+            task_item_id="T1",
+            existing_files={},
+            language=None,
+            project_context=project_context,
+        )
     )
 
 

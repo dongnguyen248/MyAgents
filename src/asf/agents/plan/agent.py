@@ -67,9 +67,7 @@ def _check_content_size(request: AgentRequest) -> list[Issue]:
     for artifact in request.artifacts:
         if artifact.type not in _ALLOWED_TYPES:
             continue
-        if isinstance(artifact.content, dict) and isinstance(
-            artifact.content.get("text"), str
-        ):
+        if isinstance(artifact.content, dict) and isinstance(artifact.content.get("text"), str):
             total += len(artifact.content["text"])
     if total > MAX_PLAN_CHARS:
         message = f"Combined SPEC+PLAN content exceeds {MAX_PLAN_CHARS} characters"
@@ -119,8 +117,7 @@ def _linked_spec_issues(reply: str, spec_art: Artifact) -> list[str]:
         issues.append("Linked SPEC section missing 'ID:' line")
     elif found_id != spec_art.id:
         issues.append(
-            f"Linked SPEC ID '{found_id}' does not match input "
-            f"SPEC artifact ID '{spec_art.id}'"
+            f"Linked SPEC ID '{found_id}' does not match input SPEC artifact ID '{spec_art.id}'"
         )
     if found_version is None:
         issues.append("Linked SPEC section missing 'Version:' line")
@@ -166,9 +163,7 @@ class PlanAgent(BaseAgent):
         return 0
 
     def _check(self, request: AgentRequest) -> list[Issue]:
-        agent_id_message = (
-            f"agentId '{request.agent_id}' does not match '{self.metadata.id}'"
-        )
+        agent_id_message = f"agentId '{request.agent_id}' does not match '{self.metadata.id}'"
         revision_message = "Reviewer feedback is required when revising a plan"
         validators = [
             lambda: check_agent_id(request, self.metadata.id, agent_id_message),
@@ -187,9 +182,7 @@ class PlanAgent(BaseAgent):
         spec_art = artifacts_of(request, "SPEC")[0]
         previous = _previous_plan(request)
         messages = self._build_messages(request, spec_art, previous)
-        response = call_model(
-            self._runtime.models, self._model_request(request, messages)
-        )
+        response = call_model(self._runtime.models, self._model_request(request, messages))
         reply = self._checked_reply(response, spec_art)
         metadata = self._artifact_metadata(request, spec_art, previous, response)
         return self._assemble(previous, reply, metadata)
@@ -211,9 +204,7 @@ class PlanAgent(BaseAgent):
         )
         return build_plan_messages(context)
 
-    def _model_request(
-        self, request: AgentRequest, messages: list[ModelMessage]
-    ) -> ModelRequest:
+    def _model_request(self, request: AgentRequest, messages: list[ModelMessage]) -> ModelRequest:
         return ModelRequest(
             messages=messages,
             parameters=dict(self._parameters),

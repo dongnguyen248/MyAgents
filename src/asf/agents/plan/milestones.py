@@ -80,9 +80,7 @@ class _MilestoneFields:
     depends_raw: str
 
 
-def _scan_milestone(
-    scan: _MilestoneScan, match: re.Match[str], content: str
-) -> None:
+def _scan_milestone(scan: _MilestoneScan, match: re.Match[str], content: str) -> None:
     mid = match.group(1).upper()
     fields = _milestone_fields(content)
     _scan_sequence(scan, mid)

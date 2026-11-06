@@ -3,8 +3,6 @@ from __future__ import annotations
 from asf.agents._shared.codegen import (
     FixContext,
     ImplementContext,
-    build_fix_context,
-    build_implement_context,
     generate_changeset,
 )
 from asf.agents._shared.contracts import (
@@ -83,7 +81,5 @@ __all__ = [
     # codegen
     "ImplementContext",
     "FixContext",
-    "build_implement_context",
-    "build_fix_context",
     "generate_changeset",
 ]

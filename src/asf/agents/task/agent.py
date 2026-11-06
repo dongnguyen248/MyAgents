@@ -242,9 +242,7 @@ def _check_task_identity(scan: _TaskScan, task: TaskItem) -> None:
 
 def _check_milestone_ref(scan: _TaskScan, task: TaskItem, plan: _PlanContext) -> None:
     if task.milestone_ref not in plan.milestone_ids:
-        scan.issues.append(
-            f"Task {task.id}: milestoneRef '{task.milestone_ref}' not found in PLAN"
-        )
+        scan.issues.append(f"Task {task.id}: milestoneRef '{task.milestone_ref}' not found in PLAN")
         return
     number = milestone_number(task.milestone_ref)
     if number < scan.prev_milestone_num:
@@ -265,26 +263,18 @@ def _check_dependency(scan: _TaskScan, task: TaskItem, dep: str) -> None:
         scan.issues.append(f"Task {task.id}: self-dependency is not allowed")
         return
     if dep not in scan.seen_ids:
-        scan.issues.append(
-            f"Task {task.id}: depends on later or non-existent task '{dep}'"
-        )
+        scan.issues.append(f"Task {task.id}: depends on later or non-existent task '{dep}'")
         return
     if milestone_number(dep) >= milestone_number(task.id):
-        scan.issues.append(
-            f"Task {task.id}: depends on '{dep}' which is not a lower-numbered task"
-        )
+        scan.issues.append(f"Task {task.id}: depends on '{dep}' which is not a lower-numbered task")
 
 
-def _check_cross_milestone(
-    scan: _TaskScan, task: TaskItem, plan: _PlanContext
-) -> None:
+def _check_cross_milestone(scan: _TaskScan, task: TaskItem, plan: _PlanContext) -> None:
     for dep in task.depends_on:
         _check_cross_dependency(scan, task, dep, plan)
 
 
-def _check_cross_dependency(
-    scan: _TaskScan, task: TaskItem, dep: str, plan: _PlanContext
-) -> None:
+def _check_cross_dependency(scan: _TaskScan, task: TaskItem, dep: str, plan: _PlanContext) -> None:
     dep_task = next((t for t in scan.all_tasks if t.id == dep), None)
     if dep_task is None:
         return
@@ -300,9 +290,7 @@ def _check_cross_dependency(
         )
 
 
-def _check_milestone_coverage(
-    scan: _TaskScan, tasks: list[TaskItem], plan: _PlanContext
-) -> None:
+def _check_milestone_coverage(scan: _TaskScan, tasks: list[TaskItem], plan: _PlanContext) -> None:
     for milestone in plan.milestones:
         if not any(t.milestone_ref == milestone.id for t in tasks):
             scan.issues.append(f"Milestone {milestone.id} has no tasks assigned")
@@ -394,9 +382,7 @@ class TaskAgent(BaseAgent):
         return 0
 
     def _check(self, request: AgentRequest) -> list[Issue]:
-        agent_id_message = (
-            f"agentId '{request.agent_id}' does not match '{self.metadata.id}'"
-        )
+        agent_id_message = f"agentId '{request.agent_id}' does not match '{self.metadata.id}'"
         revision_message = "Reviewer feedback is required when revising a task breakdown"
         size_message = f"Combined SPEC+PLAN content exceeds {MAX_TASK_CHARS} characters"
         validators = [
@@ -418,9 +404,7 @@ class TaskAgent(BaseAgent):
     def _run(self, request: AgentRequest) -> tuple[dict[str, Any], list[Artifact]]:
         run = _task_run(request)
         messages = self._build_messages(run)
-        response = call_model(
-            self._runtime.models, self._model_request(request, messages)
-        )
+        response = call_model(self._runtime.models, self._model_request(request, messages))
         tasks = self._checked_tasks(response, run.plan)
         return self._assemble(run, tasks, response)
 
@@ -438,9 +422,7 @@ class TaskAgent(BaseAgent):
         )
         return build_task_messages(context)
 
-    def _model_request(
-        self, request: AgentRequest, messages: list[ModelMessage]
-    ) -> ModelRequest:
+    def _model_request(self, request: AgentRequest, messages: list[ModelMessage]) -> ModelRequest:
         return ModelRequest(
             messages=messages,
             parameters=dict(self._parameters),
@@ -515,9 +497,7 @@ class TaskAgent(BaseAgent):
             metadata=metadata,
         )
 
-    def _artifact_metadata(
-        self, run: _TaskRun, response: ModelResponse
-    ) -> dict[str, Any]:
+    def _artifact_metadata(self, run: _TaskRun, response: ModelResponse) -> dict[str, Any]:
         metadata: dict[str, Any] = {
             "template": "task",
             "model": response.model,

@@ -3781,9 +3781,7 @@ class TaskAgentTests(unittest.TestCase):
             "content": {"text": "PLAN content"},
         }
 
-        result = build_user_message(
-            _user_message_context(spec_artifact, plan_artifact, "en", None)
-        )
+        result = build_user_message(_user_message_context(spec_artifact, plan_artifact, "en", None))
         self.assertIn("SPEC content as string directly", result)
 
     def test_build_user_message_plan_content_string(self):
@@ -3801,9 +3799,7 @@ class TaskAgentTests(unittest.TestCase):
             "content": "PLAN content as string directly",  # String content, not dict
         }
 
-        result = build_user_message(
-            _user_message_context(spec_artifact, plan_artifact, "en", None)
-        )
+        result = build_user_message(_user_message_context(spec_artifact, plan_artifact, "en", None))
         self.assertIn("PLAN content as string directly", result)
 
     def test_build_user_message_empty_project_context(self):
@@ -3814,9 +3810,7 @@ class TaskAgentTests(unittest.TestCase):
         plan_artifact = {"id": "plan-1", "version": "1", "content": {"text": "PLAN"}}
 
         # Empty project_context
-        result = build_user_message(
-            _user_message_context(spec_artifact, plan_artifact, "en", {})
-        )
+        result = build_user_message(_user_message_context(spec_artifact, plan_artifact, "en", {}))
         self.assertIn("## Project context\nnone", result)
 
         # Project context with no whitelisted keys

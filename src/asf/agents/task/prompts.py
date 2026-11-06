@@ -107,9 +107,7 @@ def build_user_message(context: TaskPromptContext) -> str:
         f"## Output language\n{lang_str}",
         project_context_section(context.project_context),
         f"## Template\n{context.template.text}",
-        *revision_sections(
-            context.previous_task, "Previous task", context.feedback
-        ),
+        *revision_sections(context.previous_task, "Previous task", context.feedback),
     ]
     return "\n\n".join(sections)
 

@@ -52,6 +52,27 @@ def check_attempt(request: AgentRequest) -> list[Issue]:
     return []
 
 
+def check_task_item_id(request: AgentRequest) -> list[Issue]:
+    value = request.input.get("taskItemId")
+    if not value:
+        return [Issue("input.taskItemId", "input.taskItemId is required")]
+    if not isinstance(value, str):
+        return [Issue("input.taskItemId", "input.taskItemId must be a string")]
+    if not is_task_item_id(value):
+        message = f"input.taskItemId '{value}' must match '^T[1-9][0-9]*$'"
+        return [Issue("input.taskItemId", message)]
+    return []
+
+
+def check_ref(request: AgentRequest) -> list[Issue]:
+    ref = request.input.get("ref")
+    if not ref:
+        return [Issue("input.ref", "input.ref is required")]
+    if not isinstance(ref, str) or not ref.strip():
+        return [Issue("input.ref", "input.ref must be a non-empty string")]
+    return []
+
+
 def check_language(request: AgentRequest, message: str) -> list[Issue]:
     if "language" not in request.input:
         return []
@@ -84,9 +105,7 @@ def check_required_artifact(request: AgentRequest, kind: str) -> list[Issue]:
     ]
 
 
-def check_revision_artifact(
-    request: AgentRequest, kind: str, feedback_message: str
-) -> list[Issue]:
+def check_revision_artifact(request: AgentRequest, kind: str, feedback_message: str) -> list[Issue]:
     arts = artifacts_of(request, kind)
     if len(arts) > 1:
         return [Issue("artifacts", f"At most one artifact of type {kind} is permitted")]
@@ -139,9 +158,7 @@ def check_text_size(
     for artifact in request.artifacts:
         if artifact.type not in kinds:
             continue
-        if isinstance(artifact.content, dict) and isinstance(
-            artifact.content.get("text"), str
-        ):
+        if isinstance(artifact.content, dict) and isinstance(artifact.content.get("text"), str):
             total += len(artifact.content["text"])
     if total > limit:
         return [Issue("artifacts", message)]

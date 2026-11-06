@@ -19,7 +19,7 @@ from asf.agents._shared.context_slicing import slice_plan, slice_spec
 from asf.agents._shared.repomap import build_repo_map
 from asf.agents._shared.report_tail import tail_artifact_for_prompt, tail_text
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
-from asf.agents.implement.agent import ImplementAgent
+from asf.agents.implement.agent import ImplementAgent, ImplementSettings
 from asf.agents.loading import load_implement_prompts, load_review_prompts
 from asf.agents.review.agent import ReviewAgent
 from asf.agents.test.agent import TestAgent
@@ -205,9 +205,11 @@ def test_implement_prompt_carries_repo_map_and_stable_prefix():
     agent = ImplementAgent(
         _runtime(gateway),
         repo,
-        prompts=load_implement_prompts(),
-        edit_format="json",
-        repair_attempts=0,
+        ImplementSettings(
+            prompts=load_implement_prompts(),
+            edit_format="json",
+            repair_attempts=0,
+        ),
     )
     result = agent.execute(
         make_implement_request(
@@ -449,7 +451,9 @@ def test_usage_sums_across_the_repair_loop():
         ]
     )
     repo = InMemoryRepository()
-    agent = ImplementAgent(_runtime(gateway), repo, prompts=load_implement_prompts())
+    agent = ImplementAgent(
+        _runtime(gateway), repo, ImplementSettings(prompts=load_implement_prompts())
+    )
     result = agent.execute(make_implement_request())
     assert result.status == "SUCCESS"
     assert result.output["repairs"] == 1

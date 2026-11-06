@@ -76,5 +76,3 @@ class TaskContent(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
 
     tasks: list[TaskItem] = Field(..., min_length=1, alias="tasks")
-
-

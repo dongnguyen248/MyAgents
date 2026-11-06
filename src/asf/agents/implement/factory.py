@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from asf.agents.base import AgentRuntime
-from asf.agents.implement.agent import ImplementAgent
+from asf.agents.implement.agent import ImplementAgent, ImplementSettings
 from asf.configuration.platform import PlatformConfig
 from asf.tools.ports import RepositoryPort
 
@@ -36,10 +36,12 @@ def build_implement_agent(
     return ImplementAgent(
         runtime,
         repository,
-        prompts=prompts,
-        model=model,
-        parameters=parameters,
-        edit_format=settings.get("editFormat", "blocks"),
-        repair_attempts=settings.get("repairAttempts", 1),
-        repo_map_max_chars=settings.get("repoMapMaxChars", 6000),
+        ImplementSettings(
+            prompts=prompts,
+            model=model,
+            parameters=parameters,
+            edit_format=settings.get("editFormat", "blocks"),
+            repair_attempts=settings.get("repairAttempts", 1),
+            repo_map_max_chars=settings.get("repoMapMaxChars", 6000),
+        ),
     )

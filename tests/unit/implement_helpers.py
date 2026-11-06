@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from asf.agents.base import AgentRuntime
-from asf.agents.implement.agent import ImplementAgent
+from asf.agents.implement.agent import ImplementAgent, ImplementSettings
 from asf.agents.loading import load_implement_prompts
 from asf.contracts.models import AgentRequest, Artifact
 from asf.models.errors import ModelGatewayError
@@ -280,13 +280,15 @@ def make_agent_and_gateway(
     agent = ImplementAgent(
         runtime,
         repo,
-        prompts=prompts,
-        model=model,
-        parameters=parameters or {"temperature": 0.3},
-        # These helpers back the suites written against the legacy
-        # JSON contract: pin it (and no repair loop) explicitly.
-        edit_format="json",
-        repair_attempts=0,
+        ImplementSettings(
+            prompts=prompts,
+            model=model,
+            parameters=parameters or {"temperature": 0.3},
+            # These helpers back the suites written against the legacy
+            # JSON contract: pin it (and no repair loop) explicitly.
+            edit_format="json",
+            repair_attempts=0,
+        ),
     )
     return agent, gateway
 
@@ -309,13 +311,15 @@ def make_agent_with_repo(
     agent = ImplementAgent(
         runtime,
         repo,
-        prompts=prompts,
-        model=model,
-        parameters=parameters or {"temperature": 0.3},
-        # These helpers back the suites written against the legacy
-        # JSON contract: pin it (and no repair loop) explicitly.
-        edit_format="json",
-        repair_attempts=0,
+        ImplementSettings(
+            prompts=prompts,
+            model=model,
+            parameters=parameters or {"temperature": 0.3},
+            # These helpers back the suites written against the legacy
+            # JSON contract: pin it (and no repair loop) explicitly.
+            edit_format="json",
+            repair_attempts=0,
+        ),
     )
     return agent, gateway
 
@@ -338,13 +342,15 @@ def make_agent_with_gateway(
     agent = ImplementAgent(
         runtime,
         repository,
-        prompts=prompts,
-        model=model,
-        parameters=parameters or {"temperature": 0.3},
-        # These helpers back the suites written against the legacy
-        # JSON contract: pin it (and no repair loop) explicitly.
-        edit_format="json",
-        repair_attempts=0,
+        ImplementSettings(
+            prompts=prompts,
+            model=model,
+            parameters=parameters or {"temperature": 0.3},
+            # These helpers back the suites written against the legacy
+            # JSON contract: pin it (and no repair loop) explicitly.
+            edit_format="json",
+            repair_attempts=0,
+        ),
     )
     return agent
 

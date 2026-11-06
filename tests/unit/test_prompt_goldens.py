@@ -25,7 +25,7 @@ import pytest
 
 from asf.agents.base import AgentRuntime
 from asf.agents.fix.agent import FixAgent
-from asf.agents.implement.agent import ImplementAgent
+from asf.agents.implement.agent import ImplementAgent, ImplementSettings
 from asf.agents.loading import (
     load_fix_prompts,
     load_implement_prompts,
@@ -255,9 +255,11 @@ def capture_implement() -> ModelRequest:
     agent = ImplementAgent(
         runtime_for(gateway),
         InMemoryRepository(),
-        prompts=load_implement_prompts(),
-        model="test-model",
-        parameters={"temperature": 0.3},
+        ImplementSettings(
+            prompts=load_implement_prompts(),
+            model="test-model",
+            parameters={"temperature": 0.3},
+        ),
     )
     request = make_implement_request(project_context=PROJECT)
     result = agent.execute(request)

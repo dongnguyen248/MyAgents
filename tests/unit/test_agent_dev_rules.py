@@ -16,7 +16,11 @@ import pytest
 from asf.agents._shared.codegen import FixContext
 from asf.agents._shared.rules import project_rules, rules_section
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
-from asf.agents.implement.prompts import ImplementPrompts, build_implement_messages
+from asf.agents.implement.prompts import (
+    ImplementPromptContext,
+    ImplementPrompts,
+    build_implement_messages,
+)
 from asf.agents.plan.prompts import (
     PlanPromptContext,
     PlanPrompts,
@@ -75,14 +79,16 @@ def test_project_rules_rejects_absent_or_invalid_values(project: Any) -> None:
 
 def test_implement_messages_carry_the_rules() -> None:
     messages = build_implement_messages(
-        prompts=ImplementPrompts(system="system"),
-        spec_artifact={},
-        plan_artifact={},
-        task_artifact={},
-        task_item_id="T1",
-        existing_files={},
-        language=None,
-        project_context=PROJECT,
+        ImplementPromptContext(
+            prompts=ImplementPrompts(system="system"),
+            spec_artifact={},
+            plan_artifact={},
+            task_artifact={},
+            task_item_id="T1",
+            existing_files={},
+            language=None,
+            project_context=PROJECT,
+        )
     )
     assert "Project development rules" in messages[0].content
     assert RULES in messages[0].content

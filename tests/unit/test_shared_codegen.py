@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from asf.agents._shared.codegen import (
-    build_fix_context,
-    build_implement_context,
+    FixContext,
+    ImplementContext,
     generate_changeset,
     normalize_changeset_operations,
 )
@@ -12,13 +12,13 @@ from asf.tools.changeset import ChangeSet, FileChange
 from asf.tools.fake import InMemoryRepository
 
 
-def test_build_implement_context() -> None:
-    ctx = build_implement_context(
+def test_implement_context_holds_fields() -> None:
+    ctx = ImplementContext(
         task_id="task-123",
         spec_summary="Spec summary",
         plan_summary="Plan summary",
         task_summary="Task summary",
-        expected_files=["src/a.py", "src/b.py"],
+        expected_files=("src/a.py", "src/b.py"),
         existing_files={"src/a.py": "old content"},
     )
     assert ctx.task_id == "task-123"
@@ -29,16 +29,16 @@ def test_build_implement_context() -> None:
     assert ctx.existing_files == {"src/a.py": "old content"}
 
 
-def test_build_fix_context() -> None:
+def test_fix_context_holds_fields() -> None:
     changeset = ChangeSet(changes=(FileChange(path="src/a.py", operation="modify", content="new"),))
-    ctx = build_fix_context(
+    ctx = FixContext(
         task_id="task-123",
         spec_summary="Spec summary",
         plan_summary="Plan summary",
         task_summary="Task summary",
-        expected_files=["src/a.py", "src/b.py"],
+        expected_files=("src/a.py", "src/b.py"),
         existing_files={"src/a.py": "old content"},
-        review_findings=[
+        review_findings=(
             {
                 "id": "f1",
                 "severity": "MAJOR",
@@ -46,7 +46,7 @@ def test_build_fix_context() -> None:
                 "line": 1,
                 "message": "Issue",
             },
-        ],
+        ),
         previous_changeset=changeset,
     )
     assert ctx.task_id == "task-123"
@@ -62,15 +62,15 @@ def test_build_fix_context() -> None:
     assert ctx.previous_changeset == changeset
 
 
-def test_build_fix_context_no_previous() -> None:
-    ctx = build_fix_context(
+def test_fix_context_no_previous() -> None:
+    ctx = FixContext(
         task_id="task-123",
         spec_summary="Spec",
         plan_summary="Plan",
         task_summary="Task",
-        expected_files=["src/a.py"],
+        expected_files=("src/a.py",),
         existing_files={},
-        review_findings=[],
+        review_findings=(),
         previous_changeset=None,
     )
     assert ctx.previous_changeset is None
