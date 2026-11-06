@@ -3,7 +3,7 @@
     .venv/bin/python -m asf.api.demo --port 8000        # serve the REST/SSE API
     .venv/bin/python -m asf.api.demo --selftest         # headless end-to-end run
 
-All seven real agents are registered with one deterministic routing
+All eight real agents are registered with one deterministic routing
 ``ScriptedModelGateway``: replies are chosen per agent from the system
 prompt and use the exact canned SPEC/PLAN/TASK/CODE/CODE_REVIEW formats the
 agents' own tests use. The TestAgent is deterministic: it runs against a
@@ -18,13 +18,12 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import json
 import logging
 import os
-import re
 import sys
 import tempfile
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,10 +32,10 @@ from uuid import uuid4
 import yaml
 
 import asf
+from asf.agents.artifact_review.factory import build_artifact_review_agent
 from asf.agents.base import AgentRuntime
 from asf.agents.fix.factory import build_fix_agent
 from asf.agents.implement.factory import build_implement_agent
-from asf.agents.loading import load_plan_template, load_spec_template
 from asf.agents.plan.factory import build_plan_agent
 from asf.agents.review.factory import build_review_agent
 from asf.agents.spec.factory import build_spec_agent
@@ -44,11 +43,13 @@ from asf.agents.task.factory import build_task_agent
 from asf.agents.test.factory import build_test_agent
 from asf.api.app import create_app
 from asf.api.decomposer import RequirementDecomposer
+from asf.api.demo_gateway import DemoRoutingGateway
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
 from asf.api.service import FactoryService
 from asf.approval.models import ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
+from asf.configuration.platform import PlatformConfig
 from asf.configuration.project import ProjectProfile
 from asf.configuration.secrets import SecretRef
 from asf.configuration.yamlio import scan_secrets
@@ -57,12 +58,9 @@ from asf.contracts.models import (
     AgentMetadata,
     AgentRequest,
     AgentResult,
-    ModelRequest,
-    ModelResponse,
     ValidationResult,
 )
 from asf.integrations.hosting.actions import build_hosting_actions
-from asf.models.fake import ScriptedModelGateway
 from asf.models.limited import ConcurrencyLimitedGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.orchestrator.budget import RunBudget
@@ -82,99 +80,6 @@ from asf.tools.worktree import GitWorktreeWorkspace
 from asf.workflow.loader import load_workflow
 
 logger = logging.getLogger(__name__)
-
-_TASK_REPLY = json.dumps(
-    {
-        "tasks": [
-            {
-                "id": "T1",
-                "title": "Create the demo module",
-                "milestoneRef": "M1",
-                "description": "Implement the demo module described by the SPEC",
-                "acceptanceCriteria": ["The demo module exists and imports cleanly"],
-                "dependsOn": [],
-                "expectedFiles": ["calculator.py"],
-                "verificationHint": "Run the project test commands",
-            }
-        ],
-    },
-    indent=2,
-)
-
-_CODE_REPLY = """CREATE: calculator.py
-<<<<<<< FILE
-def add(a, b):
-    return a + b
->>>>>>> FILE
-"""
-
-_FIX_REPLY = """FILE: calculator.py
-<<<<<<< SEARCH
-def add(a, b):
-    return a + b
-=======
-def add(a, b):
-    return a + b
->>>>>>> REPLACE
-"""
-
-_REVIEW_REPLY = '{"findings": [], "verdict": "APPROVE"}'
-
-
-class DemoRoutingGateway:
-    """Deterministic per-agent replies over one ScriptedModelGateway."""
-
-    def __init__(self, templates_dir: Path) -> None:
-        self._templates_dir = templates_dir
-        self.requests: list[ModelRequest] = []
-
-    def complete(self, request: ModelRequest) -> ModelResponse:
-        self.requests.append(request)
-        system = request.messages[0].content
-        user = request.messages[-1].content
-        if "senior business analyst" in system:
-            reply = self._spec_reply(user)
-        elif "senior software architect" in system:
-            reply = self._plan_reply(user)
-        elif "breaking down implementation plans" in system:
-            reply = _TASK_REPLY
-        elif "implementing code changes" in system:
-            reply = _CODE_REPLY
-        elif "You review exactly one task" in system:
-            reply = _REVIEW_REPLY
-        elif "You fix one task item" in system:
-            reply = _FIX_REPLY
-        else:  # pragma: no cover - defensive: every demo agent is routed above
-            raise RuntimeError(f"No demo reply routed for system prompt: {system[:60]}")
-        return ScriptedModelGateway([reply]).complete(request)
-
-    def _spec_reply(self, user: str) -> str:
-        template = load_spec_template(self._templates_dir)
-        revised = "## Reviewer feedback" in user
-        body = "Revised demo specification." if revised else "Initial demo specification."
-        return "# SPEC: Demo\n\n" + "\n\n".join(
-            f"{heading}\n{body}" for heading in template.required_sections
-        )
-
-    def _plan_reply(self, user: str) -> str:
-        template = load_plan_template(self._templates_dir)
-        linked = re.search(r"## Linked SPEC\nID: ([^\n]+)\nVersion: ([^\n]+)", user)
-        linked_text = (
-            f"ID: {linked[1]}\nVersion: {linked[2]}" if linked else "ID: unknown\nVersion: 1"
-        )
-        sections = {
-            "## Linked SPEC": linked_text,
-            "## Milestones": (
-                "### M1: Demonstrate the approved SPEC handoff\n"
-                "- Deliverables: Demo PLAN\n"
-                "- Acceptance criteria: PLAN uses the approved SPEC\n"
-                "- Depends on: none"
-            ),
-        }
-        return "# PLAN: Demo\n\n" + "\n\n".join(
-            f"{heading}\n{sections.get(heading, 'Deterministic demo plan content.')}"
-            for heading in template.required_sections
-        )
 
 
 class _FallbackMetrics:
@@ -721,13 +626,64 @@ def _profile_sandbox_settings(profile: ProjectProfile) -> SandboxSettings | None
     )
 
 
+@dataclass(frozen=True)
+class _RegistryDeps:
+    runtime: AgentRuntime
+    platform: PlatformConfig
+    templates_dir: Path
+    workspace: LocalWorkspace
+    repository: WorkspaceRepository
+    sandbox: WorkspaceSandbox
+
+
+def _build_registry(deps: _RegistryDeps) -> AgentRegistry:
+    runtime = deps.runtime
+    platform = deps.platform
+    templates_dir = deps.templates_dir
+    registry = AgentRegistry()
+    registry.register(build_spec_agent(runtime, platform, templates_dir))
+    registry.register(build_plan_agent(runtime, platform, templates_dir))
+    registry.register(build_task_agent(runtime, platform, templates_dir))
+    registry.register(build_review_agent(runtime, platform, templates_dir))
+    registry.register(build_artifact_review_agent(runtime, platform, templates_dir))
+    _register_workspace_agents(registry, deps)
+    return registry
+
+
+def _register_workspace_agents(registry: AgentRegistry, deps: _RegistryDeps) -> None:
+    runtime = deps.runtime
+    platform = deps.platform
+    templates_dir = deps.templates_dir
+    registry.register(
+        _WorkspaceBindingAgent(
+            build_implement_agent(runtime, platform, templates_dir, deps.repository),
+            deps.workspace,
+            role="implement",
+        )
+    )
+    registry.register(
+        _WorkspaceBindingAgent(
+            build_test_agent(runtime, platform, templates_dir, deps.sandbox),
+            deps.workspace,
+            role="test",
+        )
+    )
+    registry.register(
+        _WorkspaceBindingAgent(
+            build_fix_agent(runtime, platform, templates_dir, deps.repository),
+            deps.workspace,
+            role="fix",
+        )
+    )
+
+
 def build_demo(
     data_dir: Path,
     *,
     store: ExecutionStore | None = None,
     ephemeral: bool = False,
 ) -> tuple[FactoryService, Orchestrator, Any]:
-    """Assemble store, engine (all seven agents), and dashboard service.
+    """Assemble store, engine (all eight agents), and dashboard service.
 
     ``data_dir`` anchors the dashboard-managed files (model settings,
     hosting tokens) — it implies no database file. Store selection:
@@ -798,32 +754,8 @@ def build_demo(
     )
     repository = WorkspaceRepository(workspace, InMemoryRepository())
     sandbox = WorkspaceSandbox(workspace, ScriptedSandbox())
-    registry = AgentRegistry()
-    registry.register(build_spec_agent(runtime, platform, templates_dir))
-    registry.register(build_plan_agent(runtime, platform, templates_dir))
-    registry.register(build_task_agent(runtime, platform, templates_dir))
-    registry.register(
-        _WorkspaceBindingAgent(
-            build_implement_agent(runtime, platform, templates_dir, repository),
-            workspace,
-            role="implement",
-        )
-    )
-    registry.register(build_review_agent(runtime, platform, templates_dir))
-    registry.register(
-        _WorkspaceBindingAgent(
-            build_test_agent(runtime, platform, templates_dir, sandbox),
-            workspace,
-            role="test",
-        )
-    )
-    registry.register(
-        _WorkspaceBindingAgent(
-            build_fix_agent(runtime, platform, templates_dir, repository),
-            workspace,
-            role="fix",
-        )
-    )
+    deps = _RegistryDeps(runtime, platform, templates_dir, workspace, repository, sandbox)
+    registry = _build_registry(deps)
 
     if store is None:
         store = InMemoryStore() if ephemeral else _mariadb_store_from_env()

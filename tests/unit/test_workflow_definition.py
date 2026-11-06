@@ -769,3 +769,49 @@ class WorkflowStepApprovalBlockTests(unittest.TestCase):
         wf = load_workflow(root / "workflow-definitions" / "software-development.yaml")
         modes = {step.id: step.approval_mode for step in wf.steps if step.requires_approval}
         self.assertEqual(modes, {"spec": "ai", "plan": "ai", "task": "ai"})
+
+
+class PrePhase12PinCompatibilityTests(unittest.TestCase):
+    """A run pinned before Phase 12 (no approval block, no maxRevisions
+    in its definition JSON) must resolve to human mode with 3 revisions:
+    the max_revisions_explicit flag can never flip an old pin to ai."""
+
+    PINNED = {
+        "id": "software-development",
+        "name": "Software development",
+        "version": "1",
+        "steps": [
+            {
+                "id": "spec",
+                "name": "Write specification",
+                "type": "AGENT",
+                "stage": "SPEC",
+                "agentType": "spec",
+                "requiresApproval": True,
+                "configuration": {},
+                "produces": ["SPEC"],
+            }
+        ],
+        "metadata": {},
+    }
+
+    def test_old_pin_resolves_human_with_three_revisions(self):
+        from asf.approval.mode import resolve_approval_mode
+
+        wf = WorkflowDefinition.model_validate(self.PINNED)
+        step = wf.steps[0]
+        self.assertEqual(step.approval_mode, "human")
+        self.assertEqual(step.max_revisions, 3)
+        self.assertFalse(step.max_revisions_explicit)
+        resolved = resolve_approval_mode(step, None)
+        self.assertEqual(resolved.mode, "human")
+        self.assertEqual(resolved.max_revisions, 3)
+
+    def test_old_pin_round_trips_without_gaining_ai_mode(self):
+        from asf.approval.mode import resolve_approval_mode
+
+        wf = WorkflowDefinition.model_validate(self.PINNED)
+        reparsed = WorkflowDefinition.model_validate(wf.to_contract())
+        resolved = resolve_approval_mode(reparsed.steps[0], {"mode": "human"})
+        self.assertEqual(resolved.mode, "human")
+        self.assertEqual(resolved.max_revisions, 3)
