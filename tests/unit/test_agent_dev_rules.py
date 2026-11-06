@@ -18,7 +18,12 @@ from asf.agents._shared.rules import project_rules, rules_section
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import ImplementPrompts, build_implement_messages
 from asf.agents.plan.prompts import PlanPrompts, PlanTemplate, build_plan_messages
-from asf.agents.spec.prompts import SpecPrompts, SpecTemplate, build_spec_messages
+from asf.agents.spec.prompts import (
+    SpecPromptContext,
+    SpecPrompts,
+    SpecTemplate,
+    build_spec_messages,
+)
 from asf.agents.task.prompts import TaskPrompts, TaskTemplate, build_task_messages
 from asf.contracts.models import AgentRequest
 
@@ -100,11 +105,13 @@ def test_fix_messages_carry_the_rules() -> None:
 
 def test_spec_messages_carry_the_rules() -> None:
     messages = build_spec_messages(
-        prompts=SpecPrompts(system="system", revision="revision"),
-        template=SpecTemplate.from_text("template"),
-        requirement="Build a thing",
-        language=None,
-        project_context=PROJECT,
+        SpecPromptContext(
+            prompts=SpecPrompts(system="system", revision="revision"),
+            template=SpecTemplate.from_text("template"),
+            requirement="Build a thing",
+            language=None,
+            project_context=PROJECT,
+        )
     )
     assert "Project standards" in messages[0].content
     assert RULES in messages[0].content

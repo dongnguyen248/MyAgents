@@ -39,7 +39,7 @@ from asf.agents.loading import (
 )
 from asf.agents.plan.agent import PlanAgent
 from asf.agents.review.agent import ReviewAgent
-from asf.agents.spec.agent import SpecAgent
+from asf.agents.spec.agent import SpecAgent, SpecSettings
 from asf.agents.task.agent import TaskAgent
 from asf.contracts.models import AgentRequest, Artifact, ModelRequest
 from asf.models.fake import ScriptedModelGateway
@@ -184,10 +184,12 @@ def capture_spec() -> ModelRequest:
     gateway = ScriptedModelGateway([spec_valid_reply(template.required_sections)])
     agent = SpecAgent(
         runtime_for(gateway),
-        prompts=load_spec_prompts(),
-        template=template,
-        model="test-model",
-        parameters={"temperature": 0.3},
+        SpecSettings(
+            prompts=load_spec_prompts(),
+            template=template,
+            model="test-model",
+            parameters={"temperature": 0.3},
+        ),
     )
     request = base_request(
         "agent-spec",

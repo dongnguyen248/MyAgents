@@ -29,7 +29,7 @@ from asf.agents.loading import (
     load_spec_template,
 )
 from asf.agents.plan.agent import PlanAgent
-from asf.agents.spec.agent import SpecAgent
+from asf.agents.spec.agent import SpecAgent, SpecSettings
 from asf.approval.models import ApprovalPolicy
 from asf.configuration import load_platform_config
 from asf.contracts.models import ModelRequest, ModelResponse
@@ -97,8 +97,10 @@ def demo_engine(
     registry.register(
         SpecAgent(
             runtime,
-            prompts=load_spec_prompts(),
-            template=load_spec_template(Path("templates")),
+            SpecSettings(
+                prompts=load_spec_prompts(),
+                template=load_spec_template(Path("templates")),
+            ),
         )
     )
     registry.register(
