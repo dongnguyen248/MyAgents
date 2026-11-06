@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from asf.agents._shared.harness import HarnessComponents, components_from_prompts, fingerprint
+from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.reply_text import heading_lines, unwrap_code_fence
@@ -278,11 +278,7 @@ class PlanAgent(BaseAgent):
         return output, [artifact]
 
     def _harness_fingerprint(self) -> str:
-        components = self._harness or components_from_prompts(
-            contract=self._prompts.contract,
-            system=self._prompts.system,
-            revision=self._prompts.revision,
-        )
+        components = self._harness or self._prompts.to_components()
         return fingerprint(components)
 
     def _artifact_metadata(

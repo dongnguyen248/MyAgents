@@ -24,7 +24,7 @@ from asf.agents._shared.codegen import (
     validate_changeset,
 )
 from asf.agents._shared.context_slicing import slice_plan, slice_spec
-from asf.agents._shared.harness import HarnessComponents, components_from_prompts, fingerprint
+from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
 from asf.agents._shared.parsing import ParseError, parse_json
 from asf.agents._shared.paths import validate_relative_path
@@ -500,11 +500,7 @@ class FixAgent(BaseAgent):
         }, [artifact]
 
     def _harness_fingerprint(self) -> str:
-        prompts = self._settings.prompts
-        components = self._settings.harness or components_from_prompts(
-            contract=prompts.contract,
-            system=prompts.system,
-        )
+        components = self._settings.harness or self._settings.prompts.to_components()
         return fingerprint(components)
 
     def _code_artifact(self, run: _FixRun, changeset: ChangeSet, text: str) -> Artifact:

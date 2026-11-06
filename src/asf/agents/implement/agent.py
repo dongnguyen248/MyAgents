@@ -10,7 +10,7 @@ from asf.agents._shared.codegen import (
     normalize_changeset_operations,
     validate_changeset,
 )
-from asf.agents._shared.harness import HarnessComponents, components_from_prompts, fingerprint
+from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.parsing import parse_json
@@ -436,11 +436,7 @@ class ImplementAgent(BaseAgent):
         )
 
     def _harness_fingerprint(self) -> str:
-        prompts = self._settings.prompts
-        components = self._settings.harness or components_from_prompts(
-            contract=prompts.contract,
-            system=prompts.system,
-        )
+        components = self._settings.harness or self._settings.prompts.to_components()
         return fingerprint(components)
 
     def _artifact_metadata(self, run: _ImplementRun, changeset: ChangeSet) -> dict[str, Any]:

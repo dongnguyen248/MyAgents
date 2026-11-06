@@ -11,13 +11,13 @@ Offline evaluation and improvement of the agents. Separate from runtime `src/asf
   (`harness/optimization/experiments.py::run_fix_cycle_experiment`).
 - `harness2/` — a Harness²-style improvement loop, re-implemented natively
   (design record: `docs/architecture/harness2.md`). **Implemented up to
-  stage H2**: harness objects with fingerprints, rollout plumbing, and a
-  harness-sensitive offline demo. The metrics **trigger** in
+  stage H3**: harness objects with fingerprints, rollout plumbing, a
+  harness-sensitive offline demo, and the real improver with the full
+  Parallel/Sequential engine. The metrics **trigger** in
   `harness2/trigger.py` is not the method — it only decides which agent
-  deserves an improvement cycle. The real improver (H3), selection /
-  reflection / library (H4), and the run/judge/report CLI (H5) are not
-  built yet. The loop is offline and human-gated: it never rewrites
-  tracked source.
+  deserves an improvement cycle. Selection / reflection / library (H4)
+  and the run/judge/report CLI (H5) are not built yet. The loop is
+  offline and human-gated: it never rewrites tracked source.
 
 Everything under `harness/` is offline: no network, no secrets. The
 Harness² loop's real runs (H3+) cost real model calls and are driven

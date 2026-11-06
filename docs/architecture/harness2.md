@@ -1,6 +1,6 @@
 # Harness² for ASF — design record
 
-Status: Harness²-style loop implemented up to stage **H2** (see §7).
+Status: Harness²-style loop implemented up to stage **H3** (see §7).
 This document is the design record for rebuilding `harness/harness2/`
 as a real Harness² improvement loop for the ASF agents. It condenses
 the Phase 11b brief (§§1–6), records the decisions taken against the
@@ -524,9 +524,22 @@ the gateway; persisted as JSONL in the run dir; rendered to text by
   `python -m harness.harness2 demo --mode {parallel,sequential} --k N`
   running the full Parallel/Sequential structure with a scripted
   improver. **Done in Phase 11b run 1.**
-- **H3 — real improver.** `GatewayImprover`, prompt files, Stage
-  retry/fallback, full engine with fault-injection tests. Not
-  started.
+- **H3 — real improver.** `GatewayImprover` over `ModelGateway`
+  (one repair call on a malformed reply), the mission templates in
+  `harness/harness2/prompts/` (filled single-pass, refused at load
+  if they mention measurement), Stage retry/fallback extended to
+  improver errors, composition stages fed the candidate stages'
+  notes as decisions, an optional bounded thread pool per phase,
+  and fault-injection tests (invalid edit, frozen-line edit, over
+  cap, secret, off-surface path, dead rollout, improver error).
+  **Done in Phase 11b run 2.** Two pre-H3 fixes landed first: every
+  harness component is wired into the default runtime path
+  (previously the code agents' default builders and every agent's
+  default fingerprint bypassed `tools/tool_guidance.md`,
+  guardrails, memory and agent-scoped skills; round-trip tested
+  per component in `tests/unit/test_harness_wiring.py`), and the
+  two clock-dependent `test_run_visibility` tests were made
+  time-proof (relative base time, isolated adoption tests).
 - **H4 — selection, reflection, library, resume.** Not started.
 - **H5 — CLI run/judge/report, LLM judge, adoption patch, budgets.**
   Not started.
@@ -546,7 +559,10 @@ the gateway; persisted as JSONL in the run dir; rendered to text by
    used to be code constants next to `BLOCKS_FORMAT_INSTRUCTIONS`.
    Should the JSON-mode format block (implement) get the same
    treatment, or stay a frozen code constant? Currently: frozen
-   (it is a schema, enforced by the JSON parser).
+   (it is a schema, enforced by the JSON parser). Since the pre-H3
+   wiring fix the `.md` files are the only source of the
+   blocks-mode extra rules — the code constants are deleted and
+   the default builders and fingerprints read the files.
 3. **Per-agent cap tuning.** The `always_on_max` defaults are
    1.5 × a maximal-fixture measurement. Real projects enable fewer
    skills; Dong may want caps measured on VHPC's actual profile
@@ -558,3 +574,23 @@ the gateway; persisted as JSONL in the run dir; rendered to text by
    are where reviewer-feedback handling lives; an improver may
    legitimately need to edit it. Revisit at H4 with the library
    design.
+6. **Leak tripwire versus legitimate verdict inputs (Fix/Review
+   adapters, H5).** The tripwire (D6) refuses evidence containing
+   the markers `TEST_REPORT` / `CODE_REVIEW` / `CHANGES_REQUESTED`,
+   because a rollout's own verdicts are scores and must never
+   reach selection, composition or reflection. But the Fix and
+   Review agents receive exactly those artifacts as legitimate
+   *inputs*: a Fix rollout's trajectory necessarily contains the
+   CODE_REVIEW it was asked to fix, and a Review rollout's inputs
+   include the upstream chain. When the Fix/Review TaskAdapters
+   are built, define how the tripwire distinguishes an input
+   artifact (part of the task, present identically in every
+   rollout of that task) from the rollout's own produced verdict
+   (the score-like signal D6 excludes): candidate rules are
+   position (input section vs produced-artifact section of the
+   trajectory), provenance (artifact ids fixed by the task input
+   vs minted by the rollout), or adapter-side redaction of the
+   produced verdict only. Until that rule exists, the Fix/Review
+   adapters cannot be built without either tripping on every
+   rollout or opening the Goodhart hole D6 closes. (Owner: Dong,
+   before H5.)

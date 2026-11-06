@@ -30,7 +30,6 @@ __all__ = [
     "HarnessComponents",
     "agent_skills_section",
     "assemble_base_prompt",
-    "components_from_prompts",
     "fingerprint",
     "guardrails_memory_section",
 ]
@@ -47,22 +46,6 @@ class HarnessComponents:
     memory: str = ""
     tool_guidance: str = ""
     skills: Mapping[str, str] = field(default_factory=dict)
-
-
-def components_from_prompts(
-    *,
-    contract: str,
-    system: str,
-    revision: str = "",
-    tool_guidance: str = "",
-) -> HarnessComponents:
-    """The components an agent's loaded prompts represent on their own."""
-    return HarnessComponents(
-        contract=contract,
-        system=system,
-        revision=revision,
-        tool_guidance=tool_guidance,
-    )
 
 
 def assemble_base_prompt(components: HarnessComponents, *, revision: bool = False) -> str:

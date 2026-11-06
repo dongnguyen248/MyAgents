@@ -2,11 +2,12 @@
 
 A Harness²-style improvement loop for the ASF agents, re-implemented
 natively on ASF ports (design record: `docs/architecture/harness2.md`).
-**Implemented up to stage H2**: the harness is an addressable object
+**Implemented up to stage H3**: the harness is an addressable object
 with a fingerprint (H1, runtime side in `src/asf/agents/_shared/harness.py`),
-and the rollout plumbing plus a harness-sensitive offline demo exist
-(H2). The real improver (H3), selection/reflection/library (H4) and
-the run/judge/report CLI (H5) are **not** built yet. Google's Harness²
+the rollout plumbing plus a harness-sensitive offline demo exist
+(H2), and the real improver plus the full Parallel/Sequential engine
+are built (H3). Selection/reflection/library (H4) and the
+run/judge/report CLI (H5) are **not** built yet. Google's Harness²
 runtime is not integrated and is not a dependency; the method
 (Propose–Probe–Compose, selection, reflection, per-domain library) is
 re-implemented for ASF's single-shot agents.
@@ -36,8 +37,16 @@ source. Its output is a patch + report for a human to apply.
   identity (R = 4k rollouts, P = 3k improver sessions per task).
 - `context.py` — the budgeted evidence digest builder with leak
   tripwires (scores and verdict artifacts never enter evidence).
-- `recursion.py` — Parallel(k) / Sequential(k) structure (scripted
-  improver in H2; the real `GatewayImprover` is H3).
+- `improver.py` — the `ImproverPort` and the real `GatewayImprover`:
+  renders a mission template, parses the reply's edit blocks with
+  the agents' parser, one repair call on a malformed reply.
+- `prompts.py` + `prompts/` — the improver mission templates
+  (propose_inv, propose_dom, aggregate, compose_round), filled in a
+  single pass and refused at load if they mention measurement.
+- `recursion.py` — the full Parallel(k) / Sequential(k) engine:
+  Stage retry/fallback (an improver error counts as a failed
+  attempt), candidate notes fed to compositions as decisions, an
+  optional bounded thread pool per phase.
 - `demo.py` — the offline, harness-sensitive demo
   (`python -m harness.harness2 demo ...`): a request-aware fake
   gateway whose solver reply improves when the harness carries the

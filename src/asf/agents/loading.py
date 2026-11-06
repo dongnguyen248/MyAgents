@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.resources
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from asf.agents.fix.prompts import FixPrompts
 from asf.agents.implement.prompts import ImplementPrompts
@@ -25,13 +27,55 @@ __all__ = [
 ]
 
 
+def _read_optional(package: str, relative: str) -> str | None:
+    traversable = importlib.resources.files(package)
+    for part in relative.split("/"):
+        traversable = traversable.joinpath(part)
+    if not traversable.is_file():
+        return None
+    return traversable.read_text(encoding="utf-8")
+
+
+def _load_skills(package: str) -> dict[str, str]:
+    skills: dict[str, str] = {}
+    skills_dir = importlib.resources.files(package).joinpath("skills")
+    if not skills_dir.is_dir():
+        return skills
+    for entry in sorted(skills_dir.iterdir(), key=lambda item: item.name):
+        if not entry.is_dir():
+            continue
+        text = _read_optional(package, f"skills/{entry.name}/SKILL.md")
+        if text is not None:
+            skills[entry.name] = text
+    return skills
+
+
+def _load_extras(package: str, *, tool_guidance: bool) -> dict[str, Any]:
+    """The harness files beyond contract/system/revision (design D5).
+
+    Guardrails, memory, agent-scoped skills and (for the code
+    agents) tool guidance are read from the package exactly like the
+    prompt files, so the default runtime path and the offline
+    harness bundle see the same components.
+    """
+    extras: dict[str, Any] = {
+        "guardrails": _read_optional(package, "instructions/guardrails.md") or "",
+        "memory": _read_optional(package, "instructions/memory.md") or "",
+        "skills": _load_skills(package),
+    }
+    if tool_guidance:
+        extras["tool_guidance"] = _read_optional(package, "tools/tool_guidance.md") or ""
+    return extras
+
+
 def _load_prompt_pair[T](package: str, agent: str, build: Callable[..., T]) -> T:
     try:
         traversable = importlib.resources.files(package).joinpath("prompts")
         contract_text = traversable.joinpath("contract.md").read_text(encoding="utf-8")
         system_text = traversable.joinpath("system.md").read_text(encoding="utf-8")
         revision_text = traversable.joinpath("revision.md").read_text(encoding="utf-8")
-        return build(system=system_text, revision=revision_text, contract=contract_text)
+        extras = _load_extras(package, tool_guidance=False)
+        return build(system=system_text, revision=revision_text, contract=contract_text, **extras)
     except Exception as exc:
         raise ConfigError(
             f"Failed to load {agent} prompts from package: {exc}",
@@ -61,6 +105,26 @@ def _load_contract_and_system(package: str, agent: str, *, strict: bool) -> tupl
             f"Failed to load {agent} prompts from package: {exc}",
             source=f"{package}.prompts",
         ) from exc
+
+
+@dataclass(frozen=True)
+class _PromptSource:
+    package: str
+    agent: str
+    strict: bool
+    tool_guidance: bool
+
+
+def _load_agent_prompts[T](source: _PromptSource, build: Callable[..., T]) -> T:
+    contract, system = _load_contract_and_system(source.package, source.agent, strict=source.strict)
+    try:
+        extras = _load_extras(source.package, tool_guidance=source.tool_guidance)
+    except Exception as exc:
+        raise ConfigError(
+            f"Failed to load {source.agent} harness files from package: {exc}",
+            source=f"{source.package}",
+        ) from exc
+    return build(system=system, contract=contract, **extras)
 
 
 def _load_template[T](
@@ -102,15 +166,15 @@ def load_task_template(templates_dir: Path) -> TaskTemplate:
 
 
 def load_implement_prompts() -> ImplementPrompts:
-    contract, system = _load_contract_and_system("asf.agents.implement", "implement", strict=False)
-    return ImplementPrompts(system=system, contract=contract)
+    source = _PromptSource("asf.agents.implement", "implement", strict=False, tool_guidance=True)
+    return _load_agent_prompts(source, ImplementPrompts)
 
 
 def load_review_prompts() -> ReviewPrompts:
-    contract, system = _load_contract_and_system("asf.agents.review", "review", strict=True)
-    return ReviewPrompts(system=system, contract=contract)
+    source = _PromptSource("asf.agents.review", "review", strict=True, tool_guidance=False)
+    return _load_agent_prompts(source, ReviewPrompts)
 
 
 def load_fix_prompts() -> FixPrompts:
-    contract, system = _load_contract_and_system("asf.agents.fix", "fix", strict=True)
-    return FixPrompts(system=system, contract=contract)
+    source = _PromptSource("asf.agents.fix", "fix", strict=True, tool_guidance=True)
+    return _load_agent_prompts(source, FixPrompts)
