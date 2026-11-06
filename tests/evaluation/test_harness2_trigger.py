@@ -1,34 +1,35 @@
-"""Tests for the Harness² adapter seam (null default + local rules)."""
+"""Tests for the improvement trigger (null default + metrics rules)."""
 
 from harness.harness2 import (
-    LocalHarness2Adapter,
-    NullHarness2Adapter,
+    MetricsImprovementTrigger,
+    MetricsOverview,
+    NullImprovementTrigger,
     Suggestion,
-    default_adapter,
+    default_trigger,
 )
 
 
 def _overview(**overrides):
-    overview = {
+    data = {
         "agents": [],
         "human": {"approvalRate": 0.9},
         "quality": {"testPassRate": 0.95},
     }
-    overview.update(overrides)
-    return overview
+    data.update(overrides)
+    return MetricsOverview.model_validate(data)
 
 
-def test_null_adapter_is_default_and_suggests_nothing():
-    adapter = default_adapter()
-    assert isinstance(adapter, NullHarness2Adapter)
-    assert adapter.available is False
-    assert adapter.assess(_overview()) == []
-    assert adapter.assess({}) == []
+def test_null_trigger_is_default_and_suggests_nothing():
+    trigger = default_trigger()
+    assert isinstance(trigger, NullImprovementTrigger)
+    assert trigger.available is False
+    assert trigger.assess(_overview()) == []
+    assert trigger.assess(MetricsOverview()) == []
 
 
-def test_local_adapter_quiet_on_healthy_overview():
-    adapter = LocalHarness2Adapter()
-    assert adapter.available is True
+def test_metrics_trigger_quiet_on_healthy_overview():
+    trigger = MetricsImprovementTrigger()
+    assert trigger.available is True
     overview = _overview(
         agents=[
             {
@@ -40,11 +41,11 @@ def test_local_adapter_quiet_on_healthy_overview():
             }
         ]
     )
-    assert adapter.assess(overview) == []
+    assert trigger.assess(overview) == []
 
 
-def test_local_adapter_agent_rules_fire():
-    adapter = LocalHarness2Adapter()
+def test_metrics_trigger_agent_rules_fire():
+    trigger = MetricsImprovementTrigger()
     overview = _overview(
         agents=[
             {
@@ -56,7 +57,7 @@ def test_local_adapter_agent_rules_fire():
             }
         ]
     )
-    suggestions = adapter.assess(overview)
+    suggestions = trigger.assess(overview)
     by_metric = {s.metric: s for s in suggestions}
     assert set(by_metric) == {"healthScore", "avgRevisions", "humanApprovalRate"}
     assert by_metric["healthScore"].kind == "investigate_agent"
@@ -67,18 +68,18 @@ def test_local_adapter_agent_rules_fire():
     assert all(s.target_agent_id == "agent-plan" for s in suggestions)
 
 
-def test_local_adapter_overall_rules_fire():
-    adapter = LocalHarness2Adapter()
+def test_metrics_trigger_overall_rules_fire():
+    trigger = MetricsImprovementTrigger()
     overview = _overview(
         human={"approvalRate": 0.4},
         quality={"testPassRate": 0.5},
     )
-    suggestions = adapter.assess(overview)
+    suggestions = trigger.assess(overview)
     kinds = {s.kind for s in suggestions}
     assert kinds == {"review_artifact_template", "strengthen_test_generation"}
 
 
-def test_local_adapter_skips_missing_metrics():
-    adapter = LocalHarness2Adapter()
-    assert adapter.assess({}) == []
-    assert adapter.assess({"agents": [{"agentId": "agent-x"}]}) == []
+def test_metrics_trigger_skips_missing_metrics():
+    trigger = MetricsImprovementTrigger()
+    assert trigger.assess(MetricsOverview()) == []
+    assert trigger.assess(_overview(agents=[{"agentId": "agent-x"}])) == []

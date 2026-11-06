@@ -65,7 +65,7 @@ Agent requests and results do not expose a specific LLM provider. Model selectio
 9. Time and identifiers are injected: engines (state machine, approval) and agents never read the clock or generate ids; callers inject them (as `now`, `clock`, and identifier factories).
 
 ## 11. Future Harness² integration
-`harness/` is isolated from runtime. `evaluation/` scores agents, `optimization/` tests prompt/skill/tool/config changes, `harness2/` is reserved for the Harness² adapter. Runtime metrics from `src/asf/evaluation/` feed it.
+`harness/` is isolated from runtime. `evaluation/` scores agents, `optimization/` tests prompt/skill/tool/config changes, `harness2/` holds the Harness²-style improvement loop (implemented up to stage H2; see `docs/architecture/harness2.md`). Runtime metrics from `src/asf/evaluation/` feed its trigger.
 
 ## 12. Repository layout
 
