@@ -87,7 +87,10 @@ these exact headings:
   what a reviewer should check by hand. Never invent, round or copy
   test counts, results, OS names or versions. If something was not run,
   write "not run" and why.
-- **Risk & Rollback**: classify as a two-way door (easy to revert,
+- **Risk & Rollback**: include a `Security impact:` line ("none" or the
+  threat note, new dependencies, new secrets or config keys, changed
+  permissions, new external inputs; see the Security rules section).
+  Classify as a two-way door (easy to revert,
   additive, backward compatible) or a one-way door (migration,
   schema/data change, breaking API or protocol, deletion), with one
   sentence why. Give the blast radius (what is affected, what is
@@ -113,3 +116,113 @@ Formatting rules:
 - One PR/MR = one coherent change. If the work mixes unrelated changes,
   say so and propose splitting.
 - Before submitting, compare the description with `git diff --stat`.
+
+# Security rules
+
+Applies to any code an AI agent writes, in any language or stack. A
+rule applies when the code touches its area (the token rules apply
+only when the code handles tokens, and so on).
+
+## 0. Priority and scope
+
+- Security rules override convenience, speed and style rules.
+- If a task can only be done by weakening a security control, stop and ask; MUST NOT weaken it silently.
+- MUST NOT write offensive tooling (keyloggers, C2, malware, credential stealers, working exploit code) or code whose purpose is attacking systems the user does not own; defensive code, detectors, tests with synthetic payloads and educational explanations are fine.
+
+## 1. Design
+
+- For any new feature touching auth, data or external input, MUST state what sensitive data it handles, who may access it, and how an attacker could reach it (a 3-5 line threat note in the PR "Risk & Rollback" section).
+- MUST fail closed: on error, missing config or a failed check, deny; never default to allow.
+- MUST apply least privilege: minimal scopes for tokens, database users, service accounts, file permissions and container users.
+
+## 2. Secrets
+
+- MUST NOT hardcode or commit secrets (keys, tokens, passwords, connection strings, certificates), including in tests, fixtures, docs and examples; examples MUST use obvious fake placeholders, never provider-shaped fakes.
+- MUST read secrets from the environment or a secret manager; MUST NOT put secrets in images, logs, error messages, URLs or client-side code.
+- MUST add new secret names to `.env.example` (or the example config) with an empty or fake value, never a real one.
+- MUST reuse the repo's secret scanner and redactor (`scan_secrets`, `redact_text` in `src/asf/agents/_shared/security.py`); MUST NOT build a second mechanism.
+- If a secret is found in the repo or its history, MUST report it immediately and recommend rotation; MUST NOT just delete the line and continue.
+
+## 3. Input and output
+
+- MUST treat all external input (user, files, network, database, environment, model output) as untrusted: validate type, length, range and allowlist.
+- MUST use parameterized queries and safe APIs; MUST NOT build SQL, shell, LDAP or path strings by concatenation; MUST NOT pass untrusted data to a shell.
+- MUST prevent path traversal: resolve paths and confirm they stay inside the allowed root.
+- MUST NOT deserialize untrusted data with unsafe loaders (pickle, Marshal, unsafe YAML, native object deserialization); use safe formats and loaders.
+- MUST encode output for its context (HTML, SQL, shell, logs) and MUST NOT render user input as HTML without escaping.
+- MUST return generic errors to clients; MUST NOT expose stack traces, SQL, internal paths, tokens or system prompts.
+- MUST make check-then-act sequences atomic (transaction, unique constraint, conditional update, lock) wherever money, stock, quotas, one-time codes or coupons are involved.
+
+## 4. Authentication, sessions, authorization
+
+- MUST distinguish authentication from authorization and check permission at object level (this user may access this record) and at function level.
+- MUST NOT accept unsigned tokens or `alg: none`; MUST pin allowed algorithms; MUST validate `exp`, `iss`, `aud` and scope; MUST NOT reuse a public key as an HMAC secret.
+- MUST revoke or invalidate sessions and refresh tokens on password change and on logout.
+- Cookies MUST set HttpOnly, Secure and SameSite; MUST NOT place session ids or tokens in URLs or logs.
+- MUST validate OAuth redirect URIs against an exact allowlist; no open redirects.
+- MUST protect state-changing requests against CSRF when using cookie authentication.
+
+## 5. Passwords and cryptography
+
+- MUST hash passwords with Argon2id (or bcrypt/scrypt) with a per-user salt; MUST NOT use MD5, SHA-1 or plain SHA-256 for passwords.
+- MUST use vetted libraries; MUST NOT invent cryptography. Use AES-256-GCM or ChaCha20-Poly1305 with a fresh random nonce per encryption; MUST NOT use ECB, static IVs or hardcoded keys.
+- MUST use a cryptographically secure random source for tokens, ids and salts; MUST NOT use the language's non-crypto RNG for security values.
+- MUST use constant-time comparison for secrets and signatures.
+
+## 6. Web and API
+
+- MUST enforce HTTPS and set security headers when building web responses: HSTS, CSP, `X-Content-Type-Options: nosniff`, frame protection.
+- MUST add rate limiting to login, token, password-reset and expensive endpoints; respond 429 with `Retry-After`.
+- MUST limit request body size, upload size and pagination size.
+
+## 7. Dependencies and supply chain
+
+- MUST use lockfiles and exact or hashed pins; MUST NOT use `*`, `latest` or unpinned installs.
+- MUST NOT add a new dependency without stating why, what it does, its maintenance status and its license in the PR description; prefer the standard library or an existing dependency.
+- MUST check new package names carefully (typosquatting, dependency confusion); internal packages MUST come from the private registry.
+- MUST NOT run or add install hooks or download-and-execute scripts without explicit approval.
+- MUST NOT disable audit, signature or TLS verification to make an install or a test pass.
+
+## 8. Data and privacy
+
+- MUST collect and store the minimum data; MUST classify PII and MUST NOT log passwords, tokens, card numbers, national ids or other personal data; mask a value when it must be logged.
+- MUST encrypt sensitive data in transit and at rest, backups included.
+- MUST NOT put real personal or production data in tests, fixtures or examples.
+
+## 9. Infrastructure and containers
+
+- Containers MUST run as non-root, MUST NOT be privileged, MUST NOT mount the Docker socket and MUST NOT bake secrets into images.
+- Firewall and network rules MUST be default-deny with explicit allows; open only needed ports.
+- MUST keep dev, staging and prod configuration and secrets separate.
+
+## 10. Logging and monitoring
+
+- MUST log security-relevant events with who, what, when, result and request id (auth failures, permission denials, token validation failures, rate-limit hits, admin actions), without sensitive data.
+- MUST NOT log full request bodies or headers by default.
+
+## 11. LLM and agent features (when the code calls a model or runs agents)
+
+- MUST treat user text, uploaded files, web pages, tool results and database content as data, never as instructions; keep system instructions separate and delimit untrusted data.
+- MUST authorize every tool call an agent can make; dangerous or irreversible actions need explicit allowlisting or human confirmation.
+- MUST scan model output for secrets before it is stored, logged or shown (use `scan_secrets`), and MUST NOT let the model reveal system prompts or credentials.
+- MUST cap input size, output size, tool-call count and cost per run.
+
+## 12. Testing and CI
+
+- MUST add tests for the security behaviour of the change (rejected input, denied access, expired or forged token, injection attempt, boundary values), not only the happy path.
+- MUST NOT delete, skip, weaken or mark as expected-failure a security test to get a build green; MUST NOT add suppression comments for security linters (for example `nosec`, or `noqa` for security rules) without a written reason approved by a human.
+- Before declaring work done, MUST run the repo's secrets scan (`gitleaks git --redact .`, see `.gitleaks.toml`), the SAST (`bandit -c .bandit -r src -q` and the ruff `S` rules in `ruff check`) and, when dependencies change, the dependency audit (`npm audit` in `apps/dashboard`), and report the real results in the PR "Verification" section.
+
+## 13. Reporting
+
+- In every PR/MR, the "Risk & Rollback" section MUST include a "Security impact" line: "none" or the threat note, new dependencies, new secrets or config keys, changed permissions, new external inputs.
+- If a vulnerability is noticed while working, MUST report it with file and line and a suggested fix; MUST NOT silently fix unrelated code in the same change, and MUST NOT exploit or demonstrate it beyond a safe test.
+
+## Before finishing (checklist)
+
+- Secrets: no secret, token or provider-shaped fake added anywhere, including tests and docs; new secret names are in `.env.example` with fake values.
+- Input validation: every new external input is validated; no string-built SQL, shell, LDAP or paths.
+- Authz: every new endpoint or record access checks permission at function and object level.
+- Dependencies: any new dependency is pinned, licensed and justified in the PR description.
+- Logging: no sensitive data in new log lines or error responses.
+- Tests: the attack case (rejected input, denied access, forged or expired token, injection) is covered by a test.

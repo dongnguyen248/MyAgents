@@ -55,6 +55,7 @@ class ChangeRequestDescription:
     risk: str
     blast_radius: str
     rollback: str
+    security_impact: str = "none"
     resolves: str = "None"
     relates_to: str = "None"
     adr: str = "None"
@@ -89,19 +90,27 @@ def render_description(fields: ChangeRequestDescription) -> str:
         "## Verification",
         *_bullets(fields.verification),
         "",
-        "## Risk & Rollback",
-        fields.risk,
-        "",
-        f"Blast radius: {fields.blast_radius}",
-        "",
-        f"Rollback: {fields.rollback}",
-        "",
+        *_risk_lines(fields),
         "## Context",
         f"Resolves: {fields.resolves}",
         f"Relates to: {fields.relates_to}",
         f"ADR/RFC: {fields.adr}",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _risk_lines(fields: ChangeRequestDescription) -> list[str]:
+    return [
+        "## Risk & Rollback",
+        fields.risk,
+        "",
+        f"Security impact: {fields.security_impact}",
+        "",
+        f"Blast radius: {fields.blast_radius}",
+        "",
+        f"Rollback: {fields.rollback}",
+        "",
+    ]
 
 
 def _bullets(lines: tuple[str, ...]) -> list[str]:
@@ -114,7 +123,8 @@ def validate_description(text: str) -> list[str]:
     Pure and deterministic: heading presence, duplication and
     order; empty sections; leftover placeholders or HTML comments;
     TODO/TBD; a Verification section that neither quotes a command
-    nor states what was not run; and any other level-2 heading
+    nor states what was not run; a Risk & Rollback section with no
+    "Security impact:" line; and any other level-2 heading
     (bot-summary sections are not allowed).
     """
     problems: list[str] = []
@@ -162,7 +172,18 @@ def _section_problems(text: str, headings: list[str]) -> list[str]:
     verification = bodies.get("## Verification", "")
     if verification.strip() and not _verification_ok(verification):
         problems.append("Verification lists no command and does not state what was not run")
+    risk = bodies.get("## Risk & Rollback", "")
+    if risk.strip() and not _security_impact_ok(risk):
+        problems.append("Risk & Rollback has no 'Security impact:' line")
     return problems
+
+
+def _security_impact_ok(body: str) -> bool:
+    prefix = "Security impact:"
+    return any(
+        line.strip().startswith(prefix) and line.strip()[len(prefix) :].strip()
+        for line in body.splitlines()
+    )
 
 
 def _section_bodies(text: str) -> dict[str, str]:
@@ -207,6 +228,7 @@ def change_request_description(
         how=tuple(_how_lines(changes)),
         verification=tuple(_verification_lines(info)),
         risk=_RISK_TEXT,
+        security_impact=_security_impact(changes),
         blast_radius=(
             f"only branch `{info.branch}` and this change request. "
             f"The base branch `{info.base_branch}` is explicitly untouched until merge."
@@ -225,6 +247,42 @@ _RISK_TEXT = (
     "base branch; a human decides whether it merges, and the branch "
     "can be deleted without side effects."
 )
+
+_SENSITIVE_PATH_SEGMENTS = (
+    "auth",
+    "credential",
+    "crypto",
+    "password",
+    "permission",
+    "secret",
+    "security",
+    "session",
+    "token",
+)
+
+
+def _security_impact(changes: ChangeSet) -> str:
+    """The Security impact line, derived from the changeset paths.
+
+    "none" unless a changed path names a security-sensitive area;
+    then the line asks for a security review and names the areas, so
+    the statement stays a fact about the run's own data.
+    """
+    hits = sorted(
+        {
+            segment
+            for change in changes.changes
+            for segment in _SENSITIVE_PATH_SEGMENTS
+            if segment in change.path.lower()
+        }
+    )
+    if not hits:
+        return "none"
+    return (
+        "review required - the changeset touches security-sensitive "
+        f"areas ({', '.join(hits)}); no new secret, dependency or "
+        "permission change is recorded in the run data"
+    )
 
 
 def _why_text(info: ChangeRequestInfo) -> str:
