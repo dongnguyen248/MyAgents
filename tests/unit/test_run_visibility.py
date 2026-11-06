@@ -26,7 +26,9 @@ from asf.workflow.loader import load_workflow
 from tests.unit.test_agent_base import T_AWARE, CounterId, CountingClock, DummyAgent, make_request
 
 ROOT = Path(__file__).resolve().parents[2]
-NOW = datetime(2026, 11, 5, 18, 0, tzinfo=UTC)
+# Relative base: the derivations under test compare run timestamps
+# against the service's real clock, so a fixed calendar date rots.
+NOW = datetime.now(UTC)
 DEFINITION = load_workflow(ROOT / "workflow-definitions" / "software-development.yaml")
 
 
@@ -392,7 +394,7 @@ def test_drive_records_escalated_and_retry_wait(demo, monkeypatch):
     def park(run_id: str) -> None:
         with engine._edit(run_id) as stored:
             stored.state = RunState(stage="IMPLEMENTING", revisions={})
-            stored.retry_at = NOW + timedelta(minutes=5)
+            stored.retry_at = datetime.now(UTC) + timedelta(minutes=5)
 
     monkeypatch.setattr(engine, "tick", _mutating_tick(engine, park))
     run_id = _start_demo_run(service)
@@ -461,8 +463,10 @@ def _force_stage(engine: Orchestrator, run_id: str, stage: str, **updates) -> No
             setattr(stored, key, value)
 
 
-def test_adopt_orphans_bounded_at_three(demo, monkeypatch):
-    service, engine, _store = demo
+def test_adopt_orphans_bounded_at_three(tmp_path, monkeypatch):
+    # Own service: the shared demo accumulates adoptable orphan runs
+    # from the drive tests above, which would pollute the exact count.
+    service, engine, _store = build_demo(tmp_path / "adopt-bounded", ephemeral=True)
     run_id = _start_demo_run(service)
     service.wait_for_drives(timeout=10)
     _force_stage(engine, run_id, "IMPLEMENTING")
@@ -476,13 +480,20 @@ def test_adopt_orphans_bounded_at_three(demo, monkeypatch):
     assert stops and stops[-1]["reason"] == "stalled"
 
 
-def test_adopt_orphans_skips_gated_and_retry_runs(demo, monkeypatch):
-    service, engine, _store = demo
+def test_adopt_orphans_skips_gated_and_retry_runs(tmp_path, monkeypatch):
+    # Own service, like the bounded test: adoption scans every run in
+    # the store, so leftovers from other tests would break the count.
+    service, engine, _store = build_demo(tmp_path / "adopt-skips", ephemeral=True)
     _start_demo_run(service)
     service.wait_for_drives(timeout=10)  # parked at the spec gate
     parked_id = _start_demo_run(service)
     service.wait_for_drives(timeout=10)
-    _force_stage(engine, parked_id, "IMPLEMENTING", retry_at=NOW + timedelta(minutes=5))
+    _force_stage(
+        engine,
+        parked_id,
+        "IMPLEMENTING",
+        retry_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
     driven: list[str] = []
     monkeypatch.setattr(service, "_drive_in_background", driven.append)
     service._adopt_orphans()
