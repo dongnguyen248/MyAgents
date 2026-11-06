@@ -14,7 +14,7 @@ import pytest
 import asf.agents.loading as loading
 import asf.agents.review.agent as review_module
 from asf.agents.base import AgentRuntime
-from asf.agents.review import ReviewAgent, ReviewPrompts, build_review_agent
+from asf.agents.review import ReviewAgent, ReviewPrompts, ReviewSettings, build_review_agent
 from asf.agents.review.prompts import (
     MAX_FINDINGS,
     ReviewContent,
@@ -100,9 +100,11 @@ def make_agent(
     )
     return ReviewAgent(
         runtime,
-        prompts=prompts or ReviewPrompts(system="Review submitted code."),
-        model="review-model",
-        parameters={"temperature": 0.1},
+        ReviewSettings(
+            prompts=prompts or ReviewPrompts(system="Review submitted code."),
+            model="review-model",
+            parameters={"temperature": 0.1},
+        ),
     ), gateway
 
 

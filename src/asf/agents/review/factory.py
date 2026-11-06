@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from asf.agents.base import AgentRuntime
-from asf.agents.review.agent import ReviewAgent
+from asf.agents.review.agent import ReviewAgent, ReviewSettings
 from asf.configuration.platform import PlatformConfig
 
 __all__ = ["build_review_agent"]
@@ -27,10 +27,12 @@ def build_review_agent(
     settings = config.settings if config else {}
     return ReviewAgent(
         runtime,
-        prompts=load_review_prompts(),
-        model=model,
-        parameters=parameters,
-        skip_when_tests_pass=bool(settings.get("skipWhenTestsPass", False)),
-        max_diff_lines=settings.get("maxDiffLines", 200),
-        report_tail_lines=settings.get("reportTailLines", 120),
+        ReviewSettings(
+            prompts=load_review_prompts(),
+            model=model,
+            parameters=parameters,
+            skip_when_tests_pass=bool(settings.get("skipWhenTestsPass", False)),
+            max_diff_lines=settings.get("maxDiffLines", 200),
+            report_tail_lines=settings.get("reportTailLines", 120),
+        ),
     )

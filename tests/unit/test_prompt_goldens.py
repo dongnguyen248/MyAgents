@@ -38,7 +38,7 @@ from asf.agents.loading import (
     load_task_template,
 )
 from asf.agents.plan.agent import PlanAgent, PlanSettings
-from asf.agents.review.agent import ReviewAgent
+from asf.agents.review.agent import ReviewAgent, ReviewSettings
 from asf.agents.spec.agent import SpecAgent, SpecSettings
 from asf.agents.task.agent import TaskAgent, TaskSettings
 from asf.contracts.models import AgentRequest, Artifact, ModelRequest
@@ -375,9 +375,11 @@ def capture_review() -> ModelRequest:
     gateway = ScriptedModelGateway(['{"findings": [], "verdict": "APPROVE"}'])
     agent = ReviewAgent(
         runtime_for(gateway),
-        prompts=load_review_prompts(),
-        model="review-model",
-        parameters={"temperature": 0.1},
+        ReviewSettings(
+            prompts=load_review_prompts(),
+            model="review-model",
+            parameters={"temperature": 0.1},
+        ),
     )
     result = agent.execute(request)
     assert result.status == "SUCCESS", result.errors

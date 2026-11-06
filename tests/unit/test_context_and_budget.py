@@ -21,7 +21,7 @@ from asf.agents._shared.report_tail import tail_artifact_for_prompt, tail_text
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.implement.agent import ImplementAgent, ImplementSettings
 from asf.agents.loading import load_implement_prompts, load_review_prompts
-from asf.agents.review.agent import ReviewAgent
+from asf.agents.review.agent import ReviewAgent, ReviewSettings
 from asf.agents.test.agent import TestAgent
 from asf.contracts.models import (
     AgentMetadata,
@@ -804,9 +804,11 @@ def test_review_skips_llm_when_tests_pass_and_diff_small():
     gateway = ScriptedModelGateway([])
     agent = ReviewAgent(
         _runtime(gateway),
-        prompts=load_review_prompts(),
-        skip_when_tests_pass=True,
-        max_diff_lines=200,
+        ReviewSettings(
+            prompts=load_review_prompts(),
+            skip_when_tests_pass=True,
+            max_diff_lines=200,
+        ),
     )
     result = agent.execute(_review_request())
     assert result.status == "SUCCESS"
@@ -824,9 +826,11 @@ def test_review_does_not_skip_when_tests_failed():
     )
     agent = ReviewAgent(
         _runtime(gateway),
-        prompts=load_review_prompts(),
-        skip_when_tests_pass=True,
-        max_diff_lines=200,
+        ReviewSettings(
+            prompts=load_review_prompts(),
+            skip_when_tests_pass=True,
+            max_diff_lines=200,
+        ),
     )
     result = agent.execute(_review_request(verdict="FAIL"))
     assert result.status == "SUCCESS"
