@@ -46,10 +46,20 @@ class CommandResult:
 
 
 @dataclass(frozen=True)
+class AppliedRelabel:
+    """A change whose operation label was rewritten while applying it."""
+
+    path: str
+    from_operation: str
+    to_operation: str
+
+
+@dataclass(frozen=True)
 class SandboxResult:
     """Aggregate result of running multiple commands in a sandbox."""
 
     commands: tuple[CommandResult, ...]
+    relabels: tuple[AppliedRelabel, ...] = ()
 
 
 class RepositoryError(Exception):

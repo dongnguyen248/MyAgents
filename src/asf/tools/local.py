@@ -85,6 +85,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from asf.tools.changeset import ChangeSet
+from asf.tools.changeset_apply import apply_changeset, resolve_within
 from asf.tools.journal import (
     JOURNAL_ACTIVE,
     JOURNAL_CONFLICT,
@@ -94,6 +95,7 @@ from asf.tools.journal import (
     RunJournal,
 )
 from asf.tools.ports import (
+    AppliedRelabel,
     CommandResult,
     CommandSpec,
     FileNotFoundInRepository,
@@ -140,22 +142,6 @@ _IGNORED_DIRS = frozenset(
 )
 
 
-def _resolve_within(root: Path, path: str) -> Path:
-    """Resolve a repository-relative path, refusing anything outside root."""
-    if (
-        not path
-        or PurePosixPath(path).is_absolute()
-        or PureWindowsPath(path).is_absolute()
-        or PureWindowsPath(path).drive
-    ):
-        raise RepositoryError(f"Path must be relative: {path!r}", path=path)
-    resolved_root = root.resolve()
-    candidate = (resolved_root / Path(*PurePosixPath(path).parts)).resolve()
-    if not candidate.is_relative_to(resolved_root):
-        raise RepositoryError(f"Path escapes the project folder: {path!r}", path=path)
-    return candidate
-
-
 class LocalRepository:
     """RepositoryPort over one real project folder (the working tree)."""
 
@@ -175,7 +161,7 @@ class LocalRepository:
         return tuple(sorted(paths))
 
     def read_file(self, path: str, ref: str, max_bytes: int = 256_000) -> str:
-        target = _resolve_within(self._root, path)
+        target = resolve_within(self._root, path)
         if not target.is_file():
             raise FileNotFoundInRepository(path, ref)
         if target.stat().st_size > max_bytes:
@@ -406,7 +392,7 @@ def _validate_argv0(argv0: str, root: Path, spec: CommandSpec) -> None:
     if PurePosixPath(argv0).is_absolute() or PureWindowsPath(argv0).is_absolute():
         return
     try:
-        _resolve_within(root, argv0.replace("\\", "/"))
+        resolve_within(root, argv0.replace("\\", "/"))
     except RepositoryError as error:
         raise SandboxError(str(error), command=spec) from None
 
@@ -443,14 +429,15 @@ class LocalSandbox:
         *,
         fail_fast: bool = True,
     ) -> SandboxResult:
-        self._apply(changes)
-        return self._run_commands(commands, fail_fast=fail_fast)
+        relabels = apply_changeset(self._root, changes)
+        return self._run_commands(commands, fail_fast=fail_fast, relabels=relabels)
 
     def _run_commands(
         self,
         commands: Sequence[CommandSpec],
         *,
         fail_fast: bool = True,
+        relabels: tuple[AppliedRelabel, ...] = (),
     ) -> SandboxResult:
         # One fresh home per call: tools that cache into $HOME
         # cannot leak state (or read the real home) across runs.
@@ -462,7 +449,7 @@ class LocalSandbox:
                 home=home,
             )
             outcomes = self._execute_all(commands, env, fail_fast=fail_fast)
-        return SandboxResult(commands=tuple(outcomes))
+        return SandboxResult(commands=tuple(outcomes), relabels=relabels)
 
     def _execute_all(
         self,
@@ -490,35 +477,6 @@ class LocalSandbox:
             if outcome.exit_code != 0:
                 failed = True
         return outcomes
-
-    def _apply(self, changes: ChangeSet) -> None:
-        # Validate the whole change set against the current tree first, so
-        # a bad change set leaves the folder untouched (mirrors the
-        # in-memory sandbox's create/modify/delete rules).
-        targets: list[tuple[Path, str, str | None]] = []
-        for change in changes.changes:
-            try:
-                target = _resolve_within(self._root, change.path)
-            except RepositoryError as error:
-                raise SandboxError(str(error), command=None) from None
-            exists = target.is_file()
-            if change.operation == "create" and exists:
-                raise SandboxError(
-                    f"Cannot create existing file: {change.path}",
-                    command=None,
-                )
-            if change.operation in ("modify", "delete") and not exists:
-                raise SandboxError(
-                    f"Cannot {change.operation} missing file: {change.path}",
-                    command=None,
-                )
-            targets.append((target, change.operation, change.content))
-        for target, operation, content in targets:
-            if operation == "delete":
-                target.unlink()
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes((content or "").encode("utf-8"))
 
     def _run_one(self, spec: CommandSpec, env: Mapping[str, str]) -> CommandResult:
         argv = list(spec.argv)
@@ -1100,6 +1058,6 @@ class WorkspaceSandbox:
             root,
             settings=self._workspace.current_sandbox_settings(),
         )
-        sandbox._apply(changes)
+        relabels = apply_changeset(root, changes)
         journal.note_written(changes)
-        return sandbox._run_commands(commands, fail_fast=fail_fast)
+        return sandbox._run_commands(commands, fail_fast=fail_fast, relabels=relabels)
