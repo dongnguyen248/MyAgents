@@ -44,6 +44,8 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
   const [hostingToken, setHostingToken] = useState('');
   const [clearToken, setClearToken] = useState(false);
   const [workspacePath, setWorkspacePath] = useState(initial?.repository.path ?? '');
+  const [workspaceMode, setWorkspaceMode] = useState(initial?.repository.workspaceMode ?? 'direct');
+  const [keepChanges, setKeepChanges] = useState(initial?.repository.keepChangesOnFailure ?? false);
   const [testCommand, setTestCommand] = useState(
     (initial?.configuration.testCommands?.[0] ?? []).join(' '),
   );
@@ -81,7 +83,13 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
         name: name.trim(),
         // In edit mode always send the description so clearing it works.
         ...(description.trim() || editing ? { description: description.trim() } : {}),
-        repository: { provider, path: workspacePath.trim(), url: repoUrl.trim() },
+        repository: {
+          provider,
+          path: workspacePath.trim(),
+          url: repoUrl.trim(),
+          workspaceMode,
+          keepChangesOnFailure: keepChanges,
+        },
         technology: { backend: list(backend), frontend: list(frontend) },
         workflow: workflow.trim() || 'software-development',
         enabledSkills: list(skills),
@@ -222,10 +230,34 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
             />
           </label>
         </div>
+        <div className="form-grid">
+          <label className="field">
+            <span>Workspace mode (for the local folder)</span>
+            <select value={workspaceMode} onChange={(e) => setWorkspaceMode(e.target.value)}>
+              <option value="direct">Direct — edit the folder, with an undo journal</option>
+              <option value="worktree">Worktree — a separate git worktree per run</option>
+              <option value="auto">Auto — worktree for git folders, direct otherwise</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>
+              <input
+                type="checkbox"
+                checked={keepChanges}
+                onChange={(e) => setKeepChanges(e.target.checked)}
+                disabled={workspaceMode !== 'direct'}
+              />{' '}
+              Keep changes when a run fails (direct mode)
+            </span>
+          </label>
+        </div>
         <p className="muted small">
           With a local folder set, agents read the project's real files, generated code is written into
           that folder, and the test command runs there for real. Without it, runs use the in-memory demo
-          workspace. With a repository URL set, the CI step pushes the generated code to a branch on
+          workspace. In direct mode the run edits the folder itself: an undo journal records every file
+          before the run first writes it, a failed or cancelled run is reverted (unless you keep its
+          changes), and nothing is ever auto-committed. In worktree mode each run works in its own git
+          worktree and the folder stays untouched. With a repository URL set, the CI step pushes the generated code to a branch on
           GitLab/GitHub, opens a merge/pull request, and the run waits for it to merge. The access token
           is per project: paste it here and it is stored on the backend only — never in the project file
           and never shown again (only its last 4 characters). Without one, the backend falls back to its

@@ -55,8 +55,16 @@ folder itself — see ``asf.tools.worktree`` for the full state
 convention (commit on test PASS, reset before a replacement change
 set, cleanup at run end, orphan sweep at startup). A project whose
 folder is NOT a git repository keeps the direct behaviour and gets a
-loud one-time warning in the backend log: its runs write into the
-user's working tree with no isolation and no rollback.
+loud one-time warning in the backend log.
+
+A project's ``repository.workspaceMode`` chooses per project:
+``worktree`` (above), ``auto`` (worktree for git folders, direct for
+the rest — the historical behaviour) or ``direct``: runs edit the
+project folder itself, git or not, protected by the undo journal in
+``asf.tools.journal`` — revert before a replacement change set and at
+FAILED/CANCELLED run end, keep on COMPLETED, never clobbering files
+the user edited after ASF wrote them. ``direct`` is an explicit
+choice, so it does not draw the non-git warning.
 """
 
 from __future__ import annotations
@@ -77,6 +85,14 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from asf.tools.changeset import ChangeSet
+from asf.tools.journal import (
+    JOURNAL_ACTIVE,
+    JOURNAL_CONFLICT,
+    JOURNAL_KEPT,
+    JOURNAL_REVERTED,
+    JournalStore,
+    RunJournal,
+)
 from asf.tools.ports import (
     CommandResult,
     CommandSpec,
@@ -88,14 +104,17 @@ from asf.tools.ports import (
     SandboxPort,
     SandboxResult,
 )
-from asf.tools.worktree import GitWorktreeWorkspace
+from asf.tools.worktree import GitWorktreeWorkspace, run_git
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "DirectWorkspace",
     "LocalRepository",
     "LocalSandbox",
     "LocalWorkspace",
+    "ProjectWorkspaceSettings",
+    "RunWorkspaceOutcome",
     "SandboxResourceLimits",
     "SandboxSettings",
     "WorkspaceRepository",
@@ -425,7 +444,15 @@ class LocalSandbox:
         fail_fast: bool = True,
     ) -> SandboxResult:
         self._apply(changes)
-        # One fresh home per run() call: tools that cache into $HOME
+        return self._run_commands(commands, fail_fast=fail_fast)
+
+    def _run_commands(
+        self,
+        commands: Sequence[CommandSpec],
+        *,
+        fail_fast: bool = True,
+    ) -> SandboxResult:
+        # One fresh home per call: tools that cache into $HOME
         # cannot leak state (or read the real home) across runs.
         with tempfile.TemporaryDirectory(prefix="asf-sandbox-") as home:
             env = build_sandbox_env(
@@ -434,25 +461,35 @@ class LocalSandbox:
                 self._settings.env_extra,
                 home=home,
             )
-            outcomes: list[CommandResult] = []
-            failed = False
-            for spec in commands:
-                if failed and fail_fast:
-                    outcomes.append(
-                        CommandResult(
-                            exit_code=-1,
-                            stdout="",
-                            stderr="",
-                            duration_ms=0,
-                            skipped=True,
-                        )
-                    )
-                    continue
-                outcome = self._run_one(spec, env)
-                outcomes.append(outcome)
-                if outcome.exit_code != 0:
-                    failed = True
+            outcomes = self._execute_all(commands, env, fail_fast=fail_fast)
         return SandboxResult(commands=tuple(outcomes))
+
+    def _execute_all(
+        self,
+        commands: Sequence[CommandSpec],
+        env: Mapping[str, str],
+        *,
+        fail_fast: bool,
+    ) -> list[CommandResult]:
+        outcomes: list[CommandResult] = []
+        failed = False
+        for spec in commands:
+            if failed and fail_fast:
+                outcomes.append(
+                    CommandResult(
+                        exit_code=-1,
+                        stdout="",
+                        stderr="",
+                        duration_ms=0,
+                        skipped=True,
+                    )
+                )
+                continue
+            outcome = self._run_one(spec, env)
+            outcomes.append(outcome)
+            if outcome.exit_code != 0:
+                failed = True
+        return outcomes
 
     def _apply(self, changes: ChangeSet) -> None:
         # Validate the whole change set against the current tree first, so
@@ -553,6 +590,35 @@ class LocalSandbox:
 
 
 @dataclass(frozen=True)
+class ProjectWorkspaceSettings:
+    """Per-project local-folder behaviour (profile ``repository`` keys)."""
+
+    mode: str = "auto"
+    keep_changes_on_failure: bool = False
+
+
+@dataclass(frozen=True)
+class DirectWorkspace:
+    """Direct-mode collaborators of a LocalWorkspace: the undo-journal
+    store plus the per-project workspace settings."""
+
+    journals: JournalStore
+    settings: Mapping[str, ProjectWorkspaceSettings] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RunWorkspaceOutcome:
+    """What the end-of-run (or startup-sweep) journal handling did."""
+
+    project_id: str
+    run_id: str
+    mode: str
+    journal_state: str
+    files_written: tuple[str, ...] = ()
+    conflicts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class _Binding:
     project_id: str
     run_id: str | None = None
@@ -590,6 +656,7 @@ class LocalWorkspace:
         roots: Mapping[str, str | Path] | None = None,
         sandbox_settings: Mapping[str, SandboxSettings] | None = None,
         worktrees: GitWorktreeWorkspace | None = None,
+        direct: DirectWorkspace | None = None,
     ) -> None:
         self._roots: dict[str, Path] = {}
         for project_id, path in (roots or {}).items():
@@ -598,6 +665,10 @@ class LocalWorkspace:
             sandbox_settings or {},
         )
         self._worktrees = worktrees
+        self._journals = direct.journals if direct is not None else None
+        self._workspace_settings: dict[str, ProjectWorkspaceSettings] = dict(
+            direct.settings if direct is not None else {},
+        )
         self._bound: contextvars.ContextVar[_Binding | None] = contextvars.ContextVar(
             "asf-local-workspace-binding", default=None
         )
@@ -609,6 +680,38 @@ class LocalWorkspace:
     @property
     def worktrees(self) -> GitWorktreeWorkspace | None:
         return self._worktrees
+
+    @property
+    def journals(self) -> JournalStore | None:
+        return self._journals
+
+    def set_workspace_settings(
+        self,
+        project_id: str,
+        settings: ProjectWorkspaceSettings | None,
+    ) -> None:
+        if settings is None:
+            self._workspace_settings.pop(project_id, None)
+        else:
+            self._workspace_settings[project_id] = settings
+
+    def workspace_settings_of(self, project_id: str) -> ProjectWorkspaceSettings:
+        return self._workspace_settings.get(project_id, ProjectWorkspaceSettings())
+
+    def effective_mode(self, project_id: str) -> str:
+        """The mode a run of this project actually gets: direct|worktree.
+
+        ``direct`` is honoured as chosen; ``worktree`` needs a git
+        folder and an attached worktree manager; ``auto`` is worktree
+        for git folders and direct for the rest.
+        """
+        settings = self.workspace_settings_of(project_id)
+        if settings.mode == "direct":
+            return "direct"
+        plain = self._roots.get(project_id)
+        if plain is None or self._worktrees is None:
+            return "direct"
+        return "worktree" if self._worktrees.is_git_repo(plain) else "direct"
 
     def set_sandbox_settings(
         self,
@@ -635,6 +738,7 @@ class LocalWorkspace:
     def remove(self, project_id: str) -> None:
         self._roots.pop(project_id, None)
         self._sandbox_settings.pop(project_id, None)
+        self._workspace_settings.pop(project_id, None)
         with self._locks_guard:
             self._project_locks.pop(project_id, None)
 
@@ -667,9 +771,10 @@ class LocalWorkspace:
     def current_root(self, ref: str | None = None) -> Path | None:
         """The folder the bound step must work in.
 
-        For a git project with a bound run, that is the run's
-        worktree (created on first use from ``ref``); otherwise the
-        project's own folder.
+        For a worktree-mode git project with a bound run, that is the
+        run's worktree (created on first use from ``ref``); in direct
+        mode — chosen, or the fallback for a non-git folder — it is
+        the project's own folder.
         """
         binding = self._bound.get()
         if binding is None:
@@ -679,8 +784,9 @@ class LocalWorkspace:
             return None
         if self._worktrees is None or binding.run_id is None:
             return plain
-        if not self._worktrees.is_git_repo(plain):
-            self._warn_non_git(binding.project_id, plain)
+        if self.effective_mode(binding.project_id) != "worktree":
+            if self.workspace_settings_of(binding.project_id).mode != "direct":
+                self._warn_non_git(binding.project_id, plain)
             return plain
         path = self._worktrees.ensure(
             plain,
@@ -726,14 +832,109 @@ class LocalWorkspace:
         path = self._worktrees.worktree_path(binding.project_id, binding.run_id)
         return self._worktrees.commit_all(path, message)
 
-    def finish_run(self, project_id: str, run_id: str, stage: str) -> None:
-        """Applies the end-of-run worktree cleanup policy, if any."""
-        if self._worktrees is None:
+    def record_green_state(self, message: str) -> None:
+        """Marks the bound run's current state as the fix baseline.
+
+        Worktree mode commits the run's worktree; direct mode
+        advances the undo journal's baseline to the current bytes.
+        Called by the test binding when a test step reports PASS.
+        """
+        self.commit_current_worktree(message)
+        journal = self.direct_journal()
+        if journal is not None and journal.entries:
+            journal.rebaseline()
+
+    # -- direct mode ------------------------------------------------------
+
+    def journal_for(self, project_id: str, run_id: str) -> RunJournal | None:
+        if self._journals is None:
+            return None
+        return self._journals.load(project_id, run_id)
+
+    def direct_journal(self) -> RunJournal | None:
+        """The bound run's undo journal, when it runs in direct mode."""
+        binding = self._bound.get()
+        if binding is None or binding.run_id is None or self._journals is None:
+            return None
+        plain = self._roots.get(binding.project_id)
+        if plain is None or self.effective_mode(binding.project_id) != "direct":
+            return None
+        return self._journals.get_or_create(binding.project_id, binding.run_id, plain)
+
+    def refuse_dirty_direct_targets(self, root: Path, paths: list[str]) -> None:
+        """Refuses to overwrite uncommitted user changes in a git folder.
+
+        Direct mode only, and only for paths the run's journal does
+        not already manage (a journaled path holds ASF's own writes).
+        Read-only: git is asked with --no-optional-locks, so neither
+        history nor the index is ever modified.
+        """
+        if not paths or self._worktrees is None or not self._worktrees.is_git_repo(root):
             return
-        plain = self._roots.get(project_id)
-        if plain is None or not self._worktrees.has_worktree(project_id, run_id):
-            return
-        self._worktrees.finish(plain, project_id, run_id, stage)
+        output = run_git(root, "--no-optional-locks", "status", "--porcelain", "--", *paths)
+        dirty = sorted(line[3:].strip().strip('"') for line in output.splitlines() if line.strip())
+        if dirty:
+            raise SandboxError(
+                "Direct workspace mode refuses to overwrite uncommitted "
+                f"changes in the project folder {root}: {', '.join(dirty)}. "
+                "Commit or stash those changes, or switch the project to "
+                "worktree mode.",
+                command=None,
+            )
+
+    def _close_journal(self, journal: RunJournal, *, keep: bool) -> RunWorkspaceOutcome:
+        files = tuple(journal.files_written())
+        if keep:
+            journal.state = JOURNAL_KEPT
+            journal.save()
+            return RunWorkspaceOutcome(
+                journal.project_id,
+                journal.run_id,
+                "direct",
+                JOURNAL_KEPT,
+                files,
+                (),
+            )
+        report = journal.revert(journal.root)
+        journal.state = JOURNAL_CONFLICT if report.conflicts else JOURNAL_REVERTED
+        journal.save()
+        return RunWorkspaceOutcome(
+            journal.project_id,
+            journal.run_id,
+            "direct",
+            journal.state,
+            files,
+            report.conflicts,
+        )
+
+    def finish_run(
+        self,
+        project_id: str,
+        run_id: str,
+        stage: str,
+    ) -> RunWorkspaceOutcome | None:
+        """Applies the end-of-run cleanup policy (worktree and journal).
+
+        Returns the direct-mode journal outcome when one was closed,
+        so the assembly can record it on the run; idempotent — a
+        journal that is no longer active yields None.
+        """
+        if self._worktrees is not None:
+            plain = self._roots.get(project_id)
+            if plain is not None and self._worktrees.has_worktree(project_id, run_id):
+                self._worktrees.finish(plain, project_id, run_id, stage)
+        journal = self.journal_for(project_id, run_id)
+        if journal is None or journal.state != JOURNAL_ACTIVE:
+            return None
+        if stage == "COMPLETED":
+            files = tuple(journal.files_written())
+            if self._journals is not None:
+                self._journals.discard(project_id, run_id)
+            return RunWorkspaceOutcome(project_id, run_id, "direct", JOURNAL_KEPT, files, ())
+        if stage not in {"FAILED", "CANCELLED"}:
+            return None
+        keep = self.workspace_settings_of(project_id).keep_changes_on_failure
+        return self._close_journal(journal, keep=keep)
 
     def sweep_orphans(
         self,
@@ -743,6 +944,66 @@ class LocalWorkspace:
         if self._worktrees is None:
             return []
         return self._worktrees.sweep(dict(self._roots), stage_of)
+
+    def sweep_journals(
+        self,
+        stage_of: Callable[[str], str | None],
+    ) -> list[RunWorkspaceOutcome]:
+        """Startup closure of journals whose run ended while down.
+
+        Mirrors the worktree sweep: journals of runs the store no
+        longer knows, or that ended FAILED/CANCELLED, are reverted
+        (or kept, when the project keeps changes on failure). A live
+        or COMPLETED run's journal is never touched — never revert on
+        doubt.
+        """
+        if self._journals is None:
+            return []
+        outcomes: list[RunWorkspaceOutcome] = []
+        for journal in self._journals.all_journals():
+            if journal.state != JOURNAL_ACTIVE:
+                continue
+            stage = stage_of(journal.run_id)
+            if stage in {"ACTIVE", "COMPLETED"}:
+                continue
+            keep = (
+                stage in {"FAILED", "CANCELLED"}
+                and self.workspace_settings_of(journal.project_id).keep_changes_on_failure
+            )
+            outcomes.append(self._close_journal(journal, keep=keep))
+        if outcomes:
+            logger.info(
+                "Startup sweep closed %d direct-mode journal(s): %s",
+                len(outcomes),
+                ", ".join(
+                    f"{item.project_id}/{item.run_id} ({item.journal_state})" for item in outcomes
+                ),
+            )
+        return outcomes
+
+    def run_workspace_view(self, project_id: str, run_id: str) -> dict | None:
+        """The run-detail workspace block for one run (see api service)."""
+        plain = self._roots.get(project_id)
+        if plain is None:
+            return None
+        settings = self.workspace_settings_of(project_id)
+        folder = plain
+        if (
+            self.effective_mode(project_id) == "worktree"
+            and self._worktrees is not None
+            and self._worktrees.has_worktree(project_id, run_id)
+        ):
+            folder = self._worktrees.worktree_path(project_id, run_id)
+        journal = self.journal_for(project_id, run_id)
+        return {
+            "mode": self.effective_mode(project_id),
+            "configuredMode": settings.mode,
+            "folderPath": str(folder),
+            "filesWritten": journal.files_written() if journal is not None else [],
+            "journalState": journal.state if journal is not None else None,
+            "conflicts": list(journal.last_conflicts) if journal is not None else [],
+            "keepChangesOnFailure": settings.keep_changes_on_failure,
+        }
 
     def project_lock(self, project_id: str) -> threading.Lock:
         """The lock serializing code-agent work for one project."""
@@ -794,6 +1055,9 @@ class WorkspaceSandbox:
         root = self._workspace.current_root(ref)
         if root is None:
             return self._fallback.run(commands, changes, ref, fail_fast=fail_fast)
+        journal = self._workspace.direct_journal()
+        if journal is not None:
+            return self._run_direct(journal, commands, changes, fail_fast=fail_fast)
         # In a managed worktree, a dirty tree holds the previous
         # unpassed change set: reset to the last passing commit
         # before applying the replacement.
@@ -802,3 +1066,40 @@ class WorkspaceSandbox:
             root,
             settings=self._workspace.current_sandbox_settings(),
         ).run(commands, changes, ref, fail_fast=fail_fast)
+
+    def _run_direct(
+        self,
+        journal: RunJournal,
+        commands: Sequence[CommandSpec],
+        changes: ChangeSet,
+        *,
+        fail_fast: bool,
+    ) -> SandboxResult:
+        root = journal.root
+        # A journal with entries means a previous change set of this
+        # run is in the folder: revert to the last green state before
+        # applying the replacement, like the worktree reset. Files
+        # the user edited since are left alone (the journal reports
+        # them as conflicts) — the apply below then decides whether
+        # it can still proceed.
+        if journal.entries:
+            report = journal.revert(root)
+            if report.conflicts:
+                logger.warning(
+                    "Run %s: undo journal revert skipped file(s) the user "
+                    "edited after ASF wrote them: %s",
+                    journal.run_id,
+                    ", ".join(report.conflicts),
+                )
+        new_paths = [
+            change.path for change in changes.changes if change.path not in journal.entries
+        ]
+        self._workspace.refuse_dirty_direct_targets(root, new_paths)
+        journal.record_originals(root, [change.path for change in changes.changes])
+        sandbox = LocalSandbox(
+            root,
+            settings=self._workspace.current_sandbox_settings(),
+        )
+        sandbox._apply(changes)
+        journal.note_written(changes)
+        return sandbox._run_commands(commands, fail_fast=fail_fast)

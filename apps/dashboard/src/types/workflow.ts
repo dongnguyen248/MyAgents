@@ -92,6 +92,23 @@ export interface RunDiagnostics {
   suggestedActions: string[];
 }
 
+/** Local workspace of a run: how the project's folder was used. */
+export interface WorkflowWorkspace {
+  /** Effective mode for this run: 'direct' or 'worktree'. */
+  mode: string;
+  /** Mode configured on the project: 'direct' | 'worktree' | 'auto'. */
+  configuredMode: string;
+  /** The folder the run worked in (the project folder, or its worktree). */
+  folderPath: string;
+  /** Repository-relative paths the run wrote (direct mode: the journal's files). */
+  filesWritten: string[];
+  /** Undo-journal state: active | reverted | kept | conflict; null outside direct mode. */
+  journalState: string | null;
+  /** Direct-mode files a revert skipped because the user edited them. */
+  conflicts?: string[];
+  keepChangesOnFailure: boolean;
+}
+
 export interface Workflow {
   id: string;
   taskId: string;
@@ -113,6 +130,8 @@ export interface Workflow {
   currentActivity?: WorkflowCurrentActivity | null;
   waiting?: WorkflowWaiting;
   driver?: WorkflowDriver;
+  /** Local workspace block; null when the project has no local folder. */
+  workspace?: WorkflowWorkspace | null;
   steps: WorkflowStep[];
   startedAt: string;
   updatedAt: string;
