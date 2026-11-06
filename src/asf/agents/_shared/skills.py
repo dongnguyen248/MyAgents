@@ -32,6 +32,7 @@ SKILL_AGENTS: dict[str, frozenset[str]] = {
     "general": frozenset({"spec", "plan", "task", "implement", "review", "fix"}),
     "software-development": frozenset({"plan", "task", "implement", "review", "fix"}),
     "code-review": frozenset({"review", "fix"}),
+    "code-structure": frozenset({"plan", "task", "implement", "review", "fix"}),
     "testing": frozenset({"task", "implement", "review", "fix", "test"}),
     "security": frozenset({"spec", "implement", "review", "fix"}),
     "git": frozenset({"implement", "fix"}),

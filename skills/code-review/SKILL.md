@@ -39,6 +39,12 @@ description: How to review a changeset rigorously — verify correctness against
   finding.
 - Rate severity by impact: a defect that corrupts data, breaches
   security or breaks a stated requirement outranks everything else.
+- Report violations of the code-structure limits (see the
+  `code-structure` skill: function size, parameters, nesting,
+  complexity, braces, one statement per line, the comments policy)
+  as WARNING findings. Rate one ERROR only when the same violation
+  would fail the CI structure checker — a new or worsened breach of
+  a hard maximum, not a pre-existing one the ratchet tolerates.
 - Do not report guesses as defects. If you suspect but cannot
   confirm an issue from the code provided, label it a question.
 - Do not flag pre-existing issues outside the changeset as defects

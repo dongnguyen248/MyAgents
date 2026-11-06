@@ -10,9 +10,12 @@
 - Use descriptive `UpperCamelCase` types, `lowerCamelCase` methods and variables,
   `UPPER_SNAKE_CASE` constants, and lowercase package names under
   `com.poscodx.ebidding`. Avoid abbreviations that hide business meaning.
-- Give methods a focused purpose; extract helpers when they clarify complex
-  behavior, not to meet an arbitrary line count. Favor straightforward control
-  flow, early validation, and minimal nesting over speculative abstractions.
+- Give methods a focused purpose and keep them within the shared
+  code-structure limits (see the `code-structure` skill: max 30 lines
+  per method, max 4 parameters, nesting depth at most 3, complexity
+  at most 10); extract helpers to meet them. Favor straightforward
+  control flow, early validation, and minimal nesting over
+  speculative abstractions.
 - Keep classes cohesive and dependencies explicit. Prefer constructor injection
   for required collaborators; do not add field injection to new production code.
 - Follow the existing module's layered or clean/hexagonal structure. Reuse

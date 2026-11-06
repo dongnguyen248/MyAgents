@@ -63,6 +63,7 @@ def test_agent_skill_ids_reflect_the_map():
     assert agent_skill_ids("spec") == ["general", "security"]
     assert agent_skill_ids("review") == [
         "code-review",
+        "code-structure",
         "database",
         "general",
         "java",
