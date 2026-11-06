@@ -28,6 +28,7 @@ from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
 from asf.agents._shared.parsing import ParseError, parse_json
 from asf.agents._shared.paths import validate_relative_path
 from asf.agents._shared.repair import (
+    CodeGenerationCall,
     RepairableOutputError,
     run_code_generation,
     summarize_validation_issues,
@@ -300,11 +301,13 @@ class FixAgent(BaseAgent):
         run = self._gather(request)
         model_request = self._model_request(run)
         changeset, usage, repairs = run_code_generation(
-            gateway=self._runtime.models,
-            request=model_request,
-            parse=lambda response: self._parse_reply(run, response),
-            repair_attempts=self._settings.repair_attempts,
-            format_name="edit-block" if self._settings.edit_format == "blocks" else "JSON",
+            CodeGenerationCall(
+                gateway=self._runtime.models,
+                request=model_request,
+                parse=lambda response: self._parse_reply(run, response),
+                repair_attempts=self._settings.repair_attempts,
+                format_name="edit-block" if self._settings.edit_format == "blocks" else "JSON",
+            )
         )
         return self._assemble(run, changeset, usage, repairs)
 

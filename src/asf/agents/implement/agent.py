@@ -15,6 +15,7 @@ from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.parsing import parse_json
 from asf.agents._shared.paths import validate_relative_path
 from asf.agents._shared.repair import (
+    CodeGenerationCall,
     RepairableOutputError,
     run_code_generation,
     summarize_validation_issues,
@@ -33,7 +34,7 @@ from asf.agents._shared.request_checks import (
     check_text_size,
 )
 from asf.agents._shared.routing import tier_metadata
-from asf.agents._shared.traceability import ArtifactKind, build_metadata
+from asf.agents._shared.traceability import ArtifactKind, MetadataSpec, build_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.implement.prompts import (
     CodeMarkdownContext,
@@ -246,11 +247,13 @@ class ImplementAgent(BaseAgent):
         messages = self._build_messages(run)
         model_request = self._model_request(request, messages)
         changeset, usage, repairs = run_code_generation(
-            gateway=self._runtime.models,
-            request=model_request,
-            parse=lambda response: self._parse_reply(run, response),
-            repair_attempts=self._settings.repair_attempts,
-            format_name="edit-block" if self._settings.edit_format == "blocks" else "JSON",
+            CodeGenerationCall(
+                gateway=self._runtime.models,
+                request=model_request,
+                parse=lambda response: self._parse_reply(run, response),
+                repair_attempts=self._settings.repair_attempts,
+                format_name="edit-block" if self._settings.edit_format == "blocks" else "JSON",
+            )
         )
         return self._assemble(run, changeset, usage, repairs)
 
@@ -427,12 +430,14 @@ class ImplementAgent(BaseAgent):
 
     def _artifact_metadata(self, run: _ImplementRun, changeset: ChangeSet) -> dict[str, Any]:
         metadata = build_metadata(
-            ArtifactKind.CODE,
-            task_item_id=run.task_item_id,
-            generated_at=self._runtime.clock(),
-            spec_id=run.spec_art.id,
-            plan_id=run.plan_art.id,
-            changeset=changeset,
+            MetadataSpec(
+                kind=ArtifactKind.CODE,
+                task_item_id=run.task_item_id,
+                generated_at=self._runtime.clock(),
+                spec_id=run.spec_art.id,
+                plan_id=run.plan_art.id,
+                changeset=changeset,
+            )
         )
         metadata["specArtifactId"] = run.spec_art.id
         metadata["specVersion"] = run.spec_art.version

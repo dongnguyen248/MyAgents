@@ -71,9 +71,14 @@ def tail_artifact_for_prompt(
         return artifact
     trimmed = deepcopy(artifact)
     for command in trimmed["content"]["report"]["commands"]:
-        if isinstance(command, dict):
-            for stream in ("stdout", "stderr"):
-                value = command.get(stream)
-                if isinstance(value, str):
-                    command[stream] = tail_text(value, max_lines)
+        _tail_command(command, max_lines)
     return trimmed
+
+
+def _tail_command(command: Any, max_lines: int) -> None:
+    if not isinstance(command, dict):
+        return
+    for stream in ("stdout", "stderr"):
+        value = command.get(stream)
+        if isinstance(value, str):
+            command[stream] = tail_text(value, max_lines)

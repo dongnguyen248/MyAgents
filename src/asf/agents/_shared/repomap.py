@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+from dataclasses import dataclass
 
 from asf.tools.ports import RepositoryPort
 
@@ -32,6 +33,8 @@ MAX_TREE_PATHS = 200
 MAX_TREE_DEPTH = 6
 MAX_OUTLINE_FILES = 12
 MAX_OUTLINE_ENTRIES = 14
+MAX_IMPORT_LINES = 400
+READ_MAX_BYTES = 65536
 _PRUNED_DIRS = {
     "node_modules",
     ".git",
@@ -89,35 +92,54 @@ def _imported_paths(
     tree_set: set[str],
 ) -> list[str]:
     """Repo paths this file imports directly (best-effort, regex)."""
-    found: list[str] = []
     directory = posixpath.dirname(path)
-    for line in content.splitlines()[:400]:
-        if path.endswith(".py"):
-            match = _PY_IMPORT.match(line)
-            if match:
-                module = (match.group(1) or match.group(2) or "").strip(".")
-                if module:
-                    base = module.replace(".", "/")
-                    for candidate in (f"{base}.py", f"{base}/__init__.py"):
-                        if candidate in tree_set:
-                            found.append(candidate)
-        elif path.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs")):
-            match = _TS_IMPORT.match(line)
-            if match and match.group(1).startswith("."):
-                base = posixpath.normpath(
-                    posixpath.join(directory, match.group(1)),
-                )
-                for suffix in ("", ".ts", ".tsx", ".js", "/index.ts", "/index.js"):
-                    if base + suffix in tree_set:
-                        found.append(base + suffix)
-                        break
-        elif path.endswith(".java"):
-            match = _JAVA_IMPORT.match(line)
-            if match:
-                candidate = match.group(1).replace(".", "/") + ".java"
-                if candidate in tree_set:
-                    found.append(candidate)
+    found: list[str] = []
+    for line in content.splitlines()[:MAX_IMPORT_LINES]:
+        found.extend(_line_imports(path, line, directory, tree_set))
     return found
+
+
+def _line_imports(
+    path: str, line: str, directory: str, tree_set: set[str]
+) -> list[str]:
+    if path.endswith(".py"):
+        return _python_imports(line, tree_set)
+    if path.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs")):
+        return _typescript_imports(line, directory, tree_set)
+    if path.endswith(".java"):
+        return _java_imports(line, tree_set)
+    return []
+
+
+def _python_imports(line: str, tree_set: set[str]) -> list[str]:
+    match = _PY_IMPORT.match(line)
+    if not match:
+        return []
+    module = (match.group(1) or match.group(2) or "").strip(".")
+    if not module:
+        return []
+    base = module.replace(".", "/")
+    candidates = (f"{base}.py", f"{base}/__init__.py")
+    return [candidate for candidate in candidates if candidate in tree_set]
+
+
+def _typescript_imports(line: str, directory: str, tree_set: set[str]) -> list[str]:
+    match = _TS_IMPORT.match(line)
+    if not match or not match.group(1).startswith("."):
+        return []
+    base = posixpath.normpath(posixpath.join(directory, match.group(1)))
+    for suffix in ("", ".ts", ".tsx", ".js", "/index.ts", "/index.js"):
+        if base + suffix in tree_set:
+            return [base + suffix]
+    return []
+
+
+def _java_imports(line: str, tree_set: set[str]) -> list[str]:
+    match = _JAVA_IMPORT.match(line)
+    if not match:
+        return []
+    candidate = match.group(1).replace(".", "/") + ".java"
+    return [candidate] if candidate in tree_set else []
 
 
 def _outline(path: str, content: str) -> list[str]:
@@ -149,45 +171,81 @@ def build_repo_map(
     """Builds the <<<REPO MAP>>> body ('' when there is nothing)."""
     if max_chars <= 0:
         return ""
-    try:
-        tree = repository.list_tree(ref)
-    except Exception:
-        return ""
+    tree = _tree(repository, ref)
     if not tree:
         return ""
-    tree_set = set(tree)
     kept = _kept_paths(tree)
+    scan = _RepoScan(
+        repository=repository,
+        ref=ref,
+        tree_set=set(tree),
+        expected_set=set(expected_files),
+    )
+    neighbours = _neighbour_paths(scan, kept, expected_files)
+    outlines = _outlines(scan, neighbours)
+    text = _render_map(kept, outlines)
+    if len(text) > max_chars:
+        text = text[:max_chars].rstrip() + "\n… (repo map truncated)"
+    return text
 
-    expected_set = set(expected_files)
-    neighbours: list[str] = []
+
+def _tree(repository: RepositoryPort, ref: str) -> tuple[str, ...]:
+    try:
+        return repository.list_tree(ref)
+    except Exception:
+        return ()
+
+
+@dataclass(frozen=True)
+class _RepoScan:
+    repository: RepositoryPort
+    ref: str
+    tree_set: set[str]
+    expected_set: set[str]
+
+
+def _neighbour_paths(
+    scan: _RepoScan, kept: list[str], expected_files: list[str]
+) -> list[str]:
     expected_dirs = {posixpath.dirname(path) for path in expected_files}
-    for path in kept:
-        if path in expected_set:
-            continue
-        if posixpath.dirname(path) in expected_dirs:
-            neighbours.append(path)
+    neighbours = [
+        path
+        for path in kept
+        if path not in scan.expected_set and posixpath.dirname(path) in expected_dirs
+    ]
     for path in expected_files:
-        if path not in tree_set:
-            continue
-        try:
-            content = repository.read_file(path, ref, max_bytes=65536)
-        except Exception:
-            continue
-        for imported in _imported_paths(path, content, tree_set):
-            if imported not in expected_set and imported not in neighbours:
-                neighbours.append(imported)
-    neighbours = sorted(set(neighbours))[:MAX_OUTLINE_FILES]
+        neighbours.extend(_imports_of(scan, path, neighbours))
+    return sorted(set(neighbours))[:MAX_OUTLINE_FILES]
 
+
+def _imports_of(scan: _RepoScan, path: str, neighbours: list[str]) -> list[str]:
+    if path not in scan.tree_set:
+        return []
+    try:
+        content = scan.repository.read_file(path, scan.ref, max_bytes=READ_MAX_BYTES)
+    except Exception:
+        return []
+    return [
+        imported
+        for imported in _imported_paths(path, content, scan.tree_set)
+        if imported not in scan.expected_set and imported not in neighbours
+    ]
+
+
+def _outlines(scan: _RepoScan, neighbours: list[str]) -> dict[str, list[str]]:
     outlines: dict[str, list[str]] = {}
     for path in neighbours:
         try:
-            content = repository.read_file(path, ref, max_bytes=65536)
+            content = scan.repository.read_file(path, scan.ref, max_bytes=READ_MAX_BYTES)
         except Exception:
             continue
         entries = _outline(path, content)
         if entries:
             outlines[path] = entries
+    return outlines
 
+
+def _render_map(kept: list[str], outlines: dict[str, list[str]]) -> str:
     lines: list[str] = ["Files in the repository:"]
     shown = kept[:MAX_TREE_PATHS]
     lines.extend(f"- {path}" for path in shown)
@@ -199,7 +257,4 @@ def build_repo_map(
         for path in sorted(outlines):
             lines.append(f"## {path}")
             lines.extend(f"- {entry}" for entry in outlines[path])
-    text = "\n".join(lines)
-    if len(text) > max_chars:
-        text = text[:max_chars].rstrip() + "\n… (repo map truncated)"
-    return text
+    return "\n".join(lines)

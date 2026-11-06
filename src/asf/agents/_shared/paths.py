@@ -73,19 +73,22 @@ def validate_relative_path(path: str) -> list[str]:
     if "\\" in path:
         issues.append("path must not contain backslashes")
 
-    # No ".." segments
     segments = path.split("/")
-    if ".." in segments:
-        issues.append("path must not contain '..' segments")
-
-    # No empty segments or "//"
-    if "//" in path or any(seg == "" for seg in segments):
-        issues.append("path must not have empty segments")
+    issues.extend(_segment_issues(path, segments))
 
     # No NUL or control characters
     if any(ord(c) < 32 for c in path):
         issues.append("path contains control characters")
 
+    return issues
+
+
+def _segment_issues(path: str, segments: list[str]) -> list[str]:
+    issues: list[str] = []
+    if ".." in segments:
+        issues.append("path must not contain '..' segments")
+    if "//" in path or any(seg == "" for seg in segments):
+        issues.append("path must not have empty segments")
     return issues
 
 

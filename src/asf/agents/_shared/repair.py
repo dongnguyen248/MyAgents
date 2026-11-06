@@ -26,6 +26,7 @@ Policy:
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from asf.agents._shared.model_call import call_model
@@ -40,6 +41,7 @@ from asf.models.ports import ModelGateway
 from asf.tools.changeset import ChangeSet
 
 __all__ = [
+    "CodeGenerationCall",
     "RepairableOutputError",
     "run_code_generation",
     "summarize_validation_issues",
@@ -80,14 +82,16 @@ def _sum_usage(total: ModelUsage, extra: ModelUsage) -> ModelUsage:
     )
 
 
-def run_code_generation(
-    *,
-    gateway: ModelGateway,
-    request: ModelRequest,
-    parse: Callable[[ModelResponse], ChangeSet],
-    repair_attempts: int,
-    format_name: str,
-) -> tuple[ChangeSet, ModelUsage, int]:
+@dataclass(frozen=True)
+class CodeGenerationCall:
+    gateway: ModelGateway
+    request: ModelRequest
+    parse: Callable[[ModelResponse], ChangeSet]
+    repair_attempts: int
+    format_name: str
+
+
+def run_code_generation(call: CodeGenerationCall) -> tuple[ChangeSet, ModelUsage, int]:
     """Calls the model and parses, repairing in-conversation.
 
     ``parse`` receives the full response (content + finish reason)
@@ -100,68 +104,98 @@ def run_code_generation(
     When repairs run out, the last repairable failure becomes the
     standard invalid-response agent error.
     """
-    response = call_model(gateway, request)
+    request = call.request
+    response = call_model(call.gateway, request)
     total_usage = response.usage
     repairs = 0
     while True:
         try:
-            changeset = parse(response)
+            changeset = call.parse(response)
         except RepairableOutputError as error:
-            if repairs >= repair_attempts:
+            if repairs >= call.repair_attempts:
                 raise invalid_response(
                     error.message,
                     details={**error.details, "repairsAttempted": repairs},
                 ) from None
             repairs += 1
-            bad_reply = response.content[:MAX_REPAIR_REPLY_CHARS]
-            repair_request = ModelRequest(
-                messages=[
-                    *request.messages,
-                    ModelMessage(role="assistant", content=bad_reply),
-                    ModelMessage(
-                        role="user",
-                        content=(
-                            "Your previous reply was rejected:"
-                            f" {error.model_message}\n"
-                            f"Reply again with ONLY the corrected"
-                            f" {format_name} output, complete and"
-                            " self-contained, with no explanation."
-                        ),
-                    ),
-                ],
-                parameters=dict(request.parameters),
-                model=request.model,
-                metadata={**request.metadata, "repairAttempt": repairs},
-            )
-            response = call_model(gateway, repair_request)
+            repair_request = _repair_request(call, response, error, repairs)
+            response = call_model(call.gateway, repair_request)
             total_usage = _sum_usage(total_usage, response.usage)
             continue
         return changeset, total_usage, repairs
 
 
+def _repair_request(
+    call: CodeGenerationCall,
+    response: ModelResponse,
+    error: RepairableOutputError,
+    attempt: int,
+) -> ModelRequest:
+    request = call.request
+    bad_reply = response.content[:MAX_REPAIR_REPLY_CHARS]
+    return ModelRequest(
+        messages=[
+            *request.messages,
+            ModelMessage(role="assistant", content=bad_reply),
+            ModelMessage(
+                role="user",
+                content=(
+                    "Your previous reply was rejected:"
+                    f" {error.model_message}\n"
+                    f"Reply again with ONLY the corrected"
+                    f" {call.format_name} output, complete and"
+                    " self-contained, with no explanation."
+                ),
+            ),
+        ],
+        parameters=dict(request.parameters),
+        model=request.model,
+        metadata={**request.metadata, "repairAttempt": attempt},
+    )
+
+
 def summarize_validation_issues(issues: dict[str, Any]) -> str:
     """One short actionable line per validation issue kind."""
-    parts: list[str] = []
-    for key, value in issues.items():
-        if key == "outOfScopePaths" and isinstance(value, list):
-            parts.append(
-                f"paths outside the expected files list: {', '.join(str(path) for path in value)}",
-            )
-        elif key == "missingPaths" and isinstance(value, list):
-            names = ", ".join(str(item.get("path")) for item in value if isinstance(item, dict))
-            parts.append(f"files do not exist at the base ref: {names}")
-        elif key == "deniedPaths" and isinstance(value, list):
-            names = ", ".join(str(item.get("path")) for item in value if isinstance(item, dict))
-            parts.append(f"paths are never allowed: {names}")
-        elif key == "contentIssues" and isinstance(value, list):
-            rendered = "; ".join(
-                f"{item.get('path')}: {item.get('issue')}"
-                for item in value
-                if isinstance(item, dict)
-            )
-            parts.append(f"content problems: {rendered}")
-        elif key == "emptyChangeSet":
-            parts.append("the change set is empty")
-        else:
-            parts.append(f"{key}: {value}")
+    parts = [_issue_line(key, value) for key, value in issues.items()]
     return "; ".join(parts) or "the change set failed validation"
+
+
+def _issue_line(key: str, value: Any) -> str:
+    formatter = _LIST_FORMATTERS.get(key)
+    if formatter is not None and isinstance(value, list):
+        return formatter(value)
+    if key == "emptyChangeSet":
+        return "the change set is empty"
+    return f"{key}: {value}"
+
+
+def _path_names(value: list[Any]) -> str:
+    return ", ".join(str(item.get("path")) for item in value if isinstance(item, dict))
+
+
+def _out_of_scope_line(value: list[Any]) -> str:
+    joined = ", ".join(str(path) for path in value)
+    return f"paths outside the expected files list: {joined}"
+
+
+def _missing_line(value: list[Any]) -> str:
+    return f"files do not exist at the base ref: {_path_names(value)}"
+
+
+def _denied_line(value: list[Any]) -> str:
+    return f"paths are never allowed: {_path_names(value)}"
+
+
+def _content_line(value: list[Any]) -> str:
+    rendered = "; ".join(
+        f"{item.get('path')}: {item.get('issue')}" for item in value if isinstance(item, dict)
+    )
+    return f"content problems: {rendered}"
+
+
+_LIST_FORMATTERS = {
+    "outOfScopePaths": _out_of_scope_line,
+    "missingPaths": _missing_line,
+    "deniedPaths": _denied_line,
+    "contentIssues": _content_line,
+}

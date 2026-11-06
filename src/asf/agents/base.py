@@ -198,6 +198,26 @@ def _metrics(agent: BaseAgent, execution: _Execution, t_end: datetime) -> RunMet
     return agent._compute_metrics(execution.request, duration, execution.tracker)
 
 
+def _log_failure(
+    agent: BaseAgent,
+    request: AgentRequest,
+    error: ModelGatewayError | AgentExecutionError,
+) -> None:
+    # One console line per failed execution: the dashboard banner
+    # shows only the headline message, so the recorded details (the
+    # actual rejection cause) must reach the backend terminal to be
+    # diagnosable at all.
+    logger.warning(
+        "agent %s failed: task=%s request=%s code=%s message=%s details=%s",
+        agent.metadata.id,
+        request.task_id,
+        request.request_id,
+        error.code,
+        error.message,
+        json.dumps(error.details, default=str)[:600] if error.details else "-",
+    )
+
+
 def _rejected_result(agent: BaseAgent, execution: _Execution, issues: list[Issue]) -> AgentResult:
     request = execution.request
     t_end = agent._runtime.clock()
@@ -253,19 +273,7 @@ def _known_error_result(
 ) -> AgentResult:
     request = execution.request
     t_end = agent._runtime.clock()
-    # One console line per failed execution: the dashboard banner
-    # shows only the headline message, so the recorded details (the
-    # actual rejection cause) must reach the backend terminal to be
-    # diagnosable at all.
-    logger.warning(
-        "agent %s failed: task=%s request=%s code=%s message=%s details=%s",
-        agent.metadata.id,
-        request.task_id,
-        request.request_id,
-        error.code,
-        error.message,
-        json.dumps(error.details, default=str)[:600] if error.details else "-",
-    )
+    _log_failure(agent, request, error)
     platform_error = PlatformError.model_validate(error.to_platform_error(t_end))
     rejected = isinstance(error, AgentExecutionError) and error.status == "REJECTED"
     if rejected:
