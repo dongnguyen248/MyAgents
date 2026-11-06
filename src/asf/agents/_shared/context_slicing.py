@@ -81,9 +81,7 @@ def slice_plan(plan_text: str, milestone_ref: str | None) -> str:
     return "\n\n".join(part for part in parts if part)
 
 
-def _other_milestones(
-    matches: list[re.Match[str]], milestone_ref: str
-) -> list[str]:
+def _other_milestones(matches: list[re.Match[str]], milestone_ref: str) -> list[str]:
     return [
         f"{match.group(1)} — {match.group(2).strip()}"
         for match in matches
@@ -91,9 +89,7 @@ def _other_milestones(
     ]
 
 
-def _block_end(
-    plan_text: str, matches: list[re.Match[str]], target: re.Match[str]
-) -> int:
+def _block_end(plan_text: str, matches: list[re.Match[str]], target: re.Match[str]) -> int:
     for match in matches:
         if match.start() > target.start():
             return match.start()
@@ -143,9 +139,7 @@ def slice_spec(
     return "\n\n".join(parts)
 
 
-def _sections(
-    spec_text: str, matches: list[re.Match[str]]
-) -> list[tuple[str, str]]:
+def _sections(spec_text: str, matches: list[re.Match[str]]) -> list[tuple[str, str]]:
     sections: list[tuple[str, str]] = []
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(spec_text)

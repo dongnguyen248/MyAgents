@@ -99,9 +99,7 @@ def _imported_paths(
     return found
 
 
-def _line_imports(
-    path: str, line: str, directory: str, tree_set: set[str]
-) -> list[str]:
+def _line_imports(path: str, line: str, directory: str, tree_set: set[str]) -> list[str]:
     if path.endswith(".py"):
         return _python_imports(line, tree_set)
     if path.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs")):
@@ -204,9 +202,7 @@ class _RepoScan:
     expected_set: set[str]
 
 
-def _neighbour_paths(
-    scan: _RepoScan, kept: list[str], expected_files: list[str]
-) -> list[str]:
+def _neighbour_paths(scan: _RepoScan, kept: list[str], expected_files: list[str]) -> list[str]:
     expected_dirs = {posixpath.dirname(path) for path in expected_files}
     neighbours = [
         path
