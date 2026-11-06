@@ -24,6 +24,7 @@ from asf.agents._shared.codegen import (
     validate_changeset,
 )
 from asf.agents._shared.context_slicing import slice_plan, slice_spec
+from asf.agents._shared.harness import HarnessComponents, components_from_prompts, fingerprint
 from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
 from asf.agents._shared.parsing import ParseError, parse_json
 from asf.agents._shared.paths import validate_relative_path
@@ -43,7 +44,7 @@ from asf.agents.base import (
     BaseAgent,
     Issue,
 )
-from asf.agents.fix.prompts import FixPrompts, build_fix_messages
+from asf.agents.fix.prompts import FixMessageOptions, FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import CodeMarkdownContext, render_code_markdown
 from asf.contracts.models import (
     AgentMetadata,
@@ -75,6 +76,7 @@ class FixSettings:
     repair_attempts: int = 1
     repo_map_max_chars: int = 6000
     report_tail_lines: int = 120
+    harness: HarnessComponents | None = None
 
     def __post_init__(self) -> None:
         if self.edit_format not in ("blocks", "json"):
@@ -393,7 +395,10 @@ class FixAgent(BaseAgent):
                 self._settings.prompts,
                 run.request,
                 self._build_context(run),
-                edit_format=self._settings.edit_format,
+                FixMessageOptions(
+                    edit_format=self._settings.edit_format,
+                    harness=self._settings.harness,
+                ),
             ),
             model=self._settings.model,
             parameters=dict(self._settings.parameters or {}),
@@ -494,6 +499,14 @@ class FixAgent(BaseAgent):
             "repairs": repairs,
         }, [artifact]
 
+    def _harness_fingerprint(self) -> str:
+        prompts = self._settings.prompts
+        components = self._settings.harness or components_from_prompts(
+            contract=prompts.contract,
+            system=prompts.system,
+        )
+        return fingerprint(components)
+
     def _code_artifact(self, run: _FixRun, changeset: ChangeSet, text: str) -> Artifact:
         return Artifact(
             id=self._runtime.new_id(),
@@ -507,7 +520,10 @@ class FixAgent(BaseAgent):
             },
             created_by=self.metadata.id,
             created_at=self._runtime.clock(),
-            metadata=_fix_metadata(run),
+            metadata={
+                **_fix_metadata(run),
+                "harnessFingerprint": self._harness_fingerprint(),
+            },
         )
 
     def _compute_revision_count(self, request: AgentRequest) -> int:

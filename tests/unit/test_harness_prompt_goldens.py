@@ -179,7 +179,9 @@ def _review_artifacts() -> list[Artifact]:
         _artifact(
             "TASK",
             plan_link,
-            tasks=[{"id": "T1", "description": "Implement the unit", "expectedFiles": ["src/unit.py"]}],
+            tasks=[
+                {"id": "T1", "description": "Implement the unit", "expectedFiles": ["src/unit.py"]}
+            ],
         ),
         _artifact(
             "CODE",

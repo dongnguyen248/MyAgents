@@ -7,6 +7,13 @@ from typing import Any
 
 from asf.agents._shared.code_agents import task_items_from_content
 from asf.agents._shared.context_slicing import slice_plan, slice_spec
+from asf.agents._shared.harness import (
+    HarnessComponents,
+    agent_skills_section,
+    assemble_base_prompt,
+    components_from_prompts,
+    guardrails_memory_section,
+)
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
 from asf.contracts.models import ModelMessage
@@ -81,6 +88,7 @@ class ImplementPrompts:
     """System prompt for ImplementAgent."""
 
     system: str
+    contract: str = ""
 
 
 @dataclass(frozen=True)
@@ -95,6 +103,7 @@ class ImplementPromptContext:
     project_context: str | dict[str, Any] | None
     edit_format: str = "blocks"
     repo_map: str = ""
+    harness: HarnessComponents | None = None
 
 
 @dataclass(frozen=True)
@@ -118,13 +127,27 @@ def build_implement_messages(context: ImplementPromptContext) -> list[ModelMessa
     return messages
 
 
+def _components(context: ImplementPromptContext) -> HarnessComponents:
+    if context.harness is not None:
+        return context.harness
+    prompts = context.prompts
+    return components_from_prompts(
+        contract=prompts.contract,
+        system=prompts.system,
+        tool_guidance=_BLOCKS_EXTRA_RULES,
+    )
+
+
 def _system_message(context: ImplementPromptContext) -> str:
-    system_msg = context.prompts.system
+    components = _components(context)
+    system_msg = assemble_base_prompt(components)
     skills_line = _enabled_skills_line(context.project_context)
     if skills_line:
         system_msg += skills_line
     system_msg += rules_section(context.project_context, _RULES_INTRO)
+    system_msg += guardrails_memory_section(components)
     system_msg += skills_section(context.project_context, "implement")
+    system_msg += agent_skills_section(components)
     return system_msg
 
 
@@ -208,7 +231,8 @@ def _sliced_plan(plan_text: str, task_item: dict[str, Any] | None) -> str:
 
 def _user_message(context: ImplementPromptContext, task_item: dict[str, Any] | None) -> str:
     context_block = "\n\n".join(_changing_sections(context, task_item))
-    format_block = _format_block(context.edit_format)
+    guidance = context.harness.tool_guidance if context.harness is not None else None
+    format_block = _format_block(context.edit_format, guidance)
     return (
         f"Implement the task item {context.task_item_id} based on the SPEC, "
         f"PLAN, and TASK ITEM.\n\n{context_block}\n\n"
@@ -255,9 +279,10 @@ def _files_section(existing_files: dict[str, str]) -> str:
     return "\n".join(file_sections)
 
 
-def _format_block(edit_format: str) -> str:
+def _format_block(edit_format: str, tool_guidance: str | None = None) -> str:
     if edit_format == "blocks":
-        return BLOCKS_FORMAT_INSTRUCTIONS + _BLOCKS_EXTRA_RULES
+        extra = _BLOCKS_EXTRA_RULES if tool_guidance is None else tool_guidance
+        return BLOCKS_FORMAT_INSTRUCTIONS + extra
     return _JSON_FORMAT_BLOCK
 
 

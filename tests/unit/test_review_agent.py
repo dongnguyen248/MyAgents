@@ -166,7 +166,10 @@ def test_success_has_schema_valid_artifact_and_injected_traceability(verdict: st
     assert artifact.content["format"] == "json"
     assert artifact.content["text"].startswith("# CODE_REVIEW")
     assert result.output == {"verdict": verdict}
-    assert artifact.metadata == {
+    metadata = dict(artifact.metadata)
+    fingerprint_value = metadata.pop("harnessFingerprint")
+    assert isinstance(fingerprint_value, str) and len(fingerprint_value) == 64
+    assert metadata == {
         **request.artifacts[-1].metadata,
         "codeArtifactId": "code-1",
         "codeVersion": "1",
@@ -578,8 +581,10 @@ def test_factory_uses_loader_and_review_profile(
 
 
 def test_packaged_system_prompt_is_available() -> None:
-    resource = importlib.resources.files("asf.agents.review").joinpath("prompts", "system.md")
-    prompt = resource.read_text(encoding="utf-8")
+    prompts_dir = importlib.resources.files("asf.agents.review").joinpath("prompts")
+    contract = prompts_dir.joinpath("contract.md").read_text(encoding="utf-8")
+    system = prompts_dir.joinpath("system.md").read_text(encoding="utf-8")
+    prompt = contract + system
     assert "APPROVE" in prompt
     assert "CHANGES_REQUESTED" in prompt
     agent, _ = make_agent(prompts=ReviewPrompts(prompt))

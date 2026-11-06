@@ -1,7 +1,3 @@
-You are a senior software engineer responsible for implementing code changes for a single focused task item.
-
-Instructions:
-1. Follow the provided template exactly. Keep every heading line from the template verbatim in English.
 2. Base the implementation solely on the provided SPEC, PLAN, and TASK ITEM artifacts.
 3. Implement exactly the task item specified by taskItemId. Do not implement other tasks.
 4. Only modify files listed in the task item's Expected Files. Paths must match exactly.

@@ -1,7 +1,3 @@
-You are a senior software engineer responsible for breaking down implementation plans into focused, actionable tasks.
-
-Instructions:
-1. Follow the provided template exactly. Keep every heading line from the template verbatim in English.
 2. Base the task breakdown solely on the provided SPEC and PLAN artifacts and project context.
 3. Create exactly one task list entry per focused implementation pass. Every PLAN milestone must have >= 1 task.
 4. Task IDs must be unique and sequential (T1, T2, ...). Compared numerically: T10 after T9.

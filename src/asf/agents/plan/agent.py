@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from asf.agents._shared.harness import HarnessComponents, components_from_prompts, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.reply_text import heading_lines, unwrap_code_fence
@@ -50,6 +51,7 @@ class PlanSettings:
     template: PlanTemplate
     model: str | None = None
     parameters: Mapping[str, Any] | None = None
+    harness: HarnessComponents | None = None
 
 
 def _check_requirement_absent(request: AgentRequest) -> list[Issue]:
@@ -136,6 +138,7 @@ class PlanAgent(BaseAgent):
         super().__init__(runtime)
         self._prompts = settings.prompts
         self._template = settings.template
+        self._harness = settings.harness
         self._model = settings.model
         self._parameters = dict(settings.parameters or {})
         self._metadata = AgentMetadata(
@@ -201,6 +204,7 @@ class PlanAgent(BaseAgent):
             project_context=request.context.get("project"),
             previous_plan=_previous_plan_text(previous),
             feedback=request.feedback,
+            harness=self._harness,
         )
         return build_plan_messages(context)
 
@@ -273,6 +277,14 @@ class PlanAgent(BaseAgent):
         output = {"summary": summary, "artifactId": artifact.id, "version": version}
         return output, [artifact]
 
+    def _harness_fingerprint(self) -> str:
+        components = self._harness or components_from_prompts(
+            contract=self._prompts.contract,
+            system=self._prompts.system,
+            revision=self._prompts.revision,
+        )
+        return fingerprint(components)
+
     def _artifact_metadata(
         self,
         request: AgentRequest,
@@ -282,6 +294,7 @@ class PlanAgent(BaseAgent):
     ) -> dict[str, Any]:
         metadata: dict[str, Any] = {
             "template": "plan",
+            "harnessFingerprint": self._harness_fingerprint(),
             "model": response.model,
             "usage": {
                 "promptTokens": response.usage.prompt_tokens,
