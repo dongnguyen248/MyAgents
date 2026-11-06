@@ -2,2502 +2,1655 @@
  "violations": [
   {
    "file": "harness/evaluation/runner.py",
-   "symbol": "EvaluationRunner._build_engine",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 40,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "EvaluationRunner._build_engine"
   },
   {
    "file": "harness/evaluation/runner.py",
-   "symbol": "EvaluationRunner.run_case",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 14,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "EvaluationRunner.run_case"
   },
   {
    "file": "harness/evaluation/runner.py",
-   "symbol": "EvaluationRunner.run_case",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 48,
-   "limit": 30
-  },
-  {
-   "file": "harness/harness2/adapter.py",
-   "symbol": "LocalHarness2Adapter.assess",
-   "rule": "function-complexity",
-   "measured": 15,
-   "limit": 10
-  },
-  {
-   "file": "harness/harness2/adapter.py",
-   "symbol": "LocalHarness2Adapter.assess",
    "rule": "function-lines",
+   "symbol": "EvaluationRunner.run_case"
+  },
+  {
+   "file": "harness/harness2/adapter.py",
+   "limit": 10,
+   "measured": 15,
+   "rule": "function-complexity",
+   "symbol": "LocalHarness2Adapter.assess"
+  },
+  {
+   "file": "harness/harness2/adapter.py",
+   "limit": 30,
    "measured": 68,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "LocalHarness2Adapter.assess"
   },
   {
    "file": "harness/optimization/experiments.py",
-   "symbol": "_run_code_loop",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 92,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/_shared/code_agents.py",
-   "symbol": "check_code_request",
-   "rule": "function-complexity",
-   "measured": 52,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/_shared/code_agents.py",
-   "symbol": "check_code_request",
    "rule": "function-lines",
-   "measured": 98,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/_shared/code_agents.py",
-   "symbol": "check_code_request",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/_shared/code_agents.py",
-   "symbol": "check_code_request",
-   "rule": "function-params",
-   "measured": 6,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/_shared/codegen.py",
-   "symbol": "build_fix_context",
-   "rule": "function-params",
-   "measured": 10,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/_shared/codegen.py",
-   "symbol": "build_implement_context",
-   "rule": "function-params",
-   "measured": 6,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/_shared/codegen.py",
-   "symbol": "generate_changeset",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/_shared/codegen.py",
-   "symbol": "validate_changeset",
-   "rule": "function-complexity",
-   "measured": 17,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/_shared/codegen.py",
-   "symbol": "validate_changeset",
-   "rule": "function-lines",
-   "measured": 64,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/_shared/codegen.py",
-   "symbol": "validate_changeset",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/_shared/context_slicing.py",
-   "symbol": "slice_plan",
-   "rule": "function-complexity",
-   "measured": 14,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/_shared/context_slicing.py",
-   "symbol": "slice_plan",
-   "rule": "function-lines",
-   "measured": 33,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/_shared/context_slicing.py",
-   "symbol": "slice_spec",
-   "rule": "function-complexity",
-   "measured": 17,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/_shared/context_slicing.py",
-   "symbol": "slice_spec",
-   "rule": "function-lines",
-   "measured": 40,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/_shared/context_slicing.py",
-   "symbol": "slice_spec",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/_shared/paths.py",
-   "symbol": "validate_relative_path",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/_shared/repair.py",
-   "symbol": "run_code_generation",
-   "rule": "function-lines",
-   "measured": 45,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/_shared/repair.py",
-   "symbol": "run_code_generation",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/_shared/repair.py",
-   "symbol": "summarize_validation_issues",
-   "rule": "function-complexity",
-   "measured": 19,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/_shared/repair.py",
-   "symbol": "summarize_validation_issues",
-   "rule": "function-nesting",
-   "measured": 6,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/_shared/repomap.py",
-   "symbol": "_imported_paths",
-   "rule": "function-complexity",
-   "measured": 17,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/_shared/repomap.py",
-   "symbol": "_imported_paths",
-   "rule": "function-lines",
-   "measured": 34,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/_shared/repomap.py",
-   "symbol": "_imported_paths",
-   "rule": "function-nesting",
-   "measured": 6,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/_shared/repomap.py",
-   "symbol": "build_repo_map",
-   "rule": "function-complexity",
-   "measured": 23,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/_shared/repomap.py",
-   "symbol": "build_repo_map",
-   "rule": "function-lines",
-   "measured": 60,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/_shared/report_tail.py",
-   "symbol": "tail_artifact_for_prompt",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/_shared/security.py",
-   "symbol": "scan_secrets",
-   "rule": "function-nesting",
-   "measured": 6,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/_shared/traceability.py",
-   "symbol": "build_metadata",
-   "rule": "function-params",
-   "measured": 7,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/base.py",
-   "symbol": "AgentExecutionError.__init__",
-   "rule": "function-params",
-   "measured": 6,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/base.py",
-   "symbol": "BaseAgent",
-   "rule": "class-lines",
-   "measured": 307,
-   "limit": 300
-  },
-  {
-   "file": "src/asf/agents/base.py",
-   "symbol": "BaseAgent._execute_tracked",
-   "rule": "function-lines",
-   "measured": 102,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/base.py",
-   "symbol": "BaseAgent._lifecycle_events",
-   "rule": "function-lines",
-   "measured": 74,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/base.py",
-   "symbol": "BaseAgent._lifecycle_events",
-   "rule": "function-params",
-   "measured": 6,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/fix/agent.py",
-   "symbol": "FixAgent",
-   "rule": "class-fields",
-   "measured": 8,
-   "limit": 7
-  },
-  {
-   "file": "src/asf/agents/fix/agent.py",
-   "symbol": "FixAgent",
-   "rule": "class-lines",
-   "measured": 363,
-   "limit": 300
-  },
-  {
-   "file": "src/asf/agents/fix/agent.py",
-   "symbol": "FixAgent.__init__",
-   "rule": "function-params",
-   "measured": 9,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/fix/agent.py",
-   "symbol": "FixAgent._check",
-   "rule": "function-complexity",
-   "measured": 35,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/fix/agent.py",
-   "symbol": "FixAgent._check",
-   "rule": "function-lines",
-   "measured": 77,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/fix/agent.py",
-   "symbol": "FixAgent._run",
-   "rule": "function-complexity",
-   "measured": 31,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/fix/agent.py",
-   "symbol": "FixAgent._run",
-   "rule": "function-lines",
-   "measured": 217,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/fix/agent.py",
-   "symbol": "FixAgent._run.parse_reply",
-   "rule": "function-lines",
-   "measured": 63,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/fix/prompts.py",
-   "symbol": "build_fix_messages",
-   "rule": "function-lines",
-   "measured": 49,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "",
-   "rule": "file-lines",
-   "measured": 516,
-   "limit": 500
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 12,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent",
-   "rule": "class-fields",
-   "measured": 8,
-   "limit": 7
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent",
-   "rule": "class-lines",
-   "measured": 504,
-   "limit": 300
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent.__init__",
-   "rule": "function-lines",
-   "measured": 37,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent.__init__",
-   "rule": "function-params",
-   "measured": 8,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._check",
-   "rule": "function-complexity",
-   "measured": 50,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._check",
-   "rule": "function-lines",
-   "measured": 154,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._parse_json_changeset",
-   "rule": "function-lines",
-   "measured": 31,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._parse_json_changeset",
-   "rule": "function-nesting",
-   "measured": 5,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._run",
-   "rule": "function-complexity",
-   "measured": 28,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._run",
-   "rule": "function-lines",
-   "measured": 192,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._run.parse_reply",
-   "rule": "function-complexity",
-   "measured": 12,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._run.parse_reply",
-   "rule": "function-lines",
-   "measured": 55,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/implement/agent.py",
-   "symbol": "ImplementAgent._validate_changeset",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/implement/prompts.py",
-   "symbol": "build_implement_messages",
-   "rule": "function-complexity",
-   "measured": 33,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/implement/prompts.py",
-   "symbol": "build_implement_messages",
-   "rule": "function-lines",
-   "measured": 144,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/implement/prompts.py",
-   "symbol": "build_implement_messages",
-   "rule": "function-nesting",
-   "measured": 6,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/implement/prompts.py",
-   "symbol": "build_implement_messages",
-   "rule": "function-params",
-   "measured": 10,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/implement/prompts.py",
-   "symbol": "render_code_markdown",
-   "rule": "function-lines",
-   "measured": 58,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/implement/prompts.py",
-   "symbol": "render_code_markdown",
-   "rule": "function-params",
-   "measured": 6,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 10,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent",
-   "rule": "class-lines",
-   "measured": 365,
-   "limit": 300
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent.__init__",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent._check",
-   "rule": "function-complexity",
-   "measured": 40,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent._check",
-   "rule": "function-lines",
-   "measured": 111,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent._run",
-   "rule": "function-complexity",
-   "measured": 30,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent._run",
-   "rule": "function-lines",
-   "measured": 107,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent._validate_linked_spec_section",
-   "rule": "function-complexity",
-   "measured": 12,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent._validate_linked_spec_section",
-   "rule": "function-lines",
-   "measured": 36,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/plan/agent.py",
-   "symbol": "PlanAgent._validate_linked_spec_section",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/plan/milestones.py",
-   "symbol": "parse_milestones",
-   "rule": "function-complexity",
-   "measured": 22,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/plan/milestones.py",
-   "symbol": "parse_milestones",
-   "rule": "function-lines",
-   "measured": 67,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/plan/milestones.py",
-   "symbol": "parse_milestones",
-   "rule": "function-nesting",
-   "measured": 6,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/plan/prompts.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 4,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/agents/plan/prompts.py",
-   "symbol": "build_plan_messages",
-   "rule": "function-lines",
-   "measured": 32,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/plan/prompts.py",
-   "symbol": "build_plan_messages",
-   "rule": "function-params",
-   "measured": 7,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/plan/prompts.py",
-   "symbol": "build_user_message",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/plan/prompts.py",
-   "symbol": "build_user_message",
-   "rule": "function-lines",
-   "measured": 37,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/plan/prompts.py",
-   "symbol": "build_user_message",
-   "rule": "function-params",
-   "measured": 6,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/review/agent.py",
-   "symbol": "ReviewAgent.__init__",
-   "rule": "function-params",
-   "measured": 7,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/review/agent.py",
-   "symbol": "ReviewAgent._run",
-   "rule": "function-complexity",
-   "measured": 14,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/review/agent.py",
-   "symbol": "ReviewAgent._run",
-   "rule": "function-lines",
-   "measured": 65,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/review/agent.py",
-   "symbol": "ReviewAgent._skipped_review",
-   "rule": "function-complexity",
-   "measured": 13,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/review/agent.py",
-   "symbol": "ReviewAgent._skipped_review",
-   "rule": "function-lines",
-   "measured": 49,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/review/prompts.py",
-   "symbol": "build_review_messages",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/review/prompts.py",
-   "symbol": "build_review_messages",
-   "rule": "function-lines",
-   "measured": 58,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/spec/agent.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 7,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/agents/spec/agent.py",
-   "symbol": "SpecAgent.__init__",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/spec/agent.py",
-   "symbol": "SpecAgent._check",
-   "rule": "function-complexity",
-   "measured": 25,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/spec/agent.py",
-   "symbol": "SpecAgent._check",
-   "rule": "function-lines",
-   "measured": 69,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/spec/agent.py",
-   "symbol": "SpecAgent._check",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/spec/agent.py",
-   "symbol": "SpecAgent._run",
-   "rule": "function-complexity",
-   "measured": 26,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/spec/agent.py",
-   "symbol": "SpecAgent._run",
-   "rule": "function-lines",
-   "measured": 91,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/spec/prompts.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 4,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/agents/spec/prompts.py",
-   "symbol": "build_spec_messages",
-   "rule": "function-lines",
-   "measured": 32,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/spec/prompts.py",
-   "symbol": "build_spec_messages",
-   "rule": "function-params",
-   "measured": 7,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/spec/prompts.py",
-   "symbol": "build_user_message",
-   "rule": "function-params",
-   "measured": 6,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "",
-   "rule": "file-lines",
-   "measured": 591,
-   "limit": 500
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 12,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "TaskAgent",
-   "rule": "class-lines",
-   "measured": 511,
-   "limit": 300
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "TaskAgent.__init__",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "TaskAgent._check",
-   "rule": "function-complexity",
-   "measured": 56,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "TaskAgent._check",
-   "rule": "function-lines",
-   "measured": 176,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "TaskAgent._run",
-   "rule": "function-complexity",
-   "measured": 63,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "TaskAgent._run",
-   "rule": "function-lines",
-   "measured": 201,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "TaskAgent._run",
-   "rule": "function-nesting",
-   "measured": 5,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "render_task_markdown",
-   "rule": "function-lines",
-   "measured": 43,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/task/agent.py",
-   "symbol": "render_task_markdown",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/agents/task/prompts.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 5,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/agents/task/prompts.py",
-   "symbol": "build_task_messages",
-   "rule": "function-lines",
-   "measured": 35,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/task/prompts.py",
-   "symbol": "build_task_messages",
-   "rule": "function-params",
-   "measured": 8,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/task/prompts.py",
-   "symbol": "build_user_message",
-   "rule": "function-complexity",
-   "measured": 13,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/task/prompts.py",
-   "symbol": "build_user_message",
-   "rule": "function-lines",
-   "measured": 46,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/task/prompts.py",
-   "symbol": "build_user_message",
-   "rule": "function-params",
-   "measured": 7,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/agents/test/agent.py",
-   "symbol": "TestAgent._run",
-   "rule": "function-complexity",
-   "measured": 27,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/test/agent.py",
-   "symbol": "TestAgent._run",
-   "rule": "function-lines",
-   "measured": 87,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/agents/test/agent.py",
-   "symbol": "_commands",
-   "rule": "function-complexity",
-   "measured": 17,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/agents/test/agent.py",
-   "symbol": "_commands",
-   "rule": "function-lines",
-   "measured": 31,
-   "limit": 30
+   "symbol": "_run_code_loop"
   },
   {
    "file": "src/asf/api/app.py",
-   "symbol": "",
+   "limit": 0,
+   "measured": 8,
    "rule": "banner-comment",
-   "measured": 8,
-   "limit": 0
+   "symbol": ""
   },
   {
    "file": "src/asf/api/app.py",
-   "symbol": "create_app",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 65,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "create_app"
   },
   {
    "file": "src/asf/api/app.py",
-   "symbol": "create_app",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 318,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "create_app"
   },
   {
    "file": "src/asf/api/app.py",
-   "symbol": "create_app.list_tasks",
-   "rule": "function-params",
+   "limit": 4,
    "measured": 6,
-   "limit": 4
+   "rule": "function-params",
+   "symbol": "create_app.list_tasks"
   },
   {
    "file": "src/asf/api/decomposer.py",
-   "symbol": "_parse_plan",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 20,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "_parse_plan"
   },
   {
    "file": "src/asf/api/decomposer.py",
-   "symbol": "_parse_plan",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 49,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "_parse_plan"
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "",
-   "rule": "file-lines",
+   "limit": 500,
    "measured": 1021,
-   "limit": 500
+   "rule": "file-lines",
+   "symbol": ""
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "DemoFactoryService._default_test_commands",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 13,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "DemoFactoryService._default_test_commands"
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "DemoFactoryService._language_rule_packs",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "DemoFactoryService._review_rules",
    "rule": "function-complexity",
-   "measured": 14,
-   "limit": 10
+   "symbol": "DemoFactoryService._language_rule_packs"
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "DemoFactoryService._review_rules",
-   "rule": "function-lines",
+   "limit": 10,
+   "measured": 14,
+   "rule": "function-complexity",
+   "symbol": "DemoFactoryService._review_rules"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 30,
    "measured": 36,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "DemoFactoryService.start_run",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "DemoFactoryService.start_run",
    "rule": "function-lines",
+   "symbol": "DemoFactoryService._review_rules"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 10,
+   "measured": 11,
+   "rule": "function-complexity",
+   "symbol": "DemoFactoryService.start_run"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 30,
    "measured": 33,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "DemoFactoryService.start_run"
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "DemoRoutingGateway.complete",
-   "rule": "function-nesting",
+   "limit": 3,
    "measured": 6,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "_FallbackMetrics.agent_metrics",
-   "rule": "function-complexity",
-   "measured": 12,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "_WorkspaceBindingAgent._commit_after_passing_tests",
-   "rule": "function-complexity",
-   "measured": 16,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "_WorkspaceBindingAgent._commit_after_passing_tests",
-   "rule": "function-lines",
-   "measured": 39,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "_load_metrics",
    "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
+   "symbol": "DemoRoutingGateway.complete"
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "_profile_sandbox_settings",
+   "limit": 10,
+   "measured": 12,
    "rule": "function-complexity",
-   "measured": 20,
-   "limit": 10
+   "symbol": "_FallbackMetrics.agent_metrics"
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "_profile_sandbox_settings",
+   "limit": 10,
+   "measured": 16,
+   "rule": "function-complexity",
+   "symbol": "_WorkspaceBindingAgent._commit_after_passing_tests"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 30,
+   "measured": 39,
    "rule": "function-lines",
+   "symbol": "_WorkspaceBindingAgent._commit_after_passing_tests"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "_load_metrics"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 10,
+   "measured": 20,
+   "rule": "function-complexity",
+   "symbol": "_profile_sandbox_settings"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 30,
    "measured": 59,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "_profile_sandbox_settings",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "build_demo",
-   "rule": "function-complexity",
-   "measured": 16,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "symbol": "build_demo",
    "rule": "function-lines",
+   "symbol": "_profile_sandbox_settings"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "_profile_sandbox_settings"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 10,
+   "measured": 16,
+   "rule": "function-complexity",
+   "symbol": "build_demo"
+  },
+  {
+   "file": "src/asf/api/demo.py",
+   "limit": 30,
    "measured": 158,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "build_demo"
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "main",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 53,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "main"
   },
   {
    "file": "src/asf/api/demo.py",
-   "symbol": "run_selftest",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 34,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/model_settings.py",
-   "symbol": "",
-   "rule": "banner-comment",
-   "measured": 2,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/api/model_settings.py",
-   "symbol": "ModelSettings.__init__",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/api/model_settings.py",
-   "symbol": "ModelSettings.test",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/model_settings.py",
-   "symbol": "ModelSettings.test",
    "rule": "function-lines",
+   "symbol": "run_selftest"
+  },
+  {
+   "file": "src/asf/api/model_settings.py",
+   "limit": 0,
+   "measured": 2,
+   "rule": "banner-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/api/model_settings.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "ModelSettings.__init__"
+  },
+  {
+   "file": "src/asf/api/model_settings.py",
+   "limit": 10,
+   "measured": 11,
+   "rule": "function-complexity",
+   "symbol": "ModelSettings.test"
+  },
+  {
+   "file": "src/asf/api/model_settings.py",
+   "limit": 30,
    "measured": 47,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/model_settings.py",
-   "symbol": "ModelSettings.update",
-   "rule": "function-complexity",
-   "measured": 13,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/model_settings.py",
-   "symbol": "ModelSettings.update",
    "rule": "function-lines",
+   "symbol": "ModelSettings.test"
+  },
+  {
+   "file": "src/asf/api/model_settings.py",
+   "limit": 10,
+   "measured": 13,
+   "rule": "function-complexity",
+   "symbol": "ModelSettings.update"
+  },
+  {
+   "file": "src/asf/api/model_settings.py",
+   "limit": 30,
    "measured": 39,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "ModelSettings.update"
   },
   {
    "file": "src/asf/api/scheduler.py",
-   "symbol": "",
-   "rule": "banner-comment",
+   "limit": 0,
    "measured": 3,
-   "limit": 0
+   "rule": "banner-comment",
+   "symbol": ""
   },
   {
    "file": "src/asf/api/scheduler.py",
-   "symbol": "RunScheduler",
-   "rule": "class-fields",
+   "limit": 7,
    "measured": 11,
-   "limit": 7
+   "rule": "class-fields",
+   "symbol": "RunScheduler"
   },
   {
    "file": "src/asf/api/scheduler.py",
-   "symbol": "RunScheduler._run",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 16,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "RunScheduler._run"
   },
   {
    "file": "src/asf/api/scheduler.py",
-   "symbol": "RunScheduler._run",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 40,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "RunScheduler._run"
   },
   {
    "file": "src/asf/api/scheduler.py",
-   "symbol": "RunScheduler._run",
-   "rule": "function-nesting",
+   "limit": 3,
    "measured": 4,
-   "limit": 3
+   "rule": "function-nesting",
+   "symbol": "RunScheduler._run"
   },
   {
    "file": "src/asf/api/service/__init__.py",
-   "symbol": "",
-   "rule": "banner-comment",
+   "limit": 0,
    "measured": 10,
-   "limit": 0
+   "rule": "banner-comment",
+   "symbol": ""
   },
   {
    "file": "src/asf/api/service/__init__.py",
-   "symbol": "",
-   "rule": "file-lines",
+   "limit": 500,
    "measured": 580,
-   "limit": 500
+   "rule": "file-lines",
+   "symbol": ""
   },
   {
    "file": "src/asf/api/service/__init__.py",
-   "symbol": "FactoryService",
-   "rule": "class-fields",
+   "limit": 7,
    "measured": 31,
-   "limit": 7
+   "rule": "class-fields",
+   "symbol": "FactoryService"
   },
   {
    "file": "src/asf/api/service/__init__.py",
-   "symbol": "FactoryService",
-   "rule": "class-lines",
+   "limit": 300,
    "measured": 374,
-   "limit": 300
+   "rule": "class-lines",
+   "symbol": "FactoryService"
   },
   {
    "file": "src/asf/api/service/__init__.py",
-   "symbol": "FactoryService.__init__",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 64,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/__init__.py",
-   "symbol": "FactoryService.__init__",
-   "rule": "function-params",
-   "measured": 15,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/api/service/__init__.py",
-   "symbol": "FactoryService._discover_store_runs",
-   "rule": "function-nesting",
-   "measured": 5,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/api/service/__init__.py",
-   "symbol": "FactoryService._normalize_project",
-   "rule": "function-complexity",
-   "measured": 46,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/__init__.py",
-   "symbol": "FactoryService._normalize_project",
    "rule": "function-lines",
+   "symbol": "FactoryService.__init__"
+  },
+  {
+   "file": "src/asf/api/service/__init__.py",
+   "limit": 4,
+   "measured": 15,
+   "rule": "function-params",
+   "symbol": "FactoryService.__init__"
+  },
+  {
+   "file": "src/asf/api/service/__init__.py",
+   "limit": 3,
+   "measured": 5,
+   "rule": "function-nesting",
+   "symbol": "FactoryService._discover_store_runs"
+  },
+  {
+   "file": "src/asf/api/service/__init__.py",
+   "limit": 10,
+   "measured": 46,
+   "rule": "function-complexity",
+   "symbol": "FactoryService._normalize_project"
+  },
+  {
+   "file": "src/asf/api/service/__init__.py",
+   "limit": 30,
    "measured": 78,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "FactoryService._normalize_project"
   },
   {
    "file": "src/asf/api/service/__init__.py",
-   "symbol": "FactoryService._normalize_project",
-   "rule": "function-nesting",
+   "limit": 3,
    "measured": 5,
-   "limit": 3
+   "rule": "function-nesting",
+   "symbol": "FactoryService._normalize_project"
   },
   {
    "file": "src/asf/api/service/commands.py",
-   "symbol": "",
-   "rule": "banner-comment",
+   "limit": 0,
    "measured": 6,
-   "limit": 0
+   "rule": "banner-comment",
+   "symbol": ""
   },
   {
    "file": "src/asf/api/service/commands.py",
-   "symbol": "",
-   "rule": "file-lines",
+   "limit": 500,
    "measured": 769,
-   "limit": 500
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin",
-   "rule": "class-lines",
-   "measured": 780,
-   "limit": 300
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin",
-   "rule": "class-methods",
-   "measured": 15,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin._advance_split_chain",
-   "rule": "function-complexity",
-   "measured": 22,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin._advance_split_chain",
-   "rule": "function-lines",
-   "measured": 52,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin._start_split_run",
-   "rule": "function-lines",
-   "measured": 53,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin._start_split_run",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin._validated_skip_approvals",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin.decide_approval",
-   "rule": "function-complexity",
-   "measured": 13,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/commands.py",
-   "symbol": "CommandsMixin.decide_approval",
-   "rule": "function-lines",
-   "measured": 55,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/driver.py",
-   "symbol": "",
-   "rule": "banner-comment",
-   "measured": 2,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/api/service/driver.py",
-   "symbol": "DriverMixin",
-   "rule": "class-lines",
-   "measured": 402,
-   "limit": 300
-  },
-  {
-   "file": "src/asf/api/service/driver.py",
-   "symbol": "DriverMixin._drive",
-   "rule": "function-complexity",
-   "measured": 14,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/driver.py",
-   "symbol": "DriverMixin._drive",
-   "rule": "function-lines",
-   "measured": 61,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "",
-   "rule": "banner-comment",
-   "measured": 10,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "",
    "rule": "file-lines",
-   "measured": 1203,
-   "limit": 500
+   "symbol": ""
   },
   {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin",
+   "file": "src/asf/api/service/commands.py",
+   "limit": 300,
+   "measured": 780,
    "rule": "class-lines",
-   "measured": 1217,
-   "limit": 300
+   "symbol": "CommandsMixin"
   },
   {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin",
+   "file": "src/asf/api/service/commands.py",
+   "limit": 10,
+   "measured": 15,
    "rule": "class-methods",
-   "measured": 13,
-   "limit": 10
+   "symbol": "CommandsMixin"
   },
   {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._activity_view",
+   "file": "src/asf/api/service/commands.py",
+   "limit": 10,
+   "measured": 22,
    "rule": "function-complexity",
-   "measured": 21,
-   "limit": 10
+   "symbol": "CommandsMixin._advance_split_chain"
   },
   {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._activity_view",
+   "file": "src/asf/api/service/commands.py",
+   "limit": 30,
+   "measured": 52,
    "rule": "function-lines",
+   "symbol": "CommandsMixin._advance_split_chain"
+  },
+  {
+   "file": "src/asf/api/service/commands.py",
+   "limit": 30,
    "measured": 53,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._agent_view",
-   "rule": "function-complexity",
-   "measured": 17,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._agent_view",
    "rule": "function-lines",
-   "measured": 38,
-   "limit": 30
+   "symbol": "CommandsMixin._start_split_run"
   },
   {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._approval_step_state",
-   "rule": "function-complexity",
-   "measured": 13,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._approval_step_state",
+   "file": "src/asf/api/service/commands.py",
+   "limit": 4,
+   "measured": 5,
    "rule": "function-params",
-   "measured": 5,
-   "limit": 4
+   "symbol": "CommandsMixin._start_split_run"
   },
   {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._approval_view",
+   "file": "src/asf/api/service/commands.py",
+   "limit": 10,
+   "measured": 11,
    "rule": "function-complexity",
-   "measured": 12,
-   "limit": 10
+   "symbol": "CommandsMixin._validated_skip_approvals"
   },
   {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._approval_view",
-   "rule": "function-lines",
-   "measured": 41,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._group_split_parts",
+   "file": "src/asf/api/service/commands.py",
+   "limit": 10,
+   "measured": 13,
    "rule": "function-complexity",
-   "measured": 12,
-   "limit": 10
+   "symbol": "CommandsMixin.decide_approval"
   },
   {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._split_parent_views",
-   "rule": "function-complexity",
-   "measured": 27,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._split_parent_views",
-   "rule": "function-lines",
-   "measured": 53,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._split_parent_views",
-   "rule": "function-nesting",
-   "measured": 5,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._step_states",
-   "rule": "function-complexity",
-   "measured": 72,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._step_states",
-   "rule": "function-lines",
-   "measured": 151,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._step_states",
-   "rule": "function-nesting",
-   "measured": 7,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._waiting",
-   "rule": "function-complexity",
-   "measured": 19,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._waiting",
-   "rule": "function-lines",
-   "measured": 80,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin._workflow_view",
-   "rule": "function-lines",
-   "measured": 40,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.list_activity",
-   "rule": "function-complexity",
-   "measured": 24,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.list_activity",
-   "rule": "function-lines",
-   "measured": 37,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.list_projects",
-   "rule": "function-complexity",
-   "measured": 19,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.list_projects",
-   "rule": "function-lines",
-   "measured": 49,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.list_projects",
-   "rule": "function-nesting",
-   "measured": 5,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.list_tasks",
-   "rule": "function-complexity",
-   "measured": 28,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.list_tasks",
-   "rule": "function-lines",
-   "measured": 34,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.run_diagnostics",
-   "rule": "function-complexity",
-   "measured": 12,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/api/service/queries.py",
-   "symbol": "QueriesMixin.run_diagnostics",
-   "rule": "function-lines",
+   "file": "src/asf/api/service/commands.py",
+   "limit": 30,
    "measured": 55,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/approval/policy.py",
-   "symbol": "approval_policy_from_project",
-   "rule": "function-complexity",
-   "measured": 25,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/approval/policy.py",
-   "symbol": "approval_policy_from_project",
    "rule": "function-lines",
-   "measured": 128,
-   "limit": 30
+   "symbol": "CommandsMixin.decide_approval"
   },
   {
-   "file": "src/asf/approval/policy.py",
-   "symbol": "approval_policy_from_project",
-   "rule": "function-nesting",
+   "file": "src/asf/api/service/driver.py",
+   "limit": 0,
+   "measured": 2,
+   "rule": "banner-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/api/service/driver.py",
+   "limit": 300,
+   "measured": 402,
+   "rule": "class-lines",
+   "symbol": "DriverMixin"
+  },
+  {
+   "file": "src/asf/api/service/driver.py",
+   "limit": 10,
+   "measured": 14,
+   "rule": "function-complexity",
+   "symbol": "DriverMixin._drive"
+  },
+  {
+   "file": "src/asf/api/service/driver.py",
+   "limit": 30,
+   "measured": 61,
+   "rule": "function-lines",
+   "symbol": "DriverMixin._drive"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 0,
+   "measured": 10,
+   "rule": "banner-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 500,
+   "measured": 1203,
+   "rule": "file-lines",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 300,
+   "measured": 1217,
+   "rule": "class-lines",
+   "symbol": "QueriesMixin"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 13,
+   "rule": "class-methods",
+   "symbol": "QueriesMixin"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 21,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin._activity_view"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 53,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin._activity_view"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 17,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin._agent_view"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 38,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin._agent_view"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 13,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin._approval_step_state"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 4,
    "measured": 5,
-   "limit": 3
+   "rule": "function-params",
+   "symbol": "QueriesMixin._approval_step_state"
   },
   {
-   "file": "src/asf/approval/service.py",
-   "symbol": "ApprovalService.decide",
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 12,
    "rule": "function-complexity",
+   "symbol": "QueriesMixin._approval_view"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 41,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin._approval_view"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 12,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin._group_split_parts"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 27,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin._split_parent_views"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 53,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin._split_parent_views"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 3,
+   "measured": 5,
+   "rule": "function-nesting",
+   "symbol": "QueriesMixin._split_parent_views"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 72,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin._step_states"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 151,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin._step_states"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 3,
+   "measured": 7,
+   "rule": "function-nesting",
+   "symbol": "QueriesMixin._step_states"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 19,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin._waiting"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 80,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin._waiting"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 40,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin._workflow_view"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 24,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin.list_activity"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 37,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin.list_activity"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 19,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin.list_projects"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 49,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin.list_projects"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 3,
+   "measured": 5,
+   "rule": "function-nesting",
+   "symbol": "QueriesMixin.list_projects"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 28,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin.list_tasks"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 34,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin.list_tasks"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 10,
+   "measured": 12,
+   "rule": "function-complexity",
+   "symbol": "QueriesMixin.run_diagnostics"
+  },
+  {
+   "file": "src/asf/api/service/queries.py",
+   "limit": 30,
+   "measured": 55,
+   "rule": "function-lines",
+   "symbol": "QueriesMixin.run_diagnostics"
+  },
+  {
+   "file": "src/asf/approval/policy.py",
+   "limit": 10,
+   "measured": 25,
+   "rule": "function-complexity",
+   "symbol": "approval_policy_from_project"
+  },
+  {
+   "file": "src/asf/approval/policy.py",
+   "limit": 30,
+   "measured": 128,
+   "rule": "function-lines",
+   "symbol": "approval_policy_from_project"
+  },
+  {
+   "file": "src/asf/approval/policy.py",
+   "limit": 3,
+   "measured": 5,
+   "rule": "function-nesting",
+   "symbol": "approval_policy_from_project"
+  },
+  {
+   "file": "src/asf/approval/service.py",
+   "limit": 10,
    "measured": 20,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "ApprovalService.decide"
   },
   {
    "file": "src/asf/approval/service.py",
-   "symbol": "ApprovalService.decide",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 68,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "ApprovalService.decide"
   },
   {
    "file": "src/asf/approval/service.py",
-   "symbol": "ApprovalService.request",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 46,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "ApprovalService.request"
   },
   {
    "file": "src/asf/configuration/errors.py",
-   "symbol": "ConfigError.to_platform_errors",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 34,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "ConfigError.to_platform_errors"
   },
   {
    "file": "src/asf/configuration/loader.py",
-   "symbol": "load_platform_config",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 34,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "load_platform_config"
   },
   {
    "file": "src/asf/configuration/yamlio.py",
-   "symbol": "load_yaml_mapping",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/configuration/yamlio.py",
-   "symbol": "load_yaml_mapping",
-   "rule": "function-lines",
-   "measured": 45,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/configuration/yamlio.py",
-   "symbol": "load_yaml_mapping",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/configuration/yamlio.py",
-   "symbol": "scan_secrets",
    "rule": "function-complexity",
-   "measured": 12,
-   "limit": 10
+   "symbol": "load_yaml_mapping"
   },
   {
    "file": "src/asf/configuration/yamlio.py",
-   "symbol": "scan_secrets",
-   "rule": "function-nesting",
+   "limit": 30,
+   "measured": 45,
+   "rule": "function-lines",
+   "symbol": "load_yaml_mapping"
+  },
+  {
+   "file": "src/asf/configuration/yamlio.py",
+   "limit": 3,
    "measured": 4,
-   "limit": 3
+   "rule": "function-nesting",
+   "symbol": "load_yaml_mapping"
+  },
+  {
+   "file": "src/asf/configuration/yamlio.py",
+   "limit": 10,
+   "measured": 12,
+   "rule": "function-complexity",
+   "symbol": "scan_secrets"
+  },
+  {
+   "file": "src/asf/configuration/yamlio.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "scan_secrets"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "",
-   "rule": "banner-comment",
+   "limit": 0,
    "measured": 7,
-   "limit": 0
+   "rule": "banner-comment",
+   "symbol": ""
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService",
-   "rule": "class-lines",
+   "limit": 300,
    "measured": 402,
-   "limit": 300
+   "rule": "class-lines",
+   "symbol": "MetricsService"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService",
+   "limit": 10,
+   "measured": 13,
    "rule": "class-methods",
-   "measured": 13,
-   "limit": 10
+   "symbol": "MetricsService"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService._agent_metrics_locked",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 22,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "MetricsService._agent_metrics_locked"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService._agent_metrics_locked",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 34,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "MetricsService._agent_metrics_locked"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService.overview",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 32,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "MetricsService.overview"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService.overview",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 99,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "MetricsService.overview"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService.record",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 43,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService.record_approval_decision",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/evaluation/service.py",
-   "symbol": "MetricsService.record_quality",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/evaluation/service.py",
-   "symbol": "_artifact_sample",
    "rule": "function-lines",
+   "symbol": "MetricsService.record"
+  },
+  {
+   "file": "src/asf/evaluation/service.py",
+   "limit": 4,
+   "measured": 5,
+   "rule": "function-params",
+   "symbol": "MetricsService.record_approval_decision"
+  },
+  {
+   "file": "src/asf/evaluation/service.py",
+   "limit": 4,
+   "measured": 5,
+   "rule": "function-params",
+   "symbol": "MetricsService.record_quality"
+  },
+  {
+   "file": "src/asf/evaluation/service.py",
+   "limit": 30,
    "measured": 36,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "_artifact_sample"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "_artifact_sample",
-   "rule": "function-params",
+   "limit": 4,
    "measured": 5,
-   "limit": 4
+   "rule": "function-params",
+   "symbol": "_artifact_sample"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "_find_verdict",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 16,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "_find_verdict"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "_find_verdict",
-   "rule": "function-nesting",
+   "limit": 3,
    "measured": 4,
-   "limit": 3
+   "rule": "function-nesting",
+   "symbol": "_find_verdict"
   },
   {
    "file": "src/asf/evaluation/service.py",
-   "symbol": "_health_score",
-   "rule": "function-params",
+   "limit": 4,
    "measured": 5,
-   "limit": 4
+   "rule": "function-params",
+   "symbol": "_health_score"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "GeminiModelGateway",
-   "rule": "class-fields",
+   "limit": 7,
    "measured": 13,
-   "limit": 7
+   "rule": "class-fields",
+   "symbol": "GeminiModelGateway"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "GeminiModelGateway.__init__",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 44,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "GeminiModelGateway.__init__"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "GeminiModelGateway.__init__",
-   "rule": "function-params",
+   "limit": 4,
    "measured": 14,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/integrations/gemini.py",
-   "symbol": "GeminiModelGateway._capture",
    "rule": "function-params",
-   "measured": 7,
-   "limit": 4
+   "symbol": "GeminiModelGateway.__init__"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "GeminiModelGateway._parse_response",
-   "rule": "function-lines",
+   "limit": 4,
+   "measured": 7,
+   "rule": "function-params",
+   "symbol": "GeminiModelGateway._capture"
+  },
+  {
+   "file": "src/asf/integrations/gemini.py",
+   "limit": 30,
    "measured": 33,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "GeminiModelGateway._parse_response"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "GeminiModelGateway.complete",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 17,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "GeminiModelGateway.complete"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "GeminiModelGateway.complete",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 136,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "GeminiModelGateway.complete"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "GeminiModelGateway.complete",
-   "rule": "function-nesting",
+   "limit": 3,
    "measured": 4,
-   "limit": 3
+   "rule": "function-nesting",
+   "symbol": "GeminiModelGateway.complete"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "HttpTransport.post",
-   "rule": "function-params",
+   "limit": 4,
    "measured": 5,
-   "limit": 4
+   "rule": "function-params",
+   "symbol": "HttpTransport.post"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "UrlLibTransport.post",
-   "rule": "function-params",
+   "limit": 4,
    "measured": 5,
-   "limit": 4
+   "rule": "function-params",
+   "symbol": "UrlLibTransport.post"
   },
   {
    "file": "src/asf/integrations/gemini.py",
-   "symbol": "_NoRedirectHandler.redirect_request",
-   "rule": "function-params",
+   "limit": 4,
    "measured": 6,
-   "limit": 4
+   "rule": "function-params",
+   "symbol": "_NoRedirectHandler.redirect_request"
   },
   {
    "file": "src/asf/integrations/hosting/actions.py",
-   "symbol": "_fail",
-   "rule": "function-params",
+   "limit": 4,
    "measured": 7,
-   "limit": 4
+   "rule": "function-params",
+   "symbol": "_fail"
   },
   {
    "file": "src/asf/integrations/hosting/actions.py",
-   "symbol": "build_hosting_actions",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 26,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "build_hosting_actions"
   },
   {
    "file": "src/asf/integrations/hosting/actions.py",
-   "symbol": "build_hosting_actions",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 168,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/integrations/hosting/actions.py",
-   "symbol": "build_hosting_actions",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/integrations/hosting/actions.py",
-   "symbol": "build_hosting_actions.await_merge",
    "rule": "function-lines",
+   "symbol": "build_hosting_actions"
+  },
+  {
+   "file": "src/asf/integrations/hosting/actions.py",
+   "limit": 4,
+   "measured": 5,
+   "rule": "function-params",
+   "symbol": "build_hosting_actions"
+  },
+  {
+   "file": "src/asf/integrations/hosting/actions.py",
+   "limit": 30,
    "measured": 57,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "build_hosting_actions.await_merge"
   },
   {
    "file": "src/asf/integrations/hosting/actions.py",
-   "symbol": "build_hosting_actions.run_pipeline",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 16,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "build_hosting_actions.run_pipeline"
   },
   {
    "file": "src/asf/integrations/hosting/actions.py",
-   "symbol": "build_hosting_actions.run_pipeline",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 90,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "build_hosting_actions.run_pipeline"
   },
   {
    "file": "src/asf/integrations/hosting/factory.py",
-   "symbol": "build_provider",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 19,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "build_provider"
   },
   {
    "file": "src/asf/integrations/hosting/factory.py",
-   "symbol": "build_provider",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 45,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "build_provider"
   },
   {
    "file": "src/asf/integrations/hosting/github.py",
-   "symbol": "",
-   "rule": "banner-comment",
+   "limit": 0,
    "measured": 3,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/integrations/hosting/github.py",
-   "symbol": "GitHubProvider.__init__",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/integrations/hosting/github.py",
-   "symbol": "GitHubProvider.pipeline_status",
-   "rule": "function-complexity",
-   "measured": 12,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/integrations/hosting/github.py",
-   "symbol": "GitHubProvider.pipeline_status",
-   "rule": "function-lines",
-   "measured": 40,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/integrations/hosting/github.py",
-   "symbol": "GitHubProvider.pipeline_status",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/integrations/hosting/github.py",
-   "symbol": "GitHubProvider.push_changeset",
-   "rule": "function-lines",
-   "measured": 58,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/integrations/hosting/gitlab.py",
-   "symbol": "",
    "rule": "banner-comment",
-   "measured": 2,
-   "limit": 0
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/integrations/hosting/github.py",
+   "limit": 4,
+   "measured": 5,
+   "rule": "function-params",
+   "symbol": "GitHubProvider.__init__"
+  },
+  {
+   "file": "src/asf/integrations/hosting/github.py",
+   "limit": 10,
+   "measured": 12,
+   "rule": "function-complexity",
+   "symbol": "GitHubProvider.pipeline_status"
+  },
+  {
+   "file": "src/asf/integrations/hosting/github.py",
+   "limit": 30,
+   "measured": 40,
+   "rule": "function-lines",
+   "symbol": "GitHubProvider.pipeline_status"
+  },
+  {
+   "file": "src/asf/integrations/hosting/github.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "GitHubProvider.pipeline_status"
+  },
+  {
+   "file": "src/asf/integrations/hosting/github.py",
+   "limit": 30,
+   "measured": 58,
+   "rule": "function-lines",
+   "symbol": "GitHubProvider.push_changeset"
   },
   {
    "file": "src/asf/integrations/hosting/gitlab.py",
-   "symbol": "GitLabProvider.push_changeset",
-   "rule": "function-lines",
+   "limit": 0,
+   "measured": 2,
+   "rule": "banner-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/integrations/hosting/gitlab.py",
+   "limit": 30,
    "measured": 39,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "GitLabProvider.push_changeset"
   },
   {
    "file": "src/asf/integrations/hosting/http.py",
-   "symbol": "_error_message",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 12,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/integrations/openai_compatible.py",
-   "symbol": "OpenAICompatibleGateway",
-   "rule": "class-fields",
-   "measured": 9,
-   "limit": 7
-  },
-  {
-   "file": "src/asf/integrations/openai_compatible.py",
-   "symbol": "OpenAICompatibleGateway.__init__",
-   "rule": "function-params",
-   "measured": 9,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/integrations/openai_compatible.py",
-   "symbol": "OpenAICompatibleGateway._post_with_retries",
-   "rule": "function-lines",
-   "measured": 42,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/integrations/openai_compatible.py",
-   "symbol": "OpenAICompatibleGateway.complete",
    "rule": "function-complexity",
+   "symbol": "_error_message"
+  },
+  {
+   "file": "src/asf/integrations/openai_compatible.py",
+   "limit": 7,
+   "measured": 9,
+   "rule": "class-fields",
+   "symbol": "OpenAICompatibleGateway"
+  },
+  {
+   "file": "src/asf/integrations/openai_compatible.py",
+   "limit": 4,
+   "measured": 9,
+   "rule": "function-params",
+   "symbol": "OpenAICompatibleGateway.__init__"
+  },
+  {
+   "file": "src/asf/integrations/openai_compatible.py",
+   "limit": 30,
+   "measured": 42,
+   "rule": "function-lines",
+   "symbol": "OpenAICompatibleGateway._post_with_retries"
+  },
+  {
+   "file": "src/asf/integrations/openai_compatible.py",
+   "limit": 10,
    "measured": 20,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "OpenAICompatibleGateway.complete"
   },
   {
    "file": "src/asf/integrations/openai_compatible.py",
-   "symbol": "OpenAICompatibleGateway.complete",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 77,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "OpenAICompatibleGateway.complete"
   },
   {
    "file": "src/asf/integrations/openai_compatible.py",
-   "symbol": "UrlLibTransport.post",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 39,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "UrlLibTransport.post"
   },
   {
    "file": "src/asf/integrations/teams/cards.py",
-   "symbol": "approval_card",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 69,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "approval_card"
   },
   {
    "file": "src/asf/integrations/teams/config.py",
-   "symbol": "TeamsConfig.resolve_workflow_url",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 14,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "TeamsConfig.resolve_workflow_url"
   },
   {
    "file": "src/asf/integrations/teams/demo.py",
-   "symbol": "demo_engine",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 66,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "demo_engine"
   },
   {
    "file": "src/asf/integrations/teams/demo.py",
-   "symbol": "run_demo",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 11,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "run_demo"
   },
   {
    "file": "src/asf/integrations/teams/demo.py",
-   "symbol": "run_demo",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 53,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/integrations/teams/workflow.py",
-   "symbol": "TeamsWorkflow.send_approval",
    "rule": "function-lines",
-   "measured": 35,
-   "limit": 30
+   "symbol": "run_demo"
   },
   {
    "file": "src/asf/integrations/teams/workflow.py",
-   "symbol": "create_app",
-   "rule": "function-complexity",
+   "limit": 30,
+   "measured": 35,
+   "rule": "function-lines",
+   "symbol": "TeamsWorkflow.send_approval"
+  },
+  {
+   "file": "src/asf/integrations/teams/workflow.py",
+   "limit": 10,
    "measured": 20,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "create_app"
   },
   {
    "file": "src/asf/integrations/teams/workflow.py",
-   "symbol": "create_app",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 95,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "create_app"
   },
   {
    "file": "src/asf/integrations/teams/workflow.py",
-   "symbol": "create_app.decide",
-   "rule": "function-lines",
+   "limit": 30,
    "measured": 39,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/code_loop.py",
-   "symbol": "code_steps",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/code_loop.py",
-   "symbol": "loop_graph",
    "rule": "function-lines",
-   "measured": 37,
-   "limit": 30
+   "symbol": "create_app.decide"
   },
   {
    "file": "src/asf/orchestrator/code_loop.py",
-   "symbol": "ordered_task_ids",
-   "rule": "function-complexity",
+   "limit": 10,
    "measured": 11,
-   "limit": 10
+   "rule": "function-complexity",
+   "symbol": "code_steps"
+  },
+  {
+   "file": "src/asf/orchestrator/code_loop.py",
+   "limit": 30,
+   "measured": 37,
+   "rule": "function-lines",
+   "symbol": "loop_graph"
+  },
+  {
+   "file": "src/asf/orchestrator/code_loop.py",
+   "limit": 10,
+   "measured": 11,
+   "rule": "function-complexity",
+   "symbol": "ordered_task_ids"
   },
   {
    "file": "src/asf/orchestrator/engine.py",
-   "symbol": "",
-   "rule": "file-lines",
+   "limit": 500,
    "measured": 1239,
-   "limit": 500
+   "rule": "file-lines",
+   "symbol": ""
   },
   {
    "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator",
-   "rule": "class-fields",
+   "limit": 7,
    "measured": 15,
-   "limit": 7
+   "rule": "class-fields",
+   "symbol": "Orchestrator"
   },
   {
    "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator",
-   "rule": "class-lines",
+   "limit": 300,
    "measured": 1237,
-   "limit": 300
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator",
-   "rule": "class-methods",
-   "measured": 15,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.__init__",
-   "rule": "function-complexity",
-   "measured": 15,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.__init__",
-   "rule": "function-lines",
-   "measured": 42,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.__init__",
-   "rule": "function-params",
-   "measured": 12,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._apply_result",
-   "rule": "function-complexity",
-   "measured": 42,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._apply_result",
-   "rule": "function-lines",
-   "measured": 109,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._apply_result",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._deliver_observations",
-   "rule": "function-complexity",
-   "measured": 18,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._deliver_observations",
-   "rule": "function-lines",
-   "measured": 36,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._deliver_observations",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._failed_stage",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._linked_output",
-   "rule": "function-complexity",
-   "measured": 17,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._linked_output",
-   "rule": "function-lines",
-   "measured": 44,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._prepare_dispatch",
-   "rule": "function-complexity",
-   "measured": 35,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._prepare_dispatch",
-   "rule": "function-lines",
-   "measured": 117,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator._retry",
-   "rule": "function-complexity",
-   "measured": 11,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.decide",
-   "rule": "function-params",
-   "measured": 5,
-   "limit": 4
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.resume_failed",
-   "rule": "function-complexity",
-   "measured": 14,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.resume_failed",
-   "rule": "function-lines",
-   "measured": 70,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.start",
-   "rule": "function-complexity",
-   "measured": 15,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.start",
-   "rule": "function-lines",
-   "measured": 42,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.tick",
-   "rule": "function-complexity",
-   "measured": 24,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.tick",
-   "rule": "function-lines",
-   "measured": 108,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "symbol": "Orchestrator.tick",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/state_machine/graph.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 3,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/state_machine/graph.py",
-   "symbol": "build_graph",
-   "rule": "function-lines",
-   "measured": 74,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/state_machine/machine.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 4,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/state_machine/machine.py",
-   "symbol": "apply",
-   "rule": "function-complexity",
-   "measured": 17,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/state_machine/machine.py",
-   "symbol": "apply",
-   "rule": "function-lines",
-   "measured": 53,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/storage/mariadb.py",
-   "symbol": "",
-   "rule": "banner-comment",
-   "measured": 2,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/storage/mariadb.py",
-   "symbol": "",
-   "rule": "file-lines",
-   "measured": 534,
-   "limit": 500
-  },
-  {
-   "file": "src/asf/storage/mariadb.py",
-   "symbol": "MariaDbExecutionStore",
    "rule": "class-lines",
-   "measured": 317,
-   "limit": 300
+   "symbol": "Orchestrator"
   },
   {
-   "file": "src/asf/storage/mariadb.py",
-   "symbol": "MariaDbExecutionStore.list_execution_summaries",
-   "rule": "function-lines",
-   "measured": 44,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/storage/mariadb.py",
-   "symbol": "MariaDbExecutionStore.save_execution",
-   "rule": "function-lines",
-   "measured": 34,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/storage/mariadb.py",
-   "symbol": "MariaDbExecutionStore.save_execution",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/tools/edit_blocks.py",
-   "symbol": "_check_path",
-   "rule": "function-complexity",
-   "measured": 13,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/tools/edit_blocks.py",
-   "symbol": "parse_edit_blocks",
-   "rule": "function-complexity",
-   "measured": 33,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/tools/edit_blocks.py",
-   "symbol": "parse_edit_blocks",
-   "rule": "function-lines",
-   "measured": 155,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/tools/edit_blocks.py",
-   "symbol": "parse_edit_blocks",
-   "rule": "function-nesting",
-   "measured": 4,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/tools/fake.py",
-   "symbol": "InMemorySandbox.run",
-   "rule": "function-complexity",
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
    "measured": 15,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/tools/fake.py",
-   "symbol": "InMemorySandbox.run",
-   "rule": "function-lines",
-   "measured": 50,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/tools/fake.py",
-   "symbol": "InMemorySandbox.run",
-   "rule": "function-nesting",
-   "measured": 5,
-   "limit": 3
-  },
-  {
-   "file": "src/asf/tools/local.py",
-   "symbol": "",
-   "rule": "banner-comment",
-   "measured": 2,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/tools/local.py",
-   "symbol": "",
-   "rule": "file-lines",
-   "measured": 702,
-   "limit": 500
-  },
-  {
-   "file": "src/asf/tools/local.py",
-   "symbol": "LocalSandbox._run_one",
-   "rule": "function-lines",
-   "measured": 47,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/tools/local.py",
-   "symbol": "LocalSandbox.run",
-   "rule": "function-lines",
-   "measured": 35,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/tools/local.py",
-   "symbol": "LocalWorkspace",
-   "rule": "class-fields",
-   "measured": 8,
-   "limit": 7
-  },
-  {
-   "file": "src/asf/tools/local.py",
-   "symbol": "LocalWorkspace",
    "rule": "class-methods",
-   "measured": 18,
-   "limit": 10
+   "symbol": "Orchestrator"
   },
   {
-   "file": "src/asf/tools/local.py",
-   "symbol": "_terminate_tree",
-   "rule": "function-lines",
-   "measured": 35,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/tools/local.py",
-   "symbol": "build_sandbox_env",
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 15,
    "rule": "function-complexity",
-   "measured": 14,
-   "limit": 10
+   "symbol": "Orchestrator.__init__"
   },
   {
-   "file": "src/asf/tools/local.py",
-   "symbol": "build_sandbox_env",
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 30,
+   "measured": 42,
    "rule": "function-lines",
-   "measured": 34,
-   "limit": 30
+   "symbol": "Orchestrator.__init__"
   },
   {
-   "file": "src/asf/tools/worktree.py",
-   "symbol": "",
-   "rule": "banner-comment",
-   "measured": 2,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/tools/worktree.py",
-   "symbol": "GitWorktreeWorkspace.ensure",
-   "rule": "function-lines",
-   "measured": 37,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/tools/worktree.py",
-   "symbol": "GitWorktreeWorkspace.sweep",
-   "rule": "function-complexity",
-   "measured": 13,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/tools/worktree.py",
-   "symbol": "GitWorktreeWorkspace.sweep",
-   "rule": "function-lines",
-   "measured": 32,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/workflow/definition.py",
-   "symbol": "",
-   "rule": "numbered-comment",
-   "measured": 3,
-   "limit": 0
-  },
-  {
-   "file": "src/asf/workflow/definition.py",
-   "symbol": "WorkflowDefinition._validate_workflow_definition",
-   "rule": "function-complexity",
-   "measured": 13,
-   "limit": 10
-  },
-  {
-   "file": "src/asf/workflow/definition.py",
-   "symbol": "WorkflowDefinition._validate_workflow_definition",
-   "rule": "function-lines",
-   "measured": 77,
-   "limit": 30
-  },
-  {
-   "file": "src/asf/workflow/definition.py",
-   "symbol": "WorkflowStepDef._validate_step",
-   "rule": "function-complexity",
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 4,
    "measured": 12,
-   "limit": 10
+   "rule": "function-params",
+   "symbol": "Orchestrator.__init__"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 42,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator._apply_result"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 30,
+   "measured": 109,
+   "rule": "function-lines",
+   "symbol": "Orchestrator._apply_result"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 4,
+   "measured": 5,
+   "rule": "function-params",
+   "symbol": "Orchestrator._apply_result"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 18,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator._deliver_observations"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 30,
+   "measured": 36,
+   "rule": "function-lines",
+   "symbol": "Orchestrator._deliver_observations"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "Orchestrator._deliver_observations"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 11,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator._failed_stage"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 17,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator._linked_output"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 30,
+   "measured": 44,
+   "rule": "function-lines",
+   "symbol": "Orchestrator._linked_output"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 35,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator._prepare_dispatch"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 30,
+   "measured": 117,
+   "rule": "function-lines",
+   "symbol": "Orchestrator._prepare_dispatch"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 11,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator._retry"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 4,
+   "measured": 5,
+   "rule": "function-params",
+   "symbol": "Orchestrator.decide"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 14,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator.resume_failed"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 30,
+   "measured": 70,
+   "rule": "function-lines",
+   "symbol": "Orchestrator.resume_failed"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 15,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator.start"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 30,
+   "measured": 42,
+   "rule": "function-lines",
+   "symbol": "Orchestrator.start"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 10,
+   "measured": 24,
+   "rule": "function-complexity",
+   "symbol": "Orchestrator.tick"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 30,
+   "measured": 108,
+   "rule": "function-lines",
+   "symbol": "Orchestrator.tick"
+  },
+  {
+   "file": "src/asf/orchestrator/engine.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "Orchestrator.tick"
+  },
+  {
+   "file": "src/asf/state_machine/graph.py",
+   "limit": 0,
+   "measured": 3,
+   "rule": "numbered-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/state_machine/graph.py",
+   "limit": 30,
+   "measured": 74,
+   "rule": "function-lines",
+   "symbol": "build_graph"
+  },
+  {
+   "file": "src/asf/state_machine/machine.py",
+   "limit": 0,
+   "measured": 4,
+   "rule": "numbered-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/state_machine/machine.py",
+   "limit": 10,
+   "measured": 17,
+   "rule": "function-complexity",
+   "symbol": "apply"
+  },
+  {
+   "file": "src/asf/state_machine/machine.py",
+   "limit": 30,
+   "measured": 53,
+   "rule": "function-lines",
+   "symbol": "apply"
+  },
+  {
+   "file": "src/asf/storage/mariadb.py",
+   "limit": 0,
+   "measured": 2,
+   "rule": "banner-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/storage/mariadb.py",
+   "limit": 500,
+   "measured": 534,
+   "rule": "file-lines",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/storage/mariadb.py",
+   "limit": 300,
+   "measured": 317,
+   "rule": "class-lines",
+   "symbol": "MariaDbExecutionStore"
+  },
+  {
+   "file": "src/asf/storage/mariadb.py",
+   "limit": 30,
+   "measured": 44,
+   "rule": "function-lines",
+   "symbol": "MariaDbExecutionStore.list_execution_summaries"
+  },
+  {
+   "file": "src/asf/storage/mariadb.py",
+   "limit": 30,
+   "measured": 34,
+   "rule": "function-lines",
+   "symbol": "MariaDbExecutionStore.save_execution"
+  },
+  {
+   "file": "src/asf/storage/mariadb.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "MariaDbExecutionStore.save_execution"
+  },
+  {
+   "file": "src/asf/tools/edit_blocks.py",
+   "limit": 10,
+   "measured": 13,
+   "rule": "function-complexity",
+   "symbol": "_check_path"
+  },
+  {
+   "file": "src/asf/tools/edit_blocks.py",
+   "limit": 10,
+   "measured": 33,
+   "rule": "function-complexity",
+   "symbol": "parse_edit_blocks"
+  },
+  {
+   "file": "src/asf/tools/edit_blocks.py",
+   "limit": 30,
+   "measured": 155,
+   "rule": "function-lines",
+   "symbol": "parse_edit_blocks"
+  },
+  {
+   "file": "src/asf/tools/edit_blocks.py",
+   "limit": 3,
+   "measured": 4,
+   "rule": "function-nesting",
+   "symbol": "parse_edit_blocks"
+  },
+  {
+   "file": "src/asf/tools/fake.py",
+   "limit": 10,
+   "measured": 15,
+   "rule": "function-complexity",
+   "symbol": "InMemorySandbox.run"
+  },
+  {
+   "file": "src/asf/tools/fake.py",
+   "limit": 30,
+   "measured": 50,
+   "rule": "function-lines",
+   "symbol": "InMemorySandbox.run"
+  },
+  {
+   "file": "src/asf/tools/fake.py",
+   "limit": 3,
+   "measured": 5,
+   "rule": "function-nesting",
+   "symbol": "InMemorySandbox.run"
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 0,
+   "measured": 2,
+   "rule": "banner-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 500,
+   "measured": 702,
+   "rule": "file-lines",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 30,
+   "measured": 47,
+   "rule": "function-lines",
+   "symbol": "LocalSandbox._run_one"
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 30,
+   "measured": 35,
+   "rule": "function-lines",
+   "symbol": "LocalSandbox.run"
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 7,
+   "measured": 8,
+   "rule": "class-fields",
+   "symbol": "LocalWorkspace"
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 10,
+   "measured": 18,
+   "rule": "class-methods",
+   "symbol": "LocalWorkspace"
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 30,
+   "measured": 35,
+   "rule": "function-lines",
+   "symbol": "_terminate_tree"
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 10,
+   "measured": 14,
+   "rule": "function-complexity",
+   "symbol": "build_sandbox_env"
+  },
+  {
+   "file": "src/asf/tools/local.py",
+   "limit": 30,
+   "measured": 34,
+   "rule": "function-lines",
+   "symbol": "build_sandbox_env"
+  },
+  {
+   "file": "src/asf/tools/worktree.py",
+   "limit": 0,
+   "measured": 2,
+   "rule": "banner-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/tools/worktree.py",
+   "limit": 30,
+   "measured": 37,
+   "rule": "function-lines",
+   "symbol": "GitWorktreeWorkspace.ensure"
+  },
+  {
+   "file": "src/asf/tools/worktree.py",
+   "limit": 10,
+   "measured": 13,
+   "rule": "function-complexity",
+   "symbol": "GitWorktreeWorkspace.sweep"
+  },
+  {
+   "file": "src/asf/tools/worktree.py",
+   "limit": 30,
+   "measured": 32,
+   "rule": "function-lines",
+   "symbol": "GitWorktreeWorkspace.sweep"
   },
   {
    "file": "src/asf/workflow/definition.py",
-   "symbol": "WorkflowStepDef._validate_step",
+   "limit": 0,
+   "measured": 3,
+   "rule": "numbered-comment",
+   "symbol": ""
+  },
+  {
+   "file": "src/asf/workflow/definition.py",
+   "limit": 10,
+   "measured": 13,
+   "rule": "function-complexity",
+   "symbol": "WorkflowDefinition._validate_workflow_definition"
+  },
+  {
+   "file": "src/asf/workflow/definition.py",
+   "limit": 30,
+   "measured": 77,
    "rule": "function-lines",
+   "symbol": "WorkflowDefinition._validate_workflow_definition"
+  },
+  {
+   "file": "src/asf/workflow/definition.py",
+   "limit": 10,
+   "measured": 12,
+   "rule": "function-complexity",
+   "symbol": "WorkflowStepDef._validate_step"
+  },
+  {
+   "file": "src/asf/workflow/definition.py",
+   "limit": 30,
    "measured": 67,
-   "limit": 30
+   "rule": "function-lines",
+   "symbol": "WorkflowStepDef._validate_step"
   }
  ]
 }

@@ -65,6 +65,8 @@ __all__ = [
     "render_code_markdown",
 ]
 
+_STABLE_PREFIX_MESSAGES = 2
+
 MAX_CODE_REPLY_CHARS: int = 500000
 MAX_CODE_TEXT_CHARS: int = 1000000
 
@@ -328,7 +330,9 @@ class ImplementAgent(BaseAgent):
                 "agentId": self.metadata.id,
                 "requestId": request.request_id,
                 # Stable prefix: system + the SPEC/PLAN message.
-                "cachePrefixMessages": 2 if len(messages) > 2 else 1,
+                "cachePrefixMessages": (
+                    _STABLE_PREFIX_MESSAGES if len(messages) > _STABLE_PREFIX_MESSAGES else 1
+                ),
                 **tier_metadata(request.context),
             },
         )

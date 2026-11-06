@@ -8,6 +8,7 @@ from typing import Any
 
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
+from asf.agents._shared.paths import CONTROL_CHAR_BOUND
 from asf.agents._shared.reply_text import unwrap_code_fence
 from asf.agents._shared.request_checks import (
     artifacts_of,
@@ -311,7 +312,7 @@ def _check_expected_file(scan: _TaskScan, task: TaskItem, path: str) -> None:
         scan.issues.append(f"{prefix} must not contain '..' segments")
     if "//" in path or any(segment == "" for segment in path.split("/")):
         scan.issues.append(f"{prefix} has empty path segments")
-    if any(ord(char) < 32 for char in path):
+    if any(ord(char) < CONTROL_CHAR_BOUND for char in path):
         scan.issues.append(f"{prefix} contains control characters")
 
 
