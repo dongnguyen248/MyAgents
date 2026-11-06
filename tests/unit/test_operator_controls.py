@@ -34,8 +34,13 @@ def client(demo):
 
 
 def _start(service) -> str:
+    # Operator controls are exercised on runs parked at a human gate;
+    # the shipped workflow's gates default to ai mode (Phase 12).
     run = service.start_run(
-        "task-op", "vhpc", inputs={"spec": {"requirement": "Build a calculator"}}
+        "task-op",
+        "vhpc",
+        inputs={"spec": {"requirement": "Build a calculator"}},
+        context={"approval": {"overrides": {"mode": "human"}}},
     )
     service.wait_for_drives(timeout=10)
     return run.id

@@ -163,7 +163,13 @@ def harness(
         task_id="work-1",
         project_id="project-1",
         inputs={"spec": {"requirement": "Create a calculator"}, "implement": {"ref": "main"}},
-        context={"project": {"testCommands": [["pytest", "-q"]]}},
+        # The shipped workflow's gates default to ai mode (Phase 12);
+        # these tests exercise the code loop behind human-decided
+        # gates, so the run is pinned to human approval explicitly.
+        context={
+            "project": {"testCommands": [["pytest", "-q"]]},
+            "approval": {"overrides": {"mode": "human"}},
+        },
     )
     return engine, run, store, gateways, repository, sandbox
 
@@ -486,7 +492,10 @@ def test_one_selected_item_mode_does_not_execute_other_items(tmp_path):
             "spec": {"requirement": "Create a calculator"},
             "implement": {"ref": "main", "taskItemId": "T2"},
         },
-        context={"project": {"testCommands": [["pytest", "-q"]]}},
+        context={
+            "project": {"testCommands": [["pytest", "-q"]]},
+            "approval": {"overrides": {"mode": "human"}},
+        },
     )
     run = drive(engine, run)
     assert run.state.stage == "COMPLETED"

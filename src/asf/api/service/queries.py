@@ -1,11 +1,10 @@
 """FactoryService queries — read views and listings.
 
-``QueriesMixin`` carries these methods of ``FactoryService`` (a pure
-split of the former single service.py; no behavior change).
-The facade in the package ``__init__`` combines the mixins.
-Attribute and cross-group method declarations below describe
-the state the facade's ``__init__`` establishes and the
-sibling parts provide — declarations only, never assignments.
+``QueriesMixin`` carries these methods of ``FactoryService`` (a pure split
+of the former single service.py; no behavior change). The facade in the
+package ``__init__`` combines the mixins; attribute and cross-group method
+declarations below describe the state the facade's ``__init__`` establishes
+and the sibling parts provide — declarations only, never assignments.
 """
 
 from __future__ import annotations
@@ -36,6 +35,7 @@ from asf.api.service import (
     _camelize,
     _iso,
 )
+from asf.api.service.review_state import review_status
 from asf.approval.errors import ApprovalError
 from asf.contracts.models import ActivityEvent
 from asf.orchestrator.code_loop import ESCALATED_STAGE, FIX_STAGE, FIX_STEP, REWORK_STAGE
@@ -411,7 +411,7 @@ class QueriesMixin:
         if run.paused:
             return "PAUSED"
         if self._is_review_stage(run):
-            return "WAITING_APPROVAL"
+            return review_status(run, self._step_for_stage(run, run.state.stage))
         # The engine's coarse status calls both of these "WAITING",
         # which the old mapping flattened to RUNNING — an escalated
         # run looked identical to a healthy one. They are distinct

@@ -301,10 +301,13 @@ def _drive_stops(engine: Orchestrator, run_id: str) -> list[dict]:
 
 
 def _start_demo_run(service: FactoryService) -> str:
+    # These tests observe runs parked at a human gate; the shipped
+    # workflow's gates default to ai mode (Phase 12), so pin human.
     run = service.start_run(
         "task-drive",
         "vhpc",
         inputs={"spec": {"requirement": "Build a calculator"}},
+        context={"approval": {"overrides": {"mode": "human"}}},
     )
     return run.id
 

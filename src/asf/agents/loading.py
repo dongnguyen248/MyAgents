@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from asf.agents.artifact_review.prompts import ArtifactReviewPrompts
 from asf.agents.fix.prompts import FixPrompts
 from asf.agents.implement.prompts import ImplementPrompts
 from asf.agents.plan.prompts import PlanPrompts, PlanTemplate
@@ -24,6 +25,7 @@ __all__ = [
     "load_implement_prompts",
     "load_review_prompts",
     "load_fix_prompts",
+    "load_artifact_review_prompts",
 ]
 
 
@@ -178,3 +180,22 @@ def load_review_prompts() -> ReviewPrompts:
 def load_fix_prompts() -> FixPrompts:
     source = _PromptSource("asf.agents.fix", "fix", strict=True, tool_guidance=True)
     return _load_agent_prompts(source, FixPrompts)
+
+
+def _load_checklists(package: str) -> dict[str, str]:
+    checklists: dict[str, str] = {}
+    for stage in ("spec", "plan", "task"):
+        text = _read_optional(package, f"instructions/checklist_{stage}.md")
+        if text is not None:
+            checklists[stage] = text
+    return checklists
+
+
+def load_artifact_review_prompts() -> ArtifactReviewPrompts:
+    package = "asf.agents.artifact_review"
+    source = _PromptSource(package, "artifact-review", strict=True, tool_guidance=False)
+
+    def build(**kwargs: Any) -> ArtifactReviewPrompts:
+        return ArtifactReviewPrompts(checklists=_load_checklists(package), **kwargs)
+
+    return _load_agent_prompts(source, build)

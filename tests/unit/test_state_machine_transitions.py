@@ -118,21 +118,29 @@ else:
         self.assertEqual(state.stage, "SPEC_DRAFT")
         self.assertEqual(state.revisions.get("spec"), 2)
 
-        # 3. 3rd REVISE -> count becomes 3 (still within limit of 3)
+        # 3. 3rd REVISE -> count becomes 3 (still within the shipped limit of 4;
+        # Phase 12 raised the spec step's maxRevisions from 3 to 4)
         state = apply(self.graph, state, Trigger.COMPLETE)  # SPEC_REVIEW
         state = apply(self.graph, state, Trigger.REJECTED)
         state = apply(self.graph, state, Trigger.REVISE)
         self.assertEqual(state.stage, "SPEC_DRAFT")
         self.assertEqual(state.revisions.get("spec"), 3)
 
-        # 4. 4th REVISE -> limit reached! Escalates to SPEC_ESCALATED, count stays 3
+        # 4. 4th REVISE -> count becomes 4 (at the limit, still drafting)
+        state = apply(self.graph, state, Trigger.COMPLETE)  # SPEC_REVIEW
+        state = apply(self.graph, state, Trigger.REJECTED)
+        state = apply(self.graph, state, Trigger.REVISE)
+        self.assertEqual(state.stage, "SPEC_DRAFT")
+        self.assertEqual(state.revisions.get("spec"), 4)
+
+        # 5. 5th REVISE -> limit reached! Escalates to SPEC_ESCALATED, count stays 4
         state = apply(self.graph, state, Trigger.COMPLETE)  # SPEC_REVIEW
         state = apply(self.graph, state, Trigger.REJECTED)
         state = apply(self.graph, state, Trigger.REVISE)
         self.assertEqual(state.stage, "SPEC_ESCALATED")
-        self.assertEqual(state.revisions.get("spec"), 3)
+        self.assertEqual(state.revisions.get("spec"), 4)
 
-        # 5. RESUME from SPEC_ESCALATED resets count to 0 and goes to SPEC_DRAFT
+        # 6. RESUME from SPEC_ESCALATED resets count to 0 and goes to SPEC_DRAFT
         state = apply(self.graph, state, Trigger.RESUME)
         self.assertEqual(state.stage, "SPEC_DRAFT")
         self.assertEqual(state.revisions.get("spec"), 0)

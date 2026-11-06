@@ -1,11 +1,10 @@
 """FactoryService commands — commands that change state.
 
-``CommandsMixin`` carries these methods of ``FactoryService`` (a pure
-split of the former single service.py; no behavior change).
-The facade in the package ``__init__`` combines the mixins.
-Attribute and cross-group method declarations below describe
-the state the facade's ``__init__`` establishes and the
-sibling parts provide — declarations only, never assignments.
+``CommandsMixin`` carries these methods of ``FactoryService`` (a pure split
+of the former single service.py; no behavior change). The facade in the
+package ``__init__`` combines the mixins; attribute and cross-group method
+declarations below describe the state the facade's ``__init__`` establishes
+and the sibling parts provide — declarations only, never assignments.
 """
 
 from __future__ import annotations
@@ -34,6 +33,7 @@ from asf.api.service import (
     ProjectNotFoundError,
     _iso,
 )
+from asf.api.service.approval_context import bake_approval_context
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import (
     NEW_PROJECT_WORKSPACE_MODE,
@@ -468,11 +468,10 @@ class CommandsMixin:
         # requirement and record the tier in its context; a
         # caller-provided tier wins. Split parts start here too, so
         # an oversized part is classified on its own text.
-        merged_context = dict(context or {})
-        if merged_context.get("skipApprovals") is not None:
-            merged_context["skipApprovals"] = self._validated_skip_approvals(
-                merged_context["skipApprovals"],
-            )
+        merged_context = bake_approval_context(context, self._project_profiles, project_id)
+        raw_skip = merged_context.get("skipApprovals")
+        if raw_skip is not None:
+            merged_context["skipApprovals"] = self._validated_skip_approvals(raw_skip)
         tier = self._requirement_tier(inputs)
         if tier is not None:
             merged_context.setdefault("modelTier", tier)

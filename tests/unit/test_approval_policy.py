@@ -171,3 +171,35 @@ class ApprovalPolicyTests(unittest.TestCase):
                 self.assertGreater(len(ctx.exception.issues), 0)
                 for issue in ctx.exception.issues:
                     self.assertTrue(issue.path.startswith("configuration.approval"))
+
+
+class ApprovalPolicyPhase12KeysTests(unittest.TestCase):
+    def test_valid_phase12_keys_pass(self):
+        profile = make_profile(
+            {
+                "approval": {
+                    "reviewers": ["reviewer-1"],
+                    "mode": "ai",
+                    "maxRevisions": 5,
+                    "onExhausted": "accept_with_warnings",
+                    "blockOn": ["BLOCKER", "MAJOR"],
+                    "perStage": {"task": {"maxRevisions": 6}},
+                }
+            }
+        )
+        policy = approval_policy_from_project(profile)
+        self.assertEqual(policy.reviewers, ["reviewer-1"])
+
+    def test_invalid_phase12_keys_raise_config_error(self):
+        bad_keys = [
+            {"mode": "robot"},
+            {"maxRevisions": 0},
+            {"maxRevisions": 11},
+            {"onExhausted": "shrug"},
+            {"blockOn": ["CRITICAL"]},
+        ]
+        for keys in bad_keys:
+            with self.subTest(keys=keys):
+                profile = make_profile({"approval": {"reviewers": ["r1"], **keys}})
+                with self.assertRaises(ConfigError):
+                    approval_policy_from_project(profile)

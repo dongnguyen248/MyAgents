@@ -267,6 +267,18 @@
           "type": "integer",
           "minimum": 0,
           "description": "rework cycles allowed after a rejection before escalation; meaningful only when requiresApproval is true"
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["ai", "human", "none"],
+              "description": "who decides this step's approval gate: the AI review loop, a human, or nobody (gate skipped)"
+            }
+          }
         }
       },
       "anyOf": [{"required": ["agentType"]}, {"required": ["action"]}]
@@ -383,6 +395,7 @@
         "approvalId": {"type": "string", "minLength": 1},
         "decision": {"type": "string", "enum": ["APPROVED", "REJECTED", "REQUEST_CHANGES"]},
         "reviewer": {"type": "string", "minLength": 1},
+        "reviewerKind": {"type": "string", "enum": ["HUMAN", "AI"]},
         "comment": {"type": "string"},
         "createdAt": {"type": "string", "format": "date-time"}
       }

@@ -1,7 +1,9 @@
 """ASF human-in-the-loop approval service and engine."""
 
 from asf.approval.errors import ApprovalError
+from asf.approval.mode import ResolvedApproval, resolve_approval_mode
 from asf.approval.models import (
+    AI_REVIEWER,
     ApprovalDecision,
     ApprovalFeedback,
     ApprovalPolicy,
@@ -13,6 +15,7 @@ from asf.approval.ports import ApprovalRepository
 from asf.approval.service import ApprovalService
 
 __all__ = [
+    "AI_REVIEWER",
     "ApprovalDecision",
     "ApprovalError",
     "ApprovalFeedback",
@@ -21,5 +24,7 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalService",
     "ApprovalSpec",
+    "ResolvedApproval",
     "approval_policy_from_project",
+    "resolve_approval_mode",
 ]
