@@ -33,6 +33,8 @@ jobs:
         run: bandit -c .bandit -r src -q
       - name: Tests with coverage
         run: pytest -q --cov=asf --cov-report=term-missing
+      - name: Code structure ratchet
+        run: python scripts/check_code_structure.py --baseline .code-structure-baseline.json
 
   dashboard:
     name: Dashboard
