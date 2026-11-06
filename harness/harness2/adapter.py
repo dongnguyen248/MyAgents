@@ -1,140 +1,67 @@
-"""Harness² adapter seam.
+"""The TaskAdapter protocol: what the Harness² loop drives an agent through.
 
-Google Harness² (recursive improvement) is NOT integrated: there are no
-network calls here. The seam exists so a real adapter can be dropped in
-later without touching callers. The default adapter is the null one;
-:class:`LocalHarness2Adapter` is a deterministic, offline stand-in that
-applies simple rules to a runtime metrics overview.
+An adapter owns one agent type over a fixed task set. It builds the
+frozen task inputs, executes one rollout under a given harness tree
+(`None` = the agent's default harness), and answers the loop's
+questions about the run directory it produced. `score` is the only
+method whose result may carry quality information, and the loop
+calls it only after selection is committed (design D6) — in H2 it
+exists for shape only.
 """
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from pathlib import Path
+from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from asf.contracts.models import AgentRequest
+from harness.harness2.surface import Tree
 
-__all__ = [
-    "Harness2Adapter",
-    "LocalHarness2Adapter",
-    "NullHarness2Adapter",
-    "Suggestion",
-    "default_adapter",
-]
-
-
-class Suggestion(BaseModel):
-    """One improvement suggestion derived from runtime metrics."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    target_agent_id: str
-    kind: str
-    message: str
-    metric: str
-    value: float
+__all__ = ["TaskAdapter"]
 
 
 @runtime_checkable
-class Harness2Adapter(Protocol):
-    """Anything that can assess a metrics overview and suggest improvements."""
+class TaskAdapter(Protocol):
+    """One agent type over a fixed task set, drivable by the loop."""
 
-    available: bool
+    agent_type: str
 
-    def assess(self, metrics_overview: dict[str, Any]) -> list[Suggestion]:
-        """Return improvement suggestions for a MetricsOverview-shaped dict."""
+    def tasks(self) -> list[str]:
+        """Task ids in stable order."""
         ...
 
+    def domain_of(self, task_id: str) -> str:
+        """The library grouping unit for a task (project profile / stack)."""
+        ...
 
-class NullHarness2Adapter:
-    """Default adapter: Harness² is off, so it never suggests anything."""
+    def task_input(self, task_id: str) -> AgentRequest:
+        """The frozen upstream inputs for a task, as an agent request."""
+        ...
 
-    available = False
+    def execute(self, task_id: str, harness: Tree | None, run_id: str) -> Path:
+        """Run one rollout and return its run directory. Idempotent by run_id."""
+        ...
 
-    def assess(self, metrics_overview: dict[str, Any]) -> list[Suggestion]:
-        return []
+    def delivered(self, run_dir: Path) -> bool:
+        """Whether the rollout produced its deliverable artifact."""
+        ...
 
+    def trajectory(self, run_dir: Path, *, obs_trunc: int) -> str:
+        """The rollout's rendered trajectory."""
+        ...
 
-class LocalHarness2Adapter:
-    """Deterministic offline rules over a MetricsOverview-shaped dict.
+    def deliverable_text(self, run_dir: Path) -> str:
+        """The deliverable artifact's text ('' when not delivered)."""
+        ...
 
-    Expected shape (see ``apps/dashboard/src/types/metrics.ts``): ``agents``
-    rows with ``agentId`` / ``successRate`` / ``avgRevisions`` /
-    ``humanApprovalRate`` / ``healthScore``, plus ``human.approvalRate``
-    and ``quality.testPassRate``. Missing values are skipped, not guessed.
-    """
+    def base_harness(self) -> Tree:
+        """The agent's default harness as a Tree."""
+        ...
 
-    available = True
+    def validate_tree(self, tree: Tree) -> None:
+        """Raise ValueError, in actionable prose, for an invalid tree."""
+        ...
 
-    def assess(self, metrics_overview: dict[str, Any]) -> list[Suggestion]:
-        suggestions: list[Suggestion] = []
-        for row in metrics_overview.get("agents") or []:
-            agent_id = str(row.get("agentId", "unknown"))
-            health = row.get("healthScore")
-            if health is not None and health < 70:
-                suggestions.append(
-                    Suggestion(
-                        target_agent_id=agent_id,
-                        kind="investigate_agent",
-                        message=f"Agent {agent_id} health score is below 70; investigate it.",
-                        metric="healthScore",
-                        value=float(health),
-                    )
-                )
-            revisions = row.get("avgRevisions")
-            if revisions is not None and revisions > 1.5:
-                suggestions.append(
-                    Suggestion(
-                        target_agent_id=agent_id,
-                        kind="tighten_prompt_or_template",
-                        message=(
-                            f"Agent {agent_id} averages more than 1.5 revisions; "
-                            "tighten its prompt or spec template."
-                        ),
-                        metric="avgRevisions",
-                        value=float(revisions),
-                    )
-                )
-            approval = row.get("humanApprovalRate")
-            if approval is not None and approval < 0.5:
-                suggestions.append(
-                    Suggestion(
-                        target_agent_id=agent_id,
-                        kind="review_artifact_template",
-                        message=(
-                            f"Agent {agent_id} is approved by humans less than half the "
-                            "time; review its artifact template."
-                        ),
-                        metric="humanApprovalRate",
-                        value=float(approval),
-                    )
-                )
-        human = metrics_overview.get("human") or {}
-        approval_rate = human.get("approvalRate")
-        if approval_rate is not None and approval_rate < 0.5:
-            suggestions.append(
-                Suggestion(
-                    target_agent_id="all",
-                    kind="review_artifact_template",
-                    message="Overall human approval rate is below 0.5; review artifact templates.",
-                    metric="human.approvalRate",
-                    value=float(approval_rate),
-                )
-            )
-        quality = metrics_overview.get("quality") or {}
-        test_pass = quality.get("testPassRate")
-        if test_pass is not None and test_pass < 0.8:
-            suggestions.append(
-                Suggestion(
-                    target_agent_id="all",
-                    kind="strengthen_test_generation",
-                    message="Test pass rate is below 0.8; strengthen test generation.",
-                    metric="quality.testPassRate",
-                    value=float(test_pass),
-                )
-            )
-        return suggestions
-
-
-def default_adapter() -> Harness2Adapter:
-    """Return the default adapter: Harness² stays optional and off."""
-    return NullHarness2Adapter()
+    def score(self, run_dir: Path, task_id: str) -> dict | None:
+        """Post-selection scoring only; None means the judge failed."""
+        ...

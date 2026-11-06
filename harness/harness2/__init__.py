@@ -1,17 +1,30 @@
-"""Harness² adapter seam: protocol, local rules adapter, null (default) adapter."""
+"""Harness²-style improvement loop for the ASF agents (offline, human-gated).
 
-from harness.harness2.adapter import (
-    Harness2Adapter,
-    LocalHarness2Adapter,
-    NullHarness2Adapter,
+Implemented up to stage H2 — see `docs/architecture/harness2.md`.
+The metrics trigger in `trigger.py` is not the method; it only decides
+which agent deserves an improvement cycle.
+"""
+
+from harness.harness2.adapter import TaskAdapter
+from harness.harness2.ledger import Ledger, expected_rollouts, expected_sessions
+from harness.harness2.trigger import (
+    ImprovementTrigger,
+    MetricsImprovementTrigger,
+    MetricsOverview,
+    NullImprovementTrigger,
     Suggestion,
-    default_adapter,
+    default_trigger,
 )
 
 __all__ = [
-    "Harness2Adapter",
-    "LocalHarness2Adapter",
-    "NullHarness2Adapter",
+    "ImprovementTrigger",
+    "Ledger",
+    "MetricsImprovementTrigger",
+    "MetricsOverview",
+    "NullImprovementTrigger",
     "Suggestion",
-    "default_adapter",
+    "TaskAdapter",
+    "default_trigger",
+    "expected_rollouts",
+    "expected_sessions",
 ]

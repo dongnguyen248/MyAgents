@@ -17,6 +17,7 @@ from asf.agents._shared.code_agents import (
     invalid_response,
     linked_metadata,
 )
+from asf.agents._shared.harness import HarnessComponents, components_from_prompts, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.parsing import strip_code_fence
 from asf.agents._shared.routing import tier_metadata
@@ -77,6 +78,7 @@ class ReviewSettings:
     skip_when_tests_pass: bool = False
     max_diff_lines: int = 200
     report_tail_lines: int = 120
+    harness: HarnessComponents | None = None
 
 
 def _diff_lines(changes: ChangeSet) -> int:
@@ -128,6 +130,7 @@ class ReviewAgent(BaseAgent):
             prompts=self._settings.prompts,
             request=request,
             report_tail_lines=self._settings.report_tail_lines,
+            harness=self._settings.harness,
         )
         response = self._call_model(request, messages)
         review = _parse_review(response)
@@ -199,6 +202,14 @@ class ReviewAgent(BaseAgent):
         artifact = self._review_artifact(request, code, review, text)
         return {"verdict": review.verdict}, [artifact]
 
+    def _harness_fingerprint(self) -> str:
+        prompts = self._settings.prompts
+        components = self._settings.harness or components_from_prompts(
+            contract=prompts.contract,
+            system=prompts.system,
+        )
+        return fingerprint(components)
+
     def _review_artifact(
         self, request: AgentRequest, code: Artifact, review: ReviewContent, text: str
     ) -> Artifact:
@@ -211,7 +222,10 @@ class ReviewAgent(BaseAgent):
             content={"format": "json", "review": payload, "text": text},
             created_by=self.metadata.id,
             created_at=self._runtime.clock(),
-            metadata=linked_metadata(request, code),
+            metadata={
+                **linked_metadata(request, code),
+                "harnessFingerprint": self._harness_fingerprint(),
+            },
         )
 
 

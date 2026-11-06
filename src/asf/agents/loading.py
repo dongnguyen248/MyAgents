@@ -28,9 +28,10 @@ __all__ = [
 def _load_prompt_pair[T](package: str, agent: str, build: Callable[..., T]) -> T:
     try:
         traversable = importlib.resources.files(package).joinpath("prompts")
+        contract_text = traversable.joinpath("contract.md").read_text(encoding="utf-8")
         system_text = traversable.joinpath("system.md").read_text(encoding="utf-8")
         revision_text = traversable.joinpath("revision.md").read_text(encoding="utf-8")
-        return build(system=system_text, revision=revision_text)
+        return build(system=system_text, revision=revision_text, contract=contract_text)
     except Exception as exc:
         raise ConfigError(
             f"Failed to load {agent} prompts from package: {exc}",
@@ -38,23 +39,28 @@ def _load_prompt_pair[T](package: str, agent: str, build: Callable[..., T]) -> T
         ) from exc
 
 
-def _load_system_prompt(package: str, agent: str) -> str:
+def _load_contract_and_system(package: str, agent: str, *, strict: bool) -> tuple[str, str]:
     try:
-        resource = importlib.resources.files(package).joinpath("prompts", "system.md")
-        return resource.read_text(encoding="utf-8")
-    except Exception as exc:
-        raise ConfigError(
-            f"Failed to load {agent} prompts from package: {exc}",
-            source=f"{package}.prompts",
-        ) from exc
-
-
-def _load_system_prompt_strict(package: str, agent: str) -> str:
-    try:
-        resource = importlib.resources.files(package).joinpath("prompts", "system.md")
-        return resource.read_text(encoding="utf-8")
+        traversable = importlib.resources.files(package).joinpath("prompts")
+        contract = traversable.joinpath("contract.md").read_text(encoding="utf-8")
+        system = traversable.joinpath("system.md").read_text(encoding="utf-8")
+        return contract, system
     except (OSError, ModuleNotFoundError) as exc:
-        raise ConfigError(f"Failed to load {agent} prompts", source=f"{package}.prompts") from exc
+        if strict:
+            raise ConfigError(
+                f"Failed to load {agent} prompts", source=f"{package}.prompts"
+            ) from exc
+        raise ConfigError(
+            f"Failed to load {agent} prompts from package: {exc}",
+            source=f"{package}.prompts",
+        ) from exc
+    except Exception as exc:
+        if strict:
+            raise
+        raise ConfigError(
+            f"Failed to load {agent} prompts from package: {exc}",
+            source=f"{package}.prompts",
+        ) from exc
 
 
 def _load_template[T](
@@ -96,13 +102,15 @@ def load_task_template(templates_dir: Path) -> TaskTemplate:
 
 
 def load_implement_prompts() -> ImplementPrompts:
-    system = _load_system_prompt("asf.agents.implement", "implement")
-    return ImplementPrompts(system=system)
+    contract, system = _load_contract_and_system("asf.agents.implement", "implement", strict=False)
+    return ImplementPrompts(system=system, contract=contract)
 
 
 def load_review_prompts() -> ReviewPrompts:
-    return ReviewPrompts(system=_load_system_prompt_strict("asf.agents.review", "review"))
+    contract, system = _load_contract_and_system("asf.agents.review", "review", strict=True)
+    return ReviewPrompts(system=system, contract=contract)
 
 
 def load_fix_prompts() -> FixPrompts:
-    return FixPrompts(system=_load_system_prompt_strict("asf.agents.fix", "fix"))
+    contract, system = _load_contract_and_system("asf.agents.fix", "fix", strict=True)
+    return FixPrompts(system=system, contract=contract)

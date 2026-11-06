@@ -22,20 +22,6 @@
    "symbol": "EvaluationRunner.run_case"
   },
   {
-   "file": "harness/harness2/adapter.py",
-   "limit": 10,
-   "measured": 15,
-   "rule": "function-complexity",
-   "symbol": "LocalHarness2Adapter.assess"
-  },
-  {
-   "file": "harness/harness2/adapter.py",
-   "limit": 30,
-   "measured": 68,
-   "rule": "function-lines",
-   "symbol": "LocalHarness2Adapter.assess"
-  },
-  {
    "file": "harness/optimization/experiments.py",
    "limit": 30,
    "measured": 92,

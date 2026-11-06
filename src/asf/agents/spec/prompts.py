@@ -4,6 +4,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from asf.agents._shared.harness import (
+    HarnessComponents,
+    agent_skills_section,
+    assemble_base_prompt,
+    components_from_prompts,
+    guardrails_memory_section,
+)
 from asf.agents._shared.prompt_context import project_context_section, revision_sections
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
@@ -30,6 +37,7 @@ _RULES_INTRO = (
 class SpecPrompts:
     system: str
     revision: str
+    contract: str = ""
 
 
 @dataclass(frozen=True)
@@ -56,6 +64,7 @@ class SpecPromptContext:
     project_context: dict[str, Any] | None
     previous_spec: tuple[str, str] | None = None
     feedback: Sequence[ApprovalFeedback] = ()
+    harness: HarnessComponents | None = None
 
 
 def build_user_message(context: SpecPromptContext) -> str:
@@ -72,14 +81,24 @@ def build_user_message(context: SpecPromptContext) -> str:
     return "\n\n".join(sections)
 
 
-def _system_content(context: SpecPromptContext) -> str:
+def _components(context: SpecPromptContext) -> HarnessComponents:
+    if context.harness is not None:
+        return context.harness
     prompts = context.prompts
-    if context.previous_spec is not None:
-        content = f"{prompts.system}\n\n{prompts.revision}"
-    else:
-        content = prompts.system
+    return components_from_prompts(
+        contract=prompts.contract,
+        system=prompts.system,
+        revision=prompts.revision,
+    )
+
+
+def _system_content(context: SpecPromptContext) -> str:
+    components = _components(context)
+    content = assemble_base_prompt(components, revision=context.previous_spec is not None)
     content += rules_section(context.project_context, _RULES_INTRO)
+    content += guardrails_memory_section(components)
     content += skills_section(context.project_context, "spec")
+    content += agent_skills_section(components)
     return content
 
 

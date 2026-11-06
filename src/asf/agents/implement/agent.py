@@ -10,6 +10,7 @@ from asf.agents._shared.codegen import (
     normalize_changeset_operations,
     validate_changeset,
 )
+from asf.agents._shared.harness import HarnessComponents, components_from_prompts, fingerprint
 from asf.agents._shared.limits import MAX_FILE_SIZE_BYTES
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.parsing import parse_json
@@ -83,6 +84,7 @@ class ImplementSettings:
     edit_format: str = "blocks"
     repair_attempts: int = 1
     repo_map_max_chars: int = 6000
+    harness: HarnessComponents | None = None
 
     def __post_init__(self) -> None:
         if self.edit_format not in ("blocks", "json"):
@@ -318,6 +320,7 @@ class ImplementAgent(BaseAgent):
             project_context=run.request.context.get("project"),
             edit_format=self._settings.edit_format,
             repo_map=repo_map,
+            harness=self._settings.harness,
         )
         return build_implement_messages(context)
 
@@ -432,6 +435,14 @@ class ImplementAgent(BaseAgent):
             metadata=self._artifact_metadata(run, changeset),
         )
 
+    def _harness_fingerprint(self) -> str:
+        prompts = self._settings.prompts
+        components = self._settings.harness or components_from_prompts(
+            contract=prompts.contract,
+            system=prompts.system,
+        )
+        return fingerprint(components)
+
     def _artifact_metadata(self, run: _ImplementRun, changeset: ChangeSet) -> dict[str, Any]:
         metadata = build_metadata(
             MetadataSpec(
@@ -443,6 +454,7 @@ class ImplementAgent(BaseAgent):
                 changeset=changeset,
             )
         )
+        metadata["harnessFingerprint"] = self._harness_fingerprint()
         metadata["specArtifactId"] = run.spec_art.id
         metadata["specVersion"] = run.spec_art.version
         metadata["planArtifactId"] = run.plan_art.id

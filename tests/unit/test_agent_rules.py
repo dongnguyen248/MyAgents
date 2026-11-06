@@ -67,7 +67,11 @@ class AgentRulesTests(unittest.TestCase):
         validators the agents' _check methods compose. The reply-text
         helper (asf.agents._shared.reply_text) is allowlisted on the
         same terms: pure string handling for model replies (fence
-        unwrapping, heading extraction).
+        unwrapping, heading extraction). The harness helper
+        (asf.agents._shared.harness) is allowlisted on the same
+        terms: pure (hashlib/json/dataclasses only), it holds the
+        harness components every agent assembles its system prompt
+        from and the fingerprint stamped on artifacts.
         """
         agents_dir = REPO_ROOT / "src" / "asf" / "agents"
         logic_modules = [
@@ -93,6 +97,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.request_checks",
             "asf.agents._shared.reply_text",
             "asf.agents._shared.prompt_context",
+            "asf.agents._shared.harness",
             "asf.models.counting",
             "asf.agents.spec",
             "asf.agents.spec.agent",

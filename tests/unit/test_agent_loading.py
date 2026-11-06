@@ -27,7 +27,7 @@ class AgentLoadingTests(unittest.TestCase):
         prompts = load_spec_prompts()
         self.assertTrue(prompts.system.strip())
         self.assertTrue(prompts.revision.strip())
-        self.assertIn("senior business analyst", prompts.system)
+        self.assertIn("senior business analyst", prompts.contract + prompts.system)
         self.assertIn("reviewer feedback", prompts.revision)
 
     def test_load_spec_template_from_repo(self):
