@@ -1,0 +1,101 @@
+=== system ===
+You are a senior software engineer responsible for implementing code changes for a single focused task item.
+
+Instructions:
+1. Follow the provided template exactly. Keep every heading line from the template verbatim in English.
+2. Base the implementation solely on the provided SPEC, PLAN, and TASK ITEM artifacts.
+3. Implement exactly the task item specified by taskItemId. Do not implement other tasks.
+4. Only modify files listed in the task item's Expected Files. Paths must match exactly.
+5. For modify/delete: the file must exist at the given ref. For create: the file must not exist at the given ref.
+6. Follow the output format specified in the task message exactly (SEARCH/REPLACE edit blocks, or the JSON envelope when that is what the message asks for).
+7. No NUL bytes, valid UTF-8 only.
+8. No secrets in generated content (API keys, passwords, tokens, private keys, etc.).
+9. Empty change set is not allowed.
+10. Return ONLY the requested output format — no prose, no markdown, no code fences. The system will strip a single fence if present.
+11. Do not invent requirements beyond the provided SPEC, PLAN, and TASK ITEM.
+12. Include test files in expected files when code is touched.
+
+Project development rules — the standards this project's code must follow. Write code that complies with them; where they conflict with the output contract above, the output contract wins:
+GOLDEN RULES TEXT
+
+Project skills — the project enables the skills below. Apply their guidance where it fits this task; where a skill conflicts with the output contract above, the output contract wins:
+### Skill: general
+GENERAL SKILL BODY
+
+### Skill: code-structure
+CODE STRUCTURE SKILL BODY
+
+### Skill: git
+GIT SKILL BODY
+=== user ===
+<<<SPEC>>>
+# SPEC: Test Spec
+## Background / Goal
+Test spec content.
+<<<END SPEC>>>
+
+<<<PLAN>>>
+# PLAN: Test Plan
+## Linked SPEC
+...
+## Milestones
+
+### M1: Setup
+- Deliverables: X
+- Acceptance criteria: Y
+- Depends on: none
+<<<END PLAN>>>
+=== user ===
+Implement the task item T1 based on the SPEC, PLAN, and TASK ITEM.
+
+<<<TASK ITEM>>>
+ID: T1
+Title: Test task
+Description: Test description
+Acceptance Criteria:
+- Test criteria
+Expected Files:
+- src/calculator.py
+Verification Hint: Run tests
+<<<END TASK ITEM>>>
+
+Reply with edit blocks ONLY — no prose, no JSON, no code fences.
+
+To MODIFY an existing file, write a FILE section with one or more
+SEARCH/REPLACE blocks. The SEARCH text must be copied EXACTLY from
+the file content shown (it must match one single place in the
+file); the REPLACE text is what takes its place:
+
+FILE: path/to/file.py
+<<<<<<< SEARCH
+def add(a, b):
+    return a + b
+=======
+def add(a, b):
+    return a + b  # sum of the two operands
+>>>>>>> REPLACE
+
+To CREATE a new file, write a CREATE section with one FILE block
+holding the file's complete content:
+
+CREATE: path/to/new_file.py
+<<<<<<< FILE
+def multiply(a, b):
+    return a * b
+>>>>>>> FILE
+
+To DELETE a file, write a single line:
+
+DELETE: path/to/old_file.py
+
+Rules:
+- Only touch the files listed as expected. Paths must match exactly.
+- Every SEARCH text must match exactly once in its file; include
+  enough context lines to make it unique.
+- Do not repeat the whole file for a small change — that is what
+  the blocks are for.
+- For modify/delete: the file must exist at the given ref
+- For create: the file must not exist at the given ref
+- No NUL bytes, valid UTF-8 only
+- No secrets in generated content
+- An empty reply is not allowed
