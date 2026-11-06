@@ -29,6 +29,12 @@ from datetime import datetime
 from typing import Any
 
 from asf.contracts.models import AgentRequest, AgentResult, PlatformError, RunMetrics
+from asf.integrations.hosting.description import (
+    ChangeRequestInfo,
+    build_change_request_text,
+    test_commands_of,
+    validate_description,
+)
 from asf.integrations.hosting.factory import build_provider
 from asf.integrations.hosting.http import Transport
 from asf.integrations.hosting.ports import HostingError, HostingProvider
@@ -76,28 +82,30 @@ def build_hosting_actions(
             return _fail(request, started, clock, "HOSTING_CONFIG", str(error))
         if provider is None:
             return _succeed(request, started, clock, {"hosting": "not-configured"})
-        code = next((a for a in request.artifacts if a.type == "CODE"), None)
-        if code is None or not isinstance(code.content, dict):
-            return _fail(
-                request,
-                started,
-                clock,
-                "VALIDATION_FAILED",
-                "The CI step needs the CODE artifact to push",
-            )
-        try:
-            changes = ChangeSet.model_validate(code.content.get("changeSet"))
-        except Exception:
-            return _fail(
-                request,
-                started,
-                clock,
-                "VALIDATION_FAILED",
-                "The CODE artifact does not carry a valid change set",
-            )
+        parsed = _code_changeset(request, started, clock)
+        if isinstance(parsed, AgentResult):
+            return parsed
+        changes, base_branch = parsed
         branch = branch_for_task(request.task_id)
-        base_branch = str(code.metadata.get("baseRef") or "main")
         title = _title(request)
+        info = ChangeRequestInfo(
+            title=title,
+            task_id=request.task_id,
+            run_id=str(request.metadata.get("runId", "")),
+            branch=branch,
+            base_branch=base_branch,
+            test_commands=test_commands_of(profiles(request.project_id) or {}),
+        )
+        description = build_change_request_text(info, changes)
+        problems = validate_description(description)
+        if problems:
+            return _fail(
+                request,
+                started,
+                clock,
+                "VALIDATION_FAILED",
+                "Change request description is invalid: " + "; ".join(problems),
+            )
         try:
             push = provider.push_changeset(
                 branch=branch,
@@ -109,10 +117,7 @@ def build_hosting_actions(
                 branch=branch,
                 base_branch=base_branch,
                 title=title,
-                description=(
-                    f"Opened by AI Software Agents for task "
-                    f"{request.task_id} (run {request.metadata.get('runId', '')})."
-                ),
+                description=description,
             )
             pipeline = provider.pipeline_status(branch=branch)
         except HostingError as error:
@@ -218,6 +223,34 @@ def build_hosting_actions(
         )
 
     return {"run-pipeline": run_pipeline, "await-merge": await_merge}
+
+
+def _code_changeset(
+    request: AgentRequest,
+    started: datetime,
+    clock: Callable[[], datetime],
+) -> tuple[ChangeSet, str] | AgentResult:
+    """The request's CODE change set + base branch, or the failure result."""
+    code = next((a for a in request.artifacts if a.type == "CODE"), None)
+    if code is None or not isinstance(code.content, dict):
+        return _fail(
+            request,
+            started,
+            clock,
+            "VALIDATION_FAILED",
+            "The CI step needs the CODE artifact to push",
+        )
+    try:
+        changes = ChangeSet.model_validate(code.content.get("changeSet"))
+    except Exception:
+        return _fail(
+            request,
+            started,
+            clock,
+            "VALIDATION_FAILED",
+            "The CODE artifact does not carry a valid change set",
+        )
+    return changes, str(code.metadata.get("baseRef") or "main")
 
 
 def _title(request: AgentRequest) -> str:
