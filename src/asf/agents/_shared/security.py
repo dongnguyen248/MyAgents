@@ -4,8 +4,6 @@ import re
 
 __all__ = ["redact_text", "scan_secrets", "SecretMatch"]
 
-_MATCH_PREVIEW_CHARS = 50
-
 
 from dataclasses import dataclass
 
@@ -62,6 +60,9 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("database_url", re.compile(r"(?i)(?:postgres|mysql|mongodb)://[^:\s]+:[^@\s]+@")),
     ("jwt_token", re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")),
 ]
+
+
+_MATCH_PREVIEW_CHARS = 50
 
 
 def scan_secrets(
