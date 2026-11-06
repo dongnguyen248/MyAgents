@@ -77,6 +77,8 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
     try {
       const next = await updateModelSettings(buildInput());
       setSaved(next);
+      setModel(next.model);
+      setBaseUrl(next.baseUrl);
       setAgentModels({ ...(next.agentModels ?? {}) });
       setApiKey('');
       setClearKey(false);
