@@ -19,10 +19,14 @@
      a reviewer should check by hand. -->
 
 ## Risk & Rollback
-<!-- Two-way door (easy to revert, additive, backward compatible) or
-     one-way door (migration, schema/data change, breaking API or
-     protocol, deletion), one sentence why. Blast radius: what is
-     affected, what is explicitly untouched. Exact rollback steps. -->
+Security impact:
+<!-- Fill in the Security impact line above: "none" or the threat note,
+     new dependencies, new secrets or config keys, changed permissions,
+     new external inputs. Then: two-way door (easy to revert, additive,
+     backward compatible) or one-way door (migration, schema/data
+     change, breaking API or protocol, deletion), one sentence why.
+     Blast radius: what is affected, what is explicitly untouched.
+     Exact rollback steps. -->
 
 ## Context
 <!-- Resolves: issue/ticket or "None". Relates to: or "None".

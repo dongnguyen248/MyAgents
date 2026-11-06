@@ -1,0 +1,20 @@
+# Gitleaks configuration for this repository.
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+title = "ASF gitleaks configuration"
+
+# The allowlist is deliberately narrow. It covers only test files
+# whose fixtures are secret-SHAPED on purpose: the secret scanner's
+# own tests must feed it realistic payloads, and the API tests use
+# fake hosting tokens and model keys. Every value in these files is
+# synthetic. Anything outside these paths is scanned with the full
+# default ruleset; do not widen this list without a written reason
+# in the pull request.
+[[allowlists]]
+description = "Synthetic secret-shaped fixtures in tests (all values are fake)."
+paths = [
+    '''tests/unit/test_shared_security\.py''',
+    '''tests/unit/test_api_service\.py''',
+    '''tests/unit/test_api_app\.py''',
+    '''tests/unit/test_model_settings\.py''',
+    '''tests/unit/test_implement_agent_limits\.py''',
+]

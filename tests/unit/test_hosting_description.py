@@ -97,6 +97,15 @@ def test_bot_summary_heading_is_reported() -> None:
     assert any("unexpected heading" in problem for problem in problems)
 
 
+def test_missing_security_impact_line_is_reported() -> None:
+    text = _valid_text().replace("Security impact: none\n", "")
+    problems = validate_description(text)
+    assert any("Security impact" in problem for problem in problems)
+    empty = _valid_text().replace("Security impact: none", "Security impact:")
+    problems = validate_description(empty)
+    assert any("Security impact" in problem for problem in problems)
+
+
 def _info(test_commands: tuple[str, ...] = ()) -> ChangeRequestInfo:
     return ChangeRequestInfo(
         title="Build the thing",
@@ -132,6 +141,19 @@ def test_built_description_cites_configured_test_commands() -> None:
     text = render_description(change_request_description(info, changes))
     assert validate_description(text) == []
     assert "`python -m pytest -q` - passed in this run's test step" in text
+
+
+def test_built_description_security_impact_reflects_the_changeset() -> None:
+    plain = _changeset({"path": "a.py", "operation": "create", "content": "a = 1\n"})
+    text = render_description(change_request_description(_info(), plain))
+    assert "Security impact: none" in text
+    sensitive = _changeset(
+        {"path": "src/auth/session.py", "operation": "modify", "content": "b = 2\n"}
+    )
+    text = render_description(change_request_description(_info(), sensitive))
+    assert validate_description(text) == []
+    assert "Security impact: review required" in text
+    assert "auth" in text and "session" in text
 
 
 def test_built_description_groups_large_change_sets() -> None:
