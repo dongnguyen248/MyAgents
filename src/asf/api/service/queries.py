@@ -36,7 +36,6 @@ from asf.api.service import (
     _iso,
 )
 from asf.api.service.review_state import ai_review_waiting, escalation_waiting, review_status
-from asf.api.service.reviews_view import run_reviews_view
 from asf.approval.errors import ApprovalError
 from asf.contracts.models import ActivityEvent
 from asf.orchestrator.code_loop import ESCALATED_STAGE, FIX_STAGE, FIX_STEP, REWORK_STAGE
@@ -1021,11 +1020,6 @@ class QueriesMixin:
             by_task = [item for item in runs if item.task_id == workflow_id]
             run = by_task[-1] if by_task else None
         return self._workflow_view(run) if run is not None else None
-
-    def run_reviews(self, run_id: str) -> dict[str, Any] | None:
-        """The run's AI review rounds per gated stage (Stage D)."""
-        run = next((item for item in self._runs() if item.id == run_id), None)
-        return run_reviews_view(run) if run is not None else None
 
     # ------------------------------------------------------------------
     # projects

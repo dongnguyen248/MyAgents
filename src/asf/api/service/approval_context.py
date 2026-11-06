@@ -19,6 +19,7 @@ from typing import Any
 from asf.approval.mode import parse_approval_overrides
 from asf.approval.policy import approval_policy_from_project
 from asf.configuration.project import ProjectProfile
+from asf.evaluation.models import ApprovalDecisionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,24 @@ def record_decision(metrics: Any, item: DecisionRecord) -> None:
 
 
 def _call_sink(record: Any, item: DecisionRecord) -> None:
+    try:
+        record(
+            ApprovalDecisionRecord(
+                project_id=item.project_id,
+                task_id=item.task_id,
+                agent_id=item.agent_id or "",
+                decision=item.decision,
+                reviewer_kind=item.reviewer_kind,
+            )
+        )
+    except TypeError:
+        _call_sink_kwargs(record, item)
+    except Exception:
+        logger.exception("Approval metrics sink failed; decision itself already applied")
+
+
+def _call_sink_kwargs(record: Any, item: DecisionRecord) -> None:
+    """Fallback for sinks that still take the decision as keywords."""
     try:
         record(
             project_id=item.project_id,

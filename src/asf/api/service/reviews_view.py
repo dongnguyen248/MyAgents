@@ -13,7 +13,19 @@ from typing import Any
 
 from asf.orchestrator.execution import WorkflowExecution
 
-__all__ = ["run_reviews_view"]
+__all__ = ["run_reviews", "run_reviews_view"]
+
+
+def run_reviews(service: Any, run_id: str) -> dict[str, Any] | None:
+    """The service-level lookup behind GET /runs/{id}/reviews.
+
+    Kept here (not on the queries mixin) so the endpoint does
+    not grow the mixin; the route in ``api/app.py`` calls this
+    directly with the service.
+    """
+    run = next((item for item in service._runs() if item.id == run_id), None)
+    return run_reviews_view(run) if run is not None else None
+
 
 _SEVERITIES = ("BLOCKER", "MAJOR", "MINOR", "NIT")
 

@@ -10,6 +10,7 @@ import pytest
 
 from asf.contracts.models import ActivityEvent, AgentResult, Artifact, RunMetrics
 from asf.evaluation import MetricsService
+from asf.evaluation.models import ApprovalDecisionRecord
 
 DAY1 = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 DAY2 = datetime(2026, 11, 3, 9, 0, tzinfo=UTC)
@@ -134,16 +135,14 @@ def test_aggregation_math_and_health_formula() -> None:
             ),
         )
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="APPROVED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-spec", decision="APPROVED"
+        )
     )
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="REJECTED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-spec", decision="REJECTED"
+        )
     )
     service.record_quality(
         project_id="project-1",
@@ -192,10 +191,9 @@ def test_health_formula_perfect_and_zero_rates() -> None:
     service = MetricsService(clock=MutableClock())
     service.record("agent-spec", make_result(revisions=1))
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="APPROVED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-spec", decision="APPROVED"
+        )
     )
     service.record_quality(
         project_id="project-1",
@@ -380,10 +378,9 @@ def test_approval_rates_and_overview_human_section() -> None:
     service = MetricsService(clock=MutableClock())
     for decision in ("APPROVED", "REJECTED", "REQUEST_CHANGES"):
         service.record_approval_decision(
-            project_id="project-1",
-            task_id="task-1",
-            agent_id="agent-spec",
-            decision=decision,
+            ApprovalDecisionRecord(
+                project_id="project-1", task_id="task-1", agent_id="agent-spec", decision=decision
+            )
         )
     service.record("agent-spec", make_result(revisions=2))
 
@@ -406,10 +403,9 @@ def test_invalid_decision_kind_and_naive_times_are_rejected() -> None:
     service = MetricsService(clock=MutableClock())
     with pytest.raises(ValueError):
         service.record_approval_decision(
-            project_id="project-1",
-            task_id=None,
-            agent_id="agent-spec",
-            decision="MAYBE",
+            ApprovalDecisionRecord(
+                project_id="project-1", task_id=None, agent_id="agent-spec", decision="MAYBE"
+            )
         )
     with pytest.raises(ValueError):
         service.record_quality(
@@ -421,11 +417,13 @@ def test_invalid_decision_kind_and_naive_times_are_rejected() -> None:
         )
     with pytest.raises(ValueError):
         service.record_approval_decision(
-            project_id="project-1",
-            task_id=None,
-            agent_id="agent-spec",
-            decision="APPROVED",
-            at=datetime(2026, 11, 2, 9, 0),
+            ApprovalDecisionRecord(
+                project_id="project-1",
+                task_id=None,
+                agent_id="agent-spec",
+                decision="APPROVED",
+                at=datetime(2026, 11, 2, 9, 0),
+            )
         )
     naive = MetricsService(clock=lambda: datetime(2026, 11, 2, 9, 0))
     with pytest.raises(ValueError):
@@ -598,10 +596,9 @@ def test_snapshot_round_trip_is_json_safe_and_restores_everything() -> None:
         ),
     )
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-test",
-        decision="APPROVED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-test", decision="APPROVED"
+        )
     )
     service.record_quality(
         project_id="project-1",
@@ -684,18 +681,22 @@ def test_ai_decisions_never_enter_the_human_rate() -> None:
     service = MetricsService(clock=MutableClock())
     service.record("agent-spec", make_result(revisions=1))
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="APPROVED",
-        reviewer_kind="AI",
+        ApprovalDecisionRecord(
+            project_id="project-1",
+            task_id="task-1",
+            agent_id="agent-spec",
+            decision="APPROVED",
+            reviewer_kind="AI",
+        )
     )
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="REQUEST_CHANGES",
-        reviewer_kind="AI",
+        ApprovalDecisionRecord(
+            project_id="project-1",
+            task_id="task-1",
+            agent_id="agent-spec",
+            decision="REQUEST_CHANGES",
+            reviewer_kind="AI",
+        )
     )
     metrics = service.agent_metrics("agent-spec")
     assert metrics["humanApprovalRate"] is None
@@ -707,10 +708,9 @@ def test_ai_decisions_never_enter_the_human_rate() -> None:
     assert human["aiDecisions"] == 2
     # A human decision afterwards defines the rate on its own.
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="APPROVED",
+        ApprovalDecisionRecord(
+            project_id="project-1", task_id="task-1", agent_id="agent-spec", decision="APPROVED"
+        )
     )
     metrics = service.agent_metrics("agent-spec")
     assert metrics["humanApprovalRate"] == 1.0
@@ -750,11 +750,13 @@ def test_harness_trigger_does_not_fire_without_human_decisions() -> None:
     service = MetricsService(clock=MutableClock())
     service.record("agent-spec", make_result(revisions=1))
     service.record_approval_decision(
-        project_id="project-1",
-        task_id="task-1",
-        agent_id="agent-spec",
-        decision="REQUEST_CHANGES",
-        reviewer_kind="AI",
+        ApprovalDecisionRecord(
+            project_id="project-1",
+            task_id="task-1",
+            agent_id="agent-spec",
+            decision="REQUEST_CHANGES",
+            reviewer_kind="AI",
+        )
     )
     overview = MetricsOverview.model_validate(service.overview())
     trigger = MetricsImprovementTrigger()

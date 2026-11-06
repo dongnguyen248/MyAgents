@@ -25,6 +25,8 @@ from asf.api.service import (
     ProjectExistsError,
     ProjectNotFoundError,
 )
+from asf.api.service.escalation_ops import approve_escalated_run
+from asf.api.service.reviews_view import run_reviews as service_run_reviews
 from asf.approval.errors import ApprovalError
 
 __all__ = ["create_app"]
@@ -119,7 +121,9 @@ def _register_approve_route(app: FastAPI, service: FactoryService) -> None:
         if isinstance(reason, JSONResponse):
             return reason
         try:
-            view = service.approve_escalation(run_id, reason=reason, operator=_operator(request))
+            view = approve_escalated_run(
+                service, run_id, reason=reason, operator=_operator(request)
+            )
         except KeyError:
             return _not_found("Run")
         except ValueError as error:
@@ -206,7 +210,7 @@ def create_app(service: FactoryService) -> FastAPI:
 
     @app.get("/runs/{run_id}/reviews")
     async def run_reviews(run_id: str) -> Any:
-        reviews = service.run_reviews(run_id)
+        reviews = service_run_reviews(service, run_id)
         return reviews if reviews is not None else _not_found("Run")
 
     # -- projects ---------------------------------------------------------

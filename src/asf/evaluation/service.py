@@ -19,7 +19,12 @@ from asf.evaluation.aggregates import (
 from asf.evaluation.aggregates import (
     rate as _rate,
 )
-from asf.evaluation.models import AgentRunRecord, ApprovalRecord, QualityRecord
+from asf.evaluation.models import (
+    AgentRunRecord,
+    ApprovalDecisionRecord,
+    ApprovalRecord,
+    QualityRecord,
+)
 
 __all__ = ["MetricsService"]
 
@@ -228,32 +233,23 @@ class MetricsService:
 
     # -- Explicit samples ---------------------------------------------------
 
-    def record_approval_decision(
-        self,
-        *,
-        project_id: str,
-        task_id: str | None,
-        agent_id: str,
-        decision: str,
-        reviewer_kind: str = "HUMAN",
-        at: datetime | None = None,
-    ) -> None:
+    def record_approval_decision(self, record: ApprovalDecisionRecord) -> None:
         """Record one decision; human rates count HUMAN records only."""
-        if decision not in _DECISIONS:
+        if record.decision not in _DECISIONS:
             raise ValueError(f"decision must be one of {_DECISIONS}")
-        if reviewer_kind not in ("HUMAN", "AI"):
+        if record.reviewer_kind not in ("HUMAN", "AI"):
             raise ValueError("reviewer_kind must be HUMAN or AI")
         with self._lock:
-            recorded_at = self._now() if at is None else self._require_aware(at, "at")
+            recorded_at = self._now() if record.at is None else self._require_aware(record.at, "at")
             self._approvals.append(
                 ApprovalRecord.model_validate(
                     {
                         "recorded_at": recorded_at,
-                        "project_id": project_id,
-                        "task_id": task_id,
-                        "agent_id": agent_id,
-                        "decision": decision,
-                        "reviewer_kind": reviewer_kind,
+                        "project_id": record.project_id,
+                        "task_id": record.task_id,
+                        "agent_id": record.agent_id,
+                        "decision": record.decision,
+                        "reviewer_kind": record.reviewer_kind,
                     }
                 )
             )

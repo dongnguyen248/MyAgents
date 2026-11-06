@@ -21,6 +21,8 @@ from asf.agents.base import AgentRuntime
 from asf.agents.loading import load_artifact_review_prompts
 from asf.agents.spec.factory import build_spec_agent
 from asf.api.service import FactoryService
+from asf.api.service.escalation_ops import approve_escalated_run
+from asf.api.service.reviews_view import run_reviews
 from asf.approval.models import ApprovalPolicy
 from asf.approval.service import ApprovalService
 from asf.configuration.platform import PlatformConfig
@@ -254,7 +256,7 @@ def _escalated_service(replies: list[str]) -> tuple[Harness, FactoryService, Any
 
 def test_service_approve_escalation_approves_anyway_and_completes() -> None:
     harness, service, run = _escalated_service([rc_reply(), rc_reply()])
-    view = service.approve_escalation(run.id, reason="Ship it as-is", operator="alice")
+    view = approve_escalated_run(service, run.id, reason="Ship it as-is", operator="alice")
     assert view is not None
     service.wait_for_drives()
     _wait_for_status(service, run.id, "COMPLETED")
@@ -353,7 +355,7 @@ def test_run_reviews_view_groups_rounds_per_stage() -> None:
     run = service.start_run("task-rev", "ai-proj", inputs={"spec": {"requirement": "x"}})
     service.wait_for_drives()
     _wait_for_status(service, run.id, "COMPLETED")
-    view = service.run_reviews(run.id)
+    view = run_reviews(service, run.id)
     assert view is not None and view["runId"] == run.id
     assert [stage["stage"] for stage in view["stages"]] == ["spec"]
     rounds = view["stages"][0]["rounds"]
@@ -365,7 +367,7 @@ def test_run_reviews_view_groups_rounds_per_stage() -> None:
     finding = first["findings"][0]
     assert finding["id"] == "F-001"
     assert finding["requiredChange"] == "Add an acceptance criterion for REQ-2."
-    assert service.run_reviews("no-such-run") is None
+    assert run_reviews(service, "no-such-run") is None
 
 
 def test_manual_ticks_never_double_dispatch_a_reviewer_round() -> None:

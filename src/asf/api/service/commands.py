@@ -38,11 +38,7 @@ from asf.api.service.approval_context import (
     bake_approval_context,
     record_decision,
 )
-from asf.api.service.escalation_ops import (
-    EscalationResume,
-    approve_escalated_run,
-    resume_escalated_run,
-)
+from asf.api.service.escalation_ops import EscalationResume, resume_escalated_run
 from asf.approval.errors import ApprovalError
 from asf.configuration.project import (
     NEW_PROJECT_WORKSPACE_MODE,
@@ -651,11 +647,6 @@ class CommandsMixin:
             self,
             EscalationResume(run_id=run_id, reason=reason, operator=operator, guidance=guidance),
         )
-
-    def approve_escalation(
-        self, run_id: str, *, reason: str, operator: str = "operator"
-    ) -> dict[str, Any] | None:
-        return approve_escalated_run(self, run_id, reason=reason, operator=operator)
 
     def recover_run(
         self,

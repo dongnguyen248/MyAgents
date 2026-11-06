@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from pydantic import AwareDatetime, Field
@@ -8,10 +10,24 @@ from asf.configuration.platform import ConfigModel
 
 __all__ = [
     "AgentRunRecord",
+    "ApprovalDecisionRecord",
     "ApprovalRecord",
     "QualityKind",
     "QualityRecord",
 ]
+
+
+@dataclass(frozen=True)
+class ApprovalDecisionRecord:
+    """One approval decision handed to ``record_approval_decision``."""
+
+    project_id: str
+    task_id: str | None
+    agent_id: str
+    decision: str
+    reviewer_kind: str = "HUMAN"
+    at: datetime | None = None
+
 
 QualityKind = Literal["TEST", "CI", "REVIEW"]
 
