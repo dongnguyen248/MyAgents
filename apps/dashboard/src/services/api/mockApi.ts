@@ -206,6 +206,13 @@ export const mockApi: FactoryApi = {
     return delay(diagnostics);
   },
 
+  getRunReviews: (runId) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) {return delay(undefined);}
+    // Mock mode has no AI review loop; report an empty history.
+    return delay({ runId: workflow.id, stages: [] });
+  },
+
   tickRun: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
     if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}

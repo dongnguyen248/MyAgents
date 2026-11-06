@@ -223,3 +223,11 @@ def test_cancel_endpoint_rejects_terminal_and_unknown_runs():
     assert again.status_code == 409
     assert "already cancelled" in again.json()["detail"]
     assert client.post("/runs/run-missing/cancel").status_code == 404
+
+
+def test_run_reviews_route_and_openapi():
+    client = make_client()
+    assert client.get("/runs/nope/reviews").status_code == 404
+    spec = client.get("/openapi.json").json()
+    assert "/runs/{run_id}/reviews" in spec["paths"]
+    assert "/runs/{run_id}/escalation/approve" in spec["paths"]

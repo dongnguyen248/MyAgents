@@ -60,6 +60,7 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     listWorkflows: () => get('/workflows'),
     getWorkflow: (id) => getOpt(`/workflows/${id}`),
     getRunDiagnostics: (runId) => getOpt(`/runs/${runId}/diagnostics`),
+    getRunReviews: (runId) => getOpt(`/runs/${runId}/reviews`),
     tickRun: (runId) => send<Workflow>(`/runs/${runId}/tick`, 'POST'),
     retryRun: (runId) => send<Workflow>(`/runs/${runId}/retry`, 'POST'),
     resumeRun: (runId) => send<Workflow>(`/runs/${runId}/resume`, 'POST'),

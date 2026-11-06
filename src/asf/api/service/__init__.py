@@ -179,7 +179,7 @@ _ZERO_AGENT_METRICS: dict[str, Any] = {
     "successRate": 0.0,
     "avgDurationSec": 0.0,
     "avgRevisions": 0.0,
-    "humanApprovalRate": 0.0,
+    "humanApprovalRate": None,
     "testPassRate": 0.0,
     "ciPassRate": 0.0,
 }

@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from threading import RLock
 from typing import Any
 
 from asf.contracts.models import ActivityEvent, AgentResult, Artifact
+from asf.evaluation.aggregates import (
+    agent_metrics_view,
+    ai_decision_record,
+    ai_review_metrics,
+    human_section,
+)
+from asf.evaluation.aggregates import (
+    mean as _mean,
+)
+from asf.evaluation.aggregates import (
+    rate as _rate,
+)
 from asf.evaluation.models import AgentRunRecord, ApprovalRecord, QualityRecord
 
 __all__ = ["MetricsService"]
@@ -23,40 +34,6 @@ _REVIEW_VERDICTS = {
     "REJECTED": False,
 }
 _FAILED_STATUSES = ("FAILED", "REJECTED")
-
-
-def _rate(numerator: int, denominator: int) -> float:
-    """Return a 0..1 rate; a zero denominator is defined as 0.0 (never NaN)."""
-    return numerator / denominator if denominator else 0.0
-
-
-def _mean(values: list[float]) -> float:
-    return sum(values) / len(values) if values else 0.0
-
-
-def _health_score(
-    *,
-    success_rate: float,
-    human_approval_rate: float,
-    ci_pass_rate: float,
-    test_pass_rate: float,
-    avg_revisions: float,
-) -> int:
-    """Mirror ``apps/dashboard/src/utils/health.ts`` exactly (weights and rounding).
-
-    ``Math.round`` in the dashboard rounds halves up; the score is never
-    negative, so ``floor(x + 0.5)`` reproduces it. The revision term follows
-    the dashboard formula literally, including for ``avg_revisions == 0``.
-    """
-    revision_score = max(0.0, 1.0 - (avg_revisions - 1.0) / 3.0)
-    weighted = (
-        0.30 * success_rate
-        + 0.20 * human_approval_rate
-        + 0.20 * ci_pass_rate
-        + 0.15 * test_pass_rate
-        + 0.15 * revision_score
-    )
-    return int(math.floor(weighted * 100 + 0.5))
 
 
 def _find_verdict(value: Any, allowed: Mapping[str, bool], depth: int = 0) -> bool | None:
@@ -236,6 +213,12 @@ class MetricsService:
         """Store a copy of an activity event."""
         with self._lock:
             self._events.append(event.model_copy(deep=True))
+            self._record_ai_decision_locked(event)
+
+    def _record_ai_decision_locked(self, event: ActivityEvent) -> None:
+        record = ai_decision_record(event)
+        if record is not None:
+            self._approvals.append(record)
 
     def events(self) -> list[ActivityEvent]:
         """Return copies of the stored events in chronological order."""
@@ -252,11 +235,14 @@ class MetricsService:
         task_id: str | None,
         agent_id: str,
         decision: str,
+        reviewer_kind: str = "HUMAN",
         at: datetime | None = None,
     ) -> None:
-        """Record one human decision; approval rate is APPROVED / all decisions."""
+        """Record one decision; human rates count HUMAN records only."""
         if decision not in _DECISIONS:
             raise ValueError(f"decision must be one of {_DECISIONS}")
+        if reviewer_kind not in ("HUMAN", "AI"):
+            raise ValueError("reviewer_kind must be HUMAN or AI")
         with self._lock:
             recorded_at = self._now() if at is None else self._require_aware(at, "at")
             self._approvals.append(
@@ -267,6 +253,7 @@ class MetricsService:
                         "task_id": task_id,
                         "agent_id": agent_id,
                         "decision": decision,
+                        "reviewer_kind": reviewer_kind,
                     }
                 )
             )
@@ -307,36 +294,12 @@ class MetricsService:
         runs = [run for run in self._runs if run.agent_id == agent_id]
         approvals = [item for item in self._approvals if item.agent_id == agent_id]
         quality = [item for item in self._quality if item.agent_id == agent_id]
-        total = len(runs)
-        completed = sum(1 for run in runs if run.status == "SUCCESS")
-        failed = sum(1 for run in runs if run.status in _FAILED_STATUSES)
-        metrics: dict[str, Any] = {
-            "total": total,
-            "completed": completed,
-            "running": sum(1 for run in runs if run.status == "WAITING"),
-            "failed": failed,
-            "cancelled": sum(1 for run in runs if run.status == "CANCELLED"),
-            "successRate": _rate(completed, total),
-            "avgDurationSec": _mean([run.duration_seconds for run in runs]),
-            "avgRevisions": _mean([float(run.revision_count) for run in runs]),
-            "humanApprovalRate": _rate(
-                sum(1 for item in approvals if item.decision == "APPROVED"),
-                len(approvals),
-            ),
-            "testPassRate": self._quality_rate_locked(quality, "TEST"),
-            "ciPassRate": self._quality_rate_locked(quality, "CI"),
-            "promptTokens": sum(run.prompt_tokens for run in runs),
-            "completionTokens": sum(run.completion_tokens for run in runs),
-            "modelCalls": sum(run.model_calls for run in runs),
-        }
-        metrics["healthScore"] = _health_score(
-            success_rate=metrics["successRate"],
-            human_approval_rate=metrics["humanApprovalRate"],
-            ci_pass_rate=metrics["ciPassRate"],
-            test_pass_rate=metrics["testPassRate"],
-            avg_revisions=metrics["avgRevisions"],
+        return agent_metrics_view(
+            runs,
+            approvals,
+            test_pass_rate=self._quality_rate_locked(quality, "TEST"),
+            ci_pass_rate=self._quality_rate_locked(quality, "CI"),
         )
-        return metrics
 
     # -- Dashboard-shaped getters -------------------------------------------
 
@@ -390,41 +353,7 @@ class MetricsService:
                     }
                 )
 
-            approvals_by_date: dict[str, list[ApprovalRecord]] = {}
-            for item in self._approvals:
-                key = item.recorded_at.date().isoformat()
-                approvals_by_date.setdefault(key, []).append(item)
-            human_daily = []
-            for date in sorted(approvals_by_date):
-                day_items = approvals_by_date[date]
-                human_daily.append(
-                    {
-                        "date": date,
-                        "approvalRate": _rate(
-                            sum(1 for i in day_items if i.decision == "APPROVED"),
-                            len(day_items),
-                        ),
-                        "rejectionRate": _rate(
-                            sum(1 for i in day_items if i.decision != "APPROVED"),
-                            len(day_items),
-                        ),
-                    }
-                )
-            human = {
-                "approvalRate": _rate(
-                    sum(1 for i in self._approvals if i.decision == "APPROVED"),
-                    len(self._approvals),
-                ),
-                "rejectionRate": _rate(
-                    sum(1 for i in self._approvals if i.decision != "APPROVED"),
-                    len(self._approvals),
-                ),
-                "avgRevisions": _mean([float(run.revision_count) for run in self._runs]),
-                # Approval *durations* are not tracked (record_approval_decision
-                # receives no request time), so this stays 0.0 by definition.
-                "avgApprovalMinutes": 0.0,
-                "daily": human_daily,
-            }
+            human = human_section(self._approvals, self._runs)
 
             quality_dates = sorted(
                 {item.recorded_at.date().isoformat() for item in self._quality} | set(runs_by_date),
@@ -473,7 +402,13 @@ class MetricsService:
                 }
                 for agent_id, metrics in self.all_agent_metrics().items()
             ]
-            return {"daily": daily, "human": human, "quality": quality, "agents": agents}
+            return {
+                "daily": daily,
+                "human": human,
+                "quality": quality,
+                "agents": agents,
+                "aiReview": ai_review_metrics(self._events),
+            }
 
     def project_outcomes(self, project_id: str) -> dict[str, Any]:
         """Return run counts for one project, for composing ``ProjectMetrics``.

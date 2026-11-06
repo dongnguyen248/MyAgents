@@ -59,6 +59,74 @@ def _not_found(what: str) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": f"{what} not found"})
 
 
+def _operator(request: Request) -> str:
+    return request.headers.get("x-operator") or "operator"
+
+
+def _reason(payload: dict[str, Any]) -> str | JSONResponse:
+    reason = payload.get("reason")
+    if not isinstance(reason, str) or not reason.strip() or len(reason) > 500:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "reason is required (non-empty, at most 500 characters)"},
+        )
+    return reason.strip()
+
+
+def _register_escalation_routes(app: FastAPI, service: FactoryService) -> None:
+    """The two operator actions on an escalated run.
+
+    Resume restarts the revision window (optionally carrying a
+    guidance comment to the producer); approve-anyway accepts
+    the escalated gate's artifact. Both carry a validated reason
+    and the X-Operator identity into the run's audit events.
+    """
+    _register_resume_route(app, service)
+    _register_approve_route(app, service)
+
+
+def _register_resume_route(app: FastAPI, service: FactoryService) -> None:
+    @app.post("/runs/{run_id}/escalation/resume")
+    async def resume_escalation(
+        run_id: str, request: Request, payload: dict[str, Any] = Body(...)
+    ) -> Any:
+        reason = _reason(payload)
+        if isinstance(reason, JSONResponse):
+            return reason
+        guidance = payload.get("guidance")
+        if guidance is not None and (not isinstance(guidance, str) or len(guidance) > 4000):
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "guidance must be a string of at most 4000 characters"},
+            )
+        try:
+            view = service.resume_escalation(
+                run_id, reason=reason, operator=_operator(request), guidance=guidance
+            )
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
+
+def _register_approve_route(app: FastAPI, service: FactoryService) -> None:
+    @app.post("/runs/{run_id}/escalation/approve")
+    async def approve_escalation(
+        run_id: str, request: Request, payload: dict[str, Any] = Body(...)
+    ) -> Any:
+        reason = _reason(payload)
+        if isinstance(reason, JSONResponse):
+            return reason
+        try:
+            view = service.approve_escalation(run_id, reason=reason, operator=_operator(request))
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
+
 def create_app(service: FactoryService) -> FastAPI:
     """Build the dashboard REST + SSE application around ``service``."""
     app = FastAPI(title="AI Software Agents API")
@@ -135,6 +203,11 @@ def create_app(service: FactoryService) -> FastAPI:
     async def run_diagnostics(run_id: str) -> Any:
         diagnostics = service.run_diagnostics(run_id)
         return diagnostics if diagnostics is not None else _not_found("Run")
+
+    @app.get("/runs/{run_id}/reviews")
+    async def run_reviews(run_id: str) -> Any:
+        reviews = service.run_reviews(run_id)
+        return reviews if reviews is not None else _not_found("Run")
 
     # -- projects ---------------------------------------------------------
     @app.get("/projects")
@@ -325,33 +398,7 @@ def create_app(service: FactoryService) -> FastAPI:
     # from the X-Operator header (default "operator"); both land
     # in the run's audit events. State the action does not allow
     # and lost version races surface as 409 via the service.
-
-    def _operator(request: Request) -> str:
-        return request.headers.get("x-operator") or "operator"
-
-    def _reason(payload: dict[str, Any]) -> str | JSONResponse:
-        reason = payload.get("reason")
-        if not isinstance(reason, str) or not reason.strip() or len(reason) > 500:
-            return JSONResponse(
-                status_code=422,
-                content={"detail": "reason is required (non-empty, at most 500 characters)"},
-            )
-        return reason.strip()
-
-    @app.post("/runs/{run_id}/escalation/resume")
-    async def resume_escalation(
-        run_id: str, request: Request, payload: dict[str, Any] = Body(...)
-    ) -> Any:
-        reason = _reason(payload)
-        if isinstance(reason, JSONResponse):
-            return reason
-        try:
-            view = service.resume_escalation(run_id, reason=reason, operator=_operator(request))
-        except KeyError:
-            return _not_found("Run")
-        except ValueError as error:
-            return JSONResponse(status_code=409, content={"detail": str(error)})
-        return view if view is not None else _not_found("Run")
+    _register_escalation_routes(app, service)
 
     @app.post("/runs/{run_id}/recover")
     async def recover_run(

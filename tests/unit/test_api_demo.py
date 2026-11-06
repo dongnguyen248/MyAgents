@@ -431,7 +431,7 @@ def test_run_advances_on_its_own_between_approvals(tmp_path: Path):
     requests = store.approvals.list_by_task("hands-free")
     assert len(requests) == 3
     assert all(request.status == "APPROVED" for request in requests)
-    assert all(request.reviewers == ["ai-reviewer"] for request in requests)
+    assert all(request.reviewers == ["ai-reviewer", "dashboard"] for request in requests)
     decisions = [
         decision for request in requests for decision in store.approvals.list_decisions(request.id)
     ]

@@ -35,7 +35,8 @@ from asf.api.service import (
     _camelize,
     _iso,
 )
-from asf.api.service.review_state import review_status
+from asf.api.service.review_state import ai_review_waiting, escalation_waiting, review_status
+from asf.api.service.reviews_view import run_reviews_view
 from asf.approval.errors import ApprovalError
 from asf.contracts.models import ActivityEvent
 from asf.orchestrator.code_loop import ESCALATED_STAGE, FIX_STAGE, FIX_STEP, REWORK_STAGE
@@ -416,7 +417,9 @@ class QueriesMixin:
         # which the old mapping flattened to RUNNING — an escalated
         # run looked identical to a healthy one. They are distinct
         # operator states and nothing should tick them pointlessly.
-        if run.state.stage == ESCALATED_STAGE:
+        # Any ESCALATED-kind stage counts: the code loop's
+        # CODE_FIX_ESCALATED and every gated step's X_ESCALATED.
+        if self._stage_kind(run, run.state.stage) == "ESCALATED":
             return "ESCALATED"
         if run.retry_at is not None:
             return "WAITING_RETRY"
@@ -497,26 +500,11 @@ class QueriesMixin:
             else:
                 waiting["reason"] = "Waiting for approval"
             return waiting
+        if status == "AI_REVIEWING":
+            return ai_review_waiting(run, self._step_for_stage(run, run.state.stage), waiting)
         if status == "ESCALATED":
-            budget = self._fix_budget(run)
-            waiting["kind"] = "ESCALATED"
-            waiting["budget"] = budget
-            waiting["suggestedActions"] = ["resume", "cancel"]
-            waiting["reason"] = (
-                f"Escalated — fix budget used ({budget['used']}/{budget['max']}), needs operator"
-            )
-            escalated = next(
-                (
-                    obs.event
-                    for obs in reversed(run.observations)
-                    if obs.event is not None and obs.event.event_type == "WORKFLOW_ESCALATED"
-                ),
-                None,
-            )
-            if escalated is not None:
-                waiting["since"] = _iso(escalated.timestamp)
-                waiting["reason"] = escalated.message
-            return waiting
+            step = self._step_for_stage(run, run.state.stage)
+            return escalation_waiting(run, step, waiting, self._fix_budget(run))
         if status == "WAITING_RETRY":
             waiting["kind"] = "RETRY_WAIT"
             waiting["retryAt"] = _iso(run.retry_at)
@@ -1033,6 +1021,11 @@ class QueriesMixin:
             by_task = [item for item in runs if item.task_id == workflow_id]
             run = by_task[-1] if by_task else None
         return self._workflow_view(run) if run is not None else None
+
+    def run_reviews(self, run_id: str) -> dict[str, Any] | None:
+        """The run's AI review rounds per gated stage (Stage D)."""
+        run = next((item for item in self._runs() if item.id == run_id), None)
+        return run_reviews_view(run) if run is not None else None
 
     # ------------------------------------------------------------------
     # projects

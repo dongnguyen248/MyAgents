@@ -422,3 +422,71 @@ def test_driver_pauses_safely_on_delivery_failure(credentials, caplog):
     assert flow.failure_code == "INTEGRATION_UNAVAILABLE"
     assert credentials[1] not in caplog.text
     assert repo.list_decisions(run.approval_id) == []
+
+
+def test_advance_sends_no_card_for_an_ai_mode_gate(credentials):
+    engine, _, _, _repo = make_engine(approval=True)
+    run = engine.start(
+        task_id="task-1",
+        project_id="project-1",
+        inputs={"spec": {"requirement": "Add a feature"}},
+        context={
+            "project": {"name": "example"},
+            "approval": {"overrides": {"mode": "ai"}},
+        },
+    )
+    transport = FakeTransport()
+    flow = TeamsWorkflow(config(), engine, transport=transport)
+    run = flow.advance(run.id)
+    assert run.approval_id is not None
+    assert transport.calls == []
+
+
+def test_advance_still_sends_a_card_for_a_human_gate(credentials):
+    engine, _, _, _repo = make_engine(approval=True)
+    run = start(engine)
+    transport = FakeTransport()
+    flow = TeamsWorkflow(config(), engine, transport=transport)
+    run = flow.advance(run.id)
+    assert run.approval_id is not None
+    assert len(transport.calls) == 1
+    assert "card" in transport.calls[0][2]
+
+
+def _escalate(flow, engine, run):
+    for _ in range(10):
+        run = engine.get(run.id)
+        if run.state.stage.endswith("_ESCALATED"):
+            return run
+        if run.approval_id is not None:
+            engine.decide(run.id, reviewer="reviewer", decision="REQUEST_CHANGES", comment="no")
+        flow.advance(run.id)
+    return engine.get(run.id)
+
+
+def test_escalation_notice_sent_once_when_enabled(credentials):
+    engine, _, _, _repo = make_engine(approval=True)
+    run = start(engine)
+    cfg = config().model_copy(update={"notify_on_escalation": True})
+    transport = FakeTransport()
+    flow = TeamsWorkflow(cfg, engine, transport=transport)
+    run = _escalate(flow, engine, run)
+    assert run.state.stage.endswith("_ESCALATED")
+    notices = [call for call in transport.calls if call[2].get("kind") == "ESCALATION_NOTICE"]
+    assert len(notices) == 1
+    assert "card" not in notices[0][2]
+    flow.advance(run.id)
+    notices = [call for call in transport.calls if call[2].get("kind") == "ESCALATION_NOTICE"]
+    assert len(notices) == 1
+
+
+def test_escalation_notice_not_sent_by_default(credentials):
+    engine, _, _, _repo = make_engine(approval=True)
+    run = start(engine)
+    transport = FakeTransport()
+    flow = TeamsWorkflow(config(), engine, transport=transport)
+    run = _escalate(flow, engine, run)
+    assert run.state.stage.endswith("_ESCALATED")
+    transport.calls.clear()
+    flow.advance(run.id)
+    assert transport.calls == []

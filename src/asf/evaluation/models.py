@@ -37,13 +37,14 @@ class AgentRunRecord(ConfigModel):
 
 
 class ApprovalRecord(ConfigModel):
-    """One human approval decision attributed to an agent."""
+    """One approval decision attributed to an agent, tagged by decider kind."""
 
     recorded_at: AwareDatetime
     project_id: str = Field(min_length=1)
     task_id: str | None = None
     agent_id: str = Field(min_length=1)
     decision: Literal["APPROVED", "REJECTED", "REQUEST_CHANGES"]
+    reviewer_kind: Literal["HUMAN", "AI"] = "HUMAN"
 
 
 class QualityRecord(ConfigModel):

@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from asf.approval.errors import ApprovalError
+from asf.approval.mode import approval_overrides_from_context, resolve_approval_mode
 from asf.configuration.platform import ConfigModel
 from asf.integrations.gemini import HttpTransport, UrlLibTransport, _ResponseTooLargeError
 from asf.integrations.teams.approval import TeamsAction, TeamsActor, TeamsApprovals
@@ -20,6 +21,7 @@ from asf.integrations.teams.cards import approval_card
 from asf.integrations.teams.config import TeamsConfig
 from asf.orchestrator import Orchestrator
 from asf.orchestrator.execution import WorkflowExecution
+from asf.workflow.definition import WorkflowDefinition
 
 logger = logging.getLogger(__name__)
 MAX_CALLBACK_BYTES = 16_384
@@ -58,6 +60,7 @@ class TeamsWorkflow:
             raise ValueError("Teams callback secret must contain at least 32 characters")
         self._transport = transport or UrlLibTransport()
         self._sent: set[str] = set()
+        self._notified: set[str] = set()
         self.failure_code: str | None = None
 
     def authenticated(self, authorization: str) -> bool:
@@ -85,6 +88,11 @@ class TeamsWorkflow:
             "channelId": config.channel_id,
             "card": card,
         }
+        self._post(payload)
+        self._sent.add(request.id)
+
+    def _post(self, payload: dict) -> None:
+        config = self.approvals.config
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         if self._callback_secret.encode("utf-8") in body or self._url.encode("utf-8") in body:
             raise TeamsDeliveryError("Approval artifact contains configured credential material")
@@ -100,7 +108,46 @@ class TeamsWorkflow:
             raise TeamsDeliveryError("Teams workflow delivery failed; retry explicitly") from None
         if status not in (200, 201, 202, 204):
             raise TeamsDeliveryError("Teams workflow did not accept the approval request")
-        self._sent.add(request.id)
+
+    def _gate_mode(self, run: WorkflowExecution) -> str | None:
+        """The resolved approval mode of the run's current gate, if any."""
+        try:
+            definition = WorkflowDefinition.model_validate(run.definition)
+            step = next(
+                (s for s in definition.steps if f"{s.stage}_REVIEW" == run.state.stage),
+                None,
+            )
+            if step is None:
+                return None
+            overrides = approval_overrides_from_context(run.context)
+            return resolve_approval_mode(step, overrides).mode
+        except Exception:
+            return None
+
+    def _notify_escalation(self, run: WorkflowExecution) -> None:
+        """One informational message for an escalated run, when enabled.
+
+        Gated by the channel's existing ``notifyOnEscalation``
+        setting; the payload is a plain notice (no card, no
+        actions) and each escalated stage is announced once.
+        """
+        if not self.approvals.config.notify_on_escalation:
+            return
+        key = f"{run.id}:{run.state.stage}"
+        if key in self._notified:
+            return
+        self._post(
+            {
+                "runId": run.id,
+                "kind": "ESCALATION_NOTICE",
+                "stage": run.state.stage,
+                "message": (
+                    f"Run {run.id} escalated at {run.state.stage}; "
+                    "an operator is needed in the dashboard."
+                ),
+            }
+        )
+        self._notified.add(key)
 
     def decide(self, decision: WorkflowDecision) -> WorkflowExecution:
         if any(secret in decision.action.comment for secret in (self._url, self._callback_secret)):
@@ -117,9 +164,20 @@ class TeamsWorkflow:
         if engine.workflow_run(run_id)["status"] in TERMINAL or run.state.stage.endswith(
             "_ESCALATED"
         ):
+            self._notify_escalation(run)
             return run
         run = engine.tick(run_id)
-        if run.approval_id is not None and run.approval_id not in self._sent:
+        if run.state.stage.endswith("_ESCALATED"):
+            self._notify_escalation(run)
+            return run
+        # AI-mode gates get no per-round card: the review loop
+        # decides them. Human gates (and unresolvable modes, which
+        # keep the old behaviour) still send their card.
+        if (
+            run.approval_id is not None
+            and run.approval_id not in self._sent
+            and self._gate_mode(run) != "ai"
+        ):
             self.send_approval(run_id)
         return run
 

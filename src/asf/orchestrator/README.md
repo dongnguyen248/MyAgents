@@ -85,6 +85,40 @@ All successful artifacts, including superseded revisions and all task items,
 remain in `artifact_history` and in the Task projection. Passing final reports
 are available per item in `item_results`.
 
+## AI review loop (Phase 12)
+
+Gated steps whose resolved approval mode is `ai` are decided by the
+`artifact-review` agent instead of a human (`ai_review.py` claims the
+`X_REVIEW` stage, `ai_review_apply.py` applies the result). The verdict
+is computed in code from the findings, never taken from the model.
+Each round is keyed by (run, stage, revision) and persisted as an
+`ARTIFACT_REVIEW` artifact plus `AI_REVIEW_STARTED` /
+`AI_REVIEW_COMPLETED` events, so a restart mid-loop resumes without
+duplicating a round.
+
+- Escalation reasons: `MAX_REVISIONS` (revision budget exhausted),
+  `NO_PROGRESS` (stagnation: the set of open blocking findings did not
+  shrink), `REVIEWER_FAILED` (the reviewer errored past its bounded
+  retry — never converted into an approval), `BUDGET` (the run's
+  review-round budget ran out).
+- **Exhaustion is evaluated before stagnation**: on the final allowed
+  round the escalation reason is `MAX_REVISIONS` even if the blockers
+  also did not shrink. Stagnation is only the early stop while
+  revisions remain. On exhaustion the project's `onExhausted` decides:
+  `escalate` (default) or `accept_with_warnings`.
+- Manual override: an ai-mode request is addressed to `ai-reviewer`
+  plus the profile's human reviewers, so a human approve/reject is
+  allowed at any point; it is recorded with `reviewer_kind` HUMAN and
+  wins over an in-flight AI round (the apply path re-checks that the
+  request is still PENDING before applying an AI result).
+- Escalated gates: Resume restarts the revision window and may carry
+  an operator guidance comment, delivered to the producer as human
+  feedback. "Approve anyway" (`gate_ops.approve_anyway`) records a
+  fresh approval request decided APPROVED by the operator and takes
+  the `ESCALATED --APPROVED--> APPROVED` graph edge; the edge is
+  additive, so runs pinned to pre-Phase-12 definitions are unaffected
+  unless the operator invokes it.
+
 ## Recovery and operational boundaries
 
 - An in-flight marker is committed BEFORE dispatch. If dispatch/finalization is
