@@ -82,6 +82,7 @@ class ArtifactReviewSettings:
     block_on: tuple[str, ...] = DEFAULT_BLOCK_ON
     max_tasks: int = DEFAULT_MAX_TASKS
     harness: HarnessComponents | None = None
+    model_profile: str | None = None
 
 
 class ArtifactReviewAgent(BaseAgent):
@@ -97,7 +98,9 @@ class ArtifactReviewAgent(BaseAgent):
             version="1.0.0",
             status="IDLE",
             capabilities=["review-artifacts"],
-            configuration={},
+            configuration=(
+                {"modelProfile": settings.model_profile} if settings.model_profile else {}
+            ),
         )
 
     @property

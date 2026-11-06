@@ -26,10 +26,37 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "DecisionRecord",
     "approval_context_for",
+    "approval_settings_view",
     "bake_approval_context",
     "merge_approval_context",
     "record_decision",
 ]
+
+
+def approval_settings_view(approval: Any) -> dict[str, Any]:
+    """The dashboard-facing approval fields of a profile approval block.
+
+    Reads both the camelCase keys the dashboard writes and the
+    snake_case keys a hand-written profile may use; anything
+    missing or mistyped degrades to the empty default instead of
+    breaking the project view.
+    """
+    block = approval if isinstance(approval, Mapping) else {}
+    channel = block.get("channel")
+    mode = block.get("mode")
+    max_revisions = block.get("maxRevisions", block.get("max_revisions"))
+    on_exhausted = block.get("onExhausted", block.get("on_exhausted"))
+    valid_revisions = (
+        max_revisions
+        if isinstance(max_revisions, int) and not isinstance(max_revisions, bool)
+        else None
+    )
+    return {
+        "approvalChannel": channel if isinstance(channel, str) else "",
+        "approvalMode": mode if isinstance(mode, str) else "",
+        "approvalMaxRevisions": valid_revisions,
+        "approvalOnExhausted": on_exhausted if isinstance(on_exhausted, str) else "",
+    }
 
 
 @dataclass(frozen=True)

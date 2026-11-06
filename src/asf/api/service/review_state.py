@@ -17,11 +17,26 @@ from asf.workflow.definition import WorkflowStepDef
 __all__ = [
     "ai_review_waiting",
     "approval_mode_of",
+    "approval_view_fields",
     "escalation_detail",
     "escalation_waiting",
     "is_human_wait",
+    "project_approval_fields",
     "review_status",
 ]
+
+_APPROVAL_VIEW_KEYS = (
+    "approvalChannel",
+    "approvalMode",
+    "approvalMaxRevisions",
+    "approvalOnExhausted",
+)
+
+
+def project_approval_fields(profile: Any) -> dict[str, Any]:
+    """The approval fields of a normalized project profile, for list views."""
+    return {key: profile[key] for key in _APPROVAL_VIEW_KEYS}
+
 
 _OPEN_STATUSES = ("NEW", "STILL_OPEN")
 
@@ -37,6 +52,25 @@ def approval_mode_of(run: WorkflowExecution, step: WorkflowStepDef | None) -> st
 def review_status(run: WorkflowExecution, step: WorkflowStepDef | None) -> str:
     """The workflow status of a run parked at an approval gate."""
     return "AI_REVIEWING" if approval_mode_of(run, step) == "ai" else "WAITING_APPROVAL"
+
+
+def approval_view_fields(
+    run: WorkflowExecution, request: Any, step: WorkflowStepDef | None
+) -> dict[str, Any]:
+    """The Phase 12 fields of an approval view: run link, addressees, mode.
+
+    The dashboard groups pending approvals by these fields:
+    human-mode gates need a person; ai-mode gates are listed for
+    oversight (a human may still override them).
+    """
+    fields: dict[str, Any] = {
+        "workflowId": run.id,
+        "reviewers": list(request.reviewers),
+    }
+    mode = approval_mode_of(run, step)
+    if mode is not None:
+        fields["mode"] = mode
+    return fields
 
 
 def ai_review_waiting(
