@@ -119,6 +119,9 @@ duplicating a round.
   additive, so runs pinned to pre-Phase-12 definitions are unaffected
   unless the operator invokes it.
 
+Operator-facing reference (sequence, configuration, troubleshooting):
+`docs/ai-review-approval.md`.
+
 ## Recovery and operational boundaries
 
 - An in-flight marker is committed BEFORE dispatch. If dispatch/finalization is

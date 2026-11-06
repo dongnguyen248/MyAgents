@@ -104,6 +104,10 @@ class ArtifactReviewPrompts:
             guardrails=self.guardrails,
             memory=self.memory,
             skills=self.skills,
+            extras={
+                f"instructions/checklist_{stage}.md": text
+                for stage, text in sorted(self.checklists.items())
+            },
         )
 
 
@@ -225,7 +229,10 @@ def _system_message(
 ) -> str:
     components = _components(prompts, harness)
     system = assemble_base_prompt(components)
-    checklist = prompts.checklists.get(target.stage, "")
+    checklist = components.extras.get(
+        f"instructions/checklist_{target.stage}.md",
+        prompts.checklists.get(target.stage, ""),
+    )
     if checklist.strip():
         system += f"\n\n{checklist.strip()}"
     system += rules_section(project, _RULES_INTRO)

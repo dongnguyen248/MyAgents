@@ -38,3 +38,12 @@ deterministic Markdown `text`, and metadata naming the reviewed artifact id
 and version, the stage, the round, the derived verdict, per-severity counts
 and the finding ids. Output contains the verdict; the orchestrator owns
 state-machine transitions and approval decisions.
+
+The agent is registered on the Harness² surface
+(`harness/harness2/surface.py`): `prompts/system.md`,
+`instructions/guardrails.md`, `instructions/memory.md`, agent skills, and
+the three stage checklists are editable; `prompts/contract.md` is frozen,
+and `verdict.py` / `checks.py` are code, never harness files. Offline
+labelled fixtures for future evaluation runs live in
+`harness/harness2/fixtures/artifact-review/`. The operator-facing
+reference for the whole loop is `docs/ai-review-approval.md`.

@@ -5,7 +5,10 @@ The default components of an agent live in its package
 `prompts/system.md`, `prompts/revision.md` where one exists,
 `instructions/guardrails.md`, `instructions/memory.md`,
 `tools/tool_guidance.md` for the code agents, and agent-scoped
-skills under `skills/<name>/SKILL.md` (none by default). Loading
+skills under `skills/<name>/SKILL.md` (none by default). Agents
+with extra editable files (the artifact-review agent's stage
+checklists) carry them in `HarnessComponents.extras`, keyed by the
+paths the agent's `SurfaceSpec.extra_editable` declares. Loading
 goes through `importlib.resources`, the same mechanism the runtime
 loaders use, so what the loop edits is what a packaged install
 would run.
@@ -45,6 +48,7 @@ AGENT_PACKAGES: dict[str, str] = {
     "implement": "asf.agents.implement",
     "review": "asf.agents.review",
     "fix": "asf.agents.fix",
+    "artifact-review": "asf.agents.artifact_review",
 }
 
 
@@ -82,6 +86,7 @@ def load_default_components(agent: str) -> HarnessComponents:
         memory=_read(package, MEMORY_PATH) or "",
         tool_guidance=_read(package, TOOL_GUIDANCE_PATH) or "",
         skills=_load_skills(package),
+        extras={path: _read(package, path) or "" for path in AGENT_SURFACES[agent].extra_editable},
     )
 
 
@@ -98,6 +103,8 @@ def components_to_tree(components: HarnessComponents, agent: str) -> Tree:
         tree[REVISION_PATH] = components.revision
     if spec.has_tool_guidance:
         tree[TOOL_GUIDANCE_PATH] = components.tool_guidance
+    for path in spec.extra_editable:
+        tree[path] = components.extras.get(path, "")
     for name, content in sorted(components.skills.items()):
         tree[f"skills/{name}/SKILL.md"] = content
     return tree
@@ -118,6 +125,7 @@ def tree_to_components(tree: Tree, agent: str) -> HarnessComponents:
         memory=tree.get(MEMORY_PATH, ""),
         tool_guidance=tree.get(TOOL_GUIDANCE_PATH, ""),
         skills=skills,
+        extras={path: tree.get(path, "") for path in AGENT_SURFACES[agent].extra_editable},
     )
 
 
