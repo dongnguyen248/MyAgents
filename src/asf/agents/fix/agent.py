@@ -35,7 +35,13 @@ from asf.agents._shared.repair import (
 from asf.agents._shared.repomap import build_repo_map
 from asf.agents._shared.report_tail import tail_artifact_for_prompt
 from asf.agents._shared.routing import tier_metadata
-from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
+from asf.agents.base import (
+    AgentErrorOptions,
+    AgentExecutionError,
+    AgentRuntime,
+    BaseAgent,
+    Issue,
+)
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import CodeMarkdownContext, render_code_markdown
 from asf.contracts.models import (
@@ -341,9 +347,7 @@ class FixAgent(BaseAgent):
             raise AgentExecutionError(
                 "VALIDATION_FAILED",
                 "Base file exceeds the read limit",
-                category="VALIDATION",
-                retryable=False,
-                status="REJECTED",
+                AgentErrorOptions(category="VALIDATION", retryable=False, status="REJECTED"),
             ) from None
         except RepositoryError:
             raise AgentExecutionError(

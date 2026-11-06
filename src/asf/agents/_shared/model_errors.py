@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from asf.agents.base import AgentExecutionError
+from asf.agents.base import AgentErrorOptions, AgentExecutionError
 
 __all__ = ["invalid_response"]
 
@@ -36,7 +36,5 @@ def invalid_response(
     return AgentExecutionError(
         "LLM_INVALID_RESPONSE",
         message,
-        category="LLM",
-        retryable=True,
-        details=details,
+        AgentErrorOptions(category="LLM", retryable=True, details=details),
     )
