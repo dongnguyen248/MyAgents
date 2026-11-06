@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from asf.agents.base import AgentRuntime
-from asf.agents.task.agent import TaskAgent
+from asf.agents.task.agent import TaskAgent, TaskSettings
 from asf.configuration.platform import PlatformConfig
 
 __all__ = ["build_task_agent"]
@@ -33,8 +33,5 @@ def build_task_agent(
 
     return TaskAgent(
         runtime,
-        prompts=prompts,
-        template=template,
-        model=model,
-        parameters=parameters,
+        TaskSettings(prompts=prompts, template=template, model=model, parameters=parameters),
     )

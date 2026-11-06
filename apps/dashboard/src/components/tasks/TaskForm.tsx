@@ -36,7 +36,7 @@ export function TaskForm({ projects, onCreate, onCancel }: Props) {
 
   const changeTitle = (value: string) => {
     setTitle(value);
-    if (!idTouched) setTaskId(slugify(value));
+    if (!idTouched) {setTaskId(slugify(value));}
   };
 
   const submit = async (e: FormEvent) => {

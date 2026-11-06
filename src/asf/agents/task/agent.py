@@ -2,13 +2,25 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
+from asf.agents._shared.paths import CONTROL_CHAR_BOUND
+from asf.agents._shared.reply_text import unwrap_code_fence
+from asf.agents._shared.request_checks import (
+    artifacts_of,
+    check_agent_id,
+    check_artifact_types,
+    check_attempt,
+    check_language,
+    check_orphan_feedback,
+    check_required_artifact,
+    check_revision_artifact,
+    check_text_size,
+)
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.plan.milestones import (
@@ -17,12 +29,21 @@ from asf.agents.plan.milestones import (
     milestone_number,
     parse_milestones,
 )
+from asf.agents.task.items import TaskContent, TaskItem
 from asf.agents.task.prompts import (
+    TaskPromptContext,
     TaskPrompts,
     TaskTemplate,
     build_task_messages,
 )
-from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
+from asf.contracts.models import (
+    AgentMetadata,
+    AgentRequest,
+    Artifact,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+)
 
 __all__ = [
     "MAX_TASK_CHARS",
@@ -30,6 +51,9 @@ __all__ = [
     "MAX_TASK_REPLY_CHARS",
     "MAX_TASKS",
     "TaskAgent",
+    "TaskContent",
+    "TaskItem",
+    "TaskSettings",
     "render_task_markdown",
 ]
 
@@ -38,21 +62,8 @@ MAX_TASKS: int = 100
 MAX_TASK_TEXT_CHARS: int = 200000
 MAX_TASK_REPLY_CHARS: int = 500000
 
-
-def _reject_whitespace_only(value: str, field_name: str) -> str:
-    """Reject whitespace-only strings."""
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field_name} must be a non-empty string (whitespace-only not allowed)")
-    return value
-
-
-def _validate_list_no_whitespace(v: list[str], field_name: str) -> list[str]:
-    """Validate list items are non-empty strings (no whitespace-only)."""
-    for item in v:
-        if not isinstance(item, str) or not item.strip():
-            msg = f"{field_name} items must be non-empty strings (whitespace-only not allowed)"
-            raise ValueError(msg)
-    return v
+_ALLOWED_TYPES = {"SPEC", "PLAN", "TASK"}
+_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:[/\\]")
 
 
 def render_task_markdown(
@@ -62,122 +73,291 @@ def render_task_markdown(
     spec_version: str,
 ) -> str:
     """Deterministically render markdown from validated tasks."""
-    lines: list[str] = []
-    lines.append("# TASK: Breakdown")
-    lines.append("")
-    lines.append("## Linked SPEC")
-    lines.append(f"ID: {spec_id}")
-    lines.append(f"Version: {spec_version}")
-    lines.append("")
-
-    # Group tasks by milestone
-    tasks_by_milestone: dict[str, list[TaskItem]] = {}
-    for task in tasks:
-        tasks_by_milestone.setdefault(task.milestone_ref, []).append(task)
-
-    # Sort milestones by numeric order
-    sorted_milestone_ids = sorted(plan_milestones, key=lambda m: milestone_number(m.id))
-
-    for milestone in sorted_milestone_ids:
-        milestone_tasks = tasks_by_milestone.get(milestone.id, [])
-        if not milestone_tasks:
-            continue
-        lines.append(f"## Milestone {milestone.id}: {milestone.name}")
-        lines.append("")
-        for task in milestone_tasks:
-            lines.append(f"### {task.id}: {task.title}")
-            lines.append("")
-            lines.append(f"**Description:** {task.description}")
-            lines.append("")
-            lines.append("**Acceptance Criteria:**")
-            for ac in task.acceptance_criteria:
-                lines.append(f"- {ac}")
-            lines.append("")
-            if task.depends_on:
-                lines.append(f"**Depends On:** {', '.join(task.depends_on)}")
-                lines.append("")
-            if task.expected_files:
-                lines.append("**Expected Files:**")
-                for f in task.expected_files:
-                    lines.append(f"- {f}")
-                lines.append("")
-            lines.append(f"**Verification Hint:** {task.verification_hint}")
-            lines.append("")
-
+    lines = [
+        "# TASK: Breakdown",
+        "",
+        "## Linked SPEC",
+        f"ID: {spec_id}",
+        f"Version: {spec_version}",
+        "",
+    ]
+    by_milestone = _group_by_milestone(tasks)
+    ordered = sorted(plan_milestones, key=lambda m: milestone_number(m.id))
+    for milestone in ordered:
+        lines.extend(_milestone_lines(milestone, by_milestone.get(milestone.id, [])))
     return "\n".join(lines).strip()
 
 
-class TaskItem(BaseModel):
-    """A single task item in the task list."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
-
-    id: str = Field(..., min_length=1, alias="id")
-    title: str = Field(..., min_length=1, alias="title")
-    milestone_ref: str = Field(..., min_length=1, alias="milestoneRef")
-    description: str = Field(..., min_length=1, alias="description")
-    acceptance_criteria: list[str] = Field(..., min_length=1, alias="acceptanceCriteria")
-    depends_on: list[str] = Field(default_factory=list, alias="dependsOn")
-    expected_files: list[str] = Field(default_factory=list, alias="expectedFiles")
-    verification_hint: str = Field(..., min_length=1, alias="verificationHint")
-
-    @field_validator("id")
-    @classmethod
-    def validate_id_format(cls, v: str) -> str:
-        if not re.match(r"^T[1-9][0-9]*$", v):
-            raise ValueError(f"Task ID '{v}' must match '^T[1-9][0-9]*$'")
-        return v
-
-    @field_validator("id", "title", "milestone_ref", "description", "verification_hint")
-    @classmethod
-    def validate_no_whitespace_strings(cls, v: str) -> str:
-        return _reject_whitespace_only(v, "String field")
-
-    @field_validator("acceptance_criteria", "depends_on", "expected_files", mode="before")
-    @classmethod
-    def ensure_list(cls, v: Any) -> list[str]:
-        if not isinstance(v, list):
-            raise ValueError("Must be a list")
-        return v
-
-    @field_validator("acceptance_criteria", "depends_on", "expected_files")
-    @classmethod
-    def validate_no_duplicates(cls, v: list[str]) -> list[str]:
-        if len(v) != len(set(v)):
-            raise ValueError("List contains duplicate entries")
-        return v
-
-    @field_validator("acceptance_criteria", "depends_on", "expected_files")
-    @classmethod
-    def validate_no_whitespace_strings_in_list(cls, v: list[str]) -> list[str]:
-        return _validate_list_no_whitespace(v, "List field")
+def _group_by_milestone(tasks: list[TaskItem]) -> dict[str, list[TaskItem]]:
+    grouped: dict[str, list[TaskItem]] = {}
+    for task in tasks:
+        grouped.setdefault(task.milestone_ref, []).append(task)
+    return grouped
 
 
-class TaskContent(BaseModel):
-    """Full task output content."""
+def _milestone_lines(milestone: Milestone, tasks: list[TaskItem]) -> list[str]:
+    if not tasks:
+        return []
+    lines = [f"## Milestone {milestone.id}: {milestone.name}", ""]
+    for task in tasks:
+        lines.extend(_task_lines(task))
+    return lines
 
-    model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
 
-    tasks: list[TaskItem] = Field(..., min_length=1, alias="tasks")
+def _task_lines(task: TaskItem) -> list[str]:
+    lines = [
+        f"### {task.id}: {task.title}",
+        "",
+        f"**Description:** {task.description}",
+        "",
+        "**Acceptance Criteria:**",
+    ]
+    lines.extend(f"- {criterion}" for criterion in task.acceptance_criteria)
+    lines.append("")
+    if task.depends_on:
+        lines.append(f"**Depends On:** {', '.join(task.depends_on)}")
+        lines.append("")
+    if task.expected_files:
+        lines.append("**Expected Files:**")
+        lines.extend(f"- {path}" for path in task.expected_files)
+        lines.append("")
+    lines.append(f"**Verification Hint:** {task.verification_hint}")
+    lines.append("")
+    return lines
+
+
+@dataclass(frozen=True)
+class TaskSettings:
+    prompts: TaskPrompts
+    template: TaskTemplate
+    model: str | None = None
+    parameters: Mapping[str, Any] | None = None
+
+
+def _check_input_keys(request: AgentRequest) -> list[Issue]:
+    issues: list[Issue] = []
+    for key in request.input:
+        if key != "language":
+            message = f"input.{key} is not allowed for TaskAgent; only 'language' is permitted"
+            issues.append(Issue(f"input.{key}", message))
+    return issues
+
+
+def _check_plan_milestones(request: AgentRequest) -> list[Issue]:
+    plans = artifacts_of(request, "PLAN")
+    if len(plans) != 1:
+        return []
+    plan = plans[0]
+    if not isinstance(plan.content, dict) or not isinstance(plan.content.get("text"), str):
+        return []
+    try:
+        parse_milestones(plan.content["text"])
+    except Exception as error:
+        index = request.artifacts.index(plan)
+        message = f"PLAN artifact failed to parse milestones: {error}"
+        return [Issue(f"artifacts[{index}].content.text", message)]
+    return []
+
+
+def _check_plan_traceability(request: AgentRequest) -> list[Issue]:
+    specs = artifacts_of(request, "SPEC")
+    plans = artifacts_of(request, "PLAN")
+    if len(specs) != 1 or len(plans) != 1:
+        return []
+    spec, plan = specs[0], plans[0]
+    issues: list[Issue] = []
+    if plan.metadata.get("specArtifactId") != spec.id:
+        message = (
+            "PLAN.metadata.specArtifactId "
+            f"'{plan.metadata.get('specArtifactId')}' does not match "
+            f"SPEC artifact ID '{spec.id}'"
+        )
+        issues.append(Issue("artifacts", message))
+    if plan.metadata.get("specVersion") != spec.version:
+        message = (
+            "PLAN.metadata.specVersion "
+            f"'{plan.metadata.get('specVersion')}' does not match "
+            f"SPEC artifact version '{spec.version}'"
+        )
+        issues.append(Issue("artifacts", message))
+    return issues
+
+
+@dataclass(frozen=True)
+class _PlanContext:
+    milestones: list[Milestone]
+    milestone_ids: set[str]
+    ancestors: dict[str, frozenset[str]]
+
+
+def _plan_context(plan_art: Artifact) -> _PlanContext:
+    plan_text = ""
+    if isinstance(plan_art.content, dict) and isinstance(plan_art.content.get("text"), str):
+        plan_text = plan_art.content["text"]
+    milestones = parse_milestones(plan_text)
+    return _PlanContext(
+        milestones=milestones,
+        milestone_ids={m.id for m in milestones},
+        ancestors=milestone_ancestors(milestones),
+    )
+
+
+@dataclass
+class _TaskScan:
+    all_tasks: list[TaskItem]
+    issues: list[str] = field(default_factory=list)
+    expected_num: int = 1
+    seen_ids: set[str] = field(default_factory=set)
+    prev_milestone_num: int = 0
+
+
+def _validate_task_list(tasks: list[TaskItem], plan: _PlanContext) -> list[str]:
+    scan = _TaskScan(all_tasks=tasks)
+    for task in tasks:
+        _scan_task(scan, task, plan)
+    _check_milestone_coverage(scan, tasks, plan)
+    if len(tasks) > MAX_TASKS:
+        scan.issues.append(f"Too many tasks: {len(tasks)} (maximum {MAX_TASKS})")
+    for task in tasks:
+        _check_expected_files(scan, task)
+    return scan.issues
+
+
+def _scan_task(scan: _TaskScan, task: TaskItem, plan: _PlanContext) -> None:
+    _check_task_identity(scan, task)
+    _check_milestone_ref(scan, task, plan)
+    _check_dependencies(scan, task)
+    _check_cross_milestone(scan, task, plan)
+
+
+def _check_task_identity(scan: _TaskScan, task: TaskItem) -> None:
+    if milestone_number(task.id) != scan.expected_num:
+        scan.issues.append(
+            f"Task IDs must be sequential: expected T{scan.expected_num}, got {task.id}"
+        )
+    scan.expected_num += 1
+    if task.id in scan.seen_ids:
+        scan.issues.append(f"Duplicate task ID: {task.id}")
+    scan.seen_ids.add(task.id)
+
+
+def _check_milestone_ref(scan: _TaskScan, task: TaskItem, plan: _PlanContext) -> None:
+    if task.milestone_ref not in plan.milestone_ids:
+        scan.issues.append(f"Task {task.id}: milestoneRef '{task.milestone_ref}' not found in PLAN")
+        return
+    number = milestone_number(task.milestone_ref)
+    if number < scan.prev_milestone_num:
+        scan.issues.append(
+            f"Task {task.id}: milestoneRef must be non-decreasing "
+            f"(got {task.milestone_ref} after M{scan.prev_milestone_num})"
+        )
+    scan.prev_milestone_num = number
+
+
+def _check_dependencies(scan: _TaskScan, task: TaskItem) -> None:
+    for dep in task.depends_on:
+        _check_dependency(scan, task, dep)
+
+
+def _check_dependency(scan: _TaskScan, task: TaskItem, dep: str) -> None:
+    if dep == task.id:
+        scan.issues.append(f"Task {task.id}: self-dependency is not allowed")
+        return
+    if dep not in scan.seen_ids:
+        scan.issues.append(f"Task {task.id}: depends on later or non-existent task '{dep}'")
+        return
+    if milestone_number(dep) >= milestone_number(task.id):
+        scan.issues.append(f"Task {task.id}: depends on '{dep}' which is not a lower-numbered task")
+
+
+def _check_cross_milestone(scan: _TaskScan, task: TaskItem, plan: _PlanContext) -> None:
+    for dep in task.depends_on:
+        _check_cross_dependency(scan, task, dep, plan)
+
+
+def _check_cross_dependency(scan: _TaskScan, task: TaskItem, dep: str, plan: _PlanContext) -> None:
+    dep_task = next((t for t in scan.all_tasks if t.id == dep), None)
+    if dep_task is None:
+        return
+    dep_milestone = dep_task.milestone_ref
+    if dep_milestone == task.milestone_ref:
+        return
+    ancestors = plan.ancestors.get(task.milestone_ref, frozenset())
+    if dep_milestone not in ancestors:
+        scan.issues.append(
+            f"Task {task.id}: cross-milestone dependency on '{dep}' "
+            f"(in {dep_milestone}) not allowed; "
+            f"{dep_milestone} is not an ancestor of {task.milestone_ref}"
+        )
+
+
+def _check_milestone_coverage(scan: _TaskScan, tasks: list[TaskItem], plan: _PlanContext) -> None:
+    for milestone in plan.milestones:
+        if not any(t.milestone_ref == milestone.id for t in tasks):
+            scan.issues.append(f"Milestone {milestone.id} has no tasks assigned")
+
+
+def _check_expected_files(scan: _TaskScan, task: TaskItem) -> None:
+    for path in task.expected_files:
+        _check_expected_file(scan, task, path)
+
+
+def _check_expected_file(scan: _TaskScan, task: TaskItem, path: str) -> None:
+    prefix = f"Task {task.id}: expectedFiles entry '{path}'"
+    if path.startswith("/") or _DRIVE_PREFIX.match(path):
+        scan.issues.append(f"{prefix} must be relative (no leading '/' or drive letter)")
+    if "\\" in path:
+        scan.issues.append(f"{prefix} must not contain backslashes")
+    if ".." in path.split("/"):
+        scan.issues.append(f"{prefix} must not contain '..' segments")
+    if "//" in path or any(segment == "" for segment in path.split("/")):
+        scan.issues.append(f"{prefix} has empty path segments")
+    if any(ord(char) < CONTROL_CHAR_BOUND for char in path):
+        scan.issues.append(f"{prefix} contains control characters")
+
+
+@dataclass(frozen=True)
+class _TaskRun:
+    request: AgentRequest
+    spec_art: Artifact
+    plan_art: Artifact
+    previous: Artifact | None
+    plan: _PlanContext
+
+
+def _task_run(request: AgentRequest) -> _TaskRun:
+    plan_art = artifacts_of(request, "PLAN")[0]
+    return _TaskRun(
+        request=request,
+        spec_art=artifacts_of(request, "SPEC")[0],
+        plan_art=plan_art,
+        previous=_previous_task(request),
+        plan=_plan_context(plan_art),
+    )
+
+
+def _previous_task(request: AgentRequest) -> Artifact | None:
+    task_arts = artifacts_of(request, "TASK")
+    return task_arts[0] if len(task_arts) == 1 else None
+
+
+def _previous_task_text(previous: Artifact | None) -> tuple[str, str] | None:
+    if previous is None or not isinstance(previous.content, dict):
+        return None
+    if "text" not in previous.content:
+        return None
+    return (previous.version, previous.content["text"])
 
 
 class TaskAgent(BaseAgent):
     """Agent responsible for breaking down plans into implementation tasks."""
 
-    def __init__(
-        self,
-        runtime: AgentRuntime,
-        *,
-        prompts: TaskPrompts,
-        template: TaskTemplate,
-        model: str | None = None,
-        parameters: Mapping[str, Any] | None = None,
-    ) -> None:
+    def __init__(self, runtime: AgentRuntime, settings: TaskSettings) -> None:
         super().__init__(runtime)
-        self._prompts = prompts
-        self._template = template
-        self._model = model
-        self._parameters = dict(parameters or {})
+        self._prompts = settings.prompts
+        self._template = settings.template
+        self._model = settings.model
+        self._parameters = dict(settings.parameters or {})
         self._metadata = AgentMetadata(
             id="agent-task",
             name="Task Agent",
@@ -194,7 +374,7 @@ class TaskAgent(BaseAgent):
 
     def _compute_revision_count(self, request: AgentRequest) -> int:
         """Computes revision count from the TASK artifact version."""
-        task_arts = [a for a in request.artifacts if a.type == "TASK"]
+        task_arts = artifacts_of(request, "TASK")
         if task_arts:
             try:
                 return int(task_arts[0].version)
@@ -203,264 +383,48 @@ class TaskAgent(BaseAgent):
         return 0
 
     def _check(self, request: AgentRequest) -> list[Issue]:
-        issues: list[Issue] = []
-
-        # 1. agentId check
-        if request.agent_id != self.metadata.id:
-            issues.append(
-                Issue(
-                    "agentId",
-                    f"agentId '{request.agent_id}' does not match '{self.metadata.id}'",
-                )
-            )
-
-        # 2. input keys validation - only 'language' allowed
-        allowed_input_keys = {"language"}
-        for key in request.input:
-            if key not in allowed_input_keys:
-                issues.append(
-                    Issue(
-                        f"input.{key}",
-                        f"input.{key} is not allowed for TaskAgent; only 'language' is permitted",
-                    )
-                )
-
-        # 3. input.language, if present
-        if "language" in request.input:
-            lang = request.input["language"]
-            if not isinstance(lang, str) or not lang.strip():
-                issues.append(Issue("input.language", "input.language must be a non-empty string"))
-
-        # 4. Exactly one SPEC artifact required
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
-        spec_art_idx = -1
-        if len(spec_arts) != 1:
-            issues.append(Issue("artifacts", "Exactly one artifact of type SPEC is required"))
-        else:
-            spec_art = spec_arts[0]
-            spec_art_idx = request.artifacts.index(spec_art)
-            if (
-                not isinstance(spec_art.content, dict)
-                or not isinstance(spec_art.content.get("text"), str)
-                or not spec_art.content.get("text", "").strip()
-            ):
-                issues.append(
-                    Issue(
-                        f"artifacts[{spec_art_idx}].content.text",
-                        "SPEC artifact must have inline content mapping with non-empty 'text'",
-                    )
-                )
-            # SPEC version must match ^[1-9][0-9]*$
-            is_valid_ver = isinstance(spec_art.version, str) and bool(
-                re.match(r"^[1-9][0-9]*$", spec_art.version)
-            )
-            if not is_valid_ver:
-                issues.append(
-                    Issue(
-                        f"artifacts[{spec_art_idx}].version",
-                        f"SPEC artifact version '{spec_art.version}' must match '^[1-9][0-9]*$'",
-                    )
-                )
-
-        # 5. Exactly one PLAN artifact required
-        plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
-        plan_art_idx = -1
-        if len(plan_arts) != 1:
-            issues.append(Issue("artifacts", "Exactly one artifact of type PLAN is required"))
-        else:
-            plan_art = plan_arts[0]
-            plan_art_idx = request.artifacts.index(plan_art)
-            if (
-                not isinstance(plan_art.content, dict)
-                or not isinstance(plan_art.content.get("text"), str)
-                or not plan_art.content.get("text", "").strip()
-            ):
-                issues.append(
-                    Issue(
-                        f"artifacts[{plan_art_idx}].content.text",
-                        "PLAN artifact must have inline content mapping with non-empty 'text'",
-                    )
-                )
-            # PLAN version must match ^[1-9][0-9]*$
-            is_valid_ver = isinstance(plan_art.version, str) and bool(
-                re.match(r"^[1-9][0-9]*$", plan_art.version)
-            )
-            if not is_valid_ver:
-                issues.append(
-                    Issue(
-                        f"artifacts[{plan_art_idx}].version",
-                        f"PLAN artifact version '{plan_art.version}' must match '^[1-9][0-9]*$'",
-                    )
-                )
-
-            # PLAN must parse into >= 1 milestone with no parse errors
-            if isinstance(plan_art.content, dict) and isinstance(plan_art.content.get("text"), str):
-                try:
-                    parse_milestones(plan_art.content["text"])
-                except Exception as e:
-                    issues.append(
-                        Issue(
-                            f"artifacts[{plan_art_idx}].content.text",
-                            f"PLAN artifact failed to parse milestones: {e}",
-                        )
-                    )
-
-        # 6. At most one TASK artifact (for revision mode)
-        task_arts = [a for a in request.artifacts if a.type == "TASK"]
-        if len(task_arts) > 1:
-            issues.append(Issue("artifacts", "At most one artifact of type TASK is permitted"))
-
-        is_revision = len(task_arts) == 1
-
-        # 7. Revision mode iff a TASK artifact is present
-        if is_revision:
-            task_art = task_arts[0]
-            task_art_idx = request.artifacts.index(task_art)
-
-            if not request.feedback:
-                issues.append(
-                    Issue(
-                        "feedback",
-                        "Reviewer feedback is required when revising a task breakdown",
-                    )
-                )
-
-            if (
-                not isinstance(task_art.content, dict)
-                or not isinstance(task_art.content.get("text"), str)
-                or not task_art.content.get("text", "").strip()
-            ):
-                issues.append(
-                    Issue(
-                        f"artifacts[{task_art_idx}].content.text",
-                        "TASK artifact must have inline content mapping with non-empty 'text'",
-                    )
-                )
-
-            # Version must match ^[1-9][0-9]*$
-            is_valid_ver = isinstance(task_art.version, str) and bool(
-                re.match(r"^[1-9][0-9]*$", task_art.version)
-            )
-            if not is_valid_ver:
-                issues.append(
-                    Issue(
-                        f"artifacts[{task_art_idx}].version",
-                        f"TASK artifact version '{task_art.version}' must match '^[1-9][0-9]*$'",
-                    )
-                )
-
-        # 8. Feedback without TASK artifact
-        if request.feedback and not is_revision:
-            issues.append(
-                Issue("artifacts", "feedback provided without a previous TASK artifact to revise")
-            )
-
-        # 9. Reject unknown artifact types
-        allowed_types = {"SPEC", "PLAN", "TASK"}
-        for idx, art in enumerate(request.artifacts):
-            if art.type not in allowed_types:
-                issues.append(
-                    Issue(
-                        f"artifacts[{idx}].type",
-                        f"Unknown artifact type '{art.type}'; allowed: {sorted(allowed_types)}",
-                    )
-                )
-
-        # 10. metadata.attempt, if present
-        if "attempt" in request.metadata:
-            attempt_val = request.metadata["attempt"]
-            if not isinstance(attempt_val, int) or isinstance(attempt_val, bool) or attempt_val < 1:
-                issues.append(Issue("metadata.attempt", "metadata.attempt must be an integer >= 1"))
-
-        # 11. PLAN traceability must match SPEC
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
-        plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
-        if len(spec_arts) == 1 and len(plan_arts) == 1:
-            spec_art = spec_arts[0]
-            plan_art = plan_arts[0]
-            plan_meta = plan_art.metadata
-            if plan_meta.get("specArtifactId") != spec_art.id:
-                issues.append(
-                    Issue(
-                        "artifacts",
-                        "PLAN.metadata.specArtifactId "
-                        f"'{plan_meta.get('specArtifactId')}' does not match "
-                        f"SPEC artifact ID '{spec_art.id}'",
-                    )
-                )
-            if plan_meta.get("specVersion") != spec_art.version:
-                issues.append(
-                    Issue(
-                        "artifacts",
-                        "PLAN.metadata.specVersion "
-                        f"'{plan_meta.get('specVersion')}' does not match "
-                        f"SPEC artifact version '{spec_art.version}'",
-                    )
-                )
-
-        # 12. SPEC + PLAN content size limit
-        total_chars = 0
-        for art in spec_arts + plan_arts:
-            if isinstance(art.content, dict) and isinstance(art.content.get("text"), str):
-                total_chars += len(art.content["text"])
-        if total_chars > MAX_TASK_CHARS:
-            issues.append(
-                Issue(
-                    "artifacts",
-                    f"Combined SPEC+PLAN content exceeds {MAX_TASK_CHARS} characters",
-                )
-            )
-
-        return issues
+        agent_id_message = f"agentId '{request.agent_id}' does not match '{self.metadata.id}'"
+        revision_message = "Reviewer feedback is required when revising a task breakdown"
+        size_message = f"Combined SPEC+PLAN content exceeds {MAX_TASK_CHARS} characters"
+        validators = [
+            lambda: check_agent_id(request, self.metadata.id, agent_id_message),
+            lambda: _check_input_keys(request),
+            lambda: check_language(request, "input.language must be a non-empty string"),
+            lambda: check_required_artifact(request, "SPEC"),
+            lambda: check_required_artifact(request, "PLAN"),
+            lambda: _check_plan_milestones(request),
+            lambda: check_revision_artifact(request, "TASK", revision_message),
+            lambda: check_orphan_feedback(request, "TASK"),
+            lambda: check_artifact_types(request, _ALLOWED_TYPES),
+            lambda: check_attempt(request),
+            lambda: _check_plan_traceability(request),
+            lambda: check_text_size(request, {"SPEC", "PLAN"}, MAX_TASK_CHARS, size_message),
+        ]
+        return [issue for validate in validators for issue in validate()]
 
     def _run(self, request: AgentRequest) -> tuple[dict[str, Any], list[Artifact]]:
-        # Extract artifacts
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
-        spec_art = spec_arts[0]
-        spec_artifact_dict = spec_art.to_contract()
+        run = _task_run(request)
+        messages = self._build_messages(run)
+        response = call_model(self._runtime.models, self._model_request(request, messages))
+        tasks = self._checked_tasks(response, run.plan)
+        return self._assemble(run, tasks, response)
 
-        plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
-        plan_art = plan_arts[0]
-        plan_artifact_dict = plan_art.to_contract()
-
-        task_arts = [a for a in request.artifacts if a.type == "TASK"]
-        is_revision = len(task_arts) == 1
-        prev_task_art = task_arts[0] if is_revision else None
-
-        previous_task: tuple[str, str] | None = None
-        if (
-            prev_task_art
-            and isinstance(prev_task_art.content, dict)
-            and "text" in prev_task_art.content
-        ):
-            previous_task = (
-                prev_task_art.version,
-                prev_task_art.content["text"],
-            )
-
-        language = request.input.get("language")
-        project_context = request.context.get("project")
-
-        # Parse PLAN milestones for validation context
-        plan_text = ""
-        if isinstance(plan_art.content, dict) and isinstance(plan_art.content.get("text"), str):
-            plan_text = plan_art.content["text"]
-        plan_milestones = parse_milestones(plan_text)
-        plan_milestone_ids = {m.id for m in plan_milestones}
-        plan_milestone_ancestors = milestone_ancestors(plan_milestones)
-
-        messages = build_task_messages(
+    def _build_messages(self, run: _TaskRun) -> list[ModelMessage]:
+        request = run.request
+        context = TaskPromptContext(
             prompts=self._prompts,
             template=self._template,
-            spec_artifact=spec_artifact_dict,
-            plan_artifact=plan_artifact_dict,
-            language=language,
-            project_context=project_context,
-            previous_task=previous_task,
+            spec_artifact=run.spec_art.to_contract(),
+            plan_artifact=run.plan_art.to_contract(),
+            language=request.input.get("language"),
+            project_context=request.context.get("project"),
+            previous_task=_previous_task_text(run.previous),
             feedback=request.feedback,
         )
+        return build_task_messages(context)
 
-        model_req = ModelRequest(
+    def _model_request(self, request: AgentRequest, messages: list[ModelMessage]) -> ModelRequest:
+        return ModelRequest(
             messages=messages,
             parameters=dict(self._parameters),
             model=self._model,
@@ -472,203 +436,95 @@ class TaskAgent(BaseAgent):
             },
         )
 
-        response = call_model(self._runtime.models, model_req)
-        reply = response.content.strip()
-
-        # Unwrap single code fence if wrapped
-        if reply.startswith("```") and reply.endswith("```"):
-            lines = reply.splitlines()
-            if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
-                reply = "\n".join(lines[1:-1]).strip()
-
-        # Raw reply size limit
+    def _checked_tasks(self, response: ModelResponse, plan: _PlanContext) -> list[TaskItem]:
+        reply = unwrap_code_fence(response.content.strip())
         if len(reply) > MAX_TASK_REPLY_CHARS:
             raise invalid_response(
                 f"Raw LLM reply exceeds {MAX_TASK_REPLY_CHARS} characters",
                 details={"charCount": len(reply), "limit": MAX_TASK_REPLY_CHARS},
             )
-
         if not reply:
-            raise invalid_response(
-                "Model returned an empty response",
-            )
-
-        # Validate JSON output
-        try:
-            task_data = TaskContent.model_validate_json(reply)
-        except Exception as e:
-            raise invalid_response(
-                "Model response is not valid task JSON",
-                details={"parseError": str(e)},
-            ) from None
-
-        tasks = task_data.tasks
-        task_issues: list[str] = []
-
-        # Validate task IDs are T1..Tn numerically
-        expected_num = 1
-        seen_task_ids: set[str] = set()
-        prev_milestone_num = 0
-
-        for task in tasks:
-            # Check ID format and sequential numeric
-            if milestone_number(task.id) != expected_num:
-                task_issues.append(
-                    f"Task IDs must be sequential: expected T{expected_num}, got {task.id}"
-                )
-            expected_num += 1
-
-            # Check uniqueness
-            if task.id in seen_task_ids:
-                task_issues.append(f"Duplicate task ID: {task.id}")
-            seen_task_ids.add(task.id)
-
-            # milestoneRef exists in PLAN
-            if task.milestone_ref not in plan_milestone_ids:
-                task_issues.append(
-                    f"Task {task.id}: milestoneRef '{task.milestone_ref}' not found in PLAN"
-                )
-            else:
-                # milestoneRef non-decreasing
-                m_num = milestone_number(task.milestone_ref)
-                if m_num < prev_milestone_num:
-                    task_issues.append(
-                        f"Task {task.id}: milestoneRef must be non-decreasing "
-                        f"(got {task.milestone_ref} after M{prev_milestone_num})"
-                    )
-                prev_milestone_num = m_num
-
-            # dependsOn: only existing tasks with LOWER number; no self-dependency
-            for dep in task.depends_on:
-                if dep == task.id:
-                    task_issues.append(f"Task {task.id}: self-dependency is not allowed")
-                elif dep not in seen_task_ids:
-                    task_issues.append(
-                        f"Task {task.id}: depends on later or non-existent task '{dep}'"
-                    )
-                else:
-                    # Check numeric ordering of dependency
-                    if milestone_number(dep) >= milestone_number(task.id):
-                        task_issues.append(
-                            f"Task {task.id}: depends on '{dep}' which is not a lower-numbered task"
-                        )
-
-            # Cross-milestone dependency rule
-            # Task in Mx may depend on My only if My == Mx or My is ancestor of Mx
-            task_milestone = task.milestone_ref
-            for dep in task.depends_on:
-                # Find dependency task
-                dep_task = next((t for t in tasks if t.id == dep), None)
-                if dep_task:
-                    dep_milestone = dep_task.milestone_ref
-                    if dep_milestone != task_milestone:
-                        # Check if dep_milestone is ancestor of task_milestone
-                        ancestors = plan_milestone_ancestors.get(task_milestone, frozenset())
-                        if dep_milestone not in ancestors:
-                            task_issues.append(
-                                f"Task {task.id}: cross-milestone dependency on '{dep}' "
-                                f"(in {dep_milestone}) not allowed; "
-                                f"{dep_milestone} is not an ancestor of {task_milestone}"
-                            )
-
-        # Every PLAN milestone must have >= 1 task
-        for milestone in plan_milestones:
-            if not any(t.milestone_ref == milestone.id for t in tasks):
-                task_issues.append(f"Milestone {milestone.id} has no tasks assigned")
-
-        # Max tasks
-        if len(tasks) > MAX_TASKS:
-            task_issues.append(f"Too many tasks: {len(tasks)} (maximum {MAX_TASKS})")
-
-        # Validate expectedFiles rules
-        for task in tasks:
-            for f in task.expected_files:
-                # relative only, no leading "/"
-                if f.startswith("/") or re.match(r"^[A-Za-z]:[/\\]", f):
-                    task_issues.append(
-                        f"Task {task.id}: expectedFiles entry '{f}' must be relative "
-                        "(no leading '/' or drive letter)"
-                    )
-                # no backslashes
-                if "\\" in f:
-                    task_issues.append(
-                        f"Task {task.id}: expectedFiles entry '{f}' must not contain backslashes"
-                    )
-                # no ".." segment
-                if ".." in f.split("/"):
-                    task_issues.append(
-                        f"Task {task.id}: expectedFiles entry '{f}' must not contain '..' segments"
-                    )
-                # no empty segments or "//"
-                if "//" in f or any(seg == "" for seg in f.split("/")):
-                    task_issues.append(
-                        f"Task {task.id}: expectedFiles entry '{f}' has empty path segments"
-                    )
-                # no NUL/control characters
-                if any(ord(c) < 32 for c in f):
-                    task_issues.append(
-                        f"Task {task.id}: expectedFiles entry '{f}' contains control characters"
-                    )
-
-        if task_issues:
+            raise invalid_response("Model returned an empty response")
+        tasks = _parse_tasks(reply)
+        issues = _validate_task_list(tasks, plan)
+        if issues:
             raise invalid_response(
                 "Model response has invalid task structure",
-                details={"taskIssues": task_issues},
+                details={"taskIssues": issues},
             )
+        return tasks
 
-        # Determine version
-        version = str(int(prev_task_art.version) + 1) if is_revision and prev_task_art else "1"
-
-        # Render deterministic markdown text from validated tasks
-        rendered_text = render_task_markdown(tasks, plan_milestones, spec_art.id, spec_art.version)
-
-        # Output size limit
-        if len(rendered_text) > MAX_TASK_TEXT_CHARS:
+    def _assemble(
+        self,
+        run: _TaskRun,
+        tasks: list[TaskItem],
+        response: ModelResponse,
+    ) -> tuple[dict[str, Any], list[Artifact]]:
+        previous = run.previous
+        version = str(int(previous.version) + 1) if previous is not None else "1"
+        rendered = render_task_markdown(
+            tasks, run.plan.milestones, run.spec_art.id, run.spec_art.version
+        )
+        if len(rendered) > MAX_TASK_TEXT_CHARS:
             raise invalid_response(
                 f"Rendered task output exceeds {MAX_TASK_TEXT_CHARS} characters",
-                details={"charCount": len(rendered_text), "limit": MAX_TASK_TEXT_CHARS},
+                details={"charCount": len(rendered), "limit": MAX_TASK_TEXT_CHARS},
             )
+        metadata = self._artifact_metadata(run, response)
+        artifact = self._task_artifact(tasks, rendered, version, metadata)
+        summary = "Task breakdown revised" if previous is not None else "Task breakdown created"
+        output = {"summary": summary, "artifactId": artifact.id, "version": version}
+        return output, [artifact]
 
-        # Build artifact metadata with traceability
-        art_metadata: dict[str, Any] = {
+    def _task_artifact(
+        self,
+        tasks: list[TaskItem],
+        rendered: str,
+        version: str,
+        metadata: dict[str, Any],
+    ) -> Artifact:
+        return Artifact(
+            id=self._runtime.new_id(),
+            type="TASK",
+            name="TASK.md",
+            version=version,
+            content={
+                "format": "json",
+                "tasks": [task.model_dump(by_alias=True) for task in tasks],
+                "text": rendered,
+            },
+            created_by=self.metadata.id,
+            created_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+            metadata=metadata,
+        )
+
+    def _artifact_metadata(self, run: _TaskRun, response: ModelResponse) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
             "template": "task",
             "model": response.model,
             "usage": {
                 "promptTokens": response.usage.prompt_tokens,
                 "completionTokens": response.usage.completion_tokens,
             },
-            "specArtifactId": spec_art.id,
-            "specVersion": spec_art.version,
-            "planArtifactId": plan_art.id,
-            "planVersion": plan_art.version,
+            "specArtifactId": run.spec_art.id,
+            "specVersion": run.spec_art.version,
+            "planArtifactId": run.plan_art.id,
+            "planVersion": run.plan_art.version,
         }
-        if is_revision and prev_task_art:
-            art_metadata["revisionOf"] = prev_task_art.id
-        if language and isinstance(language, str) and language.strip():
-            art_metadata["language"] = language
+        if run.previous is not None:
+            metadata["revisionOf"] = run.previous.id
+        language = run.request.input.get("language")
+        if isinstance(language, str) and language.strip():
+            metadata["language"] = language
+        return metadata
 
-        art_id = self._runtime.new_id()
-        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
-        artifact = Artifact(
-            id=art_id,
-            type="TASK",
-            name="TASK.md",
-            version=version,
-            content={
-                "format": "json",
-                "tasks": [t.model_dump(by_alias=True) for t in tasks],
-                "text": rendered_text,
-            },
-            created_by=self.metadata.id,
-            created_at=placeholder_dt,
-            metadata=art_metadata,
-        )
 
-        summary = "Task breakdown revised" if is_revision else "Task breakdown created"
-        output = {
-            "summary": summary,
-            "artifactId": art_id,
-            "version": version,
-        }
-
-        return output, [artifact]
+def _parse_tasks(reply: str) -> list[TaskItem]:
+    try:
+        task_data = TaskContent.model_validate_json(reply)
+    except Exception as error:
+        raise invalid_response(
+            "Model response is not valid task JSON",
+            details={"parseError": str(error)},
+        ) from None
+    return task_data.tasks

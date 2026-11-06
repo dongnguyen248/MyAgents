@@ -42,8 +42,11 @@ description: Idiomatic modern Python — type hints on public APIs, dataclasses 
 - Strings that are data contracts (keys, codes, statuses) become
   named constants or enums defined once, not literals repeated
   across modules.
-- Write functions that fit on a screen and do one thing; extract
-  a helper when a block needs a comment to explain its purpose.
+- Write functions that do one thing and stay within the shared
+  code-structure limits (see the `code-structure` skill: max 30
+  lines per function, max 4 parameters, nesting depth at most 3,
+  complexity at most 10); extract a helper when a block needs a
+  comment to explain its purpose.
 - Tests use pytest idioms: plain `assert`, fixtures for setup,
   `parametrize` for case tables, and `tmp_path`/fakes instead of
   touching the real filesystem or network (see the testing skill).

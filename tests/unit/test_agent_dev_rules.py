@@ -16,10 +16,29 @@ import pytest
 from asf.agents._shared.codegen import FixContext
 from asf.agents._shared.rules import project_rules, rules_section
 from asf.agents.fix.prompts import FixPrompts, build_fix_messages
-from asf.agents.implement.prompts import ImplementPrompts, build_implement_messages
-from asf.agents.plan.prompts import PlanPrompts, PlanTemplate, build_plan_messages
-from asf.agents.spec.prompts import SpecPrompts, SpecTemplate, build_spec_messages
-from asf.agents.task.prompts import TaskPrompts, TaskTemplate, build_task_messages
+from asf.agents.implement.prompts import (
+    ImplementPromptContext,
+    ImplementPrompts,
+    build_implement_messages,
+)
+from asf.agents.plan.prompts import (
+    PlanPromptContext,
+    PlanPrompts,
+    PlanTemplate,
+    build_plan_messages,
+)
+from asf.agents.spec.prompts import (
+    SpecPromptContext,
+    SpecPrompts,
+    SpecTemplate,
+    build_spec_messages,
+)
+from asf.agents.task.prompts import (
+    TaskPromptContext,
+    TaskPrompts,
+    TaskTemplate,
+    build_task_messages,
+)
 from asf.contracts.models import AgentRequest
 
 RULES = "Never hardcode an HTTP status code."
@@ -60,14 +79,16 @@ def test_project_rules_rejects_absent_or_invalid_values(project: Any) -> None:
 
 def test_implement_messages_carry_the_rules() -> None:
     messages = build_implement_messages(
-        prompts=ImplementPrompts(system="system"),
-        spec_artifact={},
-        plan_artifact={},
-        task_artifact={},
-        task_item_id="T1",
-        existing_files={},
-        language=None,
-        project_context=PROJECT,
+        ImplementPromptContext(
+            prompts=ImplementPrompts(system="system"),
+            spec_artifact={},
+            plan_artifact={},
+            task_artifact={},
+            task_item_id="T1",
+            existing_files={},
+            language=None,
+            project_context=PROJECT,
+        )
     )
     assert "Project development rules" in messages[0].content
     assert RULES in messages[0].content
@@ -100,11 +121,13 @@ def test_fix_messages_carry_the_rules() -> None:
 
 def test_spec_messages_carry_the_rules() -> None:
     messages = build_spec_messages(
-        prompts=SpecPrompts(system="system", revision="revision"),
-        template=SpecTemplate.from_text("template"),
-        requirement="Build a thing",
-        language=None,
-        project_context=PROJECT,
+        SpecPromptContext(
+            prompts=SpecPrompts(system="system", revision="revision"),
+            template=SpecTemplate.from_text("template"),
+            requirement="Build a thing",
+            language=None,
+            project_context=PROJECT,
+        )
     )
     assert "Project standards" in messages[0].content
     assert RULES in messages[0].content
@@ -112,11 +135,13 @@ def test_spec_messages_carry_the_rules() -> None:
 
 def test_plan_messages_carry_the_rules() -> None:
     messages = build_plan_messages(
-        prompts=PlanPrompts(system="system", revision="revision"),
-        template=PlanTemplate.from_text("template"),
-        spec_artifact={},
-        language=None,
-        project_context=PROJECT,
+        PlanPromptContext(
+            prompts=PlanPrompts(system="system", revision="revision"),
+            template=PlanTemplate.from_text("template"),
+            spec_artifact={},
+            language=None,
+            project_context=PROJECT,
+        )
     )
     assert "Project development rules" in messages[0].content
     assert RULES in messages[0].content
@@ -124,12 +149,14 @@ def test_plan_messages_carry_the_rules() -> None:
 
 def test_task_messages_carry_the_rules() -> None:
     messages = build_task_messages(
-        prompts=TaskPrompts(system="system", revision="revision"),
-        template=TaskTemplate.from_text("template"),
-        spec_artifact={},
-        plan_artifact={},
-        language=None,
-        project_context=PROJECT,
+        TaskPromptContext(
+            prompts=TaskPrompts(system="system", revision="revision"),
+            template=TaskTemplate.from_text("template"),
+            spec_artifact={},
+            plan_artifact={},
+            language=None,
+            project_context=PROJECT,
+        )
     )
     assert "Project development rules" in messages[0].content
     assert RULES in messages[0].content
@@ -140,10 +167,12 @@ def test_agents_without_rules_keep_their_plain_system_prompt(
     project_context: Any,
 ) -> None:
     messages = build_plan_messages(
-        prompts=PlanPrompts(system="system", revision="revision"),
-        template=PlanTemplate.from_text("template"),
-        spec_artifact={},
-        language=None,
-        project_context=project_context,
+        PlanPromptContext(
+            prompts=PlanPrompts(system="system", revision="revision"),
+            template=PlanTemplate.from_text("template"),
+            spec_artifact={},
+            language=None,
+            project_context=project_context,
+        )
     )
     assert messages[0].content == "system"

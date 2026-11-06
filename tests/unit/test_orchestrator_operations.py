@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 
-from asf.agents.base import AgentExecutionError
+from asf.agents.base import AgentErrorOptions, AgentExecutionError
 from asf.approval.errors import ApprovalError
 from asf.approval.models import ApprovalPolicy
 from asf.configuration.platform import RetryPolicySettings
@@ -287,7 +287,7 @@ def test_retry_never_overrides_nonretryable_or_unlisted_errors(retryable, allowl
     spec._run_behavior = AgentExecutionError(
         "REPOSITORY_ERROR",
         "Safe failure",
-        retryable=retryable,
+        AgentErrorOptions(retryable=retryable),
     )
     run = engine.tick(start(engine).id)
     assert run.state.stage == "FAILED"

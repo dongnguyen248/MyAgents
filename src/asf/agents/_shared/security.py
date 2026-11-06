@@ -62,6 +62,9 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+_MATCH_PREVIEW_CHARS = 50
+
+
 def scan_secrets(
     content: str,
     file_path: str,
@@ -78,31 +81,41 @@ def scan_secrets(
     Returns:
         List of SecretMatch objects for detected secrets.
     """
+    context = _ScanContext(file_path=file_path, exclude_patterns=exclude_patterns)
     matches: list[SecretMatch] = []
-    lines = content.splitlines()
-
-    for line_num, line in enumerate(lines, 1):
-        for pattern_name, pattern in SECRET_PATTERNS:
-            for match in pattern.finditer(line):
-                matched = match.group(0)
-                # Check exclusion patterns
-                excluded = False
-                if exclude_patterns:
-                    for exc in exclude_patterns:
-                        if exc.search(matched):
-                            excluded = True
-                            break
-                if not excluded:
-                    matches.append(
-                        SecretMatch(
-                            pattern_name=pattern_name,
-                            file_path=file_path,
-                            line_number=line_num,
-                            matched_text=matched[:50],  # Truncate for safety
-                        )
-                    )
-
+    for line_num, line in enumerate(content.splitlines(), 1):
+        matches.extend(_line_matches(line, line_num, context))
     return matches
+
+
+@dataclass(frozen=True)
+class _ScanContext:
+    file_path: str
+    exclude_patterns: list[re.Pattern[str]] | None
+
+
+def _line_matches(line: str, line_num: int, context: _ScanContext) -> list[SecretMatch]:
+    matches: list[SecretMatch] = []
+    for pattern_name, pattern in SECRET_PATTERNS:
+        for match in pattern.finditer(line):
+            matched = match.group(0)
+            if _excluded(matched, context.exclude_patterns):
+                continue
+            matches.append(
+                SecretMatch(
+                    pattern_name=pattern_name,
+                    file_path=context.file_path,
+                    line_number=line_num,
+                    matched_text=matched[:_MATCH_PREVIEW_CHARS],
+                )
+            )
+    return matches
+
+
+def _excluded(matched: str, exclude_patterns: list[re.Pattern[str]] | None) -> bool:
+    if not exclude_patterns:
+        return False
+    return any(exc.search(matched) for exc in exclude_patterns)
 
 
 def redact_text(text: str) -> str:

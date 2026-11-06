@@ -5,8 +5,8 @@ export function duration(sec: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const r = s % 60;
-  if (h) return `${h}h ${m}m`;
-  if (m) return `${m}m ${String(r).padStart(2, '0')}s`;
+  if (h) {return `${h}h ${m}m`;}
+  if (m) {return `${m}m ${String(r).padStart(2, '0')}s`;}
   return `${r}s`;
 }
 
@@ -23,9 +23,9 @@ export const dateTime = (iso: string) =>
 
 export function ago(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return `${Math.floor(s)}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 60) {return `${Math.floor(s)}s ago`;}
+  if (s < 3600) {return `${Math.floor(s / 60)} min ago`;}
+  if (s < 86400) {return `${Math.floor(s / 3600)}h ago`;}
   return `${Math.floor(s / 86400)}d ago`;
 }
 

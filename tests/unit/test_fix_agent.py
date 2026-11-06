@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from asf.agents.base import AgentRuntime
-from asf.agents.fix import FixAgent, build_fix_agent
+from asf.agents.fix import FixAgent, FixSettings, build_fix_agent
 from asf.agents.fix.prompts import FixPrompts
 from asf.configuration.platform import PlatformConfig
 from asf.contracts.models import AgentRequest, Artifact
@@ -59,11 +59,13 @@ def fix_agent(
     return FixAgent(
         AgentRuntime(gateway, lambda: T_AWARE, counter_id("fix-")),
         repository or InMemoryRepository(),
-        prompts=FixPrompts("Return a complete replacement ChangeSet"),
-        # This suite was written against the legacy JSON contract:
-        # pin it (and no repair loop) explicitly.
-        edit_format="json",
-        repair_attempts=0,
+        FixSettings(
+            prompts=FixPrompts("Return a complete replacement ChangeSet"),
+            # This suite was written against the legacy JSON contract:
+            # pin it (and no repair loop) explicitly.
+            edit_format="json",
+            repair_attempts=0,
+        ),
     ), gateway
 
 

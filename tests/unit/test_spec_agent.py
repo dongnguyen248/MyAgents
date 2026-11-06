@@ -9,7 +9,7 @@ from typing import Any
 
 from asf.agents.base import AgentRuntime
 from asf.agents.loading import load_spec_prompts, load_spec_template
-from asf.agents.spec.agent import MAX_REQUIREMENT_CHARS, SpecAgent
+from asf.agents.spec.agent import MAX_REQUIREMENT_CHARS, SpecAgent, SpecSettings
 from asf.contracts.models import (
     AgentRequest,
     ApprovalFeedback,
@@ -63,10 +63,12 @@ class SpecAgentTests(unittest.TestCase):
         runtime = AgentRuntime(models=gateway, clock=clk, new_id=nid)
         agent = SpecAgent(
             runtime,
-            prompts=self.prompts,
-            template=self.template,
-            model=model,
-            parameters=parameters or {"temperature": 0.3},
+            SpecSettings(
+                prompts=self.prompts,
+                template=self.template,
+                model=model,
+                parameters=parameters or {"temperature": 0.3},
+            ),
         )
         return agent, gateway
 

@@ -28,8 +28,8 @@ from asf.agents.loading import (
     load_spec_prompts,
     load_spec_template,
 )
-from asf.agents.plan.agent import PlanAgent
-from asf.agents.spec.agent import SpecAgent
+from asf.agents.plan.agent import PlanAgent, PlanSettings
+from asf.agents.spec.agent import SpecAgent, SpecSettings
 from asf.approval.models import ApprovalPolicy
 from asf.configuration import load_platform_config
 from asf.contracts.models import ModelRequest, ModelResponse
@@ -93,21 +93,7 @@ def demo_engine(
         clock=lambda: datetime.now(UTC),
         new_id=lambda: next(first_id, str(uuid4())),
     )
-    registry = AgentRegistry()
-    registry.register(
-        SpecAgent(
-            runtime,
-            prompts=load_spec_prompts(),
-            template=load_spec_template(Path("templates")),
-        )
-    )
-    registry.register(
-        PlanAgent(
-            runtime,
-            prompts=load_plan_prompts(),
-            template=load_plan_template(Path("templates")),
-        )
-    )
+    registry = _demo_registry(runtime)
     return Orchestrator(
         WorkflowDefinition(
             id="teams-workflow-demo",
@@ -146,6 +132,29 @@ def demo_engine(
             expires_in_seconds=3600,
         ),
     )
+
+
+def _demo_registry(runtime: AgentRuntime) -> AgentRegistry:
+    registry = AgentRegistry()
+    registry.register(
+        SpecAgent(
+            runtime,
+            SpecSettings(
+                prompts=load_spec_prompts(),
+                template=load_spec_template(Path("templates")),
+            ),
+        )
+    )
+    registry.register(
+        PlanAgent(
+            runtime,
+            PlanSettings(
+                prompts=load_plan_prompts(),
+                template=load_plan_template(Path("templates")),
+            ),
+        )
+    )
+    return registry
 
 
 def run_demo(args: argparse.Namespace) -> None:

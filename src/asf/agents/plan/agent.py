@@ -1,45 +1,143 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
+from asf.agents._shared.reply_text import heading_lines, unwrap_code_fence
+from asf.agents._shared.request_checks import (
+    artifacts_of,
+    check_agent_id,
+    check_artifact_types,
+    check_attempt,
+    check_language,
+    check_orphan_feedback,
+    check_required_artifact,
+    check_revision_artifact,
+)
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.plan.prompts import (
     MilestoneValidationError,
+    PlanPromptContext,
     PlanPrompts,
     PlanTemplate,
     build_plan_messages,
     validate_milestones,
 )
-from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
+from asf.contracts.models import (
+    AgentMetadata,
+    AgentRequest,
+    Artifact,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+)
 
-__all__ = ["MAX_PLAN_CHARS", "PlanAgent"]
+__all__ = ["MAX_PLAN_CHARS", "PlanAgent", "PlanSettings"]
 
 MAX_PLAN_CHARS: int = 50000
+
+_ALLOWED_TYPES = {"SPEC", "PLAN"}
+
+
+@dataclass(frozen=True)
+class PlanSettings:
+    prompts: PlanPrompts
+    template: PlanTemplate
+    model: str | None = None
+    parameters: Mapping[str, Any] | None = None
+
+
+def _check_requirement_absent(request: AgentRequest) -> list[Issue]:
+    if "requirement" not in request.input:
+        return []
+    message = (
+        "input.requirement must not be present for PlanAgent; "
+        "SPEC artifact provides the requirement"
+    )
+    return [Issue("input.requirement", message)]
+
+
+def _check_content_size(request: AgentRequest) -> list[Issue]:
+    total = 0
+    for artifact in request.artifacts:
+        if artifact.type not in _ALLOWED_TYPES:
+            continue
+        if isinstance(artifact.content, dict) and isinstance(artifact.content.get("text"), str):
+            total += len(artifact.content["text"])
+    if total > MAX_PLAN_CHARS:
+        message = f"Combined SPEC+PLAN content exceeds {MAX_PLAN_CHARS} characters"
+        return [Issue("artifacts", message)]
+    return []
+
+
+def _previous_plan(request: AgentRequest) -> Artifact | None:
+    plan_arts = artifacts_of(request, "PLAN")
+    return plan_arts[0] if len(plan_arts) == 1 else None
+
+
+def _previous_plan_text(previous: Artifact | None) -> tuple[str, str] | None:
+    if previous is None or not isinstance(previous.content, dict):
+        return None
+    if "text" not in previous.content:
+        return None
+    return (previous.version, previous.content["text"])
+
+
+def _linked_spec_values(reply: str) -> tuple[bool, str | None, str | None]:
+    found_section = False
+    found_id: str | None = None
+    found_version: str | None = None
+    for line in reply.splitlines():
+        stripped = line.strip()
+        if stripped == "## Linked SPEC":
+            found_section = True
+            continue
+        if not found_section:
+            continue
+        if stripped.startswith("## "):
+            break
+        if stripped.startswith("ID:"):
+            found_id = stripped[3:].strip()
+        elif stripped.startswith("Version:"):
+            found_version = stripped[8:].strip()
+    return found_section, found_id, found_version
+
+
+def _linked_spec_issues(reply: str, spec_art: Artifact) -> list[str]:
+    found_section, found_id, found_version = _linked_spec_values(reply)
+    if not found_section:
+        return ["Missing '## Linked SPEC' section"]
+    issues: list[str] = []
+    if found_id is None:
+        issues.append("Linked SPEC section missing 'ID:' line")
+    elif found_id != spec_art.id:
+        issues.append(
+            f"Linked SPEC ID '{found_id}' does not match input SPEC artifact ID '{spec_art.id}'"
+        )
+    if found_version is None:
+        issues.append("Linked SPEC section missing 'Version:' line")
+    elif found_version != spec_art.version:
+        issues.append(
+            f"Linked SPEC version '{found_version}' does not match "
+            f"input SPEC artifact version '{spec_art.version}'"
+        )
+    return issues
 
 
 class PlanAgent(BaseAgent):
     """Agent responsible for creating and revising implementation plans."""
 
-    def __init__(
-        self,
-        runtime: AgentRuntime,
-        *,
-        prompts: PlanPrompts,
-        template: PlanTemplate,
-        model: str | None = None,
-        parameters: Mapping[str, Any] | None = None,
-    ) -> None:
+    def __init__(self, runtime: AgentRuntime, settings: PlanSettings) -> None:
         super().__init__(runtime)
-        self._prompts = prompts
-        self._template = template
-        self._model = model
-        self._parameters = dict(parameters or {})
+        self._prompts = settings.prompts
+        self._template = settings.template
+        self._model = settings.model
+        self._parameters = dict(settings.parameters or {})
         self._metadata = AgentMetadata(
             id="agent-plan",
             name="Planning Agent",
@@ -56,7 +154,7 @@ class PlanAgent(BaseAgent):
 
     def _compute_revision_count(self, request: AgentRequest) -> int:
         """Computes revision count from the PLAN artifact version."""
-        plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
+        plan_arts = artifacts_of(request, "PLAN")
         if plan_arts:
             try:
                 return int(plan_arts[0].version)
@@ -65,184 +163,49 @@ class PlanAgent(BaseAgent):
         return 0
 
     def _check(self, request: AgentRequest) -> list[Issue]:
-        issues: list[Issue] = []
-
-        # 1. agentId check
-        if request.agent_id != self.metadata.id:
-            issues.append(
-                Issue(
-                    "agentId",
-                    f"agentId '{request.agent_id}' does not match '{self.metadata.id}'",
-                )
-            )
-
-        # 2. input.requirement must not be present (SPEC provides the requirement)
-        if "requirement" in request.input:
-            issues.append(
-                Issue(
-                    "input.requirement",
-                    "input.requirement must not be present for PlanAgent; "
-                    "SPEC artifact provides the requirement",
-                )
-            )
-
-        # 3. input.language, if present
-        if "language" in request.input:
-            lang = request.input["language"]
-            if not isinstance(lang, str) or not lang.strip():
-                issues.append(Issue("input.language", "input.language must be a non-empty string"))
-
-        # 4. Exactly one SPEC artifact required
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
-        if len(spec_arts) != 1:
-            issues.append(Issue("artifacts", "Exactly one artifact of type SPEC is required"))
-        else:
-            spec_art = spec_arts[0]
-            art_idx = request.artifacts.index(spec_art)
-
-            # SPEC content must be a mapping with non-empty str "text"
-            if (
-                not isinstance(spec_art.content, dict)
-                or not isinstance(spec_art.content.get("text"), str)
-                or not spec_art.content.get("text", "").strip()
-            ):
-                issues.append(
-                    Issue(
-                        f"artifacts[{art_idx}].content.text",
-                        "SPEC artifact must have inline content mapping with non-empty 'text'",
-                    )
-                )
-
-            # SPEC version must match ^[1-9][0-9]*$
-            is_valid_ver = isinstance(spec_art.version, str) and bool(
-                re.match(r"^[1-9][0-9]*$", spec_art.version)
-            )
-            if not is_valid_ver:
-                issues.append(
-                    Issue(
-                        f"artifacts[{art_idx}].version",
-                        f"SPEC artifact version '{spec_art.version}' must match '^[1-9][0-9]*$'",
-                    )
-                )
-
-        # 5. At most one PLAN artifact (for revision mode)
-        plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
-        if len(plan_arts) > 1:
-            issues.append(Issue("artifacts", "At most one artifact of type PLAN is permitted"))
-
-        is_revision = len(plan_arts) == 1
-
-        # 6. Revision mode iff a PLAN artifact is present
-        if is_revision:
-            plan_art = plan_arts[0]
-            art_idx = request.artifacts.index(plan_art)
-
-            if not request.feedback:
-                issues.append(
-                    Issue("feedback", "Reviewer feedback is required when revising a plan")
-                )
-
-            # Content must be a mapping with non-empty str "text"
-            if (
-                not isinstance(plan_art.content, dict)
-                or not isinstance(plan_art.content.get("text"), str)
-                or not plan_art.content.get("text", "").strip()
-            ):
-                issues.append(
-                    Issue(
-                        f"artifacts[{art_idx}].content.text",
-                        "PLAN artifact must have inline content mapping with non-empty 'text'",
-                    )
-                )
-
-            # Version must match ^[1-9][0-9]*$
-            is_valid_ver = isinstance(plan_art.version, str) and bool(
-                re.match(r"^[1-9][0-9]*$", plan_art.version)
-            )
-            if not is_valid_ver:
-                issues.append(
-                    Issue(
-                        f"artifacts[{art_idx}].version",
-                        f"PLAN artifact version '{plan_art.version}' must match '^[1-9][0-9]*$'",
-                    )
-                )
-
-        # 7. Feedback without PLAN artifact
-        if request.feedback and not is_revision:
-            issues.append(
-                Issue("artifacts", "feedback provided without a previous PLAN artifact to revise")
-            )
-
-        # 8. Reject unknown artifact types
-        allowed_types = {"SPEC", "PLAN"}
-        for idx, art in enumerate(request.artifacts):
-            if art.type not in allowed_types:
-                issues.append(
-                    Issue(
-                        f"artifacts[{idx}].type",
-                        f"Unknown artifact type '{art.type}'; allowed: {sorted(allowed_types)}",
-                    )
-                )
-
-        # 9. metadata.attempt, if present
-        if "attempt" in request.metadata:
-            attempt_val = request.metadata["attempt"]
-            if not isinstance(attempt_val, int) or isinstance(attempt_val, bool) or attempt_val < 1:
-                issues.append(Issue("metadata.attempt", "metadata.attempt must be an integer >= 1"))
-
-        # 10. SPEC + PLAN content size limit
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
-        plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
-        total_chars = 0
-        for art in spec_arts + plan_arts:
-            if isinstance(art.content, dict) and isinstance(art.content.get("text"), str):
-                total_chars += len(art.content["text"])
-        if total_chars > MAX_PLAN_CHARS:
-            issues.append(
-                Issue(
-                    "artifacts",
-                    f"Combined SPEC+PLAN content exceeds {MAX_PLAN_CHARS} characters",
-                )
-            )
-
-        return issues
+        agent_id_message = f"agentId '{request.agent_id}' does not match '{self.metadata.id}'"
+        revision_message = "Reviewer feedback is required when revising a plan"
+        validators = [
+            lambda: check_agent_id(request, self.metadata.id, agent_id_message),
+            lambda: _check_requirement_absent(request),
+            lambda: check_language(request, "input.language must be a non-empty string"),
+            lambda: check_required_artifact(request, "SPEC"),
+            lambda: check_revision_artifact(request, "PLAN", revision_message),
+            lambda: check_orphan_feedback(request, "PLAN"),
+            lambda: check_artifact_types(request, _ALLOWED_TYPES),
+            lambda: check_attempt(request),
+            lambda: _check_content_size(request),
+        ]
+        return [issue for validate in validators for issue in validate()]
 
     def _run(self, request: AgentRequest) -> tuple[dict[str, Any], list[Artifact]]:
-        # Extract SPEC artifact (always required)
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
-        spec_art = spec_arts[0]
-        spec_artifact_dict = spec_art.to_contract()
+        spec_art = artifacts_of(request, "SPEC")[0]
+        previous = _previous_plan(request)
+        messages = self._build_messages(request, spec_art, previous)
+        response = call_model(self._runtime.models, self._model_request(request, messages))
+        reply = self._checked_reply(response, spec_art)
+        metadata = self._artifact_metadata(request, spec_art, previous, response)
+        return self._assemble(previous, reply, metadata)
 
-        # Check for revision mode
-        plan_arts = [a for a in request.artifacts if a.type == "PLAN"]
-        is_revision = len(plan_arts) == 1
-        prev_plan_art = plan_arts[0] if is_revision else None
-
-        previous_plan: tuple[str, str] | None = None
-        if (
-            prev_plan_art
-            and isinstance(prev_plan_art.content, dict)
-            and "text" in prev_plan_art.content
-        ):
-            previous_plan = (
-                prev_plan_art.version,
-                prev_plan_art.content["text"],
-            )
-
-        language = request.input.get("language")
-        project_context = request.context.get("project")
-
-        messages = build_plan_messages(
+    def _build_messages(
+        self,
+        request: AgentRequest,
+        spec_art: Artifact,
+        previous: Artifact | None,
+    ) -> list[ModelMessage]:
+        context = PlanPromptContext(
             prompts=self._prompts,
             template=self._template,
-            spec_artifact=spec_artifact_dict,
-            language=language,
-            project_context=project_context,
-            previous_plan=previous_plan,
+            spec_artifact=spec_art.to_contract(),
+            language=request.input.get("language"),
+            project_context=request.context.get("project"),
+            previous_plan=_previous_plan_text(previous),
             feedback=request.feedback,
         )
+        return build_plan_messages(context)
 
-        model_req = ModelRequest(
+    def _model_request(self, request: AgentRequest, messages: list[ModelMessage]) -> ModelRequest:
+        return ModelRequest(
             messages=messages,
             parameters=dict(self._parameters),
             model=self._model,
@@ -254,55 +217,70 @@ class PlanAgent(BaseAgent):
             },
         )
 
-        response = call_model(self._runtime.models, model_req)
-        reply = response.content.strip()
-
-        # Unwrap single code fence if wrapped
-        if reply.startswith("```") and reply.endswith("```"):
-            lines = reply.splitlines()
-            if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
-                reply = "\n".join(lines[1:-1]).strip()
-
+    def _checked_reply(self, response: ModelResponse, spec_art: Artifact) -> str:
+        reply = unwrap_code_fence(response.content.strip())
         if not reply:
+            raise invalid_response("Model returned an empty response")
+        self._require_sections(reply)
+        self._require_milestones(reply)
+        self._require_linked_spec(reply, spec_art)
+        return reply
+
+    def _require_sections(self, reply: str) -> None:
+        headings = heading_lines(reply)
+        missing = [s for s in self._template.required_sections if s not in headings]
+        if missing:
             raise invalid_response(
-                "Model returned an empty response",
+                f"Model response is missing required template sections: {missing}",
+                details={"missingSections": missing},
             )
 
-        # Validate required template sections
-        reply_heading_lines = {
-            line.strip() for line in reply.splitlines() if line.strip().startswith("## ")
-        }
-        missing_sections = [
-            sec for sec in self._template.required_sections if sec not in reply_heading_lines
-        ]
-        if missing_sections:
-            raise invalid_response(
-                f"Model response is missing required template sections: {missing_sections}",
-                details={"missingSections": missing_sections},
-            )
-
-        # Validate milestone structure
+    def _require_milestones(self, reply: str) -> None:
         try:
             validate_milestones(reply)
-        except MilestoneValidationError as e:
+        except MilestoneValidationError as error:
             raise invalid_response(
                 "Model response has invalid milestone structure",
-                details={"milestoneIssues": e.issues},
+                details={"milestoneIssues": error.issues},
             ) from None
 
-        # Validate "Linked SPEC" section matches the input SPEC artifact
-        linked_spec_issues = self._validate_linked_spec_section(reply, spec_art)
-        if linked_spec_issues:
+    def _require_linked_spec(self, reply: str, spec_art: Artifact) -> None:
+        issues = _linked_spec_issues(reply, spec_art)
+        if issues:
             raise invalid_response(
                 "Model response has invalid Linked SPEC section",
-                details={"linkedSpecIssues": linked_spec_issues},
+                details={"linkedSpecIssues": issues},
             )
 
-        # Determine version
-        version = str(int(prev_plan_art.version) + 1) if is_revision and prev_plan_art else "1"
+    def _assemble(
+        self,
+        previous: Artifact | None,
+        reply: str,
+        metadata: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[Artifact]]:
+        version = str(int(previous.version) + 1) if previous is not None else "1"
+        artifact = Artifact(
+            id=self._runtime.new_id(),
+            type="PLAN",
+            name="PLAN.md",
+            version=version,
+            content={"format": "markdown", "text": reply},
+            created_by=self.metadata.id,
+            created_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+            metadata=metadata,
+        )
+        summary = "Plan revised" if previous is not None else "Plan created"
+        output = {"summary": summary, "artifactId": artifact.id, "version": version}
+        return output, [artifact]
 
-        # Build artifact metadata with traceability
-        art_metadata: dict[str, Any] = {
+    def _artifact_metadata(
+        self,
+        request: AgentRequest,
+        spec_art: Artifact,
+        previous: Artifact | None,
+        response: ModelResponse,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
             "template": "plan",
             "model": response.model,
             "usage": {
@@ -312,32 +290,12 @@ class PlanAgent(BaseAgent):
             "specArtifactId": spec_art.id,
             "specVersion": spec_art.version,
         }
-        if is_revision and prev_plan_art:
-            art_metadata["revisionOf"] = prev_plan_art.id
-        if language and isinstance(language, str) and language.strip():
-            art_metadata["language"] = language
-
-        art_id = self._runtime.new_id()
-        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
-        artifact = Artifact(
-            id=art_id,
-            type="PLAN",
-            name="PLAN.md",
-            version=version,
-            content={"format": "markdown", "text": reply},
-            created_by=self.metadata.id,
-            created_at=placeholder_dt,
-            metadata=art_metadata,
-        )
-
-        summary = "Plan revised" if is_revision else "Plan created"
-        output = {
-            "summary": summary,
-            "artifactId": art_id,
-            "version": version,
-        }
-
-        return output, [artifact]
+        if previous is not None:
+            metadata["revisionOf"] = previous.id
+        language = request.input.get("language")
+        if isinstance(language, str) and language.strip():
+            metadata["language"] = language
+        return metadata
 
     @staticmethod
     def _validate_linked_spec_section(reply: str, spec_art: Artifact) -> list[str]:
@@ -346,45 +304,4 @@ class PlanAgent(BaseAgent):
 
         Returns a list of issue strings (empty if valid).
         """
-        issues: list[str] = []
-
-        # Find the Linked SPEC section
-        lines = reply.splitlines()
-        in_linked_spec = False
-        found_id = None
-        found_version = None
-
-        for _i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped == "## Linked SPEC":
-                in_linked_spec = True
-                continue
-            if in_linked_spec:
-                if stripped.startswith("## "):
-                    # Next section started
-                    break
-                if stripped.startswith("ID:"):
-                    found_id = stripped[3:].strip()
-                elif stripped.startswith("Version:"):
-                    found_version = stripped[8:].strip()
-
-        if not in_linked_spec:
-            issues.append("Missing '## Linked SPEC' section")
-        else:
-            if found_id is None:
-                issues.append("Linked SPEC section missing 'ID:' line")
-            elif found_id != spec_art.id:
-                issues.append(
-                    f"Linked SPEC ID '{found_id}' does not match input "
-                    f"SPEC artifact ID '{spec_art.id}'"
-                )
-
-            if found_version is None:
-                issues.append("Linked SPEC section missing 'Version:' line")
-            elif found_version != spec_art.version:
-                issues.append(
-                    f"Linked SPEC version '{found_version}' does not match "
-                    f"input SPEC artifact version '{spec_art.version}'"
-                )
-
-        return issues
+        return _linked_spec_issues(reply, spec_art)

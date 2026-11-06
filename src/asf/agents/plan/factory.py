@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from asf.agents.base import AgentRuntime
-from asf.agents.plan.agent import PlanAgent
+from asf.agents.plan.agent import PlanAgent, PlanSettings
 from asf.configuration.platform import PlatformConfig
 
 __all__ = ["build_plan_agent"]
@@ -33,8 +33,5 @@ def build_plan_agent(
 
     return PlanAgent(
         runtime,
-        prompts=prompts,
-        template=template,
-        model=model,
-        parameters=parameters,
+        PlanSettings(prompts=prompts, template=template, model=model, parameters=parameters),
     )

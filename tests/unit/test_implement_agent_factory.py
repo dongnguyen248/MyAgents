@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from asf.agents.base import AgentRuntime
-from asf.agents.implement.agent import ImplementAgent
+from asf.agents.implement.agent import ImplementAgent, ImplementSettings
 from asf.agents.implement.factory import build_implement_agent
 from asf.agents.implement.prompts import ImplementPrompts
 from asf.agents.loading import load_implement_prompts
@@ -32,8 +32,8 @@ def test_factory_creates_agent_with_repository() -> None:
 
     assert isinstance(agent, ImplementAgent)
     assert agent._repository is repo
-    assert agent._prompts is not None
-    assert isinstance(agent._prompts, ImplementPrompts)
+    assert agent._settings.prompts is not None
+    assert isinstance(agent._settings.prompts, ImplementPrompts)
 
 
 def test_factory_uses_platform_model_profile() -> None:
@@ -58,8 +58,8 @@ def test_factory_uses_platform_model_profile() -> None:
 
     agent = build_implement_agent(runtime, platform, templates_dir, repo)
 
-    assert agent._model == "test-model"
-    assert agent._parameters == {"temperature": 0.5}
+    assert agent._settings.model == "test-model"
+    assert agent._settings.parameters == {"temperature": 0.5}
 
 
 def test_factory_requires_repository() -> None:
@@ -102,13 +102,15 @@ def test_direct_constructor_accepts_prompts_model_params() -> None:
     agent = ImplementAgent(
         runtime,
         repo,
-        prompts=prompts,
-        model=model,
-        parameters=parameters,
-        edit_format="json",  # the scripted reply below is the legacy JSON format
-        repair_attempts=0,
+        ImplementSettings(
+            prompts=prompts,
+            model=model,
+            parameters=parameters,
+            edit_format="json",  # the scripted reply below is the legacy JSON format
+            repair_attempts=0,
+        ),
     )
 
-    assert agent._model == model
-    assert agent._parameters == parameters
-    assert agent._prompts is prompts
+    assert agent._settings.model == model
+    assert agent._settings.parameters == parameters
+    assert agent._settings.prompts is prompts

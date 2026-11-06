@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from asf.agents._shared.prompt_context import (
+    linked_artifact_section,
+    project_context_section,
+    revision_sections,
+)
 from asf.agents._shared.rules import rules_section
 from asf.agents._shared.skills import skills_section
 from asf.agents.plan.milestones import (
@@ -17,6 +21,7 @@ from asf.agents.plan.milestones import (
 from asf.contracts.models import ApprovalFeedback, ModelMessage
 
 __all__ = [
+    "PlanPromptContext",
     "PlanPrompts",
     "PlanTemplate",
     "build_plan_messages",
@@ -28,6 +33,14 @@ __all__ = [
     "Milestone",
     "MAX_MILESTONES",
 ]
+
+_RULES_INTRO = (
+    "Project development rules — the standards this project's code"
+    " must follow. Design the plan so the implementation can comply"
+    " with them (structure, layering, and the files and contracts the"
+    " standards require); where they conflict with the output"
+    " contract above, the output contract wins:"
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +64,17 @@ class PlanTemplate:
         return cls(text=text, required_sections=sections)
 
 
+@dataclass(frozen=True)
+class PlanPromptContext:
+    prompts: PlanPrompts
+    template: PlanTemplate
+    spec_artifact: dict[str, Any]
+    language: str | None
+    project_context: dict[str, Any] | None
+    previous_plan: tuple[str, str] | None = None
+    feedback: Sequence[ApprovalFeedback] = ()
+
+
 def validate_milestones(plan_text: str) -> None:
     """Validates milestone structure in the PLAN markdown.
 
@@ -64,91 +88,34 @@ def validate_milestones(plan_text: str) -> None:
     parse_milestones(plan_text)  # raises MilestoneValidationError on issues
 
 
-def build_user_message(
-    spec_artifact: dict[str, Any],
-    language: str | None,
-    project_context: dict[str, Any] | None,
-    template_text: str,
-    previous_plan: tuple[str, str] | None = None,
-    feedback: Sequence[ApprovalFeedback] = (),
-) -> str:
+def build_user_message(context: PlanPromptContext) -> str:
     """Builds the user prompt message with fixed sections."""
-    sections: list[str] = []
-
-    # 1. Linked SPEC (input artifact)
-    spec_id = spec_artifact.get("id", "unknown")
-    spec_version = spec_artifact.get("version", "unknown")
-    spec_text = ""
-    if isinstance(spec_artifact.get("content"), dict):
-        spec_text = spec_artifact["content"].get("text", "")
-    elif isinstance(spec_artifact.get("content"), str):
-        spec_text = spec_artifact["content"]
-
-    sections.append(f"## Linked SPEC\nID: {spec_id}\nVersion: {spec_version}\n\n{spec_text}")
-
-    # 2. Output language
+    language = context.language
     lang_str = language if language else "same language as the SPEC"
-    sections.append(f"## Output language\n{lang_str}")
-
-    # 3. Project context (whitelisted: name, description, technology)
-    if project_context:
-        whitelisted = {
-            k: project_context[k]
-            for k in ("name", "description", "technology")
-            if k in project_context
-        }
-        proj_str = json.dumps(whitelisted, indent=2) if whitelisted else "none"
-    else:
-        proj_str = "none"
-    sections.append(f"## Project context\n{proj_str}")
-
-    # 4. Template
-    sections.append(f"## Template\n{template_text}")
-
-    # 5 & 6. Revision mode sections
-    if previous_plan is not None:
-        prev_version, prev_text = previous_plan
-        sections.append(f"## Previous plan (version {prev_version})\n{prev_text}")
-
-        feedback_lines = [f"- [{fb.decision}] {fb.reviewer}: {fb.comment}" for fb in feedback]
-        feedback_str = "\n".join(feedback_lines) if feedback_lines else "none"
-        sections.append(f"## Reviewer feedback\n{feedback_str}")
-
+    sections = [
+        linked_artifact_section(context.spec_artifact, "Linked SPEC"),
+        f"## Output language\n{lang_str}",
+        project_context_section(context.project_context),
+        f"## Template\n{context.template.text}",
+        *revision_sections(context.previous_plan, "Previous plan", context.feedback),
+    ]
     return "\n\n".join(sections)
 
 
-def build_plan_messages(
-    prompts: PlanPrompts,
-    template: PlanTemplate,
-    spec_artifact: dict[str, Any],
-    language: str | None,
-    project_context: dict[str, Any] | None,
-    previous_plan: tuple[str, str] | None = None,
-    feedback: Sequence[ApprovalFeedback] = (),
-) -> list[ModelMessage]:
+def _system_content(context: PlanPromptContext) -> str:
+    prompts = context.prompts
+    if context.previous_plan is not None:
+        content = f"{prompts.system}\n\n{prompts.revision}"
+    else:
+        content = prompts.system
+    content += rules_section(context.project_context, _RULES_INTRO)
+    content += skills_section(context.project_context, "plan")
+    return content
+
+
+def build_plan_messages(context: PlanPromptContext) -> list[ModelMessage]:
     """Constructs the system and user messages for PlanAgent."""
-    is_revision = previous_plan is not None
-    system_content = f"{prompts.system}\n\n{prompts.revision}" if is_revision else prompts.system
-    system_content += rules_section(
-        project_context,
-        "Project development rules — the standards this project's code"
-        " must follow. Design the plan so the implementation can comply"
-        " with them (structure, layering, and the files and contracts the"
-        " standards require); where they conflict with the output"
-        " contract above, the output contract wins:",
-    )
-    system_content += skills_section(project_context, "plan")
-
-    user_content = build_user_message(
-        spec_artifact=spec_artifact,
-        language=language,
-        project_context=project_context,
-        template_text=template.text,
-        previous_plan=previous_plan,
-        feedback=feedback,
-    )
-
     return [
-        ModelMessage(role="system", content=system_content),
-        ModelMessage(role="user", content=user_content),
+        ModelMessage(role="system", content=_system_content(context)),
+        ModelMessage(role="user", content=build_user_message(context)),
     ]

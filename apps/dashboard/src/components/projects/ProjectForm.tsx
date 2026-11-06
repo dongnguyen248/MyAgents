@@ -55,7 +55,7 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
 
   const changeName = (value: string) => {
     setName(value);
-    if (!idTouched) setId(slugify(value));
+    if (!idTouched) {setId(slugify(value));}
   };
 
   const changeRepoUrl = (value: string) => {
@@ -63,8 +63,8 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
     // Paste a GitHub or GitLab link and the provider follows it.
     try {
       const host = new URL(value.trim()).hostname;
-      if (host === 'github.com') setProvider('github');
-      else if (host.includes('gitlab')) setProvider('gitlab');
+      if (host === 'github.com') {setProvider('github');}
+      else if (host.includes('gitlab')) {setProvider('gitlab');}
     } catch {
       // Not a URL yet; leave the provider as chosen.
     }

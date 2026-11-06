@@ -6,7 +6,7 @@ import { EmptyState } from '../common/Layout';
 import { TaskStatusBadge } from './TaskStatusBadge';
 
 export function TaskTable({ tasks, agentNames }: { tasks: Task[]; agentNames: Record<string, string> }) {
-  if (!tasks.length) return <EmptyState>No tasks match the current filters.</EmptyState>;
+  if (!tasks.length) {return <EmptyState>No tasks match the current filters.</EmptyState>;}
   return (
     <div className="table-wrap">
       <table className="table">

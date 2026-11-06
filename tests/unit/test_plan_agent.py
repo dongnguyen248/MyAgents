@@ -9,7 +9,7 @@ from typing import Any
 
 from asf.agents.base import AgentRuntime
 from asf.agents.loading import load_plan_prompts, load_plan_template
-from asf.agents.plan.agent import PlanAgent
+from asf.agents.plan.agent import PlanAgent, PlanSettings
 from asf.agents.plan.milestones import milestone_ancestors, parse_milestones
 from asf.contracts.models import (
     AgentRequest,
@@ -88,10 +88,12 @@ class PlanAgentTests(unittest.TestCase):
         runtime = AgentRuntime(models=gateway, clock=clk, new_id=nid)
         agent = PlanAgent(
             runtime,
-            prompts=self.prompts,
-            template=self.template,
-            model=model,
-            parameters=parameters or {"temperature": 0.3},
+            PlanSettings(
+                prompts=self.prompts,
+                template=self.template,
+                model=model,
+                parameters=parameters or {"temperature": 0.3},
+            ),
         )
         return agent, gateway
 

@@ -51,13 +51,44 @@ asf = ["**/*.md", "**/*.yaml", "**/*.yml", "**/*.json", "**/*.txt"]
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM", "S", "ASYNC"]
+select = [
+    "E", "F", "I", "B", "UP", "SIM", "S", "ASYNC",
+    # Phase 11a code-structure enforcement (Appendix A): complexity,
+    # size and shape rules Ruff can own. Function code-lines are
+    # owned by scripts/check_code_structure.py (Ruff has no such
+    # rule); PLR0915 max-statements is the closest proxy there.
+    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "ERA001", "E701", "E702", "E703",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 4
+max-statements = 25
 
 [tool.ruff.lint.per-file-ignores]
+# Phase 11a ratchet: the C901/PLR structure rules are enforced
+# everywhere except the trees the refactor waves have not reached
+# yet. Each block names the wave that deletes it; a block may only
+# shrink, never grow (same rule as .code-structure-baseline.json).
+# Wave 2 (api + orchestrator).
+"src/asf/api/**" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004"]
+"src/asf/orchestrator/**" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
+# Wave 3 (everything else under src + harness).
+"src/asf/approval/**" = ["C901", "PLR0912", "PLR0915"]
+"src/asf/configuration/**" = ["PLR0915", "PLR2004"]
+"src/asf/evaluation/**" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR2004"]
+"src/asf/integrations/**" = ["C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004"]
+"src/asf/state_machine/**" = ["PLR0915"]
+"src/asf/tools/**" = ["C901", "PLR0912", "PLR0915", "PLR2004"]
+"src/asf/workflow/**" = ["C901", "PLR0915"]
+
 # Tests and the evaluation harness use asserts and fixture
 # credentials by design; the security rule family does not apply.
-"tests/**" = ["S"]
-"harness/**" = ["S"]
+"tests/**" = ["S", "C901", "ERA001", "PLR0912", "PLR0913", "PLR0915", "PLR2004"]
+"harness/**" = ["S", "PLR0915", "PLR2004"]
 # FastAPI's Depends/Body-in-defaults is the framework idiom.
 "src/asf/api/app.py" = ["B008"]
 # Remaining swallowed errors in the service are best-effort cleanup

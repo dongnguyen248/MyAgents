@@ -21,7 +21,7 @@ interface Props {
 }
 
 export function ApprovalTable({ approvals, selectedId, onSelect }: Props) {
-  if (!approvals.length) return <EmptyState>No approvals.</EmptyState>;
+  if (!approvals.length) {return <EmptyState>No approvals.</EmptyState>;}
   return (
     <div className="table-wrap">
       <table className="table">

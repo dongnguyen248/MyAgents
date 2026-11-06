@@ -14,6 +14,7 @@ from asf.agents.task.agent import (
     MAX_TASKS,
     TaskAgent,
     TaskItem,
+    TaskSettings,
     render_task_markdown,
 )
 from asf.contracts.models import (
@@ -38,6 +39,20 @@ def counter_id(prefix: str = "id-"):
         return f"{prefix}{count}"
 
     return _next
+
+
+def _user_message_context(spec_artifact, plan_artifact, language, project_context):
+    """Builds the prompt context for the build_user_message unit tests."""
+    from asf.agents.task.prompts import TaskPromptContext, TaskPrompts, TaskTemplate
+
+    return TaskPromptContext(
+        prompts=TaskPrompts(system="", revision=""),
+        template=TaskTemplate(text="template"),
+        spec_artifact=spec_artifact,
+        plan_artifact=plan_artifact,
+        language=language,
+        project_context=project_context,
+    )
 
 
 def make_valid_task_reply(
@@ -110,10 +125,12 @@ class TaskAgentTests(unittest.TestCase):
         runtime = AgentRuntime(models=gateway, clock=clk, new_id=nid)
         agent = TaskAgent(
             runtime,
-            prompts=self.prompts,
-            template=self.template,
-            model=model,
-            parameters=parameters or {"temperature": 0.3},
+            TaskSettings(
+                prompts=self.prompts,
+                template=self.template,
+                model=model,
+                parameters=parameters or {"temperature": 0.3},
+            ),
         )
         return agent, gateway
 
@@ -3764,7 +3781,7 @@ class TaskAgentTests(unittest.TestCase):
             "content": {"text": "PLAN content"},
         }
 
-        result = build_user_message(spec_artifact, plan_artifact, "en", None, "template")
+        result = build_user_message(_user_message_context(spec_artifact, plan_artifact, "en", None))
         self.assertIn("SPEC content as string directly", result)
 
     def test_build_user_message_plan_content_string(self):
@@ -3782,7 +3799,7 @@ class TaskAgentTests(unittest.TestCase):
             "content": "PLAN content as string directly",  # String content, not dict
         }
 
-        result = build_user_message(spec_artifact, plan_artifact, "en", None, "template")
+        result = build_user_message(_user_message_context(spec_artifact, plan_artifact, "en", None))
         self.assertIn("PLAN content as string directly", result)
 
     def test_build_user_message_empty_project_context(self):
@@ -3793,12 +3810,14 @@ class TaskAgentTests(unittest.TestCase):
         plan_artifact = {"id": "plan-1", "version": "1", "content": {"text": "PLAN"}}
 
         # Empty project_context
-        result = build_user_message(spec_artifact, plan_artifact, "en", {}, "template")
+        result = build_user_message(_user_message_context(spec_artifact, plan_artifact, "en", {}))
         self.assertIn("## Project context\nnone", result)
 
         # Project context with no whitelisted keys
         project_ctx = {"other_key": "value"}
-        result = build_user_message(spec_artifact, plan_artifact, "en", project_ctx, "template")
+        result = build_user_message(
+            _user_message_context(spec_artifact, plan_artifact, "en", project_ctx)
+        )
         self.assertIn("## Project context\nnone", result)
 
 

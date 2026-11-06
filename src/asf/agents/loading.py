@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.resources
+from collections.abc import Callable
 from pathlib import Path
 
 from asf.agents.fix.prompts import FixPrompts
@@ -24,124 +25,84 @@ __all__ = [
 ]
 
 
-def load_spec_prompts() -> SpecPrompts:
-    """Loads system and revision prompts from package resources."""
+def _load_prompt_pair[T](package: str, agent: str, build: Callable[..., T]) -> T:
     try:
-        traversable = importlib.resources.files("asf.agents.spec").joinpath("prompts")
-        sys_resource = traversable.joinpath("system.md")
-        rev_resource = traversable.joinpath("revision.md")
-
-        system_text = sys_resource.read_text(encoding="utf-8")
-        revision_text = rev_resource.read_text(encoding="utf-8")
-        return SpecPrompts(system=system_text, revision=revision_text)
+        traversable = importlib.resources.files(package).joinpath("prompts")
+        system_text = traversable.joinpath("system.md").read_text(encoding="utf-8")
+        revision_text = traversable.joinpath("revision.md").read_text(encoding="utf-8")
+        return build(system=system_text, revision=revision_text)
     except Exception as exc:
         raise ConfigError(
-            f"Failed to load spec prompts from package: {exc}",
-            source="asf.agents.spec.prompts",
+            f"Failed to load {agent} prompts from package: {exc}",
+            source=f"{package}.prompts",
         ) from exc
+
+
+def _load_system_prompt(package: str, agent: str) -> str:
+    try:
+        resource = importlib.resources.files(package).joinpath("prompts", "system.md")
+        return resource.read_text(encoding="utf-8")
+    except Exception as exc:
+        raise ConfigError(
+            f"Failed to load {agent} prompts from package: {exc}",
+            source=f"{package}.prompts",
+        ) from exc
+
+
+def _load_system_prompt_strict(package: str, agent: str) -> str:
+    try:
+        resource = importlib.resources.files(package).joinpath("prompts", "system.md")
+        return resource.read_text(encoding="utf-8")
+    except (OSError, ModuleNotFoundError) as exc:
+        raise ConfigError(f"Failed to load {agent} prompts", source=f"{package}.prompts") from exc
+
+
+def _load_template[T](
+    templates_dir: Path, agent: str, filename: str, build: Callable[[str], T]
+) -> T:
+    template_path = templates_dir / agent / filename
+    try:
+        text = template_path.read_text(encoding="utf-8")
+        return build(text)
+    except Exception as exc:
+        raise ConfigError(
+            f"Failed to load {agent} template from '{template_path}': {exc}",
+            source=str(template_path),
+        ) from exc
+
+
+def load_spec_prompts() -> SpecPrompts:
+    return _load_prompt_pair("asf.agents.spec", "spec", SpecPrompts)
 
 
 def load_spec_template(templates_dir: Path) -> SpecTemplate:
-    """Loads SPEC artifact template from the specified templates directory."""
-    template_path = templates_dir / "spec" / "SPEC.md"
-    try:
-        text = template_path.read_text(encoding="utf-8")
-        return SpecTemplate.from_text(text)
-    except Exception as exc:
-        raise ConfigError(
-            f"Failed to load spec template from '{template_path}': {exc}",
-            source=str(template_path),
-        ) from exc
+    return _load_template(templates_dir, "spec", "SPEC.md", SpecTemplate.from_text)
 
 
 def load_plan_prompts() -> PlanPrompts:
-    """Loads system and revision prompts from package resources."""
-    try:
-        traversable = importlib.resources.files("asf.agents.plan").joinpath("prompts")
-        sys_resource = traversable.joinpath("system.md")
-        rev_resource = traversable.joinpath("revision.md")
-
-        system_text = sys_resource.read_text(encoding="utf-8")
-        revision_text = rev_resource.read_text(encoding="utf-8")
-        return PlanPrompts(system=system_text, revision=revision_text)
-    except Exception as exc:
-        raise ConfigError(
-            f"Failed to load plan prompts from package: {exc}",
-            source="asf.agents.plan.prompts",
-        ) from exc
+    return _load_prompt_pair("asf.agents.plan", "plan", PlanPrompts)
 
 
 def load_plan_template(templates_dir: Path) -> PlanTemplate:
-    """Loads PLAN artifact template from the specified templates directory."""
-    template_path = templates_dir / "plan" / "PLAN.md"
-    try:
-        text = template_path.read_text(encoding="utf-8")
-        return PlanTemplate.from_text(text)
-    except Exception as exc:
-        raise ConfigError(
-            f"Failed to load plan template from '{template_path}': {exc}",
-            source=str(template_path),
-        ) from exc
+    return _load_template(templates_dir, "plan", "PLAN.md", PlanTemplate.from_text)
 
 
 def load_task_prompts() -> TaskPrompts:
-    """Loads system and revision prompts from package resources."""
-    try:
-        traversable = importlib.resources.files("asf.agents.task").joinpath("prompts")
-        sys_resource = traversable.joinpath("system.md")
-        rev_resource = traversable.joinpath("revision.md")
-
-        system_text = sys_resource.read_text(encoding="utf-8")
-        revision_text = rev_resource.read_text(encoding="utf-8")
-        return TaskPrompts(system=system_text, revision=revision_text)
-    except Exception as exc:
-        raise ConfigError(
-            f"Failed to load task prompts from package: {exc}",
-            source="asf.agents.task.prompts",
-        ) from exc
+    return _load_prompt_pair("asf.agents.task", "task", TaskPrompts)
 
 
 def load_task_template(templates_dir: Path) -> TaskTemplate:
-    """Loads TASK artifact template from the specified templates directory."""
-    template_path = templates_dir / "task" / "TASK.md"
-    try:
-        text = template_path.read_text(encoding="utf-8")
-        return TaskTemplate.from_text(text)
-    except Exception as exc:
-        raise ConfigError(
-            f"Failed to load task template from '{template_path}': {exc}",
-            source=str(template_path),
-        ) from exc
+    return _load_template(templates_dir, "task", "TASK.md", TaskTemplate.from_text)
 
 
 def load_implement_prompts() -> ImplementPrompts:
-    """Loads system prompt from package resources."""
-    try:
-        traversable = importlib.resources.files("asf.agents.implement").joinpath("prompts")
-        sys_resource = traversable.joinpath("system.md")
-
-        system_text = sys_resource.read_text(encoding="utf-8")
-        return ImplementPrompts(system=system_text)
-    except Exception as exc:
-        raise ConfigError(
-            f"Failed to load implement prompts from package: {exc}",
-            source="asf.agents.implement.prompts",
-        ) from exc
+    system = _load_system_prompt("asf.agents.implement", "implement")
+    return ImplementPrompts(system=system)
 
 
 def load_review_prompts() -> ReviewPrompts:
-    try:
-        resource = importlib.resources.files("asf.agents.review").joinpath("prompts", "system.md")
-        return ReviewPrompts(system=resource.read_text(encoding="utf-8"))
-    except (OSError, ModuleNotFoundError) as exc:
-        raise ConfigError(
-            "Failed to load review prompts", source="asf.agents.review.prompts"
-        ) from exc
+    return ReviewPrompts(system=_load_system_prompt_strict("asf.agents.review", "review"))
 
 
 def load_fix_prompts() -> FixPrompts:
-    try:
-        resource = importlib.resources.files("asf.agents.fix").joinpath("prompts", "system.md")
-        return FixPrompts(system=resource.read_text(encoding="utf-8"))
-    except (OSError, ModuleNotFoundError) as exc:
-        raise ConfigError("Failed to load fix prompts", source="asf.agents.fix.prompts") from exc
+    return FixPrompts(system=_load_system_prompt_strict("asf.agents.fix", "fix"))

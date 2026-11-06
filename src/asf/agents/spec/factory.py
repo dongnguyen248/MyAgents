@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from asf.agents.base import AgentRuntime
-from asf.agents.spec.agent import SpecAgent
+from asf.agents.spec.agent import SpecAgent, SpecSettings
 from asf.configuration.platform import PlatformConfig
 
 __all__ = ["build_spec_agent"]
@@ -33,8 +33,5 @@ def build_spec_agent(
 
     return SpecAgent(
         runtime,
-        prompts=prompts,
-        template=template,
-        model=model,
-        parameters=parameters,
+        SpecSettings(prompts=prompts, template=template, model=model, parameters=parameters),
     )

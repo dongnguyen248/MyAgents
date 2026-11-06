@@ -11,7 +11,10 @@ part of an unrelated feature.
 
 1. Write code that is easy to read, review, test, and maintain.
 2. Prefer explicit and safe types over implicit behavior.
-3. Keep functions small and focused on a single responsibility.
+3. Keep functions within the shared code-structure limits (see the
+   `code-structure` skill: max 30 lines per function, max 4
+   parameters, nesting depth at most 3, complexity at most 10) and
+   focused on a single responsibility.
 4. Use the existing project patterns before introducing a new abstraction.
 5. Avoid duplicated logic, unnecessary complexity, and hidden side effects.
 

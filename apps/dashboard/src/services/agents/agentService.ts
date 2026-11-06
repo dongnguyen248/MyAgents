@@ -18,10 +18,10 @@ export const getAgentConfig = (id: string) => api.getAgentConfig(id);
 /** Answers "which agent is stuck or failing?" — returns a human-readable reason, or undefined if healthy. */
 export function attentionReason(a: Agent): string | undefined {
   const idleMin = (Date.now() - new Date(a.lastActivityAt).getTime()) / 60000;
-  if (a.status === 'ERROR') return a.statusDetail ?? 'Agent reported an error';
-  if (a.status === 'OFFLINE') return 'Agent is offline';
-  if (a.status === 'WAITING') return a.statusDetail ?? 'Waiting on a dependency';
-  if (a.status === 'BUSY' && idleMin > 10) return `No activity for ${Math.round(idleMin)} min (possibly stuck)`;
-  if ((a.metrics.healthScore ?? 100) < 70) return `Low health score (${a.metrics.healthScore})`;
+  if (a.status === 'ERROR') {return a.statusDetail ?? 'Agent reported an error';}
+  if (a.status === 'OFFLINE') {return 'Agent is offline';}
+  if (a.status === 'WAITING') {return a.statusDetail ?? 'Waiting on a dependency';}
+  if (a.status === 'BUSY' && idleMin > 10) {return `No activity for ${Math.round(idleMin)} min (possibly stuck)`;}
+  if ((a.metrics.healthScore ?? 100) < 70) {return `Low health score (${a.metrics.healthScore})`;}
   return undefined;
 }

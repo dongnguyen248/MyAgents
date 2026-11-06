@@ -37,7 +37,7 @@ export function ProjectsPage() {
   };
 
   const handleUpdate = async (input: ProjectProfileInput) => {
-    if (!editing) return;
+    if (!editing) {return;}
     await updateProject(editing.id, input);
     setEditing(null);
     projects.reload();

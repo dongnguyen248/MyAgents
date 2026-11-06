@@ -20,18 +20,18 @@ export function WorkflowDiagnostics({ runId }: { runId: string }) {
     api
       .getRunDiagnostics(runId)
       .then((value) => {
-        if (!cancelled) setDiagnostics(value);
+        if (!cancelled) {setDiagnostics(value);}
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) {setFailed(true);}
       });
     return () => {
       cancelled = true;
     };
   }, [runId]);
 
-  if (failed) return null;
-  if (!diagnostics) return null;
+  if (failed) {return null;}
+  if (!diagnostics) {return null;}
   const d = diagnostics;
   return (
     <Card title="Diagnostics">

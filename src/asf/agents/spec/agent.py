@@ -1,18 +1,38 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
+from asf.agents._shared.reply_text import heading_lines, unwrap_code_fence
+from asf.agents._shared.request_checks import (
+    artifacts_of,
+    check_agent_id,
+    check_attempt,
+    check_language,
+    is_positive_version,
+)
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
-from asf.agents.spec.prompts import SpecPrompts, SpecTemplate, build_spec_messages
-from asf.contracts.models import AgentMetadata, AgentRequest, Artifact, ModelRequest
+from asf.agents.spec.prompts import (
+    SpecPromptContext,
+    SpecPrompts,
+    SpecTemplate,
+    build_spec_messages,
+)
+from asf.contracts.models import (
+    AgentMetadata,
+    AgentRequest,
+    Artifact,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+)
 
-__all__ = ["MAX_REQUIREMENT_CHARS", "SpecAgent"]
+__all__ = ["MAX_REQUIREMENT_CHARS", "SpecAgent", "SpecSettings"]
 
 # Generous on purpose: users paste whole briefs/test-case documents as
 # the requirement. 200k chars matches the task agent's text cap
@@ -20,23 +40,100 @@ __all__ = ["MAX_REQUIREMENT_CHARS", "SpecAgent"]
 MAX_REQUIREMENT_CHARS: int = 200_000
 
 
+@dataclass(frozen=True)
+class SpecSettings:
+    prompts: SpecPrompts
+    template: SpecTemplate
+    model: str | None = None
+    parameters: Mapping[str, Any] | None = None
+
+
+def _check_requirement(request: AgentRequest) -> list[Issue]:
+    if "requirement" not in request.input:
+        return [Issue("input.requirement", "Missing requirement in input")]
+    requirement = request.input["requirement"]
+    if not isinstance(requirement, str):
+        return [Issue("input.requirement", "input.requirement must be a string")]
+    if not requirement.strip():
+        return [Issue("input.requirement", "input.requirement must be non-empty")]
+    if len(requirement) > MAX_REQUIREMENT_CHARS:
+        message = f"input.requirement exceeds maximum length of {MAX_REQUIREMENT_CHARS} characters"
+        return [Issue("input.requirement", message)]
+    return []
+
+
+def _check_spec_count(request: AgentRequest) -> list[Issue]:
+    if len(artifacts_of(request, "SPEC")) > 1:
+        return [Issue("artifacts", "At most one artifact of type SPEC is permitted")]
+    return []
+
+
+def _check_revision_feedback(request: AgentRequest) -> list[Issue]:
+    if artifacts_of(request, "SPEC") and not request.feedback:
+        message = "Reviewer feedback is required when revising a specification"
+        return [Issue("feedback", message)]
+    return []
+
+
+def _check_revision_content(request: AgentRequest, index: int) -> list[Issue]:
+    spec_art = request.artifacts[index]
+    content = spec_art.content
+    text = content.get("text") if isinstance(content, dict) else None
+    if not isinstance(text, str) or not text.strip():
+        message = "SPEC artifact must have inline content mapping with non-empty 'text'"
+        return [Issue(f"artifacts[{index}].content.text", message)]
+    return []
+
+
+def _check_revision_version(request: AgentRequest, index: int) -> list[Issue]:
+    version = request.artifacts[index].version
+    if is_positive_version(version):
+        return []
+    message = f"SPEC artifact version '{version}' must match '^[1-9][0-9]*$'"
+    return [Issue(f"artifacts[{index}].version", message)]
+
+
+def _check_revision(request: AgentRequest) -> list[Issue]:
+    spec_arts = artifacts_of(request, "SPEC")
+    if len(spec_arts) != 1:
+        return []
+    index = request.artifacts.index(spec_arts[0])
+    return [
+        *_check_revision_feedback(request),
+        *_check_revision_content(request, index),
+        *_check_revision_version(request, index),
+    ]
+
+
+def _check_orphan_feedback(request: AgentRequest) -> list[Issue]:
+    if request.feedback and not artifacts_of(request, "SPEC"):
+        message = "feedback provided without a previous SPEC artifact to revise"
+        return [Issue("artifacts", message)]
+    return []
+
+
+def _previous_spec(request: AgentRequest) -> Artifact | None:
+    spec_arts = artifacts_of(request, "SPEC")
+    return spec_arts[0] if len(spec_arts) == 1 else None
+
+
+def _previous_spec_text(previous: Artifact | None) -> tuple[str, str] | None:
+    if previous is None or not isinstance(previous.content, dict):
+        return None
+    if "text" not in previous.content:
+        return None
+    return (previous.version, previous.content["text"])
+
+
 class SpecAgent(BaseAgent):
     """Agent responsible for creating and revising software specifications."""
 
-    def __init__(
-        self,
-        runtime: AgentRuntime,
-        *,
-        prompts: SpecPrompts,
-        template: SpecTemplate,
-        model: str | None = None,
-        parameters: Mapping[str, Any] | None = None,
-    ) -> None:
+    def __init__(self, runtime: AgentRuntime, settings: SpecSettings) -> None:
         super().__init__(runtime)
-        self._prompts = prompts
-        self._template = template
-        self._model = model
-        self._parameters = dict(parameters or {})
+        self._prompts = settings.prompts
+        self._template = settings.template
+        self._model = settings.model
+        self._parameters = dict(settings.parameters or {})
         self._metadata = AgentMetadata(
             id="agent-spec",
             name="Specification Agent",
@@ -52,7 +149,7 @@ class SpecAgent(BaseAgent):
         return self._metadata
 
     def _compute_revision_count(self, request: AgentRequest) -> int:
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
+        spec_arts = artifacts_of(request, "SPEC")
         if spec_arts:
             try:
                 return int(spec_arts[0].version)
@@ -61,126 +158,41 @@ class SpecAgent(BaseAgent):
         return 0
 
     def _check(self, request: AgentRequest) -> list[Issue]:
-        issues: list[Issue] = []
-
-        # 1. agentId check
-        if request.agent_id != self.metadata.id:
-            issues.append(
-                Issue(
-                    "agentId",
-                    f"agentId '{request.agent_id}' does not match '{self.metadata.id}'",
-                )
-            )
-
-        # 2. input.requirement
-        if "requirement" not in request.input:
-            issues.append(Issue("input.requirement", "Missing requirement in input"))
-        elif not isinstance(request.input["requirement"], str):
-            issues.append(Issue("input.requirement", "input.requirement must be a string"))
-        else:
-            req_text = request.input["requirement"].strip()
-            if not req_text:
-                issues.append(Issue("input.requirement", "input.requirement must be non-empty"))
-            elif len(request.input["requirement"]) > MAX_REQUIREMENT_CHARS:
-                issues.append(
-                    Issue(
-                        "input.requirement",
-                        f"input.requirement exceeds maximum length of "
-                        f"{MAX_REQUIREMENT_CHARS} characters",
-                    )
-                )
-
-        # 3. input.language, if present
-        if "language" in request.input:
-            lang = request.input["language"]
-            if not isinstance(lang, str) or not lang.strip():
-                issues.append(Issue("input.language", "input.language must be a non-empty string"))
-
-        # 4. At most one artifact of type SPEC
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
-        if len(spec_arts) > 1:
-            issues.append(Issue("artifacts", "At most one artifact of type SPEC is permitted"))
-
-        # 5. Revision mode iff a SPEC artifact is present
-        if len(spec_arts) == 1:
-            spec_art = spec_arts[0]
-            art_idx = request.artifacts.index(spec_art)
-
-            if not request.feedback:
-                issues.append(
-                    Issue("feedback", "Reviewer feedback is required when revising a specification")
-                )
-
-            # Content must be a mapping with non-empty str "text"
-            if (
-                not isinstance(spec_art.content, dict)
-                or not isinstance(spec_art.content.get("text"), str)
-                or not spec_art.content.get("text", "").strip()
-            ):
-                issues.append(
-                    Issue(
-                        f"artifacts[{art_idx}].content.text",
-                        "SPEC artifact must have inline content mapping with non-empty 'text'",
-                    )
-                )
-
-            # Version must match ^[1-9][0-9]*$
-            is_valid_ver = isinstance(spec_art.version, str) and bool(
-                re.match(r"^[1-9][0-9]*$", spec_art.version)
-            )
-            if not is_valid_ver:
-                issues.append(
-                    Issue(
-                        f"artifacts[{art_idx}].version",
-                        f"SPEC artifact version '{spec_art.version}' must match '^[1-9][0-9]*$'",
-                    )
-                )
-
-        # 6. Non-empty feedback without a SPEC artifact
-        if request.feedback and not spec_arts:
-            issues.append(
-                Issue("artifacts", "feedback provided without a previous SPEC artifact to revise")
-            )
-
-        # 7. metadata.attempt, if present
-        if "attempt" in request.metadata:
-            attempt_val = request.metadata["attempt"]
-            if not isinstance(attempt_val, int) or isinstance(attempt_val, bool) or attempt_val < 1:
-                issues.append(Issue("metadata.attempt", "metadata.attempt must be an integer >= 1"))
-
-        return issues
+        agent_id_message = f"agentId '{request.agent_id}' does not match '{self.metadata.id}'"
+        validators = [
+            lambda: check_agent_id(request, self.metadata.id, agent_id_message),
+            lambda: _check_requirement(request),
+            lambda: check_language(request, "input.language must be a non-empty string"),
+            lambda: _check_spec_count(request),
+            lambda: _check_revision(request),
+            lambda: _check_orphan_feedback(request),
+            lambda: check_attempt(request),
+        ]
+        return [issue for validate in validators for issue in validate()]
 
     def _run(self, request: AgentRequest) -> tuple[dict[str, Any], list[Artifact]]:
-        spec_arts = [a for a in request.artifacts if a.type == "SPEC"]
-        is_revision = len(spec_arts) == 1
-        prev_spec_art = spec_arts[0] if is_revision else None
-        if (
-            prev_spec_art
-            and isinstance(prev_spec_art.content, dict)
-            and "text" in prev_spec_art.content
-        ):
-            previous_spec: tuple[str, str] | None = (
-                prev_spec_art.version,
-                prev_spec_art.content["text"],
-            )
-        else:
-            previous_spec = None
+        previous = _previous_spec(request)
+        messages = self._build_messages(request, previous)
+        response = call_model(self._runtime.models, self._model_request(request, messages))
+        reply = self._checked_reply(response)
+        return self._assemble(request, previous, reply, response)
 
-        requirement = request.input["requirement"].strip()
-        language = request.input.get("language")
-        project_context = request.context.get("project")
-
-        messages = build_spec_messages(
+    def _build_messages(
+        self, request: AgentRequest, previous: Artifact | None
+    ) -> list[ModelMessage]:
+        context = SpecPromptContext(
             prompts=self._prompts,
             template=self._template,
-            requirement=requirement,
-            language=language,
-            project_context=project_context,
-            previous_spec=previous_spec,
+            requirement=request.input["requirement"].strip(),
+            language=request.input.get("language"),
+            project_context=request.context.get("project"),
+            previous_spec=_previous_spec_text(previous),
             feedback=request.feedback,
         )
+        return build_spec_messages(context)
 
-        model_req = ModelRequest(
+    def _model_request(self, request: AgentRequest, messages: list[ModelMessage]) -> ModelRequest:
+        return ModelRequest(
             messages=messages,
             parameters=dict(self._parameters),
             model=self._model,
@@ -192,36 +204,50 @@ class SpecAgent(BaseAgent):
             },
         )
 
-        response = call_model(self._runtime.models, model_req)
-        reply = response.content.strip()
-
-        # Unwrap single code fence if wrapped
-        if reply.startswith("```") and reply.endswith("```"):
-            lines = reply.splitlines()
-            if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
-                reply = "\n".join(lines[1:-1]).strip()
-
+    def _checked_reply(self, response: ModelResponse) -> str:
+        reply = unwrap_code_fence(response.content.strip())
         if not reply:
+            raise invalid_response("Model returned an empty response")
+        headings = heading_lines(reply)
+        missing = [s for s in self._template.required_sections if s not in headings]
+        if missing:
             raise invalid_response(
-                "Model returned an empty response",
+                f"Model response is missing required template sections: {missing}",
+                details={"missingSections": missing},
             )
+        return reply
 
-        # Validate required template sections
-        reply_heading_lines = {
-            line.strip() for line in reply.splitlines() if line.strip().startswith("## ")
-        }
-        missing_sections = [
-            sec for sec in self._template.required_sections if sec not in reply_heading_lines
-        ]
-        if missing_sections:
-            raise invalid_response(
-                f"Model response is missing required template sections: {missing_sections}",
-                details={"missingSections": missing_sections},
-            )
+    def _assemble(
+        self,
+        request: AgentRequest,
+        previous: Artifact | None,
+        reply: str,
+        response: ModelResponse,
+    ) -> tuple[dict[str, Any], list[Artifact]]:
+        is_revision = previous is not None
+        version = str(int(previous.version) + 1) if previous is not None else "1"
+        art_metadata = self._artifact_metadata(request, previous, response)
+        artifact = Artifact(
+            id=self._runtime.new_id(),
+            type="SPEC",
+            name="SPEC.md",
+            version=version,
+            content={"format": "markdown", "text": reply},
+            created_by=self.metadata.id,
+            created_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+            metadata=art_metadata,
+        )
+        summary = "Specification revised" if is_revision else "Specification created"
+        output = {"summary": summary, "artifactId": artifact.id, "version": version}
+        return output, [artifact]
 
-        version = str(int(prev_spec_art.version) + 1) if is_revision and prev_spec_art else "1"
-
-        art_metadata: dict[str, Any] = {
+    def _artifact_metadata(
+        self,
+        request: AgentRequest,
+        previous: Artifact | None,
+        response: ModelResponse,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
             "template": "spec",
             "model": response.model,
             "usage": {
@@ -229,29 +255,9 @@ class SpecAgent(BaseAgent):
                 "completionTokens": response.usage.completion_tokens,
             },
         }
-        if is_revision and prev_spec_art:
-            art_metadata["revisionOf"] = prev_spec_art.id
-        if language and isinstance(language, str) and language.strip():
-            art_metadata["language"] = language
-
-        art_id = self._runtime.new_id()
-        placeholder_dt = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
-        artifact = Artifact(
-            id=art_id,
-            type="SPEC",
-            name="SPEC.md",
-            version=version,
-            content={"format": "markdown", "text": reply},
-            created_by=self.metadata.id,
-            created_at=placeholder_dt,
-            metadata=art_metadata,
-        )
-
-        summary = "Specification revised" if is_revision else "Specification created"
-        output = {
-            "summary": summary,
-            "artifactId": art_id,
-            "version": version,
-        }
-
-        return output, [artifact]
+        if previous is not None:
+            metadata["revisionOf"] = previous.id
+        language = request.input.get("language")
+        if isinstance(language, str) and language.strip():
+            metadata["language"] = language
+        return metadata

@@ -57,7 +57,7 @@ export function EmptyState({ children }: { children: ReactNode }) {
 
 /** Health score meter: number + bar + text so it works without colour. */
 export function HealthMeter({ score }: { score?: number }) {
-  if (score === undefined) return <span className="muted">–</span>;
+  if (score === undefined) {return <span className="muted">–</span>;}
   const tone = score >= 85 ? 'ok' : score >= 70 ? 'warn' : 'danger';
   return (
     <span className="meter-wrap" title={`Health score ${score}/100`}>

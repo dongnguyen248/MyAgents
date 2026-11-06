@@ -64,7 +64,7 @@ export function TaskDetailPage() {
     try {
       const updated = await cancelWorkflow(runId);
       setConfirmingCancel(false);
-      if (updated.status !== 'CANCELLED') setCancelRequested(true);
+      if (updated.status !== 'CANCELLED') {setCancelRequested(true);}
       detail.reload();
     } catch (err) {
       setCancelError(err instanceof Error ? err.message : 'Failed to cancel the run');

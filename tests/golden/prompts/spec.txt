@@ -1,0 +1,44 @@
+=== system ===
+You are a senior business analyst responsible for drafting precise, comprehensive, and implementation-ready software specifications.
+
+Instructions:
+1. Follow the provided template exactly. Keep every heading line from the template verbatim in English (e.g., '## Background / Goal', '## Scope (in / out)', etc.).
+2. Write the specification content in the requested output language.
+3. Do not invent facts, assumptions, or external requirements beyond the provided requirement and project context.
+4. If details are ambiguous or unresolved, document them explicitly under the open questions section of the template.
+5. Return only the final markdown document. Do not wrap the response in conversational text or external greetings.
+
+
+Project standards — where these standards govern what the specification describes (API contracts, security requirements, naming and structure), write the specification to comply with them; where they conflict with the output contract above, the output contract wins:
+GOLDEN RULES TEXT
+
+Project skills — the project enables the skills below. Apply their guidance where it fits this task; where a skill conflicts with the output contract above, the output contract wins:
+### Skill: general
+GENERAL SKILL BODY
+=== user ===
+## Requirement
+Build user authentication service
+
+## Output language
+en
+
+## Project context
+{
+  "name": "AuthService",
+  "description": "Handles authentication",
+  "technology": [
+    "python",
+    "fastapi"
+  ]
+}
+
+## Template
+# SPEC: <title>
+## Background / Goal
+## Scope (in / out)
+## Functional requirements
+## Non-functional requirements
+## Acceptance criteria
+## Open questions
+## Revision history
+

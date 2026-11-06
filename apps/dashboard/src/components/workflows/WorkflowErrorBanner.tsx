@@ -30,7 +30,7 @@ function detailLines(details: Record<string, unknown>): string[] {
  * instead of by digging through the execution history.
  */
 export function WorkflowErrorBanner({ workflow }: { workflow: Workflow }) {
-  if (workflow.status !== 'FAILED' || !workflow.error) return null;
+  if (workflow.status !== 'FAILED' || !workflow.error) {return null;}
   const failedStep = workflow.steps.find((s) => s.state === 'failed');
   const lines = workflow.error.details ? detailLines(workflow.error.details) : [];
   // A death inside the code-fix loop is attributed to the step whose

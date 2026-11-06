@@ -41,7 +41,7 @@ export function DashboardPage() {
           <AsyncView {...agents}>
             {(list) => {
               const flagged = list.map((a) => [a, attentionReason(a)] as const).filter(([, r]) => r);
-              if (!flagged.length) return <EmptyState>All agents healthy.</EmptyState>;
+              if (!flagged.length) {return <EmptyState>All agents healthy.</EmptyState>;}
               return (
                 <ul className="plain">
                   {flagged.map(([a, reason]) => (

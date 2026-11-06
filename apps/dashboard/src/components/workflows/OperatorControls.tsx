@@ -48,15 +48,15 @@ export function OperatorControls({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const actions = operatorActionsFor(workflow);
-  if (actions.length === 0) return null;
+  if (actions.length === 0) {return null;}
 
   const findings =
     workflow.status === 'ESCALATED' ? latestFindingsSummary(workflow) : undefined;
 
   const run = async (action: OperatorAction) => {
-    if (action.id === 'resume-failed') return onResumeFailed();
-    if (action.id === 'run-again') return onRunAgain();
-    if (action.id === 'cancel') return onCancel();
+    if (action.id === 'resume-failed') {return onResumeFailed();}
+    if (action.id === 'run-again') {return onRunAgain();}
+    if (action.id === 'cancel') {return onCancel();}
     setBusy(true);
     setError(undefined);
     try {

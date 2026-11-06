@@ -17,9 +17,9 @@ import pytest
 
 from asf.agents._shared.model_call import classify_finish_reason
 from asf.agents.base import AgentRuntime
-from asf.agents.fix.agent import FixAgent
+from asf.agents.fix.agent import FixAgent, FixSettings
 from asf.agents.fix.prompts import FixPrompts
-from asf.agents.implement.agent import ImplementAgent
+from asf.agents.implement.agent import ImplementAgent, ImplementSettings
 from asf.agents.loading import load_implement_prompts
 from asf.contracts.models import (
     AgentRequest,
@@ -147,8 +147,7 @@ def _implement_agent(script, repo: InMemoryRepository, **kwargs):
     agent = ImplementAgent(
         runtime,
         repo,
-        prompts=load_implement_prompts(),
-        **kwargs,
+        ImplementSettings(prompts=load_implement_prompts(), **kwargs),
     )
     return agent, gateway
 
@@ -329,8 +328,7 @@ def _fix_agent(script, **kwargs):
     agent = FixAgent(
         runtime,
         InMemoryRepository({"main": {}}),
-        prompts=FixPrompts("You fix one task item's CODE"),
-        **kwargs,
+        FixSettings(prompts=FixPrompts("You fix one task item's CODE"), **kwargs),
     )
     return agent, gateway
 
