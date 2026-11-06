@@ -1,0 +1,401 @@
+{
+  "src/components/activity/ActivityFeed.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/components/agents/AgentTable.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/components/approvals/ApprovalPanel.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/components/approvals/ApprovalTable.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/components/common/AsyncView.tsx": {
+    "max-statements-per-line": {
+      "count": 2
+    }
+  },
+  "src/components/common/Badge.tsx": {
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/components/common/Layout.tsx": {
+    "max-statements-per-line": {
+      "count": 1
+    },
+    "no-magic-numbers": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
+  "src/components/metrics/Chart.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "no-magic-numbers": {
+      "count": 9
+    }
+  },
+  "src/components/projects/ProjectCard.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/components/projects/ProjectForm.tsx": {
+    "complexity": {
+      "count": 2
+    },
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 3
+    },
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
+  "src/components/settings/ModelProviderForm.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 2
+    }
+  },
+  "src/components/tasks/TaskForm.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/components/tasks/TaskStatusBadge.tsx": {
+    "max-statements-per-line": {
+      "count": 5
+    }
+  },
+  "src/components/tasks/TaskTable.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/components/workflows/OperatorControls.tsx": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "max-statements-per-line": {
+      "count": 4
+    },
+    "no-nested-ternary": {
+      "count": 2
+    }
+  },
+  "src/components/workflows/RunLiveActivity.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 4
+    }
+  },
+  "src/components/workflows/WorkflowArtifacts.tsx": {
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/components/workflows/WorkflowDiagnostics.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 4
+    }
+  },
+  "src/components/workflows/WorkflowErrorBanner.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    },
+    "no-magic-numbers": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
+  "src/features/activity-feed/index.ts": {
+    "max-statements-per-line": {
+      "count": 2
+    },
+    "no-magic-numbers": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/features/workflow-monitoring/useRunLiveRefetch.ts": {
+    "max-statements-per-line": {
+      "count": 2
+    },
+    "no-magic-numbers": {
+      "count": 2
+    },
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/hooks/useAsync.ts": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/layouts/DashboardLayout.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/lib/operatorActions.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    },
+    "no-magic-numbers": {
+      "count": 2
+    }
+  },
+  "src/mocks/activity.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-magic-numbers": {
+      "count": 36
+    }
+  },
+  "src/mocks/agents.ts": {
+    "max-params": {
+      "count": 2
+    },
+    "no-magic-numbers": {
+      "count": 71
+    },
+    "no-nested-ternary": {
+      "count": 2
+    }
+  },
+  "src/mocks/approvals.ts": {
+    "no-magic-numbers": {
+      "count": 5
+    }
+  },
+  "src/mocks/metrics.ts": {
+    "no-magic-numbers": {
+      "count": 30
+    }
+  },
+  "src/mocks/projects.ts": {
+    "no-magic-numbers": {
+      "count": 6
+    }
+  },
+  "src/mocks/tasks.ts": {
+    "max-params": {
+      "count": 1
+    },
+    "no-magic-numbers": {
+      "count": 23
+    }
+  },
+  "src/mocks/time.ts": {
+    "no-magic-numbers": {
+      "count": 2
+    }
+  },
+  "src/mocks/workflows.ts": {
+    "max-statements-per-line": {
+      "count": 8
+    },
+    "no-magic-numbers": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
+  "src/pages/Agents/AgentDetailPage.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "src/pages/Agents/AgentSettingsPage.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "max-statements-per-line": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/pages/Dashboard/DashboardPage.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    },
+    "no-magic-numbers": {
+      "count": 3
+    }
+  },
+  "src/pages/Metrics/MetricsPage.tsx": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "src/pages/Projects/ProjectsPage.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/pages/Tasks/TaskDetailPage.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/pages/Tasks/TasksPage.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/pages/Workflows/WorkflowDetailPage.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "max-statements-per-line": {
+      "count": 1
+    }
+  },
+  "src/services/agents/agentService.ts": {
+    "max-statements-per-line": {
+      "count": 5
+    },
+    "no-magic-numbers": {
+      "count": 4
+    }
+  },
+  "src/services/api/httpApi.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-statements-per-line": {
+      "count": 1
+    },
+    "no-magic-numbers": {
+      "count": 3
+    }
+  },
+  "src/services/api/mockApi.ts": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 3
+    },
+    "max-lines-per-function": {
+      "count": 4
+    },
+    "max-statements-per-line": {
+      "count": 28
+    },
+    "no-magic-numbers": {
+      "count": 8
+    },
+    "no-nested-ternary": {
+      "count": 4
+    }
+  },
+  "src/utils/format.ts": {
+    "max-statements-per-line": {
+      "count": 5
+    },
+    "no-magic-numbers": {
+      "count": 13
+    }
+  },
+  "src/utils/health.ts": {
+    "no-magic-numbers": {
+      "count": 9
+    },
+    "no-nested-ternary": {
+      "count": 1
+    }
+  }
+}

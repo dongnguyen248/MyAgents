@@ -58,3 +58,9 @@ jobs:
       - name: Dashboard unit tests
         working-directory: apps/dashboard
         run: npm test
+      - name: Dashboard lint
+        working-directory: apps/dashboard
+        run: npm run lint
+      - name: Dashboard format check
+        working-directory: apps/dashboard
+        run: npm run format:check
