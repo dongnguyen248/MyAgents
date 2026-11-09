@@ -53,7 +53,10 @@ def fix_request() -> AgentRequest:
 
 
 def fix_agent(
-    replies: list[Any], repository: InMemoryRepository | None = None
+    replies: list[Any],
+    repository: InMemoryRepository | None = None,
+    *,
+    repair_attempts: int = 0,
 ) -> tuple[FixAgent, ScriptedModelGateway]:
     gateway = ScriptedModelGateway(replies)
     return FixAgent(
@@ -64,7 +67,7 @@ def fix_agent(
             # This suite was written against the legacy JSON contract:
             # pin it (and no repair loop) explicitly.
             edit_format="json",
-            repair_attempts=0,
+            repair_attempts=repair_attempts,
         ),
     ), gateway
 
@@ -474,6 +477,8 @@ def two_file_fix_request() -> AgentRequest:
 
 def fix_agent_blocks(
     replies: list[Any],
+    *,
+    repair_attempts: int = 0,
 ) -> tuple[FixAgent, ScriptedModelGateway]:
     gateway = ScriptedModelGateway(replies)
     return FixAgent(
@@ -482,7 +487,7 @@ def fix_agent_blocks(
         FixSettings(
             prompts=FixPrompts("Return a complete replacement ChangeSet"),
             edit_format="blocks",
-            repair_attempts=0,
+            repair_attempts=repair_attempts,
         ),
     ), gateway
 
@@ -507,11 +512,11 @@ def test_fix_blocks_mode_replacement_is_cumulative():
     assert by_path["src/extra.py"]["content"] == "def extra():\n    return 1\n"
 
 
-def test_fix_json_mode_replacement_drops_untouched_previous_files():
-    # Characterization of current behaviour (FIX-3 item 2): the JSON
-    # path returns the model's ChangeSet as the whole replacement —
-    # there is no compose step — so a reply naming one file silently
-    # drops every other file the previous changeset created.
+def test_fix_json_mode_replacement_is_cumulative():
+    # FIX-3 item 2-fix: the JSON path now composes the reply onto the
+    # effective state exactly like edit blocks. (This test previously
+    # pinned the delta behaviour — a one-file reply silently dropping
+    # the other previous file — which was the defect being fixed.)
     reply = make_valid_changeset_reply(
         changes=[
             {
@@ -525,4 +530,254 @@ def test_fix_json_mode_replacement_drops_untouched_previous_files():
     result = agent.execute(two_file_fix_request())
     assert result.status == "SUCCESS"
     changes = result.artifacts[0].content["changeSet"]["changes"]
+    by_path = {change["path"]: change for change in changes}
+    assert set(by_path) == {"src/calculator.py", "src/extra.py"}
+    assert by_path["src/calculator.py"]["content"] == _EDITED_CALCULATOR
+    assert by_path["src/extra.py"]["operation"] == "create"
+    assert by_path["src/extra.py"]["content"] == "def extra():\n    return 1\n"
+
+
+def test_fix_json_intentional_delete_of_previous_file_passes_the_guard():
+    reply = make_valid_changeset_reply(
+        changes=[
+            {
+                "path": "src/calculator.py",
+                "operation": "create",
+                "content": _EDITED_CALCULATOR,
+            },
+            {"path": "src/extra.py", "operation": "delete"},
+        ]
+    )
+    agent, _ = fix_agent([reply])
+    result = agent.execute(two_file_fix_request())
+    assert result.status == "SUCCESS"
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    # The deleted file was created by the previous changeset, so
+    # relative to the base it simply never exists: no delete change.
     assert [change["path"] for change in changes] == ["src/calculator.py"]
+
+
+def test_fix_blocks_intentional_delete_of_previous_file_passes_the_guard():
+    reply = (
+        "FILE: src/calculator.py\n"
+        "<<<<<<< SEARCH\n"
+        "    return a + b\n"
+        "=======\n"
+        "    return a + b  # sum of the two operands\n"
+        ">>>>>>> REPLACE\n"
+        "DELETE: src/extra.py\n"
+    )
+    agent, _ = fix_agent_blocks([reply])
+    result = agent.execute(two_file_fix_request())
+    assert result.status == "SUCCESS"
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    assert [change["path"] for change in changes] == ["src/calculator.py"]
+
+
+def _fix_request_with(expected_files: list[str], changes: list[dict[str, Any]]) -> AgentRequest:
+    request = make_implement_request(expected_files=expected_files)
+    implement, _ = make_agent_and_gateway([make_valid_changeset_reply(changes=changes)])
+    result = implement.execute(request)
+    if result.status != "SUCCESS":
+        raise AssertionError("Implement fixture failed")
+    code = result.artifacts[0]
+    review = Artifact(
+        id="review-1",
+        type="CODE_REVIEW",
+        name="CODE_REVIEW.md",
+        version="1",
+        content={
+            "format": "json",
+            "text": "Changes requested",
+            "review": {"findings": [], "verdict": "CHANGES_REQUESTED"},
+        },
+        created_by="agent-review",
+        created_at=T_AWARE,
+        metadata={"codeArtifactId": code.id, "codeVersion": code.version, "taskItemId": "T1"},
+    )
+    return request.model_copy(
+        update={"agent_id": "agent-fix", "artifacts": [*request.artifacts, code, review]}
+    )
+
+
+def _base_file_delete_request() -> AgentRequest:
+    return _fix_request_with(
+        ["src/calculator.py", "src/legacy.py"],
+        [
+            {
+                "path": "src/calculator.py",
+                "operation": "create",
+                "content": "def add(a, b):\n    return a + b\n",
+            }
+        ],
+    )
+
+
+def test_fix_json_delete_of_base_file_records_a_delete_change():
+    repository = InMemoryRepository({"main": {"src/legacy.py": "legacy = 1\n"}})
+    reply = make_valid_changeset_reply(changes=[{"path": "src/legacy.py", "operation": "delete"}])
+    agent, _ = fix_agent([reply], repository)
+    result = agent.execute(_base_file_delete_request())
+    assert result.status == "SUCCESS"
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    by_path = {change["path"]: change for change in changes}
+    assert set(by_path) == {"src/calculator.py", "src/legacy.py"}
+    assert by_path["src/legacy.py"]["operation"] == "delete"
+
+
+def test_fix_blocks_delete_of_base_file_records_a_delete_change():
+    repository = InMemoryRepository({"main": {"src/legacy.py": "legacy = 1\n"}})
+    gateway = ScriptedModelGateway(["DELETE: src/legacy.py\n"])
+    agent = FixAgent(
+        AgentRuntime(gateway, lambda: T_AWARE, counter_id("fix-")),
+        repository,
+        FixSettings(
+            prompts=FixPrompts("Return a complete replacement ChangeSet"),
+            edit_format="blocks",
+            repair_attempts=0,
+        ),
+    )
+    result = agent.execute(_base_file_delete_request())
+    assert result.status == "SUCCESS"
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    by_path = {change["path"]: change for change in changes}
+    assert set(by_path) == {"src/calculator.py", "src/legacy.py"}
+    assert by_path["src/legacy.py"]["operation"] == "delete"
+
+
+def _ghost_fix_request() -> AgentRequest:
+    return _fix_request_with(
+        ["src/calculator.py", "src/extra.py", "src/ghost.py"], _TWO_FILE_CHANGES
+    )
+
+
+def test_fix_json_delete_of_missing_file_is_repaired():
+    bad = make_valid_changeset_reply(changes=[{"path": "src/ghost.py", "operation": "delete"}])
+    good = make_valid_changeset_reply(
+        changes=[
+            {
+                "path": "src/calculator.py",
+                "operation": "create",
+                "content": _EDITED_CALCULATOR,
+            }
+        ]
+    )
+    agent, gateway = fix_agent([bad, good], repair_attempts=1)
+    result = agent.execute(_ghost_fix_request())
+    assert result.status == "SUCCESS"
+    assert result.output["repairs"] == 1
+    assert len(gateway.requests) == 2
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    assert {change["path"] for change in changes} == {
+        "src/calculator.py",
+        "src/extra.py",
+    }
+
+
+def test_fix_blocks_delete_of_missing_file_is_repaired():
+    good = (
+        "FILE: src/calculator.py\n"
+        "<<<<<<< SEARCH\n"
+        "    return a + b\n"
+        "=======\n"
+        "    return a + b  # sum of the two operands\n"
+        ">>>>>>> REPLACE\n"
+    )
+    agent, gateway = fix_agent_blocks(["DELETE: src/ghost.py\n", good], repair_attempts=1)
+    result = agent.execute(_ghost_fix_request())
+    assert result.status == "SUCCESS"
+    assert result.output["repairs"] == 1
+    assert len(gateway.requests) == 2
+
+
+def test_fix_delete_of_missing_file_fails_after_repair_exhausted():
+    bad = make_valid_changeset_reply(changes=[{"path": "src/ghost.py", "operation": "delete"}])
+    agent, _ = fix_agent([bad, bad], repair_attempts=1)
+    result = agent.execute(_ghost_fix_request())
+    assert result.status == "FAILED"
+    assert result.errors[0].code == "LLM_INVALID_RESPONSE"
+    assert result.errors[0].message == "Delete target does not exist: src/ghost.py"
+    assert result.errors[0].details["path"] == "src/ghost.py"
+
+
+def test_fix_deleting_every_previous_file_is_a_repairable_error():
+    reply = make_valid_changeset_reply(
+        changes=[
+            {"path": "src/calculator.py", "operation": "delete"},
+            {"path": "src/extra.py", "operation": "delete"},
+        ]
+    )
+    agent, _ = fix_agent([reply, reply], repair_attempts=1)
+    result = agent.execute(two_file_fix_request())
+    assert result.status == "FAILED"
+    assert result.errors[0].code == "LLM_INVALID_RESPONSE"
+    assert "empty" in result.errors[0].message
+
+
+def test_completeness_guard_rejects_a_silent_drop():
+    from asf.agents._shared.repair import RepairableOutputError
+    from asf.agents.fix.compose import check_completeness
+    from asf.tools.changeset import ChangeSet
+
+    previous = ChangeSet.model_validate(
+        {
+            "changes": [
+                {"path": "src/a.py", "operation": "create", "content": "a = 1\n"},
+                {"path": "src/b.py", "operation": "create", "content": "b = 1\n"},
+            ]
+        }
+    )
+    edits = ChangeSet.model_validate(
+        {"changes": [{"path": "src/a.py", "operation": "modify", "content": "a = 2\n"}]}
+    )
+    dropped = ChangeSet.model_validate(
+        {"changes": [{"path": "src/a.py", "operation": "modify", "content": "a = 2\n"}]}
+    )
+    with pytest.raises(RepairableOutputError) as caught:
+        check_completeness(previous, edits, dropped)
+    assert caught.value.details["missingPaths"] == ["src/b.py"]
+
+
+def test_completeness_guard_accepts_carry_over_and_explicit_delete():
+    from asf.agents.fix.compose import check_completeness
+    from asf.tools.changeset import ChangeSet
+
+    previous = ChangeSet.model_validate(
+        {
+            "changes": [
+                {"path": "src/a.py", "operation": "create", "content": "a = 1\n"},
+                {"path": "src/b.py", "operation": "create", "content": "b = 1\n"},
+            ]
+        }
+    )
+    edits = ChangeSet.model_validate(
+        {"changes": [{"path": "src/a.py", "operation": "modify", "content": "a = 2\n"}]}
+    )
+    carried = ChangeSet.model_validate(
+        {
+            "changes": [
+                {"path": "src/a.py", "operation": "modify", "content": "a = 2\n"},
+                {"path": "src/b.py", "operation": "create", "content": "b = 1\n"},
+            ]
+        }
+    )
+    check_completeness(previous, edits, carried)
+    delete_edits = ChangeSet.model_validate(
+        {"changes": [{"path": "src/b.py", "operation": "delete"}]}
+    )
+    shrunk = ChangeSet.model_validate(
+        {"changes": [{"path": "src/a.py", "operation": "create", "content": "a = 1\n"}]}
+    )
+    check_completeness(previous, delete_edits, shrunk)
+
+
+def test_delete_target_check_names_a_missing_path():
+    from asf.agents._shared.repair import RepairableOutputError
+    from asf.agents.fix.compose import check_delete_targets
+    from asf.tools.changeset import ChangeSet
+
+    edits = ChangeSet.model_validate({"changes": [{"path": "src/ghost.py", "operation": "delete"}]})
+    with pytest.raises(RepairableOutputError) as caught:
+        check_delete_targets({"src/a.py": "a = 1\n"}, edits)
+    assert caught.value.details["path"] == "src/ghost.py"
+    check_delete_targets({"src/ghost.py": "g = 1\n"}, edits)

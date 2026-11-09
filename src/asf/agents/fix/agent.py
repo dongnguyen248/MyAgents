@@ -44,6 +44,12 @@ from asf.agents.base import (
     BaseAgent,
     Issue,
 )
+from asf.agents.fix.compose import (
+    check_completeness,
+    check_delete_targets,
+    compose_replacement,
+    effective_existing,
+)
 from asf.agents.fix.prompts import FixMessageOptions, FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import CodeMarkdownContext, render_code_markdown
 from asf.contracts.models import (
@@ -202,33 +208,6 @@ def _expected_files_valid(expected: Any) -> bool:
     return len(expected) == len(set(expected))
 
 
-def _effective_existing(existing: dict[str, str], previous_changeset: ChangeSet) -> dict[str, str]:
-    # Edit blocks are written against the state the model is
-    # revising: the base files with the previous changeset applied.
-    # Untouched previous changes carry over into the replacement.
-    effective = dict(existing)
-    for change in previous_changeset.changes:
-        if change.operation == "delete":
-            effective.pop(change.path, None)
-        elif change.content is not None:
-            effective[change.path] = change.content
-    return effective
-
-
-def _compose_replacement(
-    previous_changeset: ChangeSet, existing: dict[str, str], edits: ChangeSet
-) -> ChangeSet:
-    merged = {change.path: change for change in previous_changeset.changes}
-    for change in edits.changes:
-        if change.operation == "delete" and change.path not in existing:
-            # Deleting a file the previous changeset created: relative
-            # to the base it simply never exists.
-            merged.pop(change.path, None)
-        else:
-            merged[change.path] = change
-    return ChangeSet(changes=list(merged.values()))
-
-
 def _findings(run: _FixRun, tail_lines: int) -> tuple[dict[str, Any], ...]:
     return tuple(
         tail_artifact_for_prompt(artifact.to_contract(), tail_lines) for artifact in run.reports
@@ -335,7 +314,7 @@ class FixAgent(BaseAgent):
             reports=_reports(request),
             item=item,
             previous_changeset=previous_changeset,
-            effective_existing=_effective_existing(existing, previous_changeset),
+            effective_existing=effective_existing(existing, previous_changeset),
         )
 
     def _read_existing(self, expected: list[str], ref: str) -> dict[str, str]:
@@ -425,10 +404,18 @@ class FixAgent(BaseAgent):
         return changeset
 
     def _parse_edits(self, run: _FixRun, response: ModelResponse, reply: str) -> ChangeSet:
-        if self._settings.edit_format != "blocks":
-            return _parse_json_changeset(response, reply)
+        if self._settings.edit_format == "blocks":
+            edits = self._parse_blocks(run, response, reply)
+        else:
+            edits = _parse_json_changeset(response, reply)
+        check_delete_targets(run.effective_existing, edits)
+        replacement = compose_replacement(run.previous_changeset, run.existing, edits)
+        check_completeness(run.previous_changeset, edits, replacement)
+        return replacement
+
+    def _parse_blocks(self, run: _FixRun, response: ModelResponse, reply: str) -> ChangeSet:
         try:
-            edits = parse_edit_blocks(
+            return parse_edit_blocks(
                 reply.strip(),
                 existing_files=run.effective_existing,
                 expected_files=run.expected,
@@ -442,7 +429,6 @@ class FixAgent(BaseAgent):
                     "finishReason": response.finish_reason,
                 },
             ) from None
-        return _compose_replacement(run.previous_changeset, run.existing, edits)
 
     def _validate_replacement(self, run: _FixRun, changeset: ChangeSet) -> ChangeSet:
         try:
