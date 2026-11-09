@@ -100,6 +100,22 @@ value being the number of offending comments in that file.)
 | src/asf/tools/worktree.py | banner-comment | 2 |
 | src/asf/workflow/definition.py | numbered-comment | 3 |
 
+### Approved re-sync — 2026-11-09 (after PR #67)
+
+The reset above was computed on the tree before PR #67 merged the
+FIX-3 work (PR #66's content) into master. When master was merged
+back into the ratchet-repair branch, one entry no longer matched:
+`src/asf/tools/local.py` file-lines measured 960, not 930 — the
+growth came from the FIX-3 sandbox work, not from the
+ratchet-repair changes, which added no debt. The repo owner (Dong)
+approved raising that single entry 930 → 960 on 2026-11-09 and
+recording one tightening in the same commit
+(`LocalSandbox._run_one` function-lines 47 → 31). The total stays
+225 entries. This re-sync is recorded under the governance rule
+above (an increase with the owner's approval, written down here);
+it is not a new exception, and the “may only shrink” rule is
+unchanged.
+
 ## Debt by area
 
 ### Engine / orchestrator — 29 entries
@@ -238,7 +254,7 @@ Owner: Dong (maintainer). Roadmap: build_demo is the composition root; extract g
 
 ### Tools — local sandbox & workspace — 19 entries
 
-Owner: Dong (maintainer). Roadmap: **HIGH priority: split LocalWorkspace** out of tools/local.py (387 class lines, 28 public methods, 10 fields) into its own module, separating repository reads from sandbox execution. The file is 930 lines against a 500 limit.
+Owner: Dong (maintainer). Roadmap: **HIGH priority: split LocalWorkspace** out of tools/local.py (387 class lines, 28 public methods, 10 fields) into its own module, separating repository reads from sandbox execution. The file is 960 lines against a 500 limit.
 
 | File | Symbol | Rule | Measured | Limit |
 | --- | --- | --- | --- | --- |
@@ -249,8 +265,8 @@ Owner: Dong (maintainer). Roadmap: **HIGH priority: split LocalWorkspace** out o
 | src/asf/tools/fake.py | InMemorySandbox.run | function-complexity | 13 | 10 |
 | src/asf/tools/fake.py | InMemorySandbox.run | function-lines | 47 | 30 |
 | src/asf/tools/fake.py | InMemorySandbox.run | function-nesting | 5 | 3 |
-| src/asf/tools/local.py | (file) | file-lines | 930 | 500 |
-| src/asf/tools/local.py | LocalSandbox._run_one | function-lines | 47 | 30 |
+| src/asf/tools/local.py | (file) | file-lines | 960 | 500 |
+| src/asf/tools/local.py | LocalSandbox._run_one | function-lines | 31 | 30 |
 | src/asf/tools/local.py | LocalWorkspace | class-fields | 10 | 7 |
 | src/asf/tools/local.py | LocalWorkspace | class-lines | 387 | 300 |
 | src/asf/tools/local.py | LocalWorkspace | class-methods | 28 | 10 |

@@ -1459,14 +1459,14 @@
   {
    "file": "src/asf/tools/local.py",
    "limit": 500,
-   "measured": 930,
+   "measured": 960,
    "rule": "file-lines",
    "symbol": ""
   },
   {
    "file": "src/asf/tools/local.py",
    "limit": 30,
-   "measured": 47,
+   "measured": 31,
    "rule": "function-lines",
    "symbol": "LocalSandbox._run_one"
   },
