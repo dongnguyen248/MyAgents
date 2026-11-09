@@ -38,12 +38,22 @@ MAX_ARGS = 256
 PYTEST_NO_TESTS_EXIT_CODE = 5
 
 
+def checked_test_commands(raw: object) -> tuple[CommandSpec, ...]:
+    """Validate raw test commands with the agent's strict argv rules.
+
+    The same check the agent applies at run time, exposed so an
+    operator-supplied replacement is rejected up front instead of
+    being stored and failing on the re-run.
+    """
+    if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_COMMANDS:
+        raise ValueError("Provide between 1 and 20 test commands")
+    return tuple(_command_spec(command) for command in raw)
+
+
 def _commands(request: AgentRequest) -> tuple[CommandSpec, ...]:
     project = request.context.get("project")
     raw = project.get("testCommands") if isinstance(project, dict) else None
-    if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_COMMANDS:
-        raise ValueError("Provide between 1 and 20 test commands")
-    return tuple(_command_spec(argv) for argv in raw)
+    return checked_test_commands(raw)
 
 
 def _command_spec(argv: Any) -> CommandSpec:
