@@ -109,8 +109,6 @@ class RunJournal:
     entries: dict[str, dict] = field(default_factory=dict)
     last_conflicts: list[str] = field(default_factory=list)
 
-    # -- recording ------------------------------------------------------
-
     def record_originals(self, root: Path, paths: Iterable[str]) -> None:
         """Records pre-write state for paths the journal does not know.
 
@@ -185,8 +183,6 @@ class RunJournal:
             )
         self.save()
 
-    # -- reverting ------------------------------------------------------
-
     def revert(self, root: Path) -> RevertReport:
         """Restores every journaled path the user has not edited.
 
@@ -231,8 +227,6 @@ class RunJournal:
         if not target.is_file():
             return {"absent": True}
         return {"sha256": _sha256(target.read_bytes())}
-
-    # -- views ----------------------------------------------------------
 
     def files_written(self) -> list[str]:
         return sorted(self.entries)
