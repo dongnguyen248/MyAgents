@@ -715,6 +715,12 @@ def test_fix_deleting_every_previous_file_is_a_repairable_error():
 
 
 def test_completeness_guard_rejects_a_silent_drop():
+    """Unit-level only, by construction: after the compose step a
+    silent drop cannot occur end to end (composition starts from
+    every previous change), so this branch of the guard is
+    unreachable through the agent. It is pinned here so a future
+    parse/compose change that bypasses composition fails loudly
+    instead of quietly shrinking the replacement."""
     from asf.agents._shared.repair import RepairableOutputError
     from asf.agents.fix.compose import check_completeness
     from asf.tools.changeset import ChangeSet
@@ -739,6 +745,9 @@ def test_completeness_guard_rejects_a_silent_drop():
 
 
 def test_completeness_guard_accepts_carry_over_and_explicit_delete():
+    """Companion to the silent-drop test above: the guard must stay
+    silent for the two legitimate ways a previous path leaves the
+    edits — carried over untouched, or explicitly deleted."""
     from asf.agents.fix.compose import check_completeness
     from asf.tools.changeset import ChangeSet
 
