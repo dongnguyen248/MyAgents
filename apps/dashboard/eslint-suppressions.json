@@ -373,9 +373,6 @@
     }
   },
   "src/utils/health.ts": {
-    "no-magic-numbers": {
-      "count": 9
-    },
     "no-nested-ternary": {
       "count": 1
     }
