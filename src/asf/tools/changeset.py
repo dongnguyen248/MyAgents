@@ -31,9 +31,8 @@ class FileChange(BaseModel):
                 raise ValueError(f"{operation} operation requires 'content'")
             if "\x00" in content:
                 raise ValueError("content must not contain NUL bytes")
-        elif operation == "delete":
-            if content is not None:
-                raise ValueError("delete operation must not have 'content'")
+        elif operation == "delete" and content is not None:
+            raise ValueError("delete operation must not have 'content'")
         return self
 
 
