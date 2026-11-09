@@ -43,20 +43,28 @@ jobs:
         # -c requirements.lock pins every resolved version (dev tools
         # included) to the same set the docs install locally.
         run: pip install -e ".[dev,api,mariadb]" -c requirements.lock
+      # Steps after Install carry `if: !cancelled()` so every check
+      # runs and reports even when an earlier one fails; a failing
+      # step still fails the job (no continue-on-error anywhere).
       - name: Ruff lint
         run: ruff check src tests harness
       - name: Ruff format
+        if: ${{ !cancelled() }}
         run: ruff format --check src tests harness
       - name: Mypy
+        if: ${{ !cancelled() }}
         run: mypy src
       - name: Bandit
+        if: ${{ !cancelled() }}
         # The config file is passed explicitly: bandit's automatic
         # discovery is unreliable across versions, and .bandit
         # documents every by-design skip.
         run: bandit -c .bandit -r src -q
       - name: Tests with coverage
+        if: ${{ !cancelled() }}
         run: pytest -q --cov=asf --cov-report=term-missing
       - name: Code structure ratchet
+        if: ${{ !cancelled() }}
         run: python scripts/check_code_structure.py --baseline .code-structure-baseline.json
 
   dashboard:
@@ -76,14 +84,19 @@ jobs:
         run: npm ci
       # The build script runs `tsc --noEmit` first, so type-checking
       # is covered; there is no separate lint script in this app.
+      # Same reporting rule as the Python job: after Install, every
+      # step runs and reports even when an earlier one fails.
       - name: Build (type-check + bundle)
         run: npm run build
       - name: Dashboard unit tests
+        if: ${{ !cancelled() }}
         working-directory: apps/dashboard
         run: npm test
       - name: Dashboard lint
+        if: ${{ !cancelled() }}
         working-directory: apps/dashboard
         run: npm run lint
       - name: Dashboard format check
+        if: ${{ !cancelled() }}
         working-directory: apps/dashboard
         run: npm run format:check
