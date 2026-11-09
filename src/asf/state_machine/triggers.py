@@ -12,6 +12,7 @@ class Trigger(StrEnum):
     ADVANCE = "ADVANCE"
     REVISE = "REVISE"
     RESUME = "RESUME"
+    ESCALATE = "ESCALATE"
     FAIL = "FAIL"
     CANCEL = "CANCEL"
 

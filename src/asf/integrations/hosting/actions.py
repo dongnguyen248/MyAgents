@@ -33,6 +33,7 @@ from asf.integrations.hosting.description import (
     ChangeRequestInfo,
     build_change_request_text,
     test_commands_of,
+    test_skip_of,
     validate_description,
 )
 from asf.integrations.hosting.factory import build_provider
@@ -88,13 +89,8 @@ def build_hosting_actions(
         changes, base_branch = parsed
         branch = branch_for_task(request.task_id)
         title = _title(request)
-        info = ChangeRequestInfo(
-            title=title,
-            task_id=request.task_id,
-            run_id=str(request.metadata.get("runId", "")),
-            branch=branch,
-            base_branch=base_branch,
-            test_commands=test_commands_of(profiles(request.project_id) or {}),
+        info = _change_request_info(
+            request, branch, base_branch, profiles(request.project_id) or {}
         )
         description = build_change_request_text(info, changes)
         problems = validate_description(description)
@@ -256,6 +252,22 @@ def _code_changeset(
 def _title(request: AgentRequest) -> str:
     title = request.context.get("title")
     return title if isinstance(title, str) and title.strip() else request.task_id
+
+
+def _change_request_info(
+    request: AgentRequest, branch: str, base_branch: str, profile: Mapping[str, Any]
+) -> ChangeRequestInfo:
+    skip_operator, skip_reason = test_skip_of(request.context)
+    return ChangeRequestInfo(
+        title=_title(request),
+        task_id=request.task_id,
+        run_id=str(request.metadata.get("runId", "")),
+        branch=branch,
+        base_branch=base_branch,
+        test_commands=test_commands_of(profile),
+        test_skip_operator=skip_operator,
+        test_skip_reason=skip_reason,
+    )
 
 
 def _metrics(request: AgentRequest, started: datetime, clock: Callable[[], datetime]):

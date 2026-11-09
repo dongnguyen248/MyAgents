@@ -12,14 +12,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from asf.orchestrator.code_loop import TEST_ESCALATED_STAGE
 from asf.orchestrator.execution import WorkflowExecution
 from asf.orchestrator.gate_ops import approve_anyway, deliver_guidance
+from asf.orchestrator.test_ops import TestCommandReplacement, replace_test_commands, skip_tests
 
 __all__ = [
     "EscalationResume",
     "approve_escalated_run",
     "escalated_agent_id",
+    "replace_test_commands_run",
     "resume_escalated_run",
+    "skip_tests_run",
 ]
 
 
@@ -48,6 +52,42 @@ def _require_escalated(service: Any, run: WorkflowExecution, run_id: str, action
             f"Run '{run_id}' is not escalated (stage {run.state.stage}); "
             f"only an escalated run can be {action}"
         )
+
+
+def _require_test_stop(service: Any, run: WorkflowExecution, run_id: str, action: str) -> None:
+    if run.state.stage != TEST_ESCALATED_STAGE:
+        raise ValueError(
+            f"Run '{run_id}' is at {run.state.stage}, not {TEST_ESCALATED_STAGE}; "
+            f"only a run stopped for a NO_TESTS decision can {action}"
+        )
+
+
+def skip_tests_run(
+    service: Any, run_id: str, *, reason: str, operator: str = "operator"
+) -> dict[str, Any] | None:
+    """Skip a NO_TESTS run's test step (reason mandatory) and drive on."""
+    run = service._operator_target(run_id)
+    _require_test_stop(service, run, run_id, "skip its tests")
+    view = service._operator_call(
+        "test skip",
+        lambda: skip_tests(service._engine, run_id, reason=reason, operator=operator),
+    )
+    service._drive_in_background(run_id)
+    return view
+
+
+def replace_test_commands_run(
+    service: Any, request: TestCommandReplacement
+) -> dict[str, Any] | None:
+    """Replace a NO_TESTS run's test commands (run-scoped) and retest."""
+    run = service._operator_target(request.run_id)
+    _require_test_stop(service, run, request.run_id, "replace its test commands")
+    view = service._operator_call(
+        "test commands replace",
+        lambda: replace_test_commands(service._engine, request),
+    )
+    service._drive_in_background(request.run_id)
+    return view
 
 
 def resume_escalated_run(service: Any, request: EscalationResume) -> dict[str, Any] | None:

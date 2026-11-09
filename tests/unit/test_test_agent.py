@@ -181,7 +181,7 @@ def test_runs_all_commands_once_at_code_ref_and_emits_report_schema() -> None:
         "required": ["commands", "verdict", "summary", "relabels"],
         "additionalProperties": False,
         "properties": {
-            "verdict": {"enum": ["PASS", "FAIL"]},
+            "verdict": {"enum": ["PASS", "FAIL", "NO_TESTS"]},
             "summary": {"type": "string", "minLength": 1},
             "relabels": {
                 "type": "array",
@@ -248,7 +248,7 @@ def test_report_records_sandbox_relabels() -> None:
     ]
 
 
-@pytest.mark.parametrize("exit_code", [1, 2, 5, -1])
+@pytest.mark.parametrize("exit_code", [1, 2, -1])
 def test_test_failure_is_successful_agent_execution(exit_code: int) -> None:
     sandbox = FakeSandbox(SandboxResult((CommandResult(exit_code, "", "failed", 1),)))
     result = RunnerAgent(runtime(), sandbox).execute(request())
@@ -562,3 +562,77 @@ def test_twenty_commands_are_allowed() -> None:
     assert result.status == "SUCCESS"
     assert len(sandbox.calls) == 1
     assert len(sandbox.calls[0][0]) == 20
+
+
+def _report_for(
+    commands: list[list[str]],
+    results: list[CommandResult],
+    *,
+    fail_fast: bool = True,
+) -> dict[str, Any]:
+    sandbox = FakeSandbox(SandboxResult(tuple(results)))
+    result = RunnerAgent(runtime(), sandbox, fail_fast=fail_fast).execute(request(commands))
+    assert result.status == "SUCCESS"
+    assert isinstance(result.output, dict)
+    return result.output
+
+
+def test_pytest_exit_5_is_no_tests_and_keeps_the_real_exit_code() -> None:
+    report = _report_for(
+        [["python", "-m", "pytest", "-q"]],
+        [CommandResult(5, "", "no tests ran", 3)],
+    )
+    assert report["verdict"] == "NO_TESTS"
+    assert report["summary"] == "NO_TESTS: 0/1 commands passed"
+    assert report["commands"][0]["exitCode"] == 5
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["pytest"],
+        ["pytest", "-q"],
+        ["python", "-m", "pytest"],
+        ["python3", "-m", "pytest", "-q"],
+        ["py", "-m", "pytest"],
+        ["pytest.exe", "-q"],
+        [r".venv\Scripts\pytest.exe", "-q"],
+        ["tools/pytest", "-q"],
+    ],
+)
+def test_pytest_argv_shapes_recognised(argv: list[str]) -> None:
+    report = _report_for([argv], [CommandResult(5, "", "", 1)])
+    assert report["verdict"] == "NO_TESTS"
+
+
+@pytest.mark.parametrize(
+    ("argv", "exit_code"),
+    [
+        (["dotnet", "test"], 5),  # another tool's exit 5 is a failure
+        (["python", "-m", "unittest"], 5),  # not the pytest module
+        (["python", "-m", "pytest", "-q"], 1),  # pytest ran, tests failed
+        (["pytest", "-q"], 2),  # pytest usage error
+    ],
+)
+def test_other_failures_stay_fail(argv: list[str], exit_code: int) -> None:
+    report = _report_for([argv], [CommandResult(exit_code, "", "", 1)])
+    assert report["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize(
+    ("exits", "expected"),
+    [
+        ((5, 0), "NO_TESTS"),  # NO_TESTS beats PASS: part is unverified
+        ((5, 1), "FAIL"),  # a real failure always wins
+        ((0, 0), "PASS"),
+        ((5, 5), "NO_TESTS"),
+        ((0, 5), "NO_TESTS"),
+    ],
+)
+def test_aggregate_verdict_precedence(exits: tuple[int, int], expected: str) -> None:
+    report = _report_for(
+        [["python", "-m", "pytest", "-q"], ["pytest", "-q"]],
+        [CommandResult(exits[0], "", "", 1), CommandResult(exits[1], "", "", 1)],
+        fail_fast=False,
+    )
+    assert report["verdict"] == expected

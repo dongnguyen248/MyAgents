@@ -71,6 +71,8 @@ class ChangeRequestInfo:
     branch: str
     base_branch: str
     test_commands: tuple[str, ...] = ()
+    test_skip_operator: str = ""
+    test_skip_reason: str = ""
 
 
 def render_description(fields: ChangeRequestDescription) -> str:
@@ -199,7 +201,8 @@ def _section_bodies(text: str) -> dict[str, str]:
 
 
 def _verification_ok(body: str) -> bool:
-    if "not run" in body.lower():
+    lowered = body.lower()
+    if "not run" in lowered or "tests skipped by" in lowered:
         return True
     return any(" " in span for span in re.findall(r"`([^`]+)`", body))
 
@@ -214,7 +217,10 @@ def change_request_description(
     commands. The run reaches the CI step only after its test step
     has passed, so configured test commands are reported as passed
     in this run; a project without test commands gets an explicit
-    "not run" line instead of an invented result.
+    "not run" line instead of an invented result. When the
+    operator skipped the test step at a NO_TESTS stop, the
+    verification section states the skip and its reason instead
+    of claiming a pass.
     """
     counts = _operation_counts(changes)
     return ChangeRequestDescription(
@@ -298,6 +304,19 @@ def build_change_request_text(info: ChangeRequestInfo, changes: ChangeSet) -> st
     return render_description(change_request_description(info, changes))
 
 
+def test_skip_of(context: Mapping[str, Any]) -> tuple[str, str]:
+    """The run's recorded test skip as (operator, reason), else ("", "").
+
+    The decision is the one ``test_ops`` recorded on the run when
+    the operator skipped the test step at a NO_TESTS stop; a
+    "replace" decision (or none) means the tests did run.
+    """
+    decision = context.get("testDecision")
+    if not isinstance(decision, Mapping) or decision.get("action") != "skip":
+        return "", ""
+    return str(decision.get("operator") or ""), str(decision.get("reason") or "")
+
+
 def test_commands_of(profile: Mapping[str, Any]) -> tuple[str, ...]:
     """The profile's `configuration.testCommands` as display strings."""
     configuration = profile.get("configuration")
@@ -337,12 +356,25 @@ def _how_lines(changes: ChangeSet) -> list[str]:
     ]
 
 
+def _one_line(text: str) -> str:
+    """Collapse operator free text so it cannot break the sections."""
+    return " ".join(text.split())
+
+
 def _verification_lines(info: ChangeRequestInfo) -> list[str]:
     lines: list[str] = []
-    for command in info.test_commands:
-        lines.append(f"`{command}` - passed in this run's test step, before this step")
-    if not lines:
-        lines.append("Automated tests: not run - the project profile configures no test commands")
+    if info.test_skip_operator:
+        lines.append(
+            f"Tests skipped by {_one_line(info.test_skip_operator)}: "
+            f"{_one_line(info.test_skip_reason)}"
+        )
+    else:
+        for command in info.test_commands:
+            lines.append(f"`{command}` - passed in this run's test step, before this step")
+        if not lines:
+            lines.append(
+                "Automated tests: not run - the project profile configures no test commands"
+            )
     lines.append(
         f"Provider pipeline for branch `{info.branch}`: this step reads its "
         "status after opening and the run fails unless it passes"

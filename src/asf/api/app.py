@@ -19,15 +19,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
+from asf.agents.test.agent import checked_test_commands
 from asf.api.service import (
     FactoryService,
     ProjectConflictError,
     ProjectExistsError,
     ProjectNotFoundError,
 )
-from asf.api.service.escalation_ops import approve_escalated_run
+from asf.api.service.escalation_ops import (
+    approve_escalated_run,
+    replace_test_commands_run,
+    skip_tests_run,
+)
 from asf.api.service.reviews_view import run_reviews as service_run_reviews
 from asf.approval.errors import ApprovalError
+from asf.orchestrator.test_ops import TestCommandReplacement
 
 __all__ = ["create_app"]
 
@@ -76,15 +82,23 @@ def _reason(payload: dict[str, Any]) -> str | JSONResponse:
 
 
 def _register_escalation_routes(app: FastAPI, service: FactoryService) -> None:
-    """The two operator actions on an escalated run.
+    """The operator actions on an escalated run.
 
     Resume restarts the revision window (optionally carrying a
     guidance comment to the producer); approve-anyway accepts
-    the escalated gate's artifact. Both carry a validated reason
-    and the X-Operator identity into the run's audit events.
+    the escalated gate's artifact. The two NO_TESTS decisions
+    (skip-tests, test-commands) serve a run stopped at
+    TEST_ESCALATED: skip carries a validated reason, and the
+    replacement commands are validated with the Test agent's
+    strict argv rules (422) so a bad replacement is never
+    stored; both are 409 anywhere but TEST_ESCALATED. Every
+    action carries the X-Operator identity into the run's
+    audit events.
     """
     _register_resume_route(app, service)
     _register_approve_route(app, service)
+    _register_skip_tests_route(app, service)
+    _register_replace_commands_route(app, service)
 
 
 def _register_resume_route(app: FastAPI, service: FactoryService) -> None:
@@ -123,6 +137,55 @@ def _register_approve_route(app: FastAPI, service: FactoryService) -> None:
         try:
             view = approve_escalated_run(
                 service, run_id, reason=reason, operator=_operator(request)
+            )
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
+
+def _register_skip_tests_route(app: FastAPI, service: FactoryService) -> None:
+    @app.post("/runs/{run_id}/escalation/skip-tests")
+    async def skip_tests_route(
+        run_id: str, request: Request, payload: dict[str, Any] = Body(...)
+    ) -> Any:
+        reason = _reason(payload)
+        if isinstance(reason, JSONResponse):
+            return reason
+        try:
+            view = skip_tests_run(service, run_id, reason=reason, operator=_operator(request))
+        except KeyError:
+            return _not_found("Run")
+        except ValueError as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        return view if view is not None else _not_found("Run")
+
+
+def _register_replace_commands_route(app: FastAPI, service: FactoryService) -> None:
+    @app.post("/runs/{run_id}/escalation/test-commands")
+    async def replace_test_commands_route(
+        run_id: str, request: Request, payload: dict[str, Any] = Body(...)
+    ) -> Any:
+        try:
+            checked_test_commands(payload.get("commands"))
+        except ValueError as error:
+            return JSONResponse(status_code=422, content={"detail": str(error)})
+        reason = payload.get("reason")
+        if reason is not None:
+            checked = _reason(payload)
+            if isinstance(checked, JSONResponse):
+                return checked
+            reason = checked
+        try:
+            view = replace_test_commands_run(
+                service,
+                TestCommandReplacement(
+                    run_id=run_id,
+                    commands=payload.get("commands"),
+                    operator=_operator(request),
+                    reason=reason,
+                ),
             )
         except KeyError:
             return _not_found("Run")

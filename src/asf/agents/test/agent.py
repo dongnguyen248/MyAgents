@@ -34,13 +34,26 @@ MAX_COMMANDS = 20
 MAX_ARG_CHARS = 4096
 MAX_ARGS = 256
 
+#: pytest's exit code for "the run happened, nothing was collected".
+PYTEST_NO_TESTS_EXIT_CODE = 5
+
+
+def checked_test_commands(raw: object) -> tuple[CommandSpec, ...]:
+    """Validate raw test commands with the agent's strict argv rules.
+
+    The same check the agent applies at run time, exposed so an
+    operator-supplied replacement is rejected up front instead of
+    being stored and failing on the re-run.
+    """
+    if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_COMMANDS:
+        raise ValueError("Provide between 1 and 20 test commands")
+    return tuple(_command_spec(command) for command in raw)
+
 
 def _commands(request: AgentRequest) -> tuple[CommandSpec, ...]:
     project = request.context.get("project")
     raw = project.get("testCommands") if isinstance(project, dict) else None
-    if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_COMMANDS:
-        raise ValueError("Provide between 1 and 20 test commands")
-    return tuple(_command_spec(argv) for argv in raw)
+    return checked_test_commands(raw)
 
 
 def _command_spec(argv: Any) -> CommandSpec:
@@ -262,7 +275,10 @@ def _validate_result_item(spec: CommandSpec, item: Any) -> None:
 
 
 def _build_report(commands: tuple[CommandSpec, ...], result: SandboxResult) -> dict[str, Any]:
-    verdict, summary = _report_summary(result)
+    outcomes = [
+        _command_outcome(spec, item) for spec, item in zip(commands, result.commands, strict=True)
+    ]
+    verdict, summary = _report_summary(result, outcomes)
     return {
         "commands": [
             _command_report(spec, item)
@@ -281,12 +297,54 @@ def _build_report(commands: tuple[CommandSpec, ...], result: SandboxResult) -> d
     }
 
 
-def _report_summary(result: SandboxResult) -> tuple[str, str]:
-    executed = [item for item in result.commands if not item.skipped]
+def _is_pytest_command(argv: tuple[str, ...]) -> bool:
+    """True for the argv shapes that run pytest itself.
+
+    Only pytest has a dedicated "nothing was collected" exit code
+    (5); recognising its invocations — the bare ``pytest`` entry
+    point or ``python -m pytest`` under python/python3/py, with
+    either path separator and an optional ``.exe`` suffix — is what
+    keeps every other tool's exit 5 an ordinary failure.
+    """
+    if not argv:
+        return False
+    exe = argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if exe.endswith(".exe"):
+        exe = exe[: -len(".exe")]
+    if exe == "pytest":
+        return True
+    return exe in ("python", "python3", "py") and list(argv[1:3]) == ["-m", "pytest"]
+
+
+def _command_outcome(spec: CommandSpec, item: CommandResult) -> str:
+    """One executed command's outcome: PASS, NO_TESTS or FAIL.
+
+    NO_TESTS is pytest exit code 5 — the command ran fine and
+    collected nothing, so there is no failure for a Fix agent to
+    repair. The command's real exit code stays in the report.
+    """
+    if item.skipped:
+        return "SKIPPED"
+    if item.exit_code == 0:
+        return "PASS"
+    if item.exit_code == PYTEST_NO_TESTS_EXIT_CODE and _is_pytest_command(spec.argv):
+        return "NO_TESTS"
+    return "FAIL"
+
+
+def _report_summary(result: SandboxResult, outcomes: list[str]) -> tuple[str, str]:
+    executed = [
+        outcome for item, outcome in zip(result.commands, outcomes, strict=True) if not item.skipped
+    ]
     skipped_count = len(result.commands) - len(executed)
-    failed = sum(item.exit_code != 0 for item in executed)
-    verdict = "FAIL" if failed else "PASS"
-    summary = f"{verdict}: {len(executed) - failed}/{len(executed)} commands passed"
+    passed = executed.count("PASS")
+    if "FAIL" in executed:
+        verdict = "FAIL"
+    elif "NO_TESTS" in executed:
+        verdict = "NO_TESTS"
+    else:
+        verdict = "PASS"
+    summary = f"{verdict}: {passed}/{len(executed)} commands passed"
     if skipped_count:
         summary += f" ({skipped_count} skipped)"
     return verdict, summary

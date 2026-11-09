@@ -166,3 +166,38 @@ def test_built_description_groups_large_change_sets() -> None:
     text = render_description(change_request_description(_info(), changes))
     assert validate_description(text) == []
     assert "`pkg` - 25 file(s): created" in text
+
+
+def test_built_description_states_a_test_skip_instead_of_a_pass() -> None:
+    info = ChangeRequestInfo(
+        title="Build the thing",
+        task_id="task-1",
+        run_id="run-1",
+        branch="asf/task-1",
+        base_branch="main",
+        test_commands=("python -m pytest -q",),
+        test_skip_operator="dong",
+        test_skip_reason="Docs-only change; the suite lives elsewhere",
+    )
+    changes = _changeset({"path": "a.py", "operation": "create", "content": "a = 1\n"})
+    text = render_description(change_request_description(info, changes))
+    assert validate_description(text) == []
+    assert "Tests skipped by dong: Docs-only change; the suite lives elsewhere" in text
+    assert "passed in this run's test step" not in text
+
+
+def test_skip_text_cannot_break_the_description_structure() -> None:
+    info = ChangeRequestInfo(
+        title="Build the thing",
+        task_id="task-1",
+        run_id="run-1",
+        branch="asf/task-1",
+        base_branch="main",
+        test_skip_operator="dong",
+        test_skip_reason="no tests\n## What\ninjected heading",
+    )
+    changes = _changeset({"path": "a.py", "operation": "create", "content": "a = 1\n"})
+    text = render_description(change_request_description(info, changes))
+    assert validate_description(text) == []
+    assert sum(1 for line in text.splitlines() if line == "## What") == 1
+    assert "Tests skipped by dong: no tests ## What injected heading" in text
