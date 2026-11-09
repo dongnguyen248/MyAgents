@@ -19,6 +19,7 @@ from asf.agents.test.agent import MAX_ARG_CHARS, MAX_ARGS
 from asf.configuration.platform import PlatformConfig
 from asf.contracts.models import AgentRequest, Artifact, ModelRequest, ModelResponse
 from asf.tools.changeset import ChangeSet
+from asf.tools.local import LocalSandbox
 from asf.tools.ports import (
     AppliedRelabel,
     CommandResult,
@@ -371,6 +372,82 @@ def test_runner_errors_are_safe(mode: str) -> None:
     assert result.errors[0].retryable
     assert not result.artifacts
     assert bool(private not in result.model_dump_json()), "Exception text leaked"
+
+
+def test_sandbox_error_cause_reaches_the_agent_error() -> None:
+    cause = SandboxError(
+        "apply failed: cannot modify missing file docs/decisions.md",
+        details={
+            "phase": "start",
+            "exceptionType": "SandboxError",
+            "cwd": "/worktrees/run-1",
+            "cwdExists": True,
+        },
+    )
+    result = RunnerAgent(runtime(), FakeSandbox(error=cause)).execute(request())
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.code == "SANDBOX_ERROR"
+    assert error.message == "apply failed: cannot modify missing file docs/decisions.md"
+    assert error.details["phase"] == "start"
+    assert error.details["exceptionType"] == "SandboxError"
+    assert error.details["cwd"] == "/worktrees/run-1"
+    assert error.details["cwdExists"] is True
+
+
+def test_unexpected_sandbox_exception_keeps_its_type() -> None:
+    sandbox = FakeSandbox(error=RuntimeError("kaput"))
+    result = RunnerAgent(runtime(), sandbox).execute(request())
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.code == "SANDBOX_ERROR"
+    assert error.message == "kaput"
+    assert error.details == {"phase": "unknown", "exceptionType": "RuntimeError"}
+
+
+def test_apply_failure_maps_to_the_non_retryable_apply_code(tmp_path) -> None:
+    # The exact incident shape through the real sandbox: the change set
+    # modifies a file the tree does not have — deterministic, so the
+    # error must be SANDBOX_APPLY_FAILED with retryable False, which is
+    # what stops the engine scheduling any automatic retry.
+    req = request()
+    code = req.artifacts[1]
+    content = {
+        **code.content,
+        "changeSet": {"changes": [{"path": "ghost.py", "operation": "modify", "content": "x\n"}]},
+    }
+    req = req.model_copy(
+        update={"artifacts": [req.artifacts[0], code.model_copy(update={"content": content})]}
+    )
+    result = RunnerAgent(runtime(), LocalSandbox(tmp_path)).execute(req)
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.code == "SANDBOX_APPLY_FAILED"
+    assert error.category == "INTEGRATION"
+    assert error.retryable is False
+    assert error.message == "apply failed: cannot modify missing file ghost.py"
+    assert error.details["exceptionType"] == "SandboxApplyError"
+
+
+def test_spawn_failure_stays_a_retryable_sandbox_error(tmp_path) -> None:
+    req = request(commands=[["no-such-executable-asf"]])
+    result = RunnerAgent(runtime(), LocalSandbox(tmp_path)).execute(req)
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.code == "SANDBOX_ERROR"
+    assert error.retryable is True
+    assert error.details["commandName"] == "no-such-executable-asf"
+
+
+def test_timeout_error_carries_command_name_and_phase() -> None:
+    cause = CommandTimeoutError(CommandSpec(("pytest", "-q"), timeout_seconds=3))
+    result = RunnerAgent(runtime(), FakeSandbox(error=cause)).execute(request())
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.code == "COMMAND_TIMEOUT"
+    assert error.details["phase"] == "run"
+    assert error.details["commandName"] == "pytest"
+    assert error.details["elapsedMs"] == 3000
 
 
 @pytest.mark.parametrize("duration,timed_out", [(120001, False), (1, True)])

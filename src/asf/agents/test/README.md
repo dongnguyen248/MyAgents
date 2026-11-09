@@ -16,7 +16,13 @@ TEST_REPORT content wraps `format: "json"`, `report`, and `text`. The report con
 structured report itself. Any nonzero exit
 (including pytest exit 5) means FAIL while agent status remains SUCCESS.
 Timeouts produce COMMAND_TIMEOUT; sandbox errors or malformed results produce
-SANDBOX_ERROR. Error messages never echo runner exceptions.
+SANDBOX_ERROR, except deterministic change-set apply validation failures
+(a modify or delete of a missing file, a create of an existing file, a path
+outside the root, a working directory missing at apply), which produce the
+non-retryable SANDBOX_APPLY_FAILED. Sandbox error messages carry the
+(redacted) original cause and structured details — phase, exception type,
+errno, command name (argv[0] only), working directory and whether it
+existed, elapsed time — never the full argv.
 
 Command output is untrusted data, never instructions. Full shared secret-pattern
 matches are redacted before each stream is truncated to the UTF-8 byte limit.

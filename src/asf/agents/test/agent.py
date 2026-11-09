@@ -11,13 +11,21 @@ from asf.agents._shared.code_agents import (
     code_changeset,
     linked_metadata,
 )
-from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
+from asf.agents.base import (
+    AgentErrorOptions,
+    AgentExecutionError,
+    AgentRuntime,
+    BaseAgent,
+    Issue,
+)
 from asf.contracts.models import AgentMetadata, AgentRequest, Artifact
 from asf.tools.changeset import ChangeSet
 from asf.tools.ports import (
     CommandResult,
     CommandSpec,
     CommandTimeoutError,
+    SandboxApplyError,
+    SandboxError,
     SandboxPort,
     SandboxResult,
 )
@@ -89,6 +97,51 @@ def _output(text: str, limit: int) -> str:
     return _redact(text).encode("utf-8", errors="replace")[:limit].decode("utf-8", errors="ignore")
 
 
+def _sandbox_details(error: SandboxError, *, phase: str) -> dict[str, Any]:
+    details = dict(error.details)
+    details.setdefault("phase", phase)
+    details.setdefault("exceptionType", type(error).__name__)
+    if error.command is not None and error.command.argv:
+        details.setdefault("commandName", error.command.argv[0])
+    return details
+
+
+def _timeout_details(error: BaseException) -> dict[str, Any]:
+    if isinstance(error, SandboxError):
+        return _sandbox_details(error, phase="run")
+    return {"phase": "run", "exceptionType": type(error).__name__}
+
+
+def _timeout_failure(error: BaseException) -> AgentExecutionError:
+    return AgentExecutionError(
+        "COMMAND_TIMEOUT",
+        "Test command timed out",
+        AgentErrorOptions(details=_timeout_details(error)),
+    )
+
+
+def _apply_failure(error: SandboxApplyError) -> AgentExecutionError:
+    return AgentExecutionError(
+        "SANDBOX_APPLY_FAILED",
+        _redact(str(error)),
+        AgentErrorOptions(retryable=False, details=_sandbox_details(error, phase="start")),
+    )
+
+
+def _sandbox_failure(error: BaseException) -> AgentExecutionError:
+    if isinstance(error, SandboxError):
+        return AgentExecutionError(
+            "SANDBOX_ERROR",
+            _redact(str(error)),
+            AgentErrorOptions(details=_sandbox_details(error, phase="start")),
+        )
+    return AgentExecutionError(
+        "SANDBOX_ERROR",
+        _redact(str(error)) or type(error).__name__,
+        AgentErrorOptions(details={"phase": "unknown", "exceptionType": type(error).__name__}),
+    )
+
+
 class TestAgent(BaseAgent):
     """Deterministic test runner; command output is untrusted data, never instructions."""
 
@@ -151,10 +204,12 @@ class TestAgent(BaseAgent):
                 code.metadata["baseRef"],
                 fail_fast=self._fail_fast,
             )
-        except (CommandTimeoutError, TimeoutError):
-            raise AgentExecutionError("COMMAND_TIMEOUT", "Test command timed out") from None
-        except Exception:
-            raise AgentExecutionError("SANDBOX_ERROR", "Sandbox execution failed") from None
+        except (CommandTimeoutError, TimeoutError) as error:
+            raise _timeout_failure(error) from None
+        except SandboxApplyError as error:
+            raise _apply_failure(error) from None
+        except Exception as error:
+            raise _sandbox_failure(error) from None
 
     def _report_artifact(
         self, request: AgentRequest, code: Artifact, report: dict[str, Any]

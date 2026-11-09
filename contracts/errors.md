@@ -31,4 +31,5 @@ Below is the standard catalog of built-in platform error codes. Each code maps t
 | CI_UNAVAILABLE | CI | true | CI system unreachable |
 | REPOSITORY_ERROR | INTEGRATION | true | repository port read/list failure |
 | SANDBOX_ERROR | INTEGRATION | true | sandbox infrastructure failure |
+| SANDBOX_APPLY_FAILED | INTEGRATION | false | deterministic change-set apply validation failure (modify/delete of a missing file, create of an existing file, path outside the root, working directory missing at apply) — the same change set fails identically on every retry |
 | COMMAND_TIMEOUT | INTEGRATION | true | command exceeded its timeout |

@@ -107,6 +107,15 @@ Engineering properties copied:
 6. **`harness/optimization/experiments.py` varies orchestration
    budgets** (`CodeLoopPolicy.max_fixes`), not harness components.
    It stays as-is; it is not part of the Harness² loop.
+   *Note (2026-11-09): the experiments pin `editFormat: json` for
+   the implement/fix agents because their scripted replies speak
+   the JSON format. The Fix agent's JSON format changed on that
+   date: a JSON reply is now composed onto the effective state
+   (base files plus the previous changeset), like edit blocks,
+   instead of being taken as the whole replacement — previously a
+   JSON reply silently dropped every previous file it did not
+   mention. Any json-vs-blocks comparison recorded before this
+   change is therefore not comparable with runs after it.*
 7. **Agents are single-shot** (model call, parse, validate, at most
    one repair call). A "trajectory" is therefore defined as the
    ordered record of request messages, model reply, repair calls
