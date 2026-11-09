@@ -428,3 +428,101 @@ def test_fix_rejects_invalid_language(language: Any):
     result = agent.execute(request)
     assert result.status == "REJECTED"
     assert not gateway.requests
+
+
+_TWO_FILE_CHANGES = [
+    {
+        "path": "src/calculator.py",
+        "operation": "create",
+        "content": "def add(a, b):\n    return a + b\n",
+    },
+    {
+        "path": "src/extra.py",
+        "operation": "create",
+        "content": "def extra():\n    return 1\n",
+    },
+]
+
+_EDITED_CALCULATOR = "def add(a, b):\n    return a + b  # sum of the two operands\n"
+
+
+def two_file_fix_request() -> AgentRequest:
+    request = make_implement_request(expected_files=["src/calculator.py", "src/extra.py"])
+    implement, _ = make_agent_and_gateway([make_valid_changeset_reply(changes=_TWO_FILE_CHANGES)])
+    result = implement.execute(request)
+    if result.status != "SUCCESS":
+        raise AssertionError("Implement fixture failed")
+    code = result.artifacts[0]
+    review = Artifact(
+        id="review-1",
+        type="CODE_REVIEW",
+        name="CODE_REVIEW.md",
+        version="1",
+        content={
+            "format": "json",
+            "text": "Changes requested",
+            "review": {"findings": [], "verdict": "CHANGES_REQUESTED"},
+        },
+        created_by="agent-review",
+        created_at=T_AWARE,
+        metadata={"codeArtifactId": code.id, "codeVersion": code.version, "taskItemId": "T1"},
+    )
+    return request.model_copy(
+        update={"agent_id": "agent-fix", "artifacts": [*request.artifacts, code, review]}
+    )
+
+
+def fix_agent_blocks(
+    replies: list[Any],
+) -> tuple[FixAgent, ScriptedModelGateway]:
+    gateway = ScriptedModelGateway(replies)
+    return FixAgent(
+        AgentRuntime(gateway, lambda: T_AWARE, counter_id("fix-")),
+        InMemoryRepository(),
+        FixSettings(
+            prompts=FixPrompts("Return a complete replacement ChangeSet"),
+            edit_format="blocks",
+            repair_attempts=0,
+        ),
+    ), gateway
+
+
+def test_fix_blocks_mode_replacement_is_cumulative():
+    reply = (
+        "FILE: src/calculator.py\n"
+        "<<<<<<< SEARCH\n"
+        "    return a + b\n"
+        "=======\n"
+        "    return a + b  # sum of the two operands\n"
+        ">>>>>>> REPLACE\n"
+    )
+    agent, _ = fix_agent_blocks([reply])
+    result = agent.execute(two_file_fix_request())
+    assert result.status == "SUCCESS"
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    by_path = {change["path"]: change for change in changes}
+    assert set(by_path) == {"src/calculator.py", "src/extra.py"}
+    assert by_path["src/calculator.py"]["content"] == _EDITED_CALCULATOR
+    assert by_path["src/extra.py"]["operation"] == "create"
+    assert by_path["src/extra.py"]["content"] == "def extra():\n    return 1\n"
+
+
+def test_fix_json_mode_replacement_drops_untouched_previous_files():
+    # Characterization of current behaviour (FIX-3 item 2): the JSON
+    # path returns the model's ChangeSet as the whole replacement —
+    # there is no compose step — so a reply naming one file silently
+    # drops every other file the previous changeset created.
+    reply = make_valid_changeset_reply(
+        changes=[
+            {
+                "path": "src/calculator.py",
+                "operation": "create",
+                "content": _EDITED_CALCULATOR,
+            }
+        ]
+    )
+    agent, _ = fix_agent([reply])
+    result = agent.execute(two_file_fix_request())
+    assert result.status == "SUCCESS"
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    assert [change["path"] for change in changes] == ["src/calculator.py"]

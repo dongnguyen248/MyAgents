@@ -213,6 +213,14 @@ def _build_report(commands: tuple[CommandSpec, ...], result: SandboxResult) -> d
             _command_report(spec, item)
             for spec, item in zip(commands, result.commands, strict=True)
         ],
+        "relabels": [
+            {
+                "path": relabel.path,
+                "fromOperation": relabel.from_operation,
+                "toOperation": relabel.to_operation,
+            }
+            for relabel in result.relabels
+        ],
         "verdict": verdict,
         "summary": summary,
     }

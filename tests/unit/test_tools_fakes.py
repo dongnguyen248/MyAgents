@@ -5,6 +5,7 @@ import pytest
 from asf.tools.changeset import ChangeSet, FileChange
 from asf.tools.fake import InMemoryRepository, InMemorySandbox, ScriptedSandbox
 from asf.tools.ports import (
+    AppliedRelabel,
     CommandResult,
     CommandSpec,
     CommandTimeoutError,
@@ -198,18 +199,21 @@ def test_inmemory_sandbox_create_existing_fails() -> None:
         )
 
 
-def test_inmemory_sandbox_modify_missing_fails() -> None:
+def test_inmemory_sandbox_modify_missing_with_content_applies_as_create() -> None:
+    # Supersedes test_inmemory_sandbox_modify_missing_fails: under FIX-3
+    # item 1 a modify carrying full content for an absent file applies
+    # as a create (with a recorded relabel), mirroring the local sandbox.
     repo = InMemoryRepository()
     repo.add_tree("main", {"existing.py": "old"})
 
     sandbox = InMemorySandbox(repository=repo)
     changes = ChangeSet(changes=(FileChange(path="missing.py", operation="modify", content="new"),))
-    with pytest.raises(SandboxError, match="Cannot modify missing file"):
-        sandbox.run(
-            commands=[CommandSpec(argv=("ls",))],
-            changes=changes,
-            ref="main",
-        )
+    result = sandbox.run(
+        commands=[CommandSpec(argv=("ls",))],
+        changes=changes,
+        ref="main",
+    )
+    assert result.relabels == (AppliedRelabel("missing.py", "modify", "create"),)
 
 
 def test_inmemory_sandbox_delete_missing_fails() -> None:

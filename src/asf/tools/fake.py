@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from asf.tools.changeset import ChangeSet
+from asf.tools.changeset import ChangeSet, FileChange
 from asf.tools.ports import (
+    AppliedRelabel,
     CommandResult,
     CommandSpec,
     CommandTimeoutError,
@@ -122,6 +123,24 @@ class ScriptedSandbox:
         return SandboxResult(commands=tuple(outcomes))
 
 
+def _apply_modify(
+    working_files: dict[str, str],
+    change: FileChange,
+    relabels: list[AppliedRelabel],
+) -> None:
+    # Mirrors the local sandbox: a modify with full content for an
+    # absent file applies as a create and records the relabel.
+    if change.path not in working_files and change.content is not None:
+        working_files[change.path] = change.content
+        relabels.append(AppliedRelabel(change.path, "modify", "create"))
+        return
+    if change.path not in working_files:
+        raise SandboxError(f"Cannot modify missing file: {change.path}", command=None)
+    if change.content is None:
+        raise SandboxError("modify operation requires content", command=None)
+    working_files[change.path] = change.content
+
+
 class InMemorySandbox:
     """Sandbox that applies the ChangeSet to an in-memory file tree and runs commands."""
 
@@ -153,6 +172,7 @@ class InMemorySandbox:
             working_files = dict(tree.files)
 
         # Apply the ChangeSet
+        relabels: list[AppliedRelabel] = []
         for fc in changes.changes:
             if fc.operation == "create":
                 if fc.path in working_files:
@@ -161,11 +181,7 @@ class InMemorySandbox:
                     raise SandboxError("create operation requires content", command=None)
                 working_files[fc.path] = fc.content
             elif fc.operation == "modify":
-                if fc.path not in working_files:
-                    raise SandboxError(f"Cannot modify missing file: {fc.path}", command=None)
-                if fc.content is None:
-                    raise SandboxError("modify operation requires content", command=None)
-                working_files[fc.path] = fc.content
+                _apply_modify(working_files, fc, relabels)
             elif fc.operation == "delete":
                 if fc.path not in working_files:
                     raise SandboxError(f"Cannot delete missing file: {fc.path}", command=None)
@@ -192,4 +208,4 @@ class InMemorySandbox:
             if result.exit_code != 0:
                 failed = True
 
-        return SandboxResult(commands=tuple(outcomes))
+        return SandboxResult(commands=tuple(outcomes), relabels=tuple(relabels))

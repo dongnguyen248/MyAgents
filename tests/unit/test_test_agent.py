@@ -20,6 +20,7 @@ from asf.configuration.platform import PlatformConfig
 from asf.contracts.models import AgentRequest, Artifact, ModelRequest, ModelResponse
 from asf.tools.changeset import ChangeSet
 from asf.tools.ports import (
+    AppliedRelabel,
     CommandResult,
     CommandSpec,
     CommandTimeoutError,
@@ -176,11 +177,24 @@ def test_runs_all_commands_once_at_code_ref_and_emits_report_schema() -> None:
     assert not list(validator.iter_errors(report.to_contract()))
     content_schema = {
         "type": "object",
-        "required": ["commands", "verdict", "summary"],
+        "required": ["commands", "verdict", "summary", "relabels"],
         "additionalProperties": False,
         "properties": {
             "verdict": {"enum": ["PASS", "FAIL"]},
             "summary": {"type": "string", "minLength": 1},
+            "relabels": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["path", "fromOperation", "toOperation"],
+                    "properties": {
+                        "path": {"type": "string"},
+                        "fromOperation": {"type": "string"},
+                        "toOperation": {"type": "string"},
+                    },
+                },
+            },
             "commands": {
                 "type": "array",
                 "minItems": 1,
@@ -211,6 +225,26 @@ def test_runs_all_commands_once_at_code_ref_and_emits_report_schema() -> None:
         },
     }
     assert not list(Draft202012Validator(wrapper_schema).iter_errors(report.content))
+
+
+def test_report_records_sandbox_relabels() -> None:
+    sandbox = FakeSandbox(
+        SandboxResult(
+            (CommandResult(0, "ok", "", 1),),
+            relabels=(AppliedRelabel("docs/testing/decisions.md", "modify", "create"),),
+        )
+    )
+    result = RunnerAgent(runtime(), sandbox).execute(request())
+    assert result.status == "SUCCESS"
+    report = result.artifacts[0]
+    assert isinstance(report.content, dict)
+    assert report.content["report"]["relabels"] == [
+        {
+            "path": "docs/testing/decisions.md",
+            "fromOperation": "modify",
+            "toOperation": "create",
+        }
+    ]
 
 
 @pytest.mark.parametrize("exit_code", [1, 2, 5, -1])
