@@ -15,7 +15,12 @@ from typing import Any
 from asf.orchestrator.code_loop import TEST_ESCALATED_STAGE
 from asf.orchestrator.execution import WorkflowExecution
 from asf.orchestrator.gate_ops import approve_anyway, deliver_guidance
-from asf.orchestrator.test_ops import TestCommandReplacement, replace_test_commands, skip_tests
+from asf.orchestrator.test_ops import (
+    SkipRequest,
+    TestCommandReplacement,
+    replace_test_commands,
+    skip_tests,
+)
 
 __all__ = [
     "EscalationResume",
@@ -62,17 +67,15 @@ def _require_test_stop(service: Any, run: WorkflowExecution, run_id: str, action
         )
 
 
-def skip_tests_run(
-    service: Any, run_id: str, *, reason: str, operator: str = "operator"
-) -> dict[str, Any] | None:
+def skip_tests_run(service: Any, request: SkipRequest) -> dict[str, Any] | None:
     """Skip a NO_TESTS run's test step (reason mandatory) and drive on."""
-    run = service._operator_target(run_id)
-    _require_test_stop(service, run, run_id, "skip its tests")
+    run = service._operator_target(request.run_id)
+    _require_test_stop(service, run, request.run_id, "skip its tests")
     view = service._operator_call(
         "test skip",
-        lambda: skip_tests(service._engine, run_id, reason=reason, operator=operator),
+        lambda: skip_tests(service._engine, request),
     )
-    service._drive_in_background(run_id)
+    service._drive_in_background(request.run_id)
     return view
 
 

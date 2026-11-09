@@ -13,6 +13,7 @@ import pytest
 
 from asf.orchestrator.code_loop import FIX_STEP, TEST_ESCALATED_STAGE
 from asf.orchestrator.test_ops import (
+    SkipRequest,
     TestCommandReplacement,
     replace_test_commands,
     skip_tests,
@@ -62,7 +63,7 @@ def _events(run, event_type: str) -> list:
 def test_skip_on_the_last_item_completes_the_run(tmp_path):
     engine, run, store, _gateways, _sandbox = _escalated(tmp_path)
     report_id = run.artifacts["TEST_REPORT"].id
-    run = skip_tests(engine, run.id, reason=REASON, operator="dong")
+    run = skip_tests(engine, SkipRequest(run.id, REASON, "dong"))
     assert run.state.stage == "COMPLETED"
     decision = run.context["testDecision"]
     assert decision["action"] == "skip"
@@ -87,7 +88,7 @@ def test_skip_before_the_last_item_advances_to_the_next_item(tmp_path):
     )
     run = _drive(engine, run)
     assert run.state.stage == TEST_ESCALATED_STAGE
-    run = skip_tests(engine, run.id, reason=REASON, operator="dong")
+    run = skip_tests(engine, SkipRequest(run.id, REASON, "dong"))
     run = _drive(engine, run)
     assert run.state.stage == "COMPLETED", [(e.code, e.message) for e in run.errors]
     assert len(sandbox.calls) == 2
@@ -147,7 +148,7 @@ def test_replace_rejects_invalid_commands_without_storing(tmp_path, commands):
 def test_skip_requires_a_reason(tmp_path):
     engine, run, store, _gateways, _sandbox = _escalated(tmp_path)
     with pytest.raises(ValueError):
-        skip_tests(engine, run.id, reason="   ", operator="dong")
+        skip_tests(engine, SkipRequest(run.id, "   ", "dong"))
     assert engine.get(run.id).state.stage == TEST_ESCALATED_STAGE
     store.close()
 
@@ -157,7 +158,7 @@ def test_actions_are_rejected_away_from_the_test_stop(tmp_path):
     with engine._edit(run.id) as stored:
         stored.state = stored.state.__class__(stage="CODE_FIX_ESCALATED", revisions={})
     with pytest.raises(ValueError):
-        skip_tests(engine, run.id, reason=REASON, operator="dong")
+        skip_tests(engine, SkipRequest(run.id, REASON, "dong"))
     with pytest.raises(ValueError):
         replace_test_commands(
             engine,

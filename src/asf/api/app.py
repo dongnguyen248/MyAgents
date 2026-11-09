@@ -33,7 +33,7 @@ from asf.api.service.escalation_ops import (
 )
 from asf.api.service.reviews_view import run_reviews as service_run_reviews
 from asf.approval.errors import ApprovalError
-from asf.orchestrator.test_ops import TestCommandReplacement
+from asf.orchestrator.test_ops import SkipRequest, TestCommandReplacement
 
 __all__ = ["create_app"]
 
@@ -153,8 +153,22 @@ def _register_skip_tests_route(app: FastAPI, service: FactoryService) -> None:
         reason = _reason(payload)
         if isinstance(reason, JSONResponse):
             return reason
+        scope = payload.get("scope", "item")
+        if scope not in ("item", "run"):
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "scope must be 'item' or 'run'"},
+            )
         try:
-            view = skip_tests_run(service, run_id, reason=reason, operator=_operator(request))
+            view = skip_tests_run(
+                service,
+                SkipRequest(
+                    run_id=run_id,
+                    reason=reason,
+                    operator=_operator(request),
+                    scope=scope,
+                ),
+            )
         except KeyError:
             return _not_found("Run")
         except ValueError as error:

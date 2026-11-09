@@ -121,3 +121,38 @@ def test_decisions_on_a_missing_run_are_404(client):
         ).status_code
         == 404
     )
+
+
+def test_skip_tests_run_scope_records_the_standing_decision(client, demo):
+    service, engine, _store = demo
+    run_id = _parked_run(service, engine)
+    response = client.post(
+        f"/runs/{run_id}/escalation/skip-tests",
+        json={"reason": REASON, "scope": "run"},
+        headers={"X-Operator": "dong"},
+    )
+    assert response.status_code == 200
+    service.wait_for_drives(timeout=10)
+    context = engine.get(run_id).context
+    standing = context["testSkipRemaining"]
+    assert standing["reason"] == REASON
+    assert standing["operator"] == "dong"
+    assert context["testDecisions"][0]["action"] == "skip"
+
+
+def test_skip_tests_rejects_an_unknown_scope(client, demo):
+    service, engine, _store = demo
+    run_id = _parked_run(service, engine)
+    response = client.post(
+        f"/runs/{run_id}/escalation/skip-tests",
+        json={"reason": REASON, "scope": "project"},
+    )
+    assert response.status_code == 422
+    assert "testSkipRemaining" not in engine.get(run_id).context
+
+
+def test_skip_tests_run_scope_still_requires_a_reason(client, demo):
+    service, engine, _store = demo
+    run_id = _parked_run(service, engine)
+    response = client.post(f"/runs/{run_id}/escalation/skip-tests", json={"scope": "run"})
+    assert response.status_code == 422

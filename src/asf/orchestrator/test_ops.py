@@ -36,11 +36,17 @@ if TYPE_CHECKING:
     from asf.orchestrator.execution import WorkflowExecution
 
 __all__ = [
+    "SkipApplication",
+    "SkipRequest",
     "TestCommandReplacement",
+    "apply_skip_decision",
     "record_decision",
     "replace_test_commands",
+    "run_scoped_skip",
     "skip_tests",
 ]
+
+RUN_SCOPED_SKIP_KEY = "testSkipRemaining"
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,23 @@ class TestCommandReplacement:
     commands: object
     operator: str = "operator"
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class SkipApplication:
+    """One application of a test-skip decision to the current item.
+
+    ``via`` is "operator" for the decision the operator makes at a
+    stop and "run-scope" when the engine applies a run-scoped
+    decision the operator recorded earlier; ``scope`` is the scope
+    the operator chose at the stop ("item" unless they explicitly
+    picked the rest of the run).
+    """
+
+    reason: str
+    operator: str
+    via: str = "operator"
+    scope: str = "item"
 
 
 def _require_test_escalation(run: WorkflowExecution, action: str) -> None:
@@ -93,31 +116,96 @@ def _current_item(run: WorkflowExecution) -> str | None:
     return None
 
 
-def skip_tests(
-    engine: Orchestrator, run_id: str, *, reason: str, operator: str = "operator"
-) -> WorkflowExecution:
+def apply_skip_decision(
+    engine: Orchestrator, run: WorkflowExecution, application: SkipApplication
+) -> None:
+    """Record a skip for the current item and advance like a pass.
+
+    Shared by the operator action at a stop and by the engine's
+    run-scoped path, which applies the operator's recorded decision
+    to a later item — the decision entry, the audit note and the
+    event are written the same way either way, with ``via`` saying
+    which path applied it.
+    """
+    decision: dict[str, Any] = {
+        "action": "skip",
+        "operator": application.operator,
+        "reason": application.reason,
+        "via": application.via,
+    }
+    record_decision(engine, run, decision)
+    run.recovery_notes.append(f"Tests skipped by {application.operator}: {application.reason}")
+    metadata: dict[str, Any] = {"operator": application.operator}
+    if application.via != "operator":
+        metadata["via"] = application.via
+    if application.scope != "item":
+        metadata["scope"] = application.scope
+    engine._event(
+        run,
+        "TESTS_SKIPPED",
+        f"Operator skipped the test step: {application.reason}",
+        metadata=metadata,
+    )
+    if not (run.task_order and engine._next_item(run)):
+        run.state = apply(engine._graph, run.state, Trigger.COMPLETE)
+
+
+@dataclass(frozen=True)
+class SkipRequest:
+    """An operator's test skip for one stopped run."""
+
+    run_id: str
+    reason: str
+    operator: str = "operator"
+    scope: str = "item"
+
+
+def skip_tests(engine: Orchestrator, request: SkipRequest) -> WorkflowExecution:
     """Skip this run's test step and advance exactly like a pass.
 
     The TEST_REPORT keeps its NO_TESTS verdict — history is not
     rewritten; the skip lives on the run record. The reason is
-    mandatory: a skip nobody explained must not be possible.
+    mandatory: a skip nobody explained must not be possible. With
+    scope "run" the same decision is also recorded as the run's
+    standing skip (``testSkipRemaining``), which the engine later
+    applies to any further item whose tests collect nothing; the
+    default scope "item" decides only the stopped item.
     """
-    cleaned = reason.strip()
+    cleaned = request.reason.strip()
     if not cleaned:
         raise ValueError("Skipping tests requires a non-empty reason")
-    with engine._edit(run_id) as run:
+    if request.scope not in ("item", "run"):
+        raise ValueError("scope must be 'item' or 'run'")
+    with engine._edit(request.run_id) as run:
         _require_test_escalation(run, "skipped")
-        record_decision(engine, run, {"action": "skip", "operator": operator, "reason": cleaned})
-        run.recovery_notes.append(f"Tests skipped by {operator}: {cleaned}")
-        engine._event(
+        if request.scope == "run":
+            run.context[RUN_SCOPED_SKIP_KEY] = {
+                "reason": cleaned,
+                "operator": request.operator,
+                "at": engine._now().isoformat(),
+                "itemId": _current_item(run),
+            }
+        apply_skip_decision(
+            engine,
             run,
-            "TESTS_SKIPPED",
-            f"Operator skipped the test step: {cleaned}",
-            metadata={"operator": operator},
+            SkipApplication(reason=cleaned, operator=request.operator, scope=request.scope),
         )
-        if not (run.task_order and engine._next_item(run)):
-            run.state = apply(engine._graph, run.state, Trigger.COMPLETE)
-    return engine.get(run_id)
+    return engine.get(request.run_id)
+
+
+def run_scoped_skip(run: WorkflowExecution) -> SkipApplication | None:
+    """The run's standing skip decision, if the operator recorded one."""
+    flag = run.context.get(RUN_SCOPED_SKIP_KEY)
+    if not isinstance(flag, dict):
+        return None
+    reason = str(flag.get("reason") or "").strip()
+    if not reason:
+        return None
+    return SkipApplication(
+        reason=reason,
+        operator=str(flag.get("operator") or "operator"),
+        via="run-scope",
+    )
 
 
 def replace_test_commands(
@@ -130,6 +218,9 @@ def replace_test_commands(
     instead of failing on the re-run. The override is run-scoped:
     the run's own baked context changes; the project profile does
     not, so a later Run again still bakes the profile's commands.
+    Replacing the commands also clears any run-scoped test skip —
+    a working command set supersedes the skip decision — and the
+    clearing is recorded on the event.
     """
     specs = checked_test_commands(request.commands)
     operator = request.operator
@@ -139,13 +230,20 @@ def replace_test_commands(
         project["testCommands"] = [list(spec.argv) for spec in specs]
         run.context["project"] = project
         record_decision(engine, run, _replace_decision(specs, operator, request.reason))
+        cleared = run.context.pop(RUN_SCOPED_SKIP_KEY, None) is not None
         joined = redact_text("; ".join(" ".join(spec.argv) for spec in specs))
-        run.recovery_notes.append(f"Test commands replaced by {operator}: {joined}")
+        note = f"Test commands replaced by {operator}: {joined}"
+        if cleared:
+            note += "; the run-scoped test skip was cleared"
+        run.recovery_notes.append(note)
+        metadata: dict[str, Any] = {"operator": operator}
+        if cleared:
+            metadata["clearedRunScopeSkip"] = True
         engine._event(
             run,
             "TEST_COMMANDS_REPLACED",
             f"Operator replaced the test commands: {joined}",
-            metadata={"operator": operator},
+            metadata=metadata,
         )
         run.state = apply(engine._graph, run.state, Trigger.RESUME)
     return engine.get(request.run_id)
