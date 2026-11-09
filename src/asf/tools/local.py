@@ -180,10 +180,6 @@ class LocalRepository:
             ) from None
 
 
-# ---------------------------------------------------------------------------
-# Sandbox environment
-# ---------------------------------------------------------------------------
-
 _ENV_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Always inherited (when present): enough for shells and toolchains to
@@ -821,8 +817,6 @@ class LocalWorkspace:
         journal = self.direct_journal()
         if journal is not None and journal.entries:
             journal.rebaseline()
-
-    # -- direct mode ------------------------------------------------------
 
     def journal_for(self, project_id: str, run_id: str) -> RunJournal | None:
         if self._journals is None:

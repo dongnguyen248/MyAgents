@@ -111,7 +111,7 @@ rpds-py==2026.9.1
     # via
     #   jsonschema
     #   referencing
-ruff==0.17.3
+ruff==0.17.4
     # via ai-software-agents (pyproject.toml)
 six==1.17.0
     # via rfc3339-validator

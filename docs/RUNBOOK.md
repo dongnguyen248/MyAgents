@@ -4,7 +4,7 @@ Thứ tự chạy tổng thể:
 **Cài đặt (1 lần) → Kiểm chứng (tests) → Harness (offline) → Backend API → Dashboard**
 Phần Teams/Gemini thật là tùy chọn, làm sau cùng.
 
-Yêu cầu máy: Python **3.12+**, Node.js 18+ (đang dùng tốt với Node 24), PowerShell.
+Yêu cầu máy: Python **3.12** (bản chuẩn như CI — CI là mốc tham chiếu; 3.13 cũng dùng được), Node.js 18+ (đang dùng tốt với Node 24), PowerShell.
 Mở PowerShell tại thư mục gốc project (nơi có `pyproject.toml`).
 
 ---
@@ -12,10 +12,12 @@ Mở PowerShell tại thư mục gốc project (nơi có `pyproject.toml`).
 ## 0. Cài đặt — làm 1 lần duy nhất
 
 ```powershell
-py -3.12 -m venv .venv
+py -3.12 -m venv .venv   # máy chỉ có 3.13 thì dùng py -3.13
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev,api]"
+python -m pip install -e ".[dev,api,mariadb]" -c requirements.lock
 ```
+
+- `requirements.lock` ghim đúng version của mọi gói (kể cả ruff/mypy/bandit/pytest) — CI cài cùng một lệnh này. Sau khi pin thay đổi, xoá `.venv` và tạo lại từ đầu. Quy trình bump version dev tools: xem README, mục "Bumping the pinned dev tools".
 
 - `dev` = pytest/ruff/mypy/bandit. `teams` = fastapi/uvicorn/httpx (backend API cần).
 - Không cần cài DB server, không cần Docker (thư mục `docker/` hiện chỉ có README).
