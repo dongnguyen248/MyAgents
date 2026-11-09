@@ -43,7 +43,9 @@ const withLiveActivity = (workflow: Workflow): Workflow => {
       lastStopReason: null,
     },
   };
-  if (workflow.status !== 'RUNNING') {return base;}
+  if (workflow.status !== 'RUNNING') {
+    return base;
+  }
   const active = workflow.steps.find((s) => s.state === 'active');
   return {
     ...base,
@@ -64,6 +66,21 @@ const projectStore = structuredClone(projects);
 /** Mock hosting tokens: stored apart from the project views, like the backend. */
 const hostingTokenStore: Record<string, string> = {};
 const tokenHint = (token: string): string => (token.length >= 4 ? `…${token.slice(-4)}` : '…');
+
+const rememberHostingToken = (id: string, token?: string): void => {
+  if (token) {
+    hostingTokenStore[id] = token;
+  }
+};
+
+const applyHostingTokenInput = (id: string, input: ProjectProfileInput): void => {
+  if (input.clearHostingToken) {
+    delete hostingTokenStore[id];
+  }
+  if (input.hostingToken) {
+    hostingTokenStore[id] = input.hostingToken;
+  }
+};
 let modelSettings: {
   provider: string; model: string; baseUrl: string; apiKey: string;
   agentModels: Record<string, string>;
@@ -73,7 +90,9 @@ const cleanAgentModels = (raw?: Record<string, string>): Record<string, string> 
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw ?? {})) {
     const name = key.startsWith('agent-') ? key.slice('agent-'.length) : key;
-    if (MODEL_AGENTS.includes(name) && value.trim()) {out[name] = value.trim();}
+    if (MODEL_AGENTS.includes(name) && value.trim()) {
+      out[name] = value.trim();
+    }
   }
   return out;
 };
@@ -164,7 +183,9 @@ export const mockApi: FactoryApi = {
 
   getRunDiagnostics: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return delay(undefined);}
+    if (!workflow) {
+      return delay(undefined);
+    }
     const view = withLiveActivity(workflow);
     const diagnostics: RunDiagnostics = {
       runId: workflow.id,
@@ -208,14 +229,18 @@ export const mockApi: FactoryApi = {
 
   getRunReviews: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return delay(undefined);}
+    if (!workflow) {
+      return delay(undefined);
+    }
     // Mock mode has no AI review loop; report an empty history.
     return delay({ runId: workflow.id, stages: [] });
   },
 
   tickRun: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
     // Mock advance: complete the active step, activate the next one.
     const active = workflow.steps.findIndex((s) => s.state === 'active');
     if (active >= 0) {
@@ -229,7 +254,9 @@ export const mockApi: FactoryApi = {
         next.state = 'skipped';
         next = workflow.steps[active + 2];
       }
-      if (next) {next.state = 'active';}
+      if (next) {
+        next.state = 'active';
+      }
       else {workflow.status = 'COMPLETED';}
       workflow.updatedAt = new Date().toISOString();
       const task = taskStore.find((t) => t.id === workflow.taskId);
@@ -243,7 +270,9 @@ export const mockApi: FactoryApi = {
 
   retryRun: (runId) => {
     const previous = workflowStore.find((w) => w.id === runId);
-    if (!previous) {return Promise.reject(new Error(`Run '${runId}' not found`));}
+    if (!previous) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
     if (!['FAILED', 'CANCELLED', 'COMPLETED'].includes(previous.status)) {
       return Promise.reject(new Error('Only a finished run can be run again'));
     }
@@ -268,7 +297,9 @@ export const mockApi: FactoryApi = {
 
   resumeRun: (runId) => {
     const previous = workflowStore.find((w) => w.id === runId);
-    if (!previous) {return Promise.reject(new Error(`Run '${runId}' not found`));}
+    if (!previous) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
     if (previous.status !== 'FAILED') {
       return Promise.reject(new Error('Only a failed run can be resumed'));
     }
@@ -300,7 +331,9 @@ export const mockApi: FactoryApi = {
 
   cancelRun: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
     if (['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status)) {
       return Promise.reject(new Error('Only an active run can be cancelled'));
     }
@@ -316,15 +349,22 @@ export const mockApi: FactoryApi = {
 
   resumeEscalation: (runId, reason) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
-    if (!reason.trim()) {return Promise.reject(new Error('reason is required'));}
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
+    if (!reason.trim()) {
+      return Promise.reject(new Error('reason is required'));
+    }
     if (workflow.status !== 'ESCALATED') {
       return Promise.reject(new Error('Only an escalated run can be resumed with a new fix budget'));
     }
     workflow.status = 'RUNNING';
     workflow.waiting = { kind: 'STEP_RUNNING', since: new Date().toISOString(), reason: null, retryAt: null, budget: null, suggestedActions: [] };
     const fix = workflow.steps.find((s) => s.id === 'fix');
-    if (fix) { fix.state = 'active'; fix.label = 'Fix code · fix 1/3'; }
+    if (fix) {
+      fix.state = 'active';
+      fix.label = 'Fix code · fix 1/3';
+    }
     workflow.updatedAt = new Date().toISOString();
     return delay(workflow);
   },
@@ -332,8 +372,12 @@ export const mockApi: FactoryApi = {
 
   recoverRun: (runId, reason, retryInterrupted) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
-    if (!reason.trim()) {return Promise.reject(new Error('reason is required'));}
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
+    if (!reason.trim()) {
+      return Promise.reject(new Error('reason is required'));
+    }
     workflow.status = retryInterrupted ? 'RUNNING' : 'FAILED';
     if (!retryInterrupted) {
       workflow.error = { code: 'AGENT_EXECUTION_FAILED', message: 'Interrupted dispatch not replayed', category: 'AGENT' };
@@ -344,15 +388,21 @@ export const mockApi: FactoryApi = {
 
   driveRun: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
     workflow.driver = { alive: true, lastTickAt: new Date().toISOString(), lastStopReason: null };
     return delay(workflow);
   },
 
   failRun: (runId, reason) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
-    if (!reason.trim()) {return Promise.reject(new Error('reason is required'));}
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
+    if (!reason.trim()) {
+      return Promise.reject(new Error('reason is required'));
+    }
     workflow.status = 'FAILED';
     workflow.error = { code: 'OPERATOR_FAILED', message: `Failed by operator: ${reason}`, category: 'WORKFLOW' };
     workflow.updatedAt = new Date().toISOString();
@@ -361,7 +411,9 @@ export const mockApi: FactoryApi = {
 
   pauseRun: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
     workflow.status = 'PAUSED';
     workflow.waiting = { kind: 'PAUSED', since: new Date().toISOString(), reason: 'Paused by operator — no step will start until continued', retryAt: null, budget: null, suggestedActions: ['continue', 'cancel'] };
     workflow.updatedAt = new Date().toISOString();
@@ -370,7 +422,9 @@ export const mockApi: FactoryApi = {
 
   continueRun: (runId) => {
     const workflow = workflowStore.find((w) => w.id === runId);
-    if (!workflow) {return Promise.reject(new Error(`Run '${runId}' not found`));}
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
     workflow.status = 'RUNNING';
     workflow.waiting = { kind: 'STEP_RUNNING', since: new Date().toISOString(), reason: null, retryAt: null, budget: null, suggestedActions: [] };
     workflow.updatedAt = new Date().toISOString();
@@ -404,15 +458,16 @@ export const mockApi: FactoryApi = {
       ciFailures24h: 0,
       metrics: { activeAgents: 0, running: 0, completed: 0, failed: 0, successRate: 0, pendingApprovals: 0 },
     };
-    if (input.hostingToken) {hostingTokenStore[input.id] = input.hostingToken;}
+    rememberHostingToken(input.id, input.hostingToken);
     projectStore.push(project);
     return delay(project);
   },
   updateProject: (id, input) => {
     const index = projectStore.findIndex((p) => p.id === id);
-    if (index < 0) {return Promise.reject(new Error(`Project '${id}' not found`));}
-    if (input.clearHostingToken) {delete hostingTokenStore[id];}
-    if (input.hostingToken) {hostingTokenStore[id] = input.hostingToken;}
+    if (index < 0) {
+      return Promise.reject(new Error(`Project '${id}' not found`));
+    }
+    applyHostingTokenInput(id, input);
     const stored = hostingTokenStore[id];
     const updated: Project = {
       ...projectStore[index],
@@ -438,7 +493,9 @@ export const mockApi: FactoryApi = {
   },
   deleteProject: (id) => {
     const index = projectStore.findIndex((p) => p.id === id);
-    if (index < 0) {return Promise.reject(new Error(`Project '${id}' not found`));}
+    if (index < 0) {
+      return Promise.reject(new Error(`Project '${id}' not found`));
+    }
     projectStore.splice(index, 1);
     delete hostingTokenStore[id];
     return delay(undefined);
@@ -447,9 +504,15 @@ export const mockApi: FactoryApi = {
   listApprovals: () => delay(approvals),
   decideApproval: (id, input) => {
     const a = approvals.find((x) => x.id === id);
-    if (!a) {return Promise.reject(new Error(`Approval ${id} not found`));}
-    if (input.comment) {a.comments.push({ author: 'You (mock)', at: new Date().toISOString(), text: input.comment });}
-    if (input.decision !== 'COMMENT') {a.status = statusFor[input.decision] as ApprovalStatus;}
+    if (!a) {
+      return Promise.reject(new Error(`Approval ${id} not found`));
+    }
+    if (input.comment) {
+      a.comments.push({ author: 'You (mock)', at: new Date().toISOString(), text: input.comment });
+    }
+    if (input.decision !== 'COMMENT') {
+      a.status = statusFor[input.decision] as ApprovalStatus;
+    }
     if (input.decision === 'APPROVE') {
       // Mock auto-advance: an approved run continues on its own — steps
       // complete until the next approval step becomes active (or the
@@ -476,7 +539,9 @@ export const mockApi: FactoryApi = {
         }
         if (workflow.status === 'COMPLETED') {
           const task = taskStore.find((t) => t.id === workflow.taskId);
-          if (task) {task.status = 'COMPLETED';}
+          if (task) {
+            task.status = 'COMPLETED';
+          }
         }
         workflow.updatedAt = new Date().toISOString();
       }
@@ -518,7 +583,9 @@ export const mockApi: FactoryApi = {
       const unknown = Object.keys(input.agentModels).find(
         (k) => !MODEL_AGENTS.includes(k.startsWith('agent-') ? k.slice('agent-'.length) : k),
       );
-      if (unknown) {return Promise.reject(new Error(`Unknown agent '${unknown}' in agentModels (mock)`));}
+      if (unknown) {
+        return Promise.reject(new Error(`Unknown agent '${unknown}' in agentModels (mock)`));
+      }
     }
     modelSettings = {
       provider: input.provider,

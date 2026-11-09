@@ -349,16 +349,13 @@
   },
   "src/services/api/mockApi.ts": {
     "complexity": {
-      "count": 4
+      "count": 3
     },
     "max-depth": {
       "count": 3
     },
     "max-lines-per-function": {
       "count": 4
-    },
-    "max-statements-per-line": {
-      "count": 28
     },
     "no-magic-numbers": {
       "count": 8
