@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from asf.orchestrator.code_loop import TEST_ESCALATED_STAGE
+from asf.orchestrator.code_loop import FIX_STEP, TEST_ESCALATED_STAGE
 from asf.orchestrator.test_ops import (
     TestCommandReplacement,
     replace_test_commands,
@@ -163,4 +163,51 @@ def test_actions_are_rejected_away_from_the_test_stop(tmp_path):
             engine,
             TestCommandReplacement(run_id=run.id, commands=[["pytest"]], operator="dong"),
         )
+    store.close()
+
+
+def test_resume_at_code_fix_escalated_resets_the_fix_budget(tmp_path):
+    """The established semantics, pinned: a fresh budget on resume."""
+    engine, run, store, _gateways, _repo, _sandbox = harness(
+        tmp_path,
+        review_replies=[review()] * 4,
+        exits=[1, 1, 1, 1],
+        fix_replies=[change(), change(), change()],
+    )
+    run = _drive(engine, run)
+    assert run.state.stage == "CODE_FIX_ESCALATED"
+    assert run.state.revisions[FIX_STEP] == 3
+    run = engine.resume(run.id, reason="operator call", operator="dong")
+    assert run.state.stage == "CODE_FIX"
+    assert run.state.revisions[FIX_STEP] == 1
+    store.close()
+
+
+def test_resume_at_test_escalated_keeps_the_fix_budget(tmp_path):
+    """A retest resume must not refund fixes spent earlier.
+
+    One real FAIL spends fix 1; the fix's retest then collects
+    nothing (exit 5) and stops at TEST_ESCALATED with the counter
+    at 1. Resuming there returns to the test stage with the
+    counter still at 1 — the fresh-budget assignment in
+    engine.resume fires only when a resume lands on CODE_FIX,
+    and the state machine zeroes only the resumed stage's own
+    step counter.
+    """
+    engine, run, store, gateways, _repo, _sandbox = harness(
+        tmp_path,
+        review_replies=[review(), review()],
+        exits=[1, 5, 0],
+        fix_replies=[change()],
+    )
+    run = _drive(engine, run)
+    assert run.state.stage == TEST_ESCALATED_STAGE
+    assert run.state.revisions[FIX_STEP] == 1
+    run = engine.resume(run.id, reason="test files restored", operator="dong")
+    test_stage = next(step.stage for step in engine._definition.steps if step.agent_type == "test")
+    assert run.state.stage == test_stage
+    assert run.state.revisions[FIX_STEP] == 1
+    run = _drive(engine, run)
+    assert run.state.stage == "COMPLETED", [(e.code, e.message) for e in run.errors]
+    assert len(gateways["fix"].requests) == 1
     store.close()
