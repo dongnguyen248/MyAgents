@@ -15,6 +15,7 @@ ALLOWED_GATEWAY_ERROR_CODES: dict[str, tuple[str, bool]] = {
     "LLM_AUTH_FAILED": ("LLM", False),
     "LLM_CONTEXT_TOO_LONG": ("LLM", False),
     "LLM_BAD_REQUEST": ("LLM", False),
+    "LLM_MODEL_NOT_SUPPORTED": ("LLM", False),
     "INTEGRATION_UNAVAILABLE": ("INTEGRATION", True),
 }
 

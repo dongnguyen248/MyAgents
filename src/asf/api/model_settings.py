@@ -36,6 +36,7 @@ import logging
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from asf.api.model_ids import checked_model_id, normalize_stored_model_id
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse
@@ -203,6 +204,26 @@ class ModelSettings:
             return self._agent_models[key]
         return self._data["model"]
 
+    def model_source(
+        self,
+        agent: str | None = None,
+        tier: str | None = None,
+    ) -> str:
+        """Where `effective_model`'s answer comes from, same inputs.
+
+        One of "complex-tier" (a complex run on the shared model),
+        "agentModels.<agent>" (the agent's own override) or "shared"
+        (the shared model). Mirrors effective_model branch for
+        branch; it exists so an unsupported-model failure can name
+        the setting the operator has to fix.
+        """
+        if tier == "complex" and self._data["model"].strip():
+            return "complex-tier"
+        key = agent_key(agent)
+        if key is not None and key in self._agent_models:
+            return f"agentModels.{key}"
+        return "shared"
+
     def public(self) -> dict[str, Any]:
         key = self._data["apiKey"]
         return {
@@ -353,6 +374,70 @@ def build_configured_gateway(
     )
 
 
+def _base_url_host(settings: ModelSettings) -> str:
+    """The configured endpoint's hostname only, for error details.
+
+    Never the credentials, port, path or query of the URL: an error
+    detail is shown on dashboards and stored on runs, so it carries
+    just enough to recognise which endpoint rejected the model.
+    """
+    current = settings.current()
+    base = current["baseUrl"].strip() or DEFAULT_BASE_URLS.get(current["provider"], "")
+    try:
+        return urlsplit(base).hostname or ""
+    except ValueError:
+        return ""
+
+
+def _unsupported_model_message(model: str, source: str, key: str | None) -> str:
+    """The operator-facing sentence for an unsupported-model failure."""
+    if source == "complex-tier":
+        advice = (
+            "this run is classified complex, so the shared model is used; "
+            "fix it in Settings > Model"
+        )
+    elif source.startswith("agentModels."):
+        advice = (
+            f"fix it in Settings > Model > {(key or '').capitalize()} agent or clear the override"
+        )
+    else:
+        advice = "fix it in Settings > Model"
+    return f"Model '{model}' (source: {source}) is not supported by the provider; {advice}."
+
+
+def _unsupported_model_error(
+    error: ModelGatewayError,
+    settings: ModelSettings,
+    request: ModelRequest,
+    model: str,
+) -> ModelGatewayError:
+    """Rewrite an unsupported-model failure so it names its fix.
+
+    The provider's own message says only that the id is unknown;
+    the rewrite names the calling agent, the exact id sent, where
+    the id came from and the endpoint host that rejected it. The
+    API key and every part of the base URL beyond the hostname are
+    deliberately absent.
+    """
+    key = agent_key(request.metadata.get("agentId"))
+    tier = request.metadata.get("modelTier")
+    source = settings.model_source(key, tier)
+    sent = model or request.model or "(gateway default)"
+    details = {
+        **error.details,
+        "agent": key or "unknown",
+        "model": sent,
+        "source": source,
+        "provider": settings.current()["provider"],
+        "baseUrlHost": _base_url_host(settings),
+    }
+    return ModelGatewayError(
+        "LLM_MODEL_NOT_SUPPORTED",
+        _unsupported_model_message(sent, source, key),
+        details=details,
+    )
+
+
 class SettingsRoutingGateway:
     """ModelGateway that follows the current settings on every call."""
 
@@ -399,6 +484,13 @@ class SettingsRoutingGateway:
                 error.code,
                 error.message,
             )
+            if error.code == "LLM_MODEL_NOT_SUPPORTED":
+                raise _unsupported_model_error(
+                    error,
+                    self._settings,
+                    request,
+                    model,
+                ) from error
             raise
 
     def _resolve(self, current: dict[str, str]) -> ModelGateway | None:

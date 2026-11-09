@@ -10,6 +10,7 @@ same delay — no matter which adapter ASF is configured with:
 - connection error, 5xx     -> INTEGRATION_UNAVAILABLE (retryable)
 - 401 / 403                 -> LLM_AUTH_FAILED (permanent)
 - 400 about context length  -> LLM_CONTEXT_TOO_LONG (permanent)
+- 400 / 404 naming the model -> LLM_MODEL_NOT_SUPPORTED (permanent)
 - any other 4xx             -> LLM_BAD_REQUEST (permanent)
 
 LLM_INVALID_RESPONSE is deliberately absent from the table: it means
@@ -33,6 +34,7 @@ __all__ = [
     "backoff_delay",
     "http_error_code",
     "is_context_too_long",
+    "is_model_not_supported",
     "parse_retry_after",
 ]
 
@@ -50,7 +52,12 @@ _CONTEXT_MARKERS = (
 )
 
 
-def http_error_code(status: int, *, context_too_long: bool = False) -> str:
+def http_error_code(
+    status: int,
+    *,
+    context_too_long: bool = False,
+    model_not_supported: bool = False,
+) -> str:
     """Maps an HTTP failure status to a gateway error code."""
     if status == 429:
         return "LLM_RATE_LIMITED"
@@ -58,6 +65,8 @@ def http_error_code(status: int, *, context_too_long: bool = False) -> str:
         return "LLM_AUTH_FAILED"
     if status == 400 and context_too_long:
         return "LLM_CONTEXT_TOO_LONG"
+    if status in (400, 404) and model_not_supported:
+        return "LLM_MODEL_NOT_SUPPORTED"
     if status >= 500:
         return "INTEGRATION_UNAVAILABLE"
     return "LLM_BAD_REQUEST"
@@ -67,6 +76,28 @@ def is_context_too_long(*texts: str | None) -> bool:
     """True when a provider error code/message blames context length."""
     blob = " ".join(text for text in texts if text).lower()
     return any(marker in blob for marker in _CONTEXT_MARKERS)
+
+
+# Provider wordings that mark a 400/404 as "this model id is unknown
+# or unsupported" rather than a generically bad request.
+_MODEL_MARKERS = (
+    "model_not_supported",
+    "model_not_found",
+    "model not supported",
+    "model not found",
+)
+
+
+def is_model_not_supported(*texts: str | None) -> bool:
+    """True when a provider error names the model id as the problem.
+
+    The texts are the provider's error code and message plus, when
+    the caller has it, the raw body: the match is a case-insensitive
+    substring scan, so a non-JSON or truncated body still classifies
+    when the wording survives in the payload.
+    """
+    blob = " ".join(text for text in texts if text).lower()
+    return any(marker in blob for marker in _MODEL_MARKERS)
 
 
 def parse_retry_after(

@@ -136,6 +136,7 @@ class ModelsGatewayTests(unittest.TestCase):
             "LLM_AUTH_FAILED",
             "LLM_CONTEXT_TOO_LONG",
             "LLM_BAD_REQUEST",
+            "LLM_MODEL_NOT_SUPPORTED",
             "LLM_OUTPUT_TRUNCATED",
             "INTEGRATION_UNAVAILABLE",
         }
