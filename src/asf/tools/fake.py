@@ -135,7 +135,7 @@ def _apply_modify(
         relabels.append(AppliedRelabel(change.path, "modify", "create"))
         return
     if change.path not in working_files:
-        raise SandboxError(f"Cannot modify missing file: {change.path}", command=None)
+        raise SandboxError(f"apply failed: cannot modify missing file {change.path}", command=None)
     if change.content is None:
         raise SandboxError("modify operation requires content", command=None)
     working_files[change.path] = change.content

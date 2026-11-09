@@ -81,14 +81,18 @@ def test_modify_with_content_for_missing_file_fails_without_relabel(tmp_path: Pa
     # missing file is a hard failure naming the path, so a typo in the
     # changeset cannot silently create a file in the user's folder.
     changes = _changeset(FileChange(path="docs/decisions.md", operation="modify", content="v2\n"))
-    with pytest.raises(SandboxError, match="Cannot modify missing file: docs/decisions.md"):
+    with pytest.raises(
+        SandboxError, match="apply failed: cannot modify missing file docs/decisions.md"
+    ):
         apply_changeset(tmp_path, changes, allow_relabel=False)
     assert not (tmp_path / "docs" / "decisions.md").exists()
 
 
 def test_local_sandbox_is_strict_by_default(tmp_path: Path) -> None:
     changes = _changeset(FileChange(path="docs/decisions.md", operation="modify", content="v2\n"))
-    with pytest.raises(SandboxError, match="Cannot modify missing file: docs/decisions.md"):
+    with pytest.raises(
+        SandboxError, match="apply failed: cannot modify missing file docs/decisions.md"
+    ):
         LocalSandbox(tmp_path).run([], changes, "main")
     assert not (tmp_path / "docs" / "decisions.md").exists()
 

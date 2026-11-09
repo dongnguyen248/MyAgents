@@ -373,6 +373,48 @@ def test_runner_errors_are_safe(mode: str) -> None:
     assert bool(private not in result.model_dump_json()), "Exception text leaked"
 
 
+def test_sandbox_error_cause_reaches_the_agent_error() -> None:
+    cause = SandboxError(
+        "apply failed: cannot modify missing file docs/decisions.md",
+        details={
+            "phase": "start",
+            "exceptionType": "SandboxError",
+            "cwd": "/worktrees/run-1",
+            "cwdExists": True,
+        },
+    )
+    result = RunnerAgent(runtime(), FakeSandbox(error=cause)).execute(request())
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.code == "SANDBOX_ERROR"
+    assert error.message == "apply failed: cannot modify missing file docs/decisions.md"
+    assert error.details["phase"] == "start"
+    assert error.details["exceptionType"] == "SandboxError"
+    assert error.details["cwd"] == "/worktrees/run-1"
+    assert error.details["cwdExists"] is True
+
+
+def test_unexpected_sandbox_exception_keeps_its_type() -> None:
+    sandbox = FakeSandbox(error=RuntimeError("kaput"))
+    result = RunnerAgent(runtime(), sandbox).execute(request())
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.code == "SANDBOX_ERROR"
+    assert error.message == "kaput"
+    assert error.details == {"phase": "unknown", "exceptionType": "RuntimeError"}
+
+
+def test_timeout_error_carries_command_name_and_phase() -> None:
+    cause = CommandTimeoutError(CommandSpec(("pytest", "-q"), timeout_seconds=3))
+    result = RunnerAgent(runtime(), FakeSandbox(error=cause)).execute(request())
+    assert result.status == "FAILED"
+    error = result.errors[0]
+    assert error.code == "COMMAND_TIMEOUT"
+    assert error.details["phase"] == "run"
+    assert error.details["commandName"] == "pytest"
+    assert error.details["elapsedMs"] == 3000
+
+
 @pytest.mark.parametrize("duration,timed_out", [(120001, False), (1, True)])
 def test_result_timeout_is_infrastructure_failure(duration: int, timed_out: bool) -> None:
     sandbox = FakeSandbox(SandboxResult((CommandResult(0, "", "", duration, timed_out),)))
