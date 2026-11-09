@@ -251,3 +251,23 @@ def test_run_pipeline_refuses_to_open_when_description_is_invalid(
     # Nothing was pushed and nothing was opened.
     assert provider.calls == []
     assert provider.description is None
+
+
+def test_run_pipeline_description_states_a_recorded_test_skip(provider: FakeProvider):
+    request = _request("run-pipeline")
+    request = request.model_copy(
+        update={
+            "context": {
+                **request.context,
+                "testDecision": {
+                    "action": "skip",
+                    "operator": "dong",
+                    "reason": "Docs-only change",
+                },
+            }
+        }
+    )
+    result = _actions()["run-pipeline"](request)
+    assert result.status == "SUCCESS"
+    assert provider.description is not None
+    assert "Tests skipped by dong: Docs-only change" in provider.description
