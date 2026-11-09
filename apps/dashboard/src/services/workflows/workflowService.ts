@@ -21,6 +21,14 @@ export const resumeEscalation = (id: string, reason: string, guidance?: string) 
 /** Approve an escalated gate's artifact anyway; resolves to its workflow. */
 export const approveEscalation = (id: string, reason: string) => api.approveEscalation(id, reason);
 
+/** Skip a no-tests run's test step (reason required); scope 'run' covers the rest of the run. */
+export const skipTests = (id: string, reason: string, scope?: 'item' | 'run') =>
+  api.skipTests(id, reason, scope);
+
+/** Replace a no-tests run's test commands (run-scoped) and retest. */
+export const replaceTestCommands = (id: string, commands: string[][], reason?: string) =>
+  api.replaceTestCommands(id, commands, reason);
+
 /** The run's AI review rounds per gated stage (Phase 12). */
 export const getRunReviews = (id: string) => api.getRunReviews(id);
 

@@ -117,3 +117,31 @@ test('testCommandError mirrors the backend argv rules', () => {
   const many = Array.from({ length: 21 }, () => ['pytest', '-q']);
   assert.match(testCommandError(many) ?? '', /at most 20/);
 });
+
+import { readFileSync } from 'node:fs';
+
+const panelSource = readFileSync(
+  new URL('../src/components/workflows/EscalatedPanel.tsx', import.meta.url),
+  'utf8',
+);
+const testStopSource = readFileSync(
+  new URL('../src/components/workflows/TestStopPanel.tsx', import.meta.url),
+  'utf8',
+);
+
+test('the escalation panel derives its buttons and delegates test stops', () => {
+  assert.match(panelSource, /escalationButtonsFor\(workflow\.waiting\)/);
+  assert.match(panelSource, /buttons\.includes\('resume'\)/);
+  assert.match(panelSource, /buttons\.includes\('approve'\)/);
+  assert.match(panelSource, /isTestStop\(workflow\)/);
+  assert.match(panelSource, /TestStopPanel/);
+});
+
+test('the test-stop panel offers both skip scopes and never shows a budget', () => {
+  assert.match(testStopSource, /Skip tests for this item/);
+  assert.match(testStopSource, /Skip tests for the rest of this run/);
+  assert.match(testStopSource, /Replace test command/);
+  assert.match(testStopSource, /parseTestCommands/);
+  assert.match(testStopSource, /testCommandError/);
+  assert.doesNotMatch(testStopSource, /\.budget/);
+});

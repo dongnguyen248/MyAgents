@@ -57,13 +57,15 @@ export interface WorkflowWaiting {
   retryAt?: string | null;
   budget?: { used: number; max: number } | null;
   suggestedActions: string[];
+  /** For a no-tests stop: the run's baked test commands (redacted argv lists). */
+  testCommands?: string[][];
   /** For AI_REVIEW: the gated stage under review (e.g. 'SPEC'). */
   stage?: string;
   /** For AI_REVIEW: the current review round (1-based). */
   round?: number;
   /** For AI_REVIEW: the effective revision cap the loop escalates at. */
   maxRounds?: number;
-  /** For ESCALATED: MAX_REVISIONS | NO_PROGRESS | REVIEWER_FAILED | BUDGET, when known. */
+  /** For ESCALATED: MAX_REVISIONS | NO_PROGRESS | REVIEWER_FAILED | BUDGET | NO_TESTS, when known. */
   escalationReason?: string | null;
   /** For ESCALATED: open BLOCKER findings in the latest AI review of the stage. */
   openBlockers?: number;
