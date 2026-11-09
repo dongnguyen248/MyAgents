@@ -27,6 +27,7 @@ from asf.integrations.retry import (
     effective_timeout,
     http_error_code,
     is_context_too_long,
+    is_model_not_supported,
     parse_retry_after,
 )
 from asf.models.errors import ModelGatewayError
@@ -199,10 +200,7 @@ class OpenAICompatibleGateway:
         )
         if status >= 400:
             detail, provider_code = _provider_error(raw)
-            code = http_error_code(
-                status,
-                context_too_long=is_context_too_long(provider_code, detail),
-            )
+            code = _error_code(status, provider_code, detail, raw)
             raise ModelGatewayError(
                 code,
                 f"Model provider error (HTTP {status})" + (f": {detail}" if detail else ""),
@@ -309,3 +307,22 @@ def _provider_error(body: bytes) -> tuple[str, str]:
         if isinstance(data.get("message"), str):
             return data["message"], ""
     return "", ""
+
+
+def _error_code(status: int, provider_code: str, detail: str, raw: bytes) -> str:
+    """The gateway error code for a failed provider response.
+
+    The raw body joins the model-marker scan: when the body is not
+    the provider's usual JSON envelope the parsed code/message come
+    back empty, while the wording that names the model id is still
+    in the payload.
+    """
+    return http_error_code(
+        status,
+        context_too_long=is_context_too_long(provider_code, detail),
+        model_not_supported=is_model_not_supported(
+            provider_code,
+            detail,
+            raw.decode("utf-8", "replace"),
+        ),
+    )

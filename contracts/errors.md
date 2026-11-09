@@ -25,6 +25,7 @@ Below is the standard catalog of built-in platform error codes. Each code maps t
 | LLM_AUTH_FAILED | LLM | false | provider rejected the credentials (HTTP 401/403) |
 | LLM_CONTEXT_TOO_LONG | LLM | false | request exceeds the model's context window |
 | LLM_BAD_REQUEST | LLM | false | provider rejected the request as invalid (other 4xx) |
+| LLM_MODEL_NOT_SUPPORTED | LLM | false | the requested model id is unknown or unsupported by the provider (HTTP 400/404 naming the model, e.g. model_not_supported / model_not_found); fix the model id in Settings |
 | GIT_CONFLICT | GIT | false | merge or push conflict |
 | GIT_OPERATION_FAILED | GIT | true | source-control operation failed |
 | CI_RUN_FAILED | CI | false | pipeline finished with failure |
