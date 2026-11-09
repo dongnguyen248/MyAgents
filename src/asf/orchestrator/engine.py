@@ -31,6 +31,7 @@ from asf.orchestrator.ports import (
     ExecutionStore,
     MetricsRecorder,
 )
+from asf.orchestrator.quality_routing import apply_quality_result
 from asf.orchestrator.registry import AgentRegistry
 from asf.state_machine.graph import build_graph
 from asf.state_machine.machine import InvalidTransition, RunState, allowed_triggers, apply
@@ -666,24 +667,7 @@ class Orchestrator:
         verdict = result.output.get("verdict") if isinstance(result.output, dict) else None
         expected_verdict = {"review": "APPROVE", "test": "PASS"}.get(step.agent_type or "")
         if self._code_loop is not None and step.agent_type in ("review", "test"):
-            allowed = (
-                ("APPROVE", "CHANGES_REQUESTED")
-                if step.agent_type == "review"
-                else ("PASS", "FAIL")
-            )
-            if verdict not in allowed:
-                self._fail(run, "VALIDATION_FAILED", "Invalid quality verdict", "VALIDATION")
-                return
-            if not self._linked_output(run, step, result):
-                return
-            self._publish_artifacts(run, result)
-            run.retry_attempts = 0
-            if verdict != expected_verdict:
-                self._request_fix(run)
-            elif step.agent_type == "test" and self._next_item(run):
-                return
-            else:
-                run.state = apply(self._graph, run.state, Trigger.COMPLETE)
+            apply_quality_result(self, run, step, result)
             return
         if (verdict is not None and verdict not in ("PASS", "APPROVE")) or (
             expected_verdict is not None and verdict != expected_verdict

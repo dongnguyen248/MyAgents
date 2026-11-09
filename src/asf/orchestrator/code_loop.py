@@ -14,6 +14,7 @@ FIX_STEP = "__code_fix"
 FIX_STAGE = "CODE_FIX"
 REWORK_STAGE = "CODE_REWORK"
 ESCALATED_STAGE = "CODE_FIX_ESCALATED"
+TEST_ESCALATED_STAGE = "TEST_ESCALATED"
 
 
 class CodeLoopPolicy(ConfigModel):
@@ -42,43 +43,77 @@ def code_steps(definition: WorkflowDefinition) -> dict[str, WorkflowStepDef]:
     return result
 
 
+_LOOP_STAGES = (FIX_STAGE, REWORK_STAGE, ESCALATED_STAGE, TEST_ESCALATED_STAGE)
+
+
 def loop_graph(
     graph: StageGraph,
     definition: WorkflowDefinition,
     policy: CodeLoopPolicy,
 ) -> StageGraph:
     steps = code_steps(definition)
-    names = {stage.name for stage in graph.stages}
-    if names & {FIX_STAGE, REWORK_STAGE, ESCALATED_STAGE}:
+    if {stage.name for stage in graph.stages} & set(_LOOP_STAGES):
         raise ValueError("Workflow stages collide with code-loop stages")
     if any(step.id == FIX_STEP for step in definition.steps):
         raise ValueError("Workflow step ID collides with the code-loop step")
-    stages = (
-        *graph.stages,
+    stages = (*graph.stages, *_loop_stages(steps))
+    edges = [*graph.edges, *_loop_edges(graph, steps)]
+    return StageGraph(stages, tuple(edges), {**graph.max_revisions, FIX_STEP: policy.max_fixes})
+
+
+def _loop_stages(steps: dict[str, WorkflowStepDef]) -> tuple[StageInfo, ...]:
+    return (
         StageInfo(FIX_STAGE, StageKind.STEP, FIX_STEP),
         StageInfo(REWORK_STAGE, StageKind.REJECTED, FIX_STEP),
         StageInfo(ESCALATED_STAGE, StageKind.ESCALATED, FIX_STEP),
+        StageInfo(TEST_ESCALATED_STAGE, StageKind.ESCALATED, steps["test"].id),
     )
-    edges = list(graph.edges)
-    for kind in ("review", "test"):
-        edges.append(Edge(steps[kind].stage, Trigger.REQUEST_CHANGES, REWORK_STAGE))
-    edges.extend(
-        [
-            Edge(REWORK_STAGE, Trigger.REVISE, FIX_STAGE, "within_limit"),
-            Edge(REWORK_STAGE, Trigger.REVISE, ESCALATED_STAGE, "limit_reached"),
-            Edge(ESCALATED_STAGE, Trigger.RESUME, FIX_STAGE),
-            Edge(FIX_STAGE, Trigger.COMPLETE, steps["review"].stage),
-            Edge(steps["test"].stage, Trigger.ADVANCE, steps["implement"].stage),
-        ]
-    )
-    for stage in (FIX_STAGE, REWORK_STAGE, ESCALATED_STAGE):
+
+
+def _loop_edges(graph: StageGraph, steps: dict[str, WorkflowStepDef]) -> list[Edge]:
+    edges = [
+        Edge(steps["review"].stage, Trigger.REQUEST_CHANGES, REWORK_STAGE),
+        Edge(steps["test"].stage, Trigger.REQUEST_CHANGES, REWORK_STAGE),
+        Edge(REWORK_STAGE, Trigger.REVISE, FIX_STAGE, "within_limit"),
+        Edge(REWORK_STAGE, Trigger.REVISE, ESCALATED_STAGE, "limit_reached"),
+        Edge(ESCALATED_STAGE, Trigger.RESUME, FIX_STAGE),
+        Edge(FIX_STAGE, Trigger.COMPLETE, steps["review"].stage),
+        Edge(steps["test"].stage, Trigger.ADVANCE, steps["implement"].stage),
+        *_test_escalation_edges(graph, steps),
+    ]
+    for stage in _LOOP_STAGES:
         edges.extend(
             [
                 Edge(stage, Trigger.FAIL, "FAILED"),
                 Edge(stage, Trigger.CANCEL, "CANCELLED"),
             ]
         )
-    return StageGraph(stages, tuple(edges), {**graph.max_revisions, FIX_STEP: policy.max_fixes})
+    return edges
+
+
+def _test_escalation_edges(graph: StageGraph, steps: dict[str, WorkflowStepDef]) -> list[Edge]:
+    """The NO_TESTS operator stop, hung off the test stage.
+
+    ESCALATE parks the run at TEST_ESCALATED; RESUME returns for a
+    retest with replaced commands; COMPLETE leaves by the test
+    stage's own exit (the skip path), and ADVANCE serves the
+    multi-item skip through the same bookkeeping a pass uses.
+    """
+    test_stage = steps["test"].stage
+    after_test = next(
+        (
+            edge.target
+            for edge in graph.edges
+            if edge.source == test_stage and edge.trigger == Trigger.COMPLETE
+        ),
+        "COMPLETED",
+    )
+    return [
+        Edge(test_stage, Trigger.ESCALATE, TEST_ESCALATED_STAGE),
+        Edge(TEST_ESCALATED_STAGE, Trigger.RESUME, test_stage),
+        Edge(TEST_ESCALATED_STAGE, Trigger.COMPLETE, after_test),
+        Edge(TEST_ESCALATED_STAGE, Trigger.ADVANCE, steps["implement"].stage),
+    ]
 
 
 def ordered_task_ids(artifact: Artifact) -> list[str]:
