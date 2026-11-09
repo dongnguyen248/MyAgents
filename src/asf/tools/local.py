@@ -416,10 +416,12 @@ class LocalSandbox:
         *,
         settings: SandboxSettings | None = None,
         base_env: Mapping[str, str] | None = None,
+        allow_relabel: bool = False,
     ) -> None:
         self._root = Path(root)
         self._settings = settings or SandboxSettings()
         self._base_env = base_env
+        self._allow_relabel = allow_relabel
 
     def run(
         self,
@@ -429,7 +431,7 @@ class LocalSandbox:
         *,
         fail_fast: bool = True,
     ) -> SandboxResult:
-        relabels = apply_changeset(self._root, changes)
+        relabels = apply_changeset(self._root, changes, allow_relabel=self._allow_relabel)
         return self._run_commands(commands, fail_fast=fail_fast, relabels=relabels)
 
     def _run_commands(
@@ -1023,6 +1025,7 @@ class WorkspaceSandbox:
         return LocalSandbox(
             root,
             settings=self._workspace.current_sandbox_settings(),
+            allow_relabel=True,
         ).run(commands, changes, ref, fail_fast=fail_fast)
 
     def _run_direct(
@@ -1058,6 +1061,6 @@ class WorkspaceSandbox:
             root,
             settings=self._workspace.current_sandbox_settings(),
         )
-        relabels = apply_changeset(root, changes)
+        relabels = apply_changeset(root, changes, allow_relabel=False)
         journal.note_written(changes)
         return sandbox._run_commands(commands, fail_fast=fail_fast, relabels=relabels)
