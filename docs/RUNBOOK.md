@@ -4,7 +4,7 @@ Thứ tự chạy tổng thể:
 **Cài đặt (1 lần) → Kiểm chứng (tests) → Harness (offline) → Backend API → Dashboard**
 Phần Teams/Gemini thật là tùy chọn, làm sau cùng.
 
-Yêu cầu máy: Python **3.12+**, Node.js 18+ (đang dùng tốt với Node 24), PowerShell.
+Yêu cầu máy: Python **3.12** (bản chuẩn như CI — CI là mốc tham chiếu; 3.13 cũng dùng được), Node.js 18+ (đang dùng tốt với Node 24), PowerShell.
 Mở PowerShell tại thư mục gốc project (nơi có `pyproject.toml`).
 
 ---
@@ -12,7 +12,7 @@ Mở PowerShell tại thư mục gốc project (nơi có `pyproject.toml`).
 ## 0. Cài đặt — làm 1 lần duy nhất
 
 ```powershell
-py -3.12 -m venv .venv
+py -3.12 -m venv .venv   # máy chỉ có 3.13 thì dùng py -3.13
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev,api,mariadb]" -c requirements.lock
 ```

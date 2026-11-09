@@ -169,6 +169,10 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,api,mariadb]" -c requirements.lock
 ```
 
+Use Python 3.12, the interpreter CI runs — CI is the reference.
+Python 3.13 is expected to work (it is what the maintainer's
+machine has), but the gates are verified on 3.12.
+
 Regenerate the lock after changing `pyproject.toml`:
 
 ```bash
