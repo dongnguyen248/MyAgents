@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import type { ModelSettings, ModelTestResult } from '../../types/settings';
 import { testModelSettings, updateModelSettings } from '../../features/settings';
+import {
+  API_KEY_INPUT_ATTRS,
+  BASE_URL_INPUT_NAME,
+  SHARED_MODEL_INPUT_NAME,
+  agentModelInputName,
+  modelTextInputAttrs,
+} from './modelFormAttrs';
 
 const PROVIDERS: { value: string; label: string }[] = [
   { value: 'scripted', label: 'Scripted demo replies (no API key)' },
@@ -142,6 +149,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
         <label className="field">
           <span>Model (shared default)</span>
           <input
+            {...modelTextInputAttrs(SHARED_MODEL_INPUT_NAME)}
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder={MODEL_PLACEHOLDERS[provider] ?? '—'}
@@ -153,6 +161,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
         <label className="field block">
           <span>Base URL{provider === 'custom' ? '' : ' (optional override)'}</span>
           <input
+            {...modelTextInputAttrs(BASE_URL_INPUT_NAME)}
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder={DEFAULT_BASE_URLS[provider] ?? 'https://your-endpoint/v1'}
@@ -172,6 +181,7 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
               <span>{a.label}</span>
               <div className="agent-model-row">
                 <input
+                  {...modelTextInputAttrs(agentModelInputName(a.key))}
                   value={agentModels[a.key] ?? ''}
                   onChange={(e) =>
                     setAgentModels((prev) => ({ ...prev, [a.key]: e.target.value }))
@@ -197,11 +207,11 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
           <label className="field block">
             <span>API key</span>
             <input
+              {...API_KEY_INPUT_ATTRS}
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={saved.keyConfigured ? 'Leave blank to keep the stored key' : 'Paste the provider API key'}
-              autoComplete="off"
             />
           </label>
           <p className="muted small">
