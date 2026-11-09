@@ -155,7 +155,8 @@ def missing_working_directory(root: Path, command: CommandSpec) -> SandboxError:
     name = command.argv[0] if command.argv else None
     return SandboxError(
         f"Working directory does not exist: {root} "
-        "(it may have been removed, e.g. by antivirus software)",
+        "(it may have been moved or removed; one possible cause is "
+        "antivirus software)",
         command=command,
         failure=SandboxFailure("start", "SandboxError", command_name=name, cwd=root, elapsed_ms=0),
     )
@@ -194,6 +195,15 @@ def capture_failure(command: CommandSpec, root: Path, elapsed_ms: int) -> Sandbo
             elapsed_ms=elapsed_ms,
         ),
     )
+
+
+class SandboxApplyError(SandboxError):
+    """A change set failed validation against the working tree.
+
+    Deterministic: the same change set against the same tree fails
+    identically on every retry, so agents report it under a
+    non-retryable code instead of SANDBOX_ERROR.
+    """
 
 
 class CommandTimeoutError(SandboxError):

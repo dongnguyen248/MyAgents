@@ -9,7 +9,7 @@ from asf.tools.changeset import ChangeSet, FileChange
 from asf.tools.ports import (
     AppliedRelabel,
     RepositoryError,
-    SandboxError,
+    SandboxApplyError,
     SandboxFailure,
 )
 
@@ -35,7 +35,7 @@ def resolve_within(root: Path, path: str) -> Path:
 
 
 def _apply_failure(root: Path) -> SandboxFailure:
-    return SandboxFailure("start", "SandboxError", cwd=root)
+    return SandboxFailure("start", "SandboxApplyError", cwd=root)
 
 
 def _operation_for_missing(
@@ -54,12 +54,12 @@ def _operation_for_missing(
         )
         return "create"
     if change.operation == "modify":
-        raise SandboxError(
+        raise SandboxApplyError(
             f"apply failed: cannot modify missing file {change.path}",
             command=None,
             failure=_apply_failure(root),
         )
-    raise SandboxError(
+    raise SandboxApplyError(
         f"Cannot {change.operation} missing file: {change.path}",
         command=None,
         failure=_apply_failure(root),
@@ -75,10 +75,12 @@ def _planned_targets(
         try:
             target = resolve_within(root, change.path)
         except RepositoryError as error:
-            raise SandboxError(str(error), command=None, failure=_apply_failure(root)) from None
+            raise SandboxApplyError(
+                str(error), command=None, failure=_apply_failure(root)
+            ) from None
         exists = target.is_file()
         if change.operation == "create" and exists:
-            raise SandboxError(
+            raise SandboxApplyError(
                 f"Cannot create existing file: {change.path}",
                 command=None,
                 failure=_apply_failure(root),
@@ -109,9 +111,10 @@ def apply_changeset(
     A delete of a missing file always fails, naming the path.
     """
     if not root.is_dir():
-        raise SandboxError(
+        raise SandboxApplyError(
             f"apply failed: working directory does not exist: {root} "
-            "(it may have been removed, e.g. by antivirus software)",
+            "(it may have been moved or removed; one possible cause is "
+            "antivirus software)",
             command=None,
             failure=_apply_failure(root),
         )

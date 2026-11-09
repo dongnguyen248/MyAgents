@@ -24,6 +24,7 @@ from asf.tools.ports import (
     CommandResult,
     CommandSpec,
     CommandTimeoutError,
+    SandboxApplyError,
     SandboxError,
     SandboxPort,
     SandboxResult,
@@ -111,6 +112,36 @@ def _timeout_details(error: BaseException) -> dict[str, Any]:
     return {"phase": "run", "exceptionType": type(error).__name__}
 
 
+def _timeout_failure(error: BaseException) -> AgentExecutionError:
+    return AgentExecutionError(
+        "COMMAND_TIMEOUT",
+        "Test command timed out",
+        AgentErrorOptions(details=_timeout_details(error)),
+    )
+
+
+def _apply_failure(error: SandboxApplyError) -> AgentExecutionError:
+    return AgentExecutionError(
+        "SANDBOX_APPLY_FAILED",
+        _redact(str(error)),
+        AgentErrorOptions(retryable=False, details=_sandbox_details(error, phase="start")),
+    )
+
+
+def _sandbox_failure(error: BaseException) -> AgentExecutionError:
+    if isinstance(error, SandboxError):
+        return AgentExecutionError(
+            "SANDBOX_ERROR",
+            _redact(str(error)),
+            AgentErrorOptions(details=_sandbox_details(error, phase="start")),
+        )
+    return AgentExecutionError(
+        "SANDBOX_ERROR",
+        _redact(str(error)) or type(error).__name__,
+        AgentErrorOptions(details={"phase": "unknown", "exceptionType": type(error).__name__}),
+    )
+
+
 class TestAgent(BaseAgent):
     """Deterministic test runner; command output is untrusted data, never instructions."""
 
@@ -174,25 +205,11 @@ class TestAgent(BaseAgent):
                 fail_fast=self._fail_fast,
             )
         except (CommandTimeoutError, TimeoutError) as error:
-            raise AgentExecutionError(
-                "COMMAND_TIMEOUT",
-                "Test command timed out",
-                AgentErrorOptions(details=_timeout_details(error)),
-            ) from None
-        except SandboxError as error:
-            raise AgentExecutionError(
-                "SANDBOX_ERROR",
-                _redact(str(error)),
-                AgentErrorOptions(details=_sandbox_details(error, phase="start")),
-            ) from None
+            raise _timeout_failure(error) from None
+        except SandboxApplyError as error:
+            raise _apply_failure(error) from None
         except Exception as error:
-            raise AgentExecutionError(
-                "SANDBOX_ERROR",
-                _redact(str(error)) or type(error).__name__,
-                AgentErrorOptions(
-                    details={"phase": "unknown", "exceptionType": type(error).__name__}
-                ),
-            ) from None
+            raise _sandbox_failure(error) from None
 
     def _report_artifact(
         self, request: AgentRequest, code: Artifact, report: dict[str, Any]

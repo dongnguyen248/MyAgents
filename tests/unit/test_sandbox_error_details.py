@@ -8,12 +8,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
+from asf.configuration.platform import RetryPolicySettings
 from asf.tools.changeset import ChangeSet, FileChange
 from asf.tools.changeset_apply import apply_changeset
 from asf.tools.fake import ScriptedSandbox
 from asf.tools.local import LocalSandbox, LocalWorkspace, WorkspaceSandbox
-from asf.tools.ports import CommandSpec, CommandTimeoutError, SandboxError
+from asf.tools.ports import (
+    CommandSpec,
+    CommandTimeoutError,
+    SandboxApplyError,
+    SandboxError,
+)
 from asf.tools.worktree import GitWorktreeWorkspace, WorktreeError
 
 _CREATE = ChangeSet(changes=[FileChange(path="scratch.txt", operation="create", content="x\n")])
@@ -26,9 +33,10 @@ def test_apply_modify_missing_carries_its_cause(tmp_path: Path) -> None:
     with pytest.raises(SandboxError) as caught:
         apply_changeset(tmp_path, changes, allow_relabel=False)
     error = caught.value
+    assert isinstance(error, SandboxApplyError)
     assert str(error) == "apply failed: cannot modify missing file docs/decisions.md"
     assert error.details["phase"] == "start"
-    assert error.details["exceptionType"] == "SandboxError"
+    assert error.details["exceptionType"] == "SandboxApplyError"
     assert error.details["cwd"] == str(tmp_path)
     assert error.details["cwdExists"] is True
 
@@ -38,10 +46,30 @@ def test_apply_into_a_missing_root_is_a_distinct_failure(tmp_path: Path) -> None
     with pytest.raises(SandboxError) as caught:
         apply_changeset(missing, _CREATE, allow_relabel=True)
     error = caught.value
+    assert isinstance(error, SandboxApplyError)
     assert "working directory does not exist" in str(error)
     assert str(missing) in str(error)
     assert "antivirus" in str(error)
     assert error.details["cwdExists"] is False
+
+
+def test_every_apply_validation_failure_is_an_apply_error(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("base\n", encoding="utf-8")
+    cases = [
+        ChangeSet(changes=[FileChange(path="app.py", operation="create", content="x\n")]),
+        ChangeSet(changes=[FileChange(path="ghost.py", operation="delete", content=None)]),
+        ChangeSet(changes=[FileChange(path="../evil.py", operation="create", content="x\n")]),
+    ]
+    for changes in cases:
+        with pytest.raises(SandboxApplyError):
+            apply_changeset(tmp_path, changes, allow_relabel=True)
+
+
+def test_apply_failed_is_not_a_configurable_retry_code() -> None:
+    # SANDBOX_APPLY_FAILED is deliberately absent from the valid
+    # retryOn set, so a workflow cannot opt back into retrying it.
+    with pytest.raises(ValidationError, match="SANDBOX_APPLY_FAILED"):
+        RetryPolicySettings(max_attempts=2, retry_on=["SANDBOX_APPLY_FAILED"])
 
 
 def test_spawn_failure_carries_errno_and_the_command_name_only(
