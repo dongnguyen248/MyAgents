@@ -40,7 +40,9 @@ jobs:
         # MariaDB driver at module level, so CI needs every extra —
         # with only [dev] collection fails on a clean machine even
         # though developer venvs (which have all extras) pass.
-        run: pip install -e ".[dev,api,mariadb]"
+        # -c requirements.lock pins every resolved version (dev tools
+        # included) to the same set the docs install locally.
+        run: pip install -e ".[dev,api,mariadb]" -c requirements.lock
       - name: Ruff lint
         run: ruff check src tests harness
       - name: Ruff format

@@ -29,12 +29,12 @@ api = [
     "httpx>=0.28.1,<1",
 ]
 dev = [
-    "pytest",
-    "pytest-cov",
-    "ruff",
-    "mypy",
-    "types-PyYAML",
-    "bandit",
+    "pytest==9.2.0",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.4",
+    "mypy==2.4.1",
+    "types-PyYAML==6.0.12.20261103",
+    "bandit==1.9.4",
 ]
 
 [project.scripts]

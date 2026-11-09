@@ -14,8 +14,10 @@ Mở PowerShell tại thư mục gốc project (nơi có `pyproject.toml`).
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev,api]"
+python -m pip install -e ".[dev,api,mariadb]" -c requirements.lock
 ```
+
+- `requirements.lock` ghim đúng version của mọi gói (kể cả ruff/mypy/bandit/pytest) — CI cài cùng một lệnh này. Sau khi pin thay đổi, xoá `.venv` và tạo lại từ đầu. Quy trình bump version dev tools: xem README, mục "Bumping the pinned dev tools".
 
 - `dev` = pytest/ruff/mypy/bandit. `teams` = fastapi/uvicorn/httpx (backend API cần).
 - Không cần cài DB server, không cần Docker (thư mục `docker/` hiện chỉ có README).

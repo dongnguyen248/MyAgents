@@ -150,19 +150,56 @@ All three live in `config/platform.yaml` (see
 ## Dependency lock
 
 `requirements.lock` pins the full dependency set (all extras) for
-reproducible installs: `pip install -r requirements.lock`. Regenerate
-it after changing `pyproject.toml`:
+reproducible installs. The dev tools (ruff, mypy, bandit, pytest,
+pytest-cov, types-PyYAML) are additionally pinned with exact `==`
+versions in the `dev` extra in `pyproject.toml`, and the lock
+carries the same versions — the two must never disagree. Install
+with the lock as constraints, exactly as CI does:
+
+```bash
+pip install -e ".[dev,api,mariadb]" -c requirements.lock
+```
+
+To recreate a local venv after the pins change (an existing venv
+keeps its old tool versions otherwise):
+
+```powershell
+Remove-Item -Recurse -Force .venv
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,api,mariadb]" -c requirements.lock
+```
+
+Regenerate the lock after changing `pyproject.toml`:
 
 ```bash
 uv pip compile pyproject.toml --all-extras --python-version 3.12 -o requirements.lock
 ```
+
+### Bumping the pinned dev tools
+
+Tool versions only move in a dedicated pull request whose only job
+is the bump:
+
+1. Change the `==` pins in the `dev` extra in `pyproject.toml`.
+2. Update the matching entries in `requirements.lock` (or
+   regenerate it with the `uv pip compile` command above).
+3. Run every gate (ruff, format, mypy, bandit, pytest, the code
+   structure ratchet) in a clean clone or worktree with a fresh
+   venv — never in a venv that still holds the old tools.
+4. Fix any new findings the new tool versions report in the same
+   PR; do not let them ride along silently or get fixed "later".
+5. Note the old and new versions in the PR description.
+
+Automating the version PRs (Dependabot or Renovate) is a possible
+follow-up; neither is configured today, on purpose — a human picks
+the moment a new linter lands.
 
 ## Python development checks
 
 These are exactly what CI runs (`.github/workflows/ci.yml`):
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[dev,api]"
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,api,mariadb]" -c requirements.lock
 .\.venv\Scripts\python.exe -m ruff check src tests harness
 .\.venv\Scripts\python.exe -m ruff format --check src tests harness
 .\.venv\Scripts\python.exe -m mypy src
