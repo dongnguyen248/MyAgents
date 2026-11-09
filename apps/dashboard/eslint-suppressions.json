@@ -62,17 +62,6 @@
       "count": 1
     }
   },
-  "src/components/projects/ProjectForm.tsx": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines-per-function": {
-      "count": 1
-    },
-    "max-statements-per-line": {
-      "count": 3
-    }
-  },
   "src/components/settings/ModelProviderForm.tsx": {
     "complexity": {
       "count": 1
