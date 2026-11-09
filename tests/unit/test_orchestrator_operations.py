@@ -295,6 +295,43 @@ def test_retry_never_overrides_nonretryable_or_unlisted_errors(retryable, allowl
     assert run.retry_at is None
 
 
+def test_apply_failure_gets_zero_automatic_retries():
+    # The error exactly as the Test agent produces it for a
+    # deterministic apply-validation failure (FIX-3 item 3b).
+    engine, spec, _, _ = make_engine(two_steps=False)
+    engine._definition.steps[0] = engine._definition.steps[0].model_copy(
+        update={"retry_policy": RetryPolicySettings(max_attempts=5)}
+    )
+    spec._run_behavior = AgentExecutionError(
+        "SANDBOX_APPLY_FAILED",
+        "apply failed: cannot modify missing file docs/decisions.md",
+        AgentErrorOptions(retryable=False),
+    )
+    run = engine.tick(start(engine).id)
+    assert run.state.stage == "FAILED"
+    assert run.attempts["spec"] == 1
+    assert run.retry_at is None
+
+
+def test_spawn_failure_still_retries_within_its_limit():
+    engine, spec, _, _ = make_engine(two_steps=False)
+    engine._definition.steps[0] = engine._definition.steps[0].model_copy(
+        update={"retry_policy": RetryPolicySettings(max_attempts=2)}
+    )
+    spec._run_behavior = AgentExecutionError(
+        "SANDBOX_ERROR",
+        "Could not run command 'dotnet': [Errno 2] No such file or directory",
+        AgentErrorOptions(retryable=True),
+    )
+    run = engine.tick(start(engine).id)
+    assert run.retry_at == NOW
+    assert run.attempts["spec"] == 1
+    run = engine.tick(run.id)
+    assert run.state.stage == "FAILED"
+    assert run.attempts["spec"] == 2
+    assert run.retry_at is None
+
+
 def test_retry_success_resets_budget_and_retains_attempt_history():
     engine, spec, _, _ = make_engine(two_steps=False)
     engine._definition.steps[0] = engine._definition.steps[0].model_copy(

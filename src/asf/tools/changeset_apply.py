@@ -6,7 +6,12 @@ import logging
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from asf.tools.changeset import ChangeSet, FileChange
-from asf.tools.ports import AppliedRelabel, RepositoryError, SandboxError
+from asf.tools.ports import (
+    AppliedRelabel,
+    RepositoryError,
+    SandboxApplyError,
+    SandboxFailure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +34,18 @@ def resolve_within(root: Path, path: str) -> Path:
     return candidate
 
 
-def _operation_for_missing(change: FileChange, relabels: list[AppliedRelabel]) -> str:
-    if change.operation == "modify" and change.content is not None:
+def _apply_failure(root: Path) -> SandboxFailure:
+    return SandboxFailure("start", "SandboxApplyError", cwd=root)
+
+
+def _operation_for_missing(
+    change: FileChange,
+    relabels: list[AppliedRelabel],
+    *,
+    allow_relabel: bool,
+    root: Path,
+) -> str:
+    if allow_relabel and change.operation == "modify" and change.content is not None:
         relabels.append(AppliedRelabel(change.path, "modify", "create"))
         logger.warning(
             "changeset relabel: %s labelled modify but absent from the "
@@ -38,14 +53,21 @@ def _operation_for_missing(change: FileChange, relabels: list[AppliedRelabel]) -
             change.path,
         )
         return "create"
-    raise SandboxError(
+    if change.operation == "modify":
+        raise SandboxApplyError(
+            f"apply failed: cannot modify missing file {change.path}",
+            command=None,
+            failure=_apply_failure(root),
+        )
+    raise SandboxApplyError(
         f"Cannot {change.operation} missing file: {change.path}",
         command=None,
+        failure=_apply_failure(root),
     )
 
 
 def _planned_targets(
-    root: Path, changes: ChangeSet
+    root: Path, changes: ChangeSet, *, allow_relabel: bool
 ) -> tuple[list[tuple[Path, str, str | None]], list[AppliedRelabel]]:
     targets: list[tuple[Path, str, str | None]] = []
     relabels: list[AppliedRelabel] = []
@@ -53,32 +75,50 @@ def _planned_targets(
         try:
             target = resolve_within(root, change.path)
         except RepositoryError as error:
-            raise SandboxError(str(error), command=None) from None
+            raise SandboxApplyError(
+                str(error), command=None, failure=_apply_failure(root)
+            ) from None
         exists = target.is_file()
         if change.operation == "create" and exists:
-            raise SandboxError(
+            raise SandboxApplyError(
                 f"Cannot create existing file: {change.path}",
                 command=None,
+                failure=_apply_failure(root),
             )
         operation: str = change.operation
         if operation in ("modify", "delete") and not exists:
-            operation = _operation_for_missing(change, relabels)
+            operation = _operation_for_missing(
+                change, relabels, allow_relabel=allow_relabel, root=root
+            )
         targets.append((target, operation, change.content))
     return targets, relabels
 
 
-def apply_changeset(root: Path, changes: ChangeSet) -> tuple[AppliedRelabel, ...]:
+def apply_changeset(
+    root: Path, changes: ChangeSet, *, allow_relabel: bool
+) -> tuple[AppliedRelabel, ...]:
     """Write a change set into root, validating the whole set first.
 
-    A bad change set leaves the folder untouched. A modify carrying the
-    file's full content whose target is absent is applied as a create
-    and reported in the returned relabels: the label was aligned with a
-    tree state that no longer holds (a worktree reset to HEAD removes
-    files an earlier change set created), while the intent — set this
-    path to this content — is unambiguous. A modify without content and
-    a delete of a missing file still fail, naming the path.
+    A bad change set leaves the folder untouched. With
+    ``allow_relabel`` — only for a managed worktree that was just reset
+    to HEAD, which removes files an earlier change set created — a
+    modify carrying the file's full content whose target is absent is
+    applied as a create and reported in the returned relabels: the
+    label was aligned with a tree state the reset destroyed, while the
+    intent (set this path to this content) is unambiguous. Without it
+    (a real project folder), a modify of a missing file is a hard
+    failure naming the path, so a typo cannot silently create a file.
+    A delete of a missing file always fails, naming the path.
     """
-    targets, relabels = _planned_targets(root, changes)
+    if not root.is_dir():
+        raise SandboxApplyError(
+            f"apply failed: working directory does not exist: {root} "
+            "(it may have been moved or removed; one possible cause is "
+            "antivirus software)",
+            command=None,
+            failure=_apply_failure(root),
+        )
+    targets, relabels = _planned_targets(root, changes, allow_relabel=allow_relabel)
     for target, operation, content in targets:
         if operation == "delete":
             target.unlink()

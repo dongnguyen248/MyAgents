@@ -103,8 +103,12 @@ from asf.tools.ports import (
     RepositoryError,
     RepositoryPort,
     SandboxError,
+    SandboxFailure,
     SandboxPort,
     SandboxResult,
+    capture_failure,
+    missing_working_directory,
+    spawn_failure,
 )
 from asf.tools.worktree import GitWorktreeWorkspace, run_git
 
@@ -390,7 +394,11 @@ def _validate_argv0(argv0: str, root: Path, spec: CommandSpec) -> None:
     try:
         resolve_within(root, argv0.replace("\\", "/"))
     except RepositoryError as error:
-        raise SandboxError(str(error), command=spec) from None
+        raise SandboxError(
+            str(error),
+            command=spec,
+            failure=SandboxFailure("start", "SandboxError", command_name=argv0, cwd=root),
+        ) from None
 
 
 class LocalSandbox:
@@ -412,10 +420,12 @@ class LocalSandbox:
         *,
         settings: SandboxSettings | None = None,
         base_env: Mapping[str, str] | None = None,
+        allow_relabel: bool = False,
     ) -> None:
         self._root = Path(root)
         self._settings = settings or SandboxSettings()
         self._base_env = base_env
+        self._allow_relabel = allow_relabel
 
     def run(
         self,
@@ -425,7 +435,7 @@ class LocalSandbox:
         *,
         fail_fast: bool = True,
     ) -> SandboxResult:
-        relabels = apply_changeset(self._root, changes)
+        relabels = apply_changeset(self._root, changes, allow_relabel=self._allow_relabel)
         return self._run_commands(commands, fail_fast=fail_fast, relabels=relabels)
 
     def _run_commands(
@@ -480,6 +490,8 @@ class LocalSandbox:
             raise SandboxError("Command argv must not be empty", command=spec)
         _validate_argv0(argv[0], self._root, spec)
         started = time.monotonic()
+        if not self._root.is_dir():
+            raise missing_working_directory(self._root, spec)
         try:
             process = subprocess.Popen(
                 argv,
@@ -491,18 +503,26 @@ class LocalSandbox:
                 **self._spawn_kwargs(),
             )
         except OSError as error:
-            raise SandboxError(
-                f"Could not run command {spec.argv!r}: {error}",
-                command=spec,
-            ) from None
+            elapsed = int((time.monotonic() - started) * 1000)
+            raise spawn_failure(error, spec, self._root, elapsed) from None
         if process.stdout is None or process.stderr is None:
-            raise SandboxError(f"Could not capture output of {spec.argv!r}", command=spec)
+            elapsed = int((time.monotonic() - started) * 1000)
+            raise capture_failure(spec, self._root, elapsed)
         readers = [
             _CappedReader(process.stdout, spec.output_limit_bytes),
             _CappedReader(process.stderr, spec.output_limit_bytes),
         ]
         for reader in readers:
             reader.start()
+        return self._collect_result(process, readers, spec, started)
+
+    def _collect_result(
+        self,
+        process: subprocess.Popen,
+        readers: list[_CappedReader],
+        spec: CommandSpec,
+        started: float,
+    ) -> CommandResult:
         timed_out = False
         try:
             process.wait(timeout=spec.timeout_seconds)
@@ -1004,20 +1024,32 @@ class WorkspaceSandbox:
         *,
         fail_fast: bool = True,
     ) -> SandboxResult:
-        root = self._workspace.current_root(ref)
+        root = self._selected_root(ref)
         if root is None:
             return self._fallback.run(commands, changes, ref, fail_fast=fail_fast)
         journal = self._workspace.direct_journal()
         if journal is not None:
             return self._run_direct(journal, commands, changes, fail_fast=fail_fast)
-        # In a managed worktree, a dirty tree holds the previous
-        # unpassed change set: reset to the last passing commit
-        # before applying the replacement.
-        self._workspace.prepare_worktree_for_changes(root)
         return LocalSandbox(
             root,
             settings=self._workspace.current_sandbox_settings(),
+            allow_relabel=True,
         ).run(commands, changes, ref, fail_fast=fail_fast)
+
+    def _selected_root(self, ref: str) -> Path | None:
+        root: Path | None = None
+        try:
+            root = self._workspace.current_root(ref)
+            if root is not None and self._workspace.direct_journal() is None:
+                # In a managed worktree, a dirty tree holds the previous
+                # unpassed change set: reset to the last passing commit
+                # before applying the replacement.
+                self._workspace.prepare_worktree_for_changes(root)
+        except SandboxError as error:
+            if not error.details:
+                error.details = SandboxFailure("select", type(error).__name__, cwd=root).details()
+            raise
+        return root
 
     def _run_direct(
         self,
@@ -1052,6 +1084,6 @@ class WorkspaceSandbox:
             root,
             settings=self._workspace.current_sandbox_settings(),
         )
-        relabels = apply_changeset(root, changes)
+        relabels = apply_changeset(root, changes, allow_relabel=False)
         journal.note_written(changes)
         return sandbox._run_commands(commands, fail_fast=fail_fast, relabels=relabels)
