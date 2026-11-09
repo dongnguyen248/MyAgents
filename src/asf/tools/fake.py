@@ -11,6 +11,7 @@ from asf.tools.ports import (
     CommandTimeoutError,
     FileNotFoundInRepository,
     FileTooLargeError,
+    SandboxApplyError,
     SandboxError,
     SandboxResult,
 )
@@ -135,7 +136,9 @@ def _apply_modify(
         relabels.append(AppliedRelabel(change.path, "modify", "create"))
         return
     if change.path not in working_files:
-        raise SandboxError(f"Cannot modify missing file: {change.path}", command=None)
+        raise SandboxApplyError(
+            f"apply failed: cannot modify missing file {change.path}", command=None
+        )
     if change.content is None:
         raise SandboxError("modify operation requires content", command=None)
     working_files[change.path] = change.content
@@ -176,7 +179,7 @@ class InMemorySandbox:
         for fc in changes.changes:
             if fc.operation == "create":
                 if fc.path in working_files:
-                    raise SandboxError(f"Cannot create existing file: {fc.path}", command=None)
+                    raise SandboxApplyError(f"Cannot create existing file: {fc.path}", command=None)
                 if fc.content is None:
                     raise SandboxError("create operation requires content", command=None)
                 working_files[fc.path] = fc.content
@@ -184,7 +187,7 @@ class InMemorySandbox:
                 _apply_modify(working_files, fc, relabels)
             elif fc.operation == "delete":
                 if fc.path not in working_files:
-                    raise SandboxError(f"Cannot delete missing file: {fc.path}", command=None)
+                    raise SandboxApplyError(f"Cannot delete missing file: {fc.path}", command=None)
                 del working_files[fc.path]
 
         # Run commands (simulated - just returns recorded results)

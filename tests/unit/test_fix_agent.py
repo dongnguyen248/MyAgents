@@ -512,6 +512,58 @@ def test_fix_blocks_mode_replacement_is_cumulative():
     assert by_path["src/extra.py"]["content"] == "def extra():\n    return 1\n"
 
 
+def legacy_report_fix_request() -> AgentRequest:
+    request = fix_request()
+    code = next(a for a in request.artifacts if a.type == "CODE")
+    legacy_report = Artifact(
+        id="test-report-1",
+        type="TEST_REPORT",
+        name="Test report",
+        version="1",
+        content={
+            "format": "json",
+            "report": {
+                "commands": [
+                    {
+                        "argv": ["python", "-m", "pytest", "-q"],
+                        "exitCode": 5,
+                        "stdout": "",
+                        "stderr": "no tests ran",
+                        "durationMs": 12,
+                    }
+                ],
+                "verdict": "FAIL",
+                "summary": "FAIL: 0/1 commands passed",
+            },
+            "text": "FAIL: 0/1 commands passed",
+        },
+        created_by="agent-test",
+        created_at=T_AWARE,
+        metadata={
+            "codeArtifactId": code.id,
+            "codeVersion": code.version,
+            "taskItemId": "T1",
+        },
+    )
+    artifacts = [a for a in request.artifacts if a.type != "CODE_REVIEW"]
+    return request.model_copy(update={"artifacts": [*artifacts, legacy_report]})
+
+
+def test_fix_consumes_a_legacy_test_report_without_relabels():
+    # TEST_REPORT artifacts stored before the relabels key existed must
+    # still load: the report body has no schema in the contract and
+    # every reader uses .get, so the key is optional — pinned here by
+    # running a whole fix on a legacy report.
+    request = legacy_report_fix_request()
+    report = next(a for a in request.artifacts if a.type == "TEST_REPORT")
+    assert "relabels" not in report.content["report"]
+    validator_for("Artifact").validate(report.to_contract())
+    agent, _ = fix_agent([make_valid_changeset_reply()])
+    result = agent.execute(request)
+    assert result.status == "SUCCESS"
+    assert result.artifacts[0].metadata["fixedTestReportIds"] == ["test-report-1"]
+
+
 def test_fix_json_mode_replacement_is_cumulative():
     # FIX-3 item 2-fix: the JSON path now composes the reply onto the
     # effective state exactly like edit blocks. (This test previously
