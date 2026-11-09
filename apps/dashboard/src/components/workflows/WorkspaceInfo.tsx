@@ -20,7 +20,9 @@ const JOURNAL_LABELS: Record<string, string> = {
  */
 export function WorkspaceInfo({ workflow }: { workflow: Workflow }) {
   const workspace = workflow.workspace;
-  if (!workspace) return null;
+  if (!workspace) {
+    return null;
+  }
   const journalLabel = workspace.journalState ? JOURNAL_LABELS[workspace.journalState] : null;
   return (
     <Card title="Workspace">
