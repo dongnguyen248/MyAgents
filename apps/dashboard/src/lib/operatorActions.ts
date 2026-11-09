@@ -6,7 +6,9 @@ import type { Workflow } from '../types/workflow';
  * the selection rules can be unit-tested directly (tests/).
  *
  * - ESCALATED: resume with a fresh fix budget (reason required) or
- *   fail the run under operator control.
+ *   fail the run under operator control. At a no-tests stop the
+ *   resume is omitted: it would only re-run the test step, and the
+ *   decision there belongs to the test-stop panel.
  * - STALLED (waiting kind): recover (replay the interrupted step,
  *   or mark it failed) and restart the driver.
  * - PAUSED: continue or cancel.
@@ -45,22 +47,30 @@ const CANCEL: OperatorAction = {
     'Cancel this run permanently? It cannot be resumed afterwards — you can Run again from scratch, and this run stays as the record. A step already in progress finishes first.',
 };
 
+function escalationActions(workflow: Workflow): OperatorAction[] {
+  const failRun: OperatorAction = {
+    id: 'fail-run',
+    label: 'Fail run',
+    danger: true,
+    needsReason: true,
+    confirm:
+      'Fail this run? It ends as Failed with your reason recorded, and can then be resumed from the failed step with a reset fix budget.',
+  };
+  if (workflow.waiting?.suggestedActions.includes('skip_tests')) {
+    return [failRun, CANCEL];
+  }
+  return [
+    { id: 'resume-escalation', label: 'Resume with new fix budget', needsReason: true },
+    failRun,
+    CANCEL,
+  ];
+}
+
 export function operatorActionsFor(workflow: Workflow): OperatorAction[] {
   const { status } = workflow;
   if (status === 'COMPLETED' || status === 'CANCELLED') {return [];}
   if (status === 'ESCALATED') {
-    return [
-      { id: 'resume-escalation', label: 'Resume with new fix budget', needsReason: true },
-      {
-        id: 'fail-run',
-        label: 'Fail run',
-        danger: true,
-        needsReason: true,
-        confirm:
-          'Fail this run? It ends as Failed with your reason recorded, and can then be resumed from the failed step with a reset fix budget.',
-      },
-      CANCEL,
-    ];
+    return escalationActions(workflow);
   }
   if (status === 'PAUSED') {
     return [{ id: 'continue', label: 'Continue' }, CANCEL];
