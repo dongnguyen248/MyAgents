@@ -38,14 +38,14 @@
   {
    "file": "src/asf/api/app.py",
    "limit": 10,
-   "measured": 65,
+   "measured": 58,
    "rule": "function-complexity",
    "symbol": "create_app"
   },
   {
    "file": "src/asf/api/app.py",
    "limit": 30,
-   "measured": 318,
+   "measured": 299,
    "rule": "function-lines",
    "symbol": "create_app"
   },
@@ -73,7 +73,7 @@
   {
    "file": "src/asf/api/demo.py",
    "limit": 500,
-   "measured": 1021,
+   "measured": 1011,
    "rule": "file-lines",
    "symbol": ""
   },
@@ -118,13 +118,6 @@
    "measured": 33,
    "rule": "function-lines",
    "symbol": "DemoFactoryService.start_run"
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "limit": 3,
-   "measured": 6,
-   "rule": "function-nesting",
-   "symbol": "DemoRoutingGateway.complete"
   },
   {
    "file": "src/asf/api/demo.py",
@@ -178,14 +171,14 @@
   {
    "file": "src/asf/api/demo.py",
    "limit": 10,
-   "measured": 16,
+   "measured": 22,
    "rule": "function-complexity",
    "symbol": "build_demo"
   },
   {
    "file": "src/asf/api/demo.py",
    "limit": 30,
-   "measured": 158,
+   "measured": 174,
    "rule": "function-lines",
    "symbol": "build_demo"
   },
@@ -195,13 +188,6 @@
    "measured": 53,
    "rule": "function-lines",
    "symbol": "main"
-  },
-  {
-   "file": "src/asf/api/demo.py",
-   "limit": 30,
-   "measured": 34,
-   "rule": "function-lines",
-   "symbol": "run_selftest"
   },
   {
    "file": "src/asf/api/model_settings.py",
@@ -290,35 +276,35 @@
   {
    "file": "src/asf/api/service/__init__.py",
    "limit": 500,
-   "measured": 580,
+   "measured": 597,
    "rule": "file-lines",
    "symbol": ""
   },
   {
    "file": "src/asf/api/service/__init__.py",
    "limit": 7,
-   "measured": 31,
+   "measured": 32,
    "rule": "class-fields",
    "symbol": "FactoryService"
   },
   {
    "file": "src/asf/api/service/__init__.py",
    "limit": 300,
-   "measured": 374,
+   "measured": 386,
    "rule": "class-lines",
    "symbol": "FactoryService"
   },
   {
    "file": "src/asf/api/service/__init__.py",
    "limit": 30,
-   "measured": 64,
+   "measured": 66,
    "rule": "function-lines",
    "symbol": "FactoryService.__init__"
   },
   {
    "file": "src/asf/api/service/__init__.py",
    "limit": 4,
-   "measured": 15,
+   "measured": 16,
    "rule": "function-params",
    "symbol": "FactoryService.__init__"
   },
@@ -332,14 +318,14 @@
   {
    "file": "src/asf/api/service/__init__.py",
    "limit": 10,
-   "measured": 46,
+   "measured": 44,
    "rule": "function-complexity",
    "symbol": "FactoryService._normalize_project"
   },
   {
    "file": "src/asf/api/service/__init__.py",
    "limit": 30,
-   "measured": 78,
+   "measured": 84,
    "rule": "function-lines",
    "symbol": "FactoryService._normalize_project"
   },
@@ -360,14 +346,14 @@
   {
    "file": "src/asf/api/service/commands.py",
    "limit": 500,
-   "measured": 769,
+   "measured": 781,
    "rule": "file-lines",
    "symbol": ""
   },
   {
    "file": "src/asf/api/service/commands.py",
    "limit": 300,
-   "measured": 780,
+   "measured": 783,
    "rule": "class-lines",
    "symbol": "CommandsMixin"
   },
@@ -437,7 +423,7 @@
   {
    "file": "src/asf/api/service/driver.py",
    "limit": 300,
-   "measured": 402,
+   "measured": 394,
    "rule": "class-lines",
    "symbol": "DriverMixin"
   },
@@ -451,7 +437,7 @@
   {
    "file": "src/asf/api/service/driver.py",
    "limit": 30,
-   "measured": 61,
+   "measured": 57,
    "rule": "function-lines",
    "symbol": "DriverMixin._drive"
   },
@@ -465,14 +451,14 @@
   {
    "file": "src/asf/api/service/queries.py",
    "limit": 500,
-   "measured": 1203,
+   "measured": 1229,
    "rule": "file-lines",
    "symbol": ""
   },
   {
    "file": "src/asf/api/service/queries.py",
    "limit": 300,
-   "measured": 1217,
+   "measured": 1240,
    "rule": "class-lines",
    "symbol": "QueriesMixin"
   },
@@ -535,7 +521,7 @@
   {
    "file": "src/asf/api/service/queries.py",
    "limit": 30,
-   "measured": 41,
+   "measured": 34,
    "rule": "function-lines",
    "symbol": "QueriesMixin._approval_view"
   },
@@ -591,21 +577,21 @@
   {
    "file": "src/asf/api/service/queries.py",
    "limit": 10,
-   "measured": 19,
+   "measured": 16,
    "rule": "function-complexity",
    "symbol": "QueriesMixin._waiting"
   },
   {
    "file": "src/asf/api/service/queries.py",
    "limit": 30,
-   "measured": 80,
+   "measured": 65,
    "rule": "function-lines",
    "symbol": "QueriesMixin._waiting"
   },
   {
    "file": "src/asf/api/service/queries.py",
    "limit": 30,
-   "measured": 40,
+   "measured": 41,
    "rule": "function-lines",
    "symbol": "QueriesMixin._workflow_view"
   },
@@ -633,7 +619,7 @@
   {
    "file": "src/asf/api/service/queries.py",
    "limit": 30,
-   "measured": 49,
+   "measured": 51,
    "rule": "function-lines",
    "symbol": "QueriesMixin.list_projects"
   },
@@ -675,14 +661,14 @@
   {
    "file": "src/asf/approval/policy.py",
    "limit": 10,
-   "measured": 25,
+   "measured": 20,
    "rule": "function-complexity",
    "symbol": "approval_policy_from_project"
   },
   {
    "file": "src/asf/approval/policy.py",
    "limit": 30,
-   "measured": 128,
+   "measured": 110,
    "rule": "function-lines",
    "symbol": "approval_policy_from_project"
   },
@@ -773,7 +759,7 @@
   {
    "file": "src/asf/evaluation/service.py",
    "limit": 300,
-   "measured": 402,
+   "measured": 351,
    "rule": "class-lines",
    "symbol": "MetricsService"
   },
@@ -787,28 +773,14 @@
   {
    "file": "src/asf/evaluation/service.py",
    "limit": 10,
-   "measured": 22,
-   "rule": "function-complexity",
-   "symbol": "MetricsService._agent_metrics_locked"
-  },
-  {
-   "file": "src/asf/evaluation/service.py",
-   "limit": 30,
-   "measured": 34,
-   "rule": "function-lines",
-   "symbol": "MetricsService._agent_metrics_locked"
-  },
-  {
-   "file": "src/asf/evaluation/service.py",
-   "limit": 10,
-   "measured": 32,
+   "measured": 21,
    "rule": "function-complexity",
    "symbol": "MetricsService.overview"
   },
   {
    "file": "src/asf/evaluation/service.py",
    "limit": 30,
-   "measured": 99,
+   "measured": 73,
    "rule": "function-lines",
    "symbol": "MetricsService.overview"
   },
@@ -818,13 +790,6 @@
    "measured": 43,
    "rule": "function-lines",
    "symbol": "MetricsService.record"
-  },
-  {
-   "file": "src/asf/evaluation/service.py",
-   "limit": 4,
-   "measured": 5,
-   "rule": "function-params",
-   "symbol": "MetricsService.record_approval_decision"
   },
   {
    "file": "src/asf/evaluation/service.py",
@@ -860,13 +825,6 @@
    "measured": 4,
    "rule": "function-nesting",
    "symbol": "_find_verdict"
-  },
-  {
-   "file": "src/asf/evaluation/service.py",
-   "limit": 4,
-   "measured": 5,
-   "rule": "function-params",
-   "symbol": "_health_score"
   },
   {
    "file": "src/asf/integrations/gemini.py",
@@ -955,14 +913,14 @@
   {
    "file": "src/asf/integrations/hosting/actions.py",
    "limit": 10,
-   "measured": 26,
+   "measured": 23,
    "rule": "function-complexity",
    "symbol": "build_hosting_actions"
   },
   {
    "file": "src/asf/integrations/hosting/actions.py",
    "limit": 30,
-   "measured": 168,
+   "measured": 167,
    "rule": "function-lines",
    "symbol": "build_hosting_actions"
   },
@@ -983,14 +941,14 @@
   {
    "file": "src/asf/integrations/hosting/actions.py",
    "limit": 10,
-   "measured": 16,
+   "measured": 13,
    "rule": "function-complexity",
    "symbol": "build_hosting_actions.run_pipeline"
   },
   {
    "file": "src/asf/integrations/hosting/actions.py",
    "limit": 30,
-   "measured": 90,
+   "measured": 89,
    "rule": "function-lines",
    "symbol": "build_hosting_actions.run_pipeline"
   },
@@ -1130,7 +1088,7 @@
   {
    "file": "src/asf/integrations/teams/demo.py",
    "limit": 30,
-   "measured": 66,
+   "measured": 52,
    "rule": "function-lines",
    "symbol": "demo_engine"
   },
@@ -1147,13 +1105,6 @@
    "measured": 53,
    "rule": "function-lines",
    "symbol": "run_demo"
-  },
-  {
-   "file": "src/asf/integrations/teams/workflow.py",
-   "limit": 30,
-   "measured": 35,
-   "rule": "function-lines",
-   "symbol": "TeamsWorkflow.send_approval"
   },
   {
    "file": "src/asf/integrations/teams/workflow.py",
@@ -1200,7 +1151,7 @@
   {
    "file": "src/asf/orchestrator/engine.py",
    "limit": 500,
-   "measured": 1239,
+   "measured": 1237,
    "rule": "file-lines",
    "symbol": ""
   },
@@ -1214,7 +1165,7 @@
   {
    "file": "src/asf/orchestrator/engine.py",
    "limit": 300,
-   "measured": 1237,
+   "measured": 1232,
    "rule": "class-lines",
    "symbol": "Orchestrator"
   },
@@ -1368,22 +1319,15 @@
   {
    "file": "src/asf/orchestrator/engine.py",
    "limit": 10,
-   "measured": 24,
+   "measured": 21,
    "rule": "function-complexity",
    "symbol": "Orchestrator.tick"
   },
   {
    "file": "src/asf/orchestrator/engine.py",
    "limit": 30,
-   "measured": 108,
+   "measured": 97,
    "rule": "function-lines",
-   "symbol": "Orchestrator.tick"
-  },
-  {
-   "file": "src/asf/orchestrator/engine.py",
-   "limit": 3,
-   "measured": 4,
-   "rule": "function-nesting",
    "symbol": "Orchestrator.tick"
   },
   {
@@ -1396,7 +1340,7 @@
   {
    "file": "src/asf/state_machine/graph.py",
    "limit": 30,
-   "measured": 74,
+   "measured": 64,
    "rule": "function-lines",
    "symbol": "build_graph"
   },
@@ -1494,14 +1438,14 @@
   {
    "file": "src/asf/tools/fake.py",
    "limit": 10,
-   "measured": 15,
+   "measured": 13,
    "rule": "function-complexity",
    "symbol": "InMemorySandbox.run"
   },
   {
    "file": "src/asf/tools/fake.py",
    "limit": 30,
-   "measured": 50,
+   "measured": 47,
    "rule": "function-lines",
    "symbol": "InMemorySandbox.run"
   },
@@ -1514,15 +1458,8 @@
   },
   {
    "file": "src/asf/tools/local.py",
-   "limit": 0,
-   "measured": 2,
-   "rule": "banner-comment",
-   "symbol": ""
-  },
-  {
-   "file": "src/asf/tools/local.py",
    "limit": 500,
-   "measured": 702,
+   "measured": 930,
    "rule": "file-lines",
    "symbol": ""
   },
@@ -1535,22 +1472,22 @@
   },
   {
    "file": "src/asf/tools/local.py",
-   "limit": 30,
-   "measured": 35,
-   "rule": "function-lines",
-   "symbol": "LocalSandbox.run"
-  },
-  {
-   "file": "src/asf/tools/local.py",
    "limit": 7,
-   "measured": 8,
+   "measured": 10,
    "rule": "class-fields",
    "symbol": "LocalWorkspace"
   },
   {
    "file": "src/asf/tools/local.py",
+   "limit": 300,
+   "measured": 387,
+   "rule": "class-lines",
+   "symbol": "LocalWorkspace"
+  },
+  {
+   "file": "src/asf/tools/local.py",
    "limit": 10,
-   "measured": 18,
+   "measured": 28,
    "rule": "class-methods",
    "symbol": "LocalWorkspace"
   },
