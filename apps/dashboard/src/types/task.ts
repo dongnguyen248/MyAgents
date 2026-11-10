@@ -12,6 +12,8 @@ export type CiStatus = 'PASS' | 'FAIL' | 'RUNNING' | 'UNKNOWN';
 
 export interface Task {
   id: string;
+  /** The run every surface must show for this task (backend-selected). */
+  currentRunId?: string;
   title: string;
   projectId: string;
   workflowType: WorkflowType;
