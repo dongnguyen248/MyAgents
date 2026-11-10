@@ -6,6 +6,7 @@ import { CiBadge } from '../../components/common/Badge';
 import { Card, PageHeader, Stat } from '../../components/common/Layout';
 import { TaskStatusBadge } from '../../components/tasks/TaskStatusBadge';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
+import { RunLabel } from '../../components/workflows/RunLabel';
 import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkflowErrorBanner } from '../../components/workflows/WorkflowErrorBanner';
 import { WorkflowStatusBadge } from '../../components/workflows/WorkflowStatusBadge';
@@ -96,6 +97,7 @@ export function TaskDetailPage() {
                 </button>
               )}
               <TaskStatusBadge status={task.status} />
+              {workflow && <RunLabel workflow={workflow} earlierRuns={runs.length - 1} />}
             </>} />
             {retryError && (
               <p className="alert" role="alert">

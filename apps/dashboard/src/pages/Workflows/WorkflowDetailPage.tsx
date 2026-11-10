@@ -6,6 +6,7 @@ import { Card, PageHeader } from '../../components/common/Layout';
 import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts';
 import { EscalatedPanel } from '../../components/workflows/EscalatedPanel';
 import { ReviewTimeline } from '../../components/workflows/ReviewTimeline';
+import { RunLabel } from '../../components/workflows/RunLabel';
 import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkspaceInfo } from '../../components/workflows/WorkspaceInfo';
 import { WorkflowDiagnostics } from '../../components/workflows/WorkflowDiagnostics';
@@ -99,7 +100,7 @@ export function WorkflowDetailPage() {
               title={`${workflow.taskId} · ${workflow.title}`}
               subtitle={`${workflow.projectId.toUpperCase()} · ${titleCase(workflow.type)}`}
               back={{ to: '/workflows', label: 'Workflows' }}
-              actions={<><WorkflowStatusBadge status={workflow.status} /><Link className="btn" to={`/tasks/${workflow.taskId}`}>Open task</Link></>}
+              actions={<><WorkflowStatusBadge status={workflow.status} /><RunLabel workflow={workflow} /><Link className="btn" to={`/tasks/${workflow.taskId}`}>Open task</Link></>}
             />
             <WorkflowErrorBanner workflow={workflow} />
             <EscalatedPanel

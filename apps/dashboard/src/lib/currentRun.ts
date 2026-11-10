@@ -71,3 +71,30 @@ export function pickTaskWorkflow(
   const named = currentRunId ? runs.find((run) => run.id === currentRunId) : undefined;
   return named ?? pickCurrentRun(runs);
 }
+
+const RUN_ID_PREFIX_LENGTH = 8;
+
+/**
+ * The label that names the displayed run next to a page's status:
+ * "Run <id prefix> · started <time> · <N> earlier runs", or
+ * "Part <n> · run <id prefix> · ..." for a split part. The caller
+ * formats the start time (this module stays formatter-free so the
+ * test runner can import it); the count segment is omitted when
+ * the caller does not know the run family size.
+ */
+export function runLabelText(
+  run: Pick<Workflow, 'id' | 'parentTaskId' | 'splitIndex'>,
+  startedLabel: string,
+  earlierRuns?: number,
+): string {
+  const prefix = run.id.slice(0, RUN_ID_PREFIX_LENGTH);
+  let text = `Run ${prefix} · started ${startedLabel}`;
+  if (run.parentTaskId) {
+    text = `Part ${run.splitIndex} · run ${prefix} · started ${startedLabel}`;
+  }
+  if (earlierRuns !== undefined) {
+    const noun = earlierRuns === 1 ? 'earlier run' : 'earlier runs';
+    text = `${text} · ${earlierRuns} ${noun}`;
+  }
+  return text;
+}
