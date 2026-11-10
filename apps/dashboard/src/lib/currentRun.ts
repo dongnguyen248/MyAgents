@@ -64,10 +64,7 @@ export function pickCurrentRun(runs: Workflow[]): Workflow | undefined {
  * The fallback matters because the task view and the workflow list
  * are fetched in parallel — the named run may not have landed yet.
  */
-export function pickTaskWorkflow(
-  runs: Workflow[],
-  currentRunId?: string,
-): Workflow | undefined {
+export function pickTaskWorkflow(runs: Workflow[], currentRunId?: string): Workflow | undefined {
   const named = currentRunId ? runs.find((run) => run.id === currentRunId) : undefined;
   return named ?? pickCurrentRun(runs);
 }
