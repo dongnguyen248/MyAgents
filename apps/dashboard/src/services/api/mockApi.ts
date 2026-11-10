@@ -1,3 +1,4 @@
+import { pickCurrentRun } from '../../lib/currentRun';
 import { activity, livePool, makeEvent } from '../../mocks/activity';
 import { agentConfigs, agents, runsFor } from '../../mocks/agents';
 import { approvals as approvalSeed } from '../../mocks/approvals';
@@ -107,6 +108,25 @@ const modelSettingsView = () => ({
 const taskStore: Task[] = structuredClone(tasks);
 const workflowStore: Workflow[] = structuredClone(workflows);
 
+/** Mock parity for the backend's current-run selection on task views. */
+function currentRunIdFor(taskId: string): string | undefined {
+  const pool = workflowStore.filter((w) => w.taskId === taskId || w.parentTaskId === taskId);
+  return pickCurrentRun(pool)?.id;
+}
+
+function withCurrentRun(task: Task): Task {
+  const currentRunId = currentRunIdFor(task.id);
+  if (currentRunId === undefined) {
+    return task;
+  }
+  return { ...task, currentRunId };
+}
+
+/** Mock parity for the backend's by-task workflow lookup fallback. */
+function workflowByTask(taskId: string): Workflow | undefined {
+  return pickCurrentRun(workflowStore.filter((w) => w.taskId === taskId));
+}
+
 const STEP_DEFS: [WorkflowStepId, string][] = [
   ['requirement', 'Requirement'], ['spec', 'Spec'], ['spec_approval', 'Spec Approval'],
   ['plan', 'Plan'], ['plan_approval', 'Plan Approval'], ['task', 'Task'], ['task_approval', 'Task Approval'],
@@ -137,10 +157,14 @@ export const mockApi: FactoryApi = {
         .filter((t) => !f.workflowType || t.workflowType === f.workflowType)
         .filter((t) => !f.priority || t.priority === f.priority)
         .filter((t) => new Date(t.createdAt).getTime() >= cutoff)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map(withCurrentRun),
     );
   },
-  getTask: (id) => delay(taskStore.find((t) => t.id === id)),
+  getTask: (id) => {
+    const task = taskStore.find((t) => t.id === id);
+    return delay(task && withCurrentRun(task));
+  },
 
   startRun: (input) => {
     if (!projectStore.some((p) => p.id === input.projectId)) {
@@ -177,7 +201,7 @@ export const mockApi: FactoryApi = {
 
   listWorkflows: () => delay(workflowStore.map(withLiveActivity)),
   getWorkflow: (id) => {
-    const workflow = workflowStore.find((w) => w.id === id);
+    const workflow = workflowStore.find((w) => w.id === id) ?? workflowByTask(id);
     return delay(workflow && withLiveActivity(workflow));
   },
 
