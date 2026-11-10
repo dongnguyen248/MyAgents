@@ -72,6 +72,21 @@ export function pickTaskWorkflow(
   return named ?? pickCurrentRun(runs);
 }
 
+/**
+ * The id the workflow page's actions must target: the displayed
+ * run's id once the detail has loaded, else the URL param (which
+ * is a run id for every in-app link).
+ */
+export function displayedRunIdOf(
+  data: { workflow?: Workflow } | undefined,
+  fallback: string,
+): string {
+  if (!data || !data.workflow) {
+    return fallback;
+  }
+  return data.workflow.id;
+}
+
 const RUN_ID_PREFIX_LENGTH = 8;
 
 /**

@@ -7,6 +7,7 @@ import { WorkflowArtifacts } from '../../components/workflows/WorkflowArtifacts'
 import { EscalatedPanel } from '../../components/workflows/EscalatedPanel';
 import { ReviewTimeline } from '../../components/workflows/ReviewTimeline';
 import { RunLabel } from '../../components/workflows/RunLabel';
+import { displayedRunIdOf } from '../../lib/currentRun';
 import { RunLiveActivity } from '../../components/workflows/RunLiveActivity';
 import { WorkspaceInfo } from '../../components/workflows/WorkspaceInfo';
 import { WorkflowDiagnostics } from '../../components/workflows/WorkflowDiagnostics';
@@ -22,6 +23,10 @@ export function WorkflowDetailPage() {
   const detail = useWorkflowDetail(workflowId);
   const reviews = useRunReviews(workflowId);
   const navigate = useNavigate();
+  // Actions target the run the page displays: the URL may carry a
+  // task id (the backend resolves it to the current run for
+  // display), and the raw param is not a run id in that case.
+  const displayedRunId = displayedRunIdOf(detail.data, workflowId);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | undefined>();
   const [resuming, setResuming] = useState(false);
@@ -51,7 +56,7 @@ export function WorkflowDetailPage() {
     setRetryError(undefined);
     setRetrying(true);
     try {
-      const fresh = await retryWorkflow(workflowId);
+      const fresh = await retryWorkflow(displayedRunId);
       navigate(`/workflows/${fresh.id}`);
     } catch (err) {
       setRetryError(err instanceof Error ? err.message : 'Failed to run again');
@@ -64,7 +69,7 @@ export function WorkflowDetailPage() {
     setResumeError(undefined);
     setResuming(true);
     try {
-      const fresh = await resumeWorkflow(workflowId);
+      const fresh = await resumeWorkflow(displayedRunId);
       navigate(`/workflows/${fresh.id}`);
     } catch (err) {
       setResumeError(err instanceof Error ? err.message : 'Failed to resume');
@@ -77,7 +82,7 @@ export function WorkflowDetailPage() {
     setCancelError(undefined);
     setCancelling(true);
     try {
-      const updated = await cancelWorkflow(workflowId);
+      const updated = await cancelWorkflow(displayedRunId);
       // A run mid-step cannot stop instantly: the backend records the
       // request and the run flips to Cancelled when the step returns.
       if (updated.status !== 'CANCELLED') {setCancelRequested(true);}

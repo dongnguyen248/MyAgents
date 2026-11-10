@@ -4,7 +4,11 @@
 // Run with: npm test  (node:test + type stripping, no extra deps)
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { pickCurrentRun, pickTaskWorkflow } from '../src/lib/currentRun.ts';
+import {
+  displayedRunIdOf,
+  pickCurrentRun,
+  pickTaskWorkflow,
+} from '../src/lib/currentRun.ts';
 import type { Workflow } from '../src/types/workflow.ts';
 
 function workflow(partial: Partial<Workflow>): Workflow {
@@ -99,6 +103,13 @@ test('pickTaskWorkflow falls back when the named run is not in the pool yet', ()
   const newer = workflow({ id: 'r-new', startedAt: '2026-11-09T03:00:00Z' });
   assert.equal(pickTaskWorkflow([older, newer], 'r-not-landed')?.id, 'r-new');
   assert.equal(pickTaskWorkflow([], 'r-not-landed'), undefined);
+});
+
+test('displayedRunIdOf targets the loaded run, else the URL param', () => {
+  const loaded = workflow({ id: 'run-loaded' });
+  assert.equal(displayedRunIdOf({ workflow: loaded }, 'task-1'), 'run-loaded');
+  assert.equal(displayedRunIdOf({ workflow: undefined }, 'task-1'), 'task-1');
+  assert.equal(displayedRunIdOf(undefined, 'run-from-url'), 'run-from-url');
 });
 
 test('a split parent pool picks the newest part attempt', () => {

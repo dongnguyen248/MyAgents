@@ -49,6 +49,15 @@ test('both detail pages render the run label next to the status', () => {
   assert.match(workflowPageSource, /<RunLabel workflow=\{workflow\} \/>/);
 });
 
+test('the workflow page actions target the displayed run, not the URL param', () => {
+  assert.match(workflowPageSource, /retryWorkflow\(displayedRunId\)/);
+  assert.match(workflowPageSource, /resumeWorkflow\(displayedRunId\)/);
+  assert.match(workflowPageSource, /cancelWorkflow\(displayedRunId\)/);
+  assert.doesNotMatch(workflowPageSource, /retryWorkflow\(workflowId\)/);
+  assert.doesNotMatch(workflowPageSource, /resumeWorkflow\(workflowId\)/);
+  assert.doesNotMatch(workflowPageSource, /cancelWorkflow\(workflowId\)/);
+});
+
 test('every run-history row links to that run, whose page shows its panels', () => {
   // The history row is a link to the run's own workflow page...
   assert.match(taskPageSource, /to=\{`\/workflows\/\$\{run\.id\}`\}/);
