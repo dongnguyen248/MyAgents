@@ -8,9 +8,13 @@ from asf.integrations.hosting.description import (
     SECTION_HEADINGS,
     ChangeRequestDescription,
     ChangeRequestInfo,
+    TestSkip,
     change_request_description,
     render_description,
     validate_description,
+)
+from asf.integrations.hosting.description import (
+    test_skips_of as recorded_skips,
 )
 from asf.tools.changeset import ChangeSet
 
@@ -176,8 +180,9 @@ def test_built_description_states_a_test_skip_instead_of_a_pass() -> None:
         branch="asf/task-1",
         base_branch="main",
         test_commands=("python -m pytest -q",),
-        test_skip_operator="dong",
-        test_skip_reason="Docs-only change; the suite lives elsewhere",
+        test_skips=(
+            TestSkip(operator="dong", reason="Docs-only change; the suite lives elsewhere"),
+        ),
     )
     changes = _changeset({"path": "a.py", "operation": "create", "content": "a = 1\n"})
     text = render_description(change_request_description(info, changes))
@@ -193,11 +198,55 @@ def test_skip_text_cannot_break_the_description_structure() -> None:
         run_id="run-1",
         branch="asf/task-1",
         base_branch="main",
-        test_skip_operator="dong",
-        test_skip_reason="no tests\n## What\ninjected heading",
+        test_skips=(TestSkip(operator="dong", reason="no tests\n## What\ninjected heading"),),
     )
     changes = _changeset({"path": "a.py", "operation": "create", "content": "a = 1\n"})
     text = render_description(change_request_description(info, changes))
     assert validate_description(text) == []
     assert sum(1 for line in text.splitlines() if line == "## What") == 1
     assert "Tests skipped by dong: no tests ## What injected heading" in text
+
+
+def test_built_description_lists_every_skipped_item() -> None:
+    info = ChangeRequestInfo(
+        title="Build the thing",
+        task_id="task-1",
+        run_id="run-1",
+        branch="asf/task-1",
+        base_branch="main",
+        test_commands=("python -m pytest -q",),
+        test_skips=(
+            TestSkip(operator="dong", reason="docs only", item_id="T1"),
+            TestSkip(operator="dong", reason="docs only", item_id="T2"),
+        ),
+    )
+    changes = _changeset({"path": "a.py", "operation": "create", "content": "a = 1\n"})
+    text = render_description(change_request_description(info, changes))
+    assert validate_description(text) == []
+    assert "Tests skipped by dong for item T1: docs only" in text
+    assert "Tests skipped by dong for item T2: docs only" in text
+    assert "passed in this run's test step" not in text
+
+
+def test_skips_of_reads_the_list_and_keeps_skips_past_a_replace() -> None:
+    context = {
+        "testDecisions": [
+            {"action": "skip", "operator": "dong", "reason": "docs only", "itemId": "T1"},
+            {"action": "replace", "operator": "dong", "commands": [["pytest", "-q"]]},
+            {"action": "skip", "operator": "dong", "reason": "still docs", "itemId": "T3"},
+        ],
+        "testDecision": {"action": "skip", "operator": "dong", "reason": "still docs"},
+    }
+    skips = recorded_skips(context)
+    assert [(skip.item_id, skip.reason) for skip in skips] == [
+        ("T1", "docs only"),
+        ("T3", "still docs"),
+    ]
+
+
+def test_skips_of_falls_back_to_a_legacy_single_decision() -> None:
+    legacy = {"testDecision": {"action": "skip", "operator": "dong", "reason": "docs only"}}
+    assert recorded_skips(legacy) == (TestSkip(operator="dong", reason="docs only"),)
+    replaced = {"testDecision": {"action": "replace", "operator": "dong"}}
+    assert recorded_skips(replaced) == ()
+    assert recorded_skips({}) == ()

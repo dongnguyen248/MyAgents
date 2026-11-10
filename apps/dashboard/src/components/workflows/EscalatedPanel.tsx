@@ -1,9 +1,15 @@
 import { useState } from 'react';
 import { approveEscalation, resumeEscalation } from '../../features/workflow-monitoring';
 import { escalationReasonError } from '../../lib/approvalSettings';
+import {
+  escalationButtonsFor,
+  escalationSummaryFor,
+  isTestStop,
+  type EscalationButtonId,
+} from '../../lib/escalationActions';
 import type { Workflow } from '../../types/workflow';
 import { Card } from '../common/Layout';
-import { titleCase } from '../../utils/format';
+import { TestStopPanel } from './TestStopPanel';
 
 interface Props {
   workflow: Workflow;
@@ -51,32 +57,18 @@ async function runEscalationAction(params: ActParams): Promise<void> {
 }
 
 function EscalationSummary({ workflow }: { workflow: Workflow }) {
-  const waiting = workflow.waiting;
-  const reason = waiting?.escalationReason ?? null;
-  const blockers = waiting?.openBlockers ?? null;
-  return (
-    <p>
-      The AI review loop escalated this run
-      {waiting?.stage ? ` at the ${titleCase(waiting.stage)} gate` : ''}
-      {reason ? (
-        <>
-          {' '}
-          (<strong>{titleCase(reason.replace('_', ' '))}</strong>)
-        </>
-      ) : null}
-      {blockers !== null ? ` with ${blockers} blocker(s) still open.` : '.'}
-    </p>
-  );
+  return <p>{escalationSummaryFor(workflow)}</p>;
 }
 
 interface FieldsProps {
   reason: string;
   guidance: string;
+  showGuidance: boolean;
   onReason: (value: string) => void;
   onGuidance: (value: string) => void;
 }
 
-function EscalationFields({ reason, guidance, onReason, onGuidance }: FieldsProps) {
+function EscalationFields({ reason, guidance, showGuidance, onReason, onGuidance }: FieldsProps) {
   return (
     <div className="form-grid">
       <label className="field">
@@ -88,44 +80,53 @@ function EscalationFields({ reason, guidance, onReason, onGuidance }: FieldsProp
           maxLength={500}
         />
       </label>
-      <label className="field">
-        <span>Guidance for the producer (optional, resume only)</span>
-        <input
-          value={guidance}
-          onChange={(e) => onGuidance(e.target.value)}
-          placeholder="What should the agent do differently?"
-          maxLength={4000}
-        />
-      </label>
+      {showGuidance ? (
+        <label className="field">
+          <span>Guidance for the producer (optional, resume only)</span>
+          <input
+            value={guidance}
+            onChange={(e) => onGuidance(e.target.value)}
+            placeholder="What should the agent do differently?"
+            maxLength={4000}
+          />
+        </label>
+      ) : null}
     </div>
   );
 }
 
 interface ButtonsProps {
+  buttons: EscalationButtonId[];
   busy: EscalationAction | undefined;
   cancelBusy: boolean;
   onAct: (action: EscalationAction) => void;
   onCancel: () => void;
 }
 
-function EscalationButtons({ busy, cancelBusy, onAct, onCancel }: ButtonsProps) {
+function EscalationButtons({ buttons, busy, cancelBusy, onAct, onCancel }: ButtonsProps) {
   const disabled = busy !== undefined || cancelBusy;
   return (
     <div className="filters">
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={() => onAct('resume')}
-        disabled={disabled}
-      >
-        {busy === 'resume' ? 'Resuming…' : 'Resume with a fresh budget'}
-      </button>
-      <button type="button" className="btn" onClick={() => onAct('approve')} disabled={disabled}>
-        {busy === 'approve' ? 'Approving…' : 'Approve anyway'}
-      </button>
-      <button type="button" className="btn" onClick={onCancel} disabled={disabled}>
-        {cancelBusy ? 'Cancelling…' : 'Cancel run'}
-      </button>
+      {buttons.includes('resume') ? (
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => onAct('resume')}
+          disabled={disabled}
+        >
+          {busy === 'resume' ? 'Resuming…' : 'Resume with a fresh budget'}
+        </button>
+      ) : null}
+      {buttons.includes('approve') ? (
+        <button type="button" className="btn" onClick={() => onAct('approve')} disabled={disabled}>
+          {busy === 'approve' ? 'Approving…' : 'Approve anyway'}
+        </button>
+      ) : null}
+      {buttons.includes('cancel') ? (
+        <button type="button" className="btn" onClick={onCancel} disabled={disabled}>
+          {cancelBusy ? 'Cancelling…' : 'Cancel run'}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -150,18 +151,21 @@ function useEscalationForm(): EscalationForm {
 }
 
 interface BodyProps {
+  workflow: Workflow;
   form: EscalationForm;
   cancelBusy: boolean;
   onAct: (action: EscalationAction) => void;
   onCancel: () => void;
 }
 
-function EscalationBody({ form, cancelBusy, onAct, onCancel }: BodyProps) {
+function EscalationBody({ workflow, form, cancelBusy, onAct, onCancel }: BodyProps) {
+  const buttons = escalationButtonsFor(workflow.waiting);
   return (
     <>
       <EscalationFields
         reason={form.reason}
         guidance={form.guidance}
+        showGuidance={buttons.includes('resume')}
         onReason={form.setReason}
         onGuidance={form.setGuidance}
       />
@@ -171,6 +175,7 @@ function EscalationBody({ form, cancelBusy, onAct, onCancel }: BodyProps) {
         </p>
       )}
       <EscalationButtons
+        buttons={buttons}
         busy={form.busy}
         cancelBusy={cancelBusy}
         onAct={onAct}
@@ -181,17 +186,40 @@ function EscalationBody({ form, cancelBusy, onAct, onCancel }: BodyProps) {
 }
 
 /**
- * The decision panel of an escalated run (Phase 12): why the AI
- * review loop gave up, how many blockers are still open, and the
- * three human ways out — resume with a fresh budget (optionally
- * guiding the producer), approve the artifact anyway, or cancel.
- * Both actions need a reason; it lands in the run's audit trail.
+ * The decision panel of an escalated run. The buttons are derived
+ * from the backend's waiting.suggestedActions, so the panel only
+ * ever offers actions this kind of escalation actually accepts: a
+ * fresh-budget resume for fix and review escalations, approve
+ * anyway only at approval gates, and — for a no-tests stop — the
+ * dedicated test panel instead of this one. Both generic actions
+ * need a reason; it lands in the run's audit trail.
  */
 export function EscalatedPanel({ workflow, onChanged, onCancel, cancelBusy }: Props) {
-  const form = useEscalationForm();
   if (workflow.status !== 'ESCALATED') {
     return null;
   }
+  if (isTestStop(workflow)) {
+    return (
+      <TestStopPanel
+        workflow={workflow}
+        onChanged={onChanged}
+        onCancel={onCancel}
+        cancelBusy={cancelBusy}
+      />
+    );
+  }
+  return (
+    <GenericEscalationPanel
+      workflow={workflow}
+      onChanged={onChanged}
+      onCancel={onCancel}
+      cancelBusy={cancelBusy}
+    />
+  );
+}
+
+function GenericEscalationPanel({ workflow, onChanged, onCancel, cancelBusy }: Props) {
+  const form = useEscalationForm();
   const act = (action: EscalationAction) =>
     runEscalationAction({
       action,
@@ -205,7 +233,13 @@ export function EscalatedPanel({ workflow, onChanged, onCancel, cancelBusy }: Pr
   return (
     <Card title="Escalated — a human decision is needed">
       <EscalationSummary workflow={workflow} />
-      <EscalationBody form={form} cancelBusy={cancelBusy} onAct={act} onCancel={onCancel} />
+      <EscalationBody
+        workflow={workflow}
+        form={form}
+        cancelBusy={cancelBusy}
+        onAct={act}
+        onCancel={onCancel}
+      />
     </Card>
   );
 }

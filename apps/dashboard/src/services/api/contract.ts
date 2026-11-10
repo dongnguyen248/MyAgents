@@ -41,6 +41,10 @@ export interface FactoryApi {
   resumeEscalation(runId: string, reason: string, guidance?: string): Promise<Workflow>;
   /** Approve an escalated gate's artifact anyway (reason required, recorded as the decision comment). */
   approveEscalation(runId: string, reason: string): Promise<Workflow>;
+  /** Skip a no-tests run's test step (reason required); scope 'run' also covers later items that collect no tests. */
+  skipTests(runId: string, reason: string, scope?: 'item' | 'run'): Promise<Workflow>;
+  /** Replace a no-tests run's test commands (run-scoped override) and retest. */
+  replaceTestCommands(runId: string, commands: string[][], reason?: string): Promise<Workflow>;
   /** Recover a run whose step was interrupted; replay it or fail the run. */
   recoverRun(runId: string, reason: string, retryInterrupted: boolean): Promise<Workflow>;
   /** (Re)start the run's background driver; idempotent. */

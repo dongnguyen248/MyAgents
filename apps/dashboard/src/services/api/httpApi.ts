@@ -72,6 +72,16 @@ export function createHttpApi(baseUrl: string): FactoryApi {
       }),
     approveEscalation: (runId, reason) =>
       send<Workflow>(`/runs/${runId}/escalation/approve`, 'POST', { reason }),
+    skipTests: (runId, reason, scope) =>
+      send<Workflow>(`/runs/${runId}/escalation/skip-tests`, 'POST', {
+        reason,
+        ...(scope ? { scope } : {}),
+      }),
+    replaceTestCommands: (runId, commands, reason) =>
+      send<Workflow>(`/runs/${runId}/escalation/test-commands`, 'POST', {
+        commands,
+        ...(reason ? { reason } : {}),
+      }),
     recoverRun: (runId, reason, retryInterrupted) =>
       send<Workflow>(`/runs/${runId}/recover`, 'POST', { reason, retryInterrupted }),
     driveRun: (runId) => send<Workflow>(`/runs/${runId}/drive`, 'POST'),

@@ -634,6 +634,58 @@ export const mockApi: FactoryApi = {
     workflow.updatedAt = new Date().toISOString();
     return delay(workflow);
   },
+
+  skipTests: (runId, reason) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
+    if (!reason.trim()) {
+      return Promise.reject(new Error('reason is required'));
+    }
+    if (workflow.status !== 'ESCALATED') {
+      return Promise.reject(
+        new Error('Only a run stopped for a no-tests decision can skip its tests'),
+      );
+    }
+    workflow.status = 'RUNNING';
+    workflow.waiting = {
+      kind: 'STEP_RUNNING',
+      since: new Date().toISOString(),
+      reason: null,
+      retryAt: null,
+      budget: null,
+      suggestedActions: [],
+    };
+    workflow.updatedAt = new Date().toISOString();
+    return delay(workflow);
+  },
+
+  replaceTestCommands: (runId, commands) => {
+    const workflow = workflowStore.find((w) => w.id === runId);
+    if (!workflow) {
+      return Promise.reject(new Error(`Run '${runId}' not found`));
+    }
+    if (commands.length === 0) {
+      return Promise.reject(new Error('Provide at least one test command'));
+    }
+    if (workflow.status !== 'ESCALATED') {
+      return Promise.reject(
+        new Error('Only a run stopped for a no-tests decision can replace its test commands'),
+      );
+    }
+    workflow.status = 'RUNNING';
+    workflow.waiting = {
+      kind: 'STEP_RUNNING',
+      since: new Date().toISOString(),
+      reason: null,
+      retryAt: null,
+      budget: null,
+      suggestedActions: [],
+    };
+    workflow.updatedAt = new Date().toISOString();
+    return delay(workflow);
+  },
 };
 
 function approvalFieldsOf(input: ProjectProfileInput) {

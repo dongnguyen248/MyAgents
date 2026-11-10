@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { parseMaxRevisions, validateApprovalSettings } from '../../lib/approvalSettings';
 import type { ProjectProfileInput } from '../../types/project';
 import { Card } from '../common/Layout';
+import { secretInputAttrs, textInputAttrs } from '../forms/inputAttrs';
 
 const list = (value: string): string[] =>
   value
@@ -393,6 +394,7 @@ function RepositoryFields({ repoLink, onProviderChange }: { repoLink: RepoLinkSt
         value={repoLink.repoUrl}
         onChange={(e) => changeRepoUrl(e.target.value)}
         placeholder="https://github.com/owner/repo or https://gitlab.com/group/project"
+        {...textInputAttrs('asf-repo-url')}
       />
     </label>
   );
@@ -412,7 +414,7 @@ function HostingTokenFields({ repoLink, initial }: { repoLink: RepoLinkState; in
         value={repoLink.hostingToken}
         onChange={(e) => repoLink.setHostingToken(e.target.value)}
         placeholder={initial?.hostingTokenConfigured ? 'Paste a new token to replace the stored one' : 'Paste this project’s GitLab/GitHub token'}
-        autoComplete="off"
+        {...secretInputAttrs('asf-hosting-token')}
       />
     </label>
   );

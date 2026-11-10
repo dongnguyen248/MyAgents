@@ -62,6 +62,15 @@ class ChangeRequestDescription:
 
 
 @dataclass(frozen=True)
+class TestSkip:
+    """One recorded test skip: who skipped, why, and for which item."""
+
+    operator: str
+    reason: str
+    item_id: str = ""
+
+
+@dataclass(frozen=True)
 class ChangeRequestInfo:
     """What the hosting action knows when it opens a change request."""
 
@@ -71,8 +80,7 @@ class ChangeRequestInfo:
     branch: str
     base_branch: str
     test_commands: tuple[str, ...] = ()
-    test_skip_operator: str = ""
-    test_skip_reason: str = ""
+    test_skips: tuple[TestSkip, ...] = ()
 
 
 def render_description(fields: ChangeRequestDescription) -> str:
@@ -304,17 +312,25 @@ def build_change_request_text(info: ChangeRequestInfo, changes: ChangeSet) -> st
     return render_description(change_request_description(info, changes))
 
 
-def test_skip_of(context: Mapping[str, Any]) -> tuple[str, str]:
-    """The run's recorded test skip as (operator, reason), else ("", "").
+def test_skips_of(context: Mapping[str, Any]) -> tuple[TestSkip, ...]:
+    """Every test skip recorded on the run, in decision order.
 
-    The decision is the one ``test_ops`` recorded on the run when
-    the operator skipped the test step at a NO_TESTS stop; a
-    "replace" decision (or none) means the tests did run.
+    The decisions are the ones ``test_ops`` recorded when the
+    operator skipped items at NO_TESTS stops; a run recorded before
+    the list existed falls back to its single latest decision. A
+    later "replace" or pass never erases an earlier skip here.
     """
-    decision = context.get("testDecision")
-    if not isinstance(decision, Mapping) or decision.get("action") != "skip":
-        return "", ""
-    return str(decision.get("operator") or ""), str(decision.get("reason") or "")
+    history = context.get("testDecisions")
+    entries = history if isinstance(history, list) else [context.get("testDecision")]
+    return tuple(
+        TestSkip(
+            operator=str(entry.get("operator") or ""),
+            reason=str(entry.get("reason") or ""),
+            item_id=str(entry.get("itemId") or ""),
+        )
+        for entry in entries
+        if isinstance(entry, Mapping) and entry.get("action") == "skip"
+    )
 
 
 def test_commands_of(profile: Mapping[str, Any]) -> tuple[str, ...]:
@@ -361,13 +377,19 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
+def _skip_line(skip: TestSkip) -> str:
+    if skip.item_id:
+        return (
+            f"Tests skipped by {_one_line(skip.operator)} for item "
+            f"{_one_line(skip.item_id)}: {_one_line(skip.reason)}"
+        )
+    return f"Tests skipped by {_one_line(skip.operator)}: {_one_line(skip.reason)}"
+
+
 def _verification_lines(info: ChangeRequestInfo) -> list[str]:
     lines: list[str] = []
-    if info.test_skip_operator:
-        lines.append(
-            f"Tests skipped by {_one_line(info.test_skip_operator)}: "
-            f"{_one_line(info.test_skip_reason)}"
-        )
+    if info.test_skips:
+        lines.extend(_skip_line(skip) for skip in info.test_skips)
     else:
         for command in info.test_commands:
             lines.append(f"`{command}` - passed in this run's test step, before this step")

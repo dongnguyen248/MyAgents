@@ -96,3 +96,24 @@ test('findings summary prefers the latest review, then the test report', () => {
   assert.equal(latestFindingsSummary(long)?.length, 601);
   assert.equal(latestFindingsSummary(workflow({ status: 'RUNNING' })), undefined);
 });
+
+test('escalated no-tests stops omit the fix-budget resume', () => {
+  const stopped = workflow({
+    status: 'ESCALATED',
+    waiting: {
+      kind: 'ESCALATED',
+      since: '2026-11-09T00:00:00Z',
+      suggestedActions: ['skip_tests', 'replace_test_commands', 'cancel'],
+    },
+  });
+  assert.deepEqual(ids(stopped), ['fail-run', 'cancel']);
+  const fixEscalated = workflow({
+    status: 'ESCALATED',
+    waiting: {
+      kind: 'ESCALATED',
+      since: '2026-11-09T00:00:00Z',
+      suggestedActions: ['resume', 'cancel'],
+    },
+  });
+  assert.deepEqual(ids(fixEscalated), ['resume-escalation', 'fail-run', 'cancel']);
+});

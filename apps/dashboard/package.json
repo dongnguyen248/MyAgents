@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/operatorActions.test.ts tests/approvalGroups.test.ts tests/reviewViews.test.ts tests/approvalSettings.test.ts tests/errorBanner.test.ts tests/modelFormAttrs.test.ts",
+    "test": "node --experimental-strip-types --test tests/operatorActions.test.ts tests/approvalGroups.test.ts tests/reviewViews.test.ts tests/approvalSettings.test.ts tests/errorBanner.test.ts tests/modelFormAttrs.test.ts tests/escalationActions.test.ts tests/projectFormAttrs.test.ts",
     "lint": "eslint src",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\""
   },

@@ -33,7 +33,7 @@ from asf.integrations.hosting.description import (
     ChangeRequestInfo,
     build_change_request_text,
     test_commands_of,
-    test_skip_of,
+    test_skips_of,
     validate_description,
 )
 from asf.integrations.hosting.factory import build_provider
@@ -257,7 +257,7 @@ def _title(request: AgentRequest) -> str:
 def _change_request_info(
     request: AgentRequest, branch: str, base_branch: str, profile: Mapping[str, Any]
 ) -> ChangeRequestInfo:
-    skip_operator, skip_reason = test_skip_of(request.context)
+    skips = test_skips_of(request.context)
     return ChangeRequestInfo(
         title=_title(request),
         task_id=request.task_id,
@@ -265,8 +265,7 @@ def _change_request_info(
         branch=branch,
         base_branch=base_branch,
         test_commands=test_commands_of(profile),
-        test_skip_operator=skip_operator,
-        test_skip_reason=skip_reason,
+        test_skips=skips,
     )
 
 

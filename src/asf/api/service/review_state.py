@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from asf.agents._shared.security import redact_text
 from asf.approval.mode import approval_overrides_from_context, resolve_approval_mode
+from asf.orchestrator.code_loop import TEST_ESCALATED_STAGE
 from asf.orchestrator.execution import WorkflowExecution
 from asf.workflow.definition import WorkflowStepDef
 
@@ -183,9 +185,37 @@ def escalation_waiting(
     reason, open_blockers = escalation_detail(run, step)
     waiting["escalationReason"] = reason
     waiting["openBlockers"] = open_blockers
+    _finalise_actions(run, step, waiting)
+    return waiting
+
+
+def _finalise_actions(
+    run: WorkflowExecution, step: WorkflowStepDef | None, waiting: dict[str, Any]
+) -> None:
     if step is not None and step.requires_approval:
         waiting["suggestedActions"] = ["resume", "approve", "cancel"]
-    return waiting
+    if run.state.stage == TEST_ESCALATED_STAGE:
+        _test_stop_waiting(run, waiting)
+
+
+def _test_stop_waiting(run: WorkflowExecution, waiting: dict[str, Any]) -> None:
+    """A no-tests stop is decided on the test commands, not on the
+    fix budget or an approval: offer exactly the two test actions
+    plus cancel, hide the budget, and pass the baked commands
+    (redacted) so the panel can prefill the replacement input."""
+    waiting["budget"] = None
+    waiting["suggestedActions"] = ["skip_tests", "replace_test_commands", "cancel"]
+    waiting["testCommands"] = _baked_test_commands(run)
+
+
+def _baked_test_commands(run: WorkflowExecution) -> list[list[str]]:
+    project = run.context.get("project")
+    if not isinstance(project, dict):
+        return []
+    commands = project.get("testCommands")
+    if not isinstance(commands, list):
+        return []
+    return [[redact_text(str(arg)) for arg in argv] for argv in commands if isinstance(argv, list)]
 
 
 def is_human_wait(run: WorkflowExecution, step: WorkflowStepDef | None) -> bool:
