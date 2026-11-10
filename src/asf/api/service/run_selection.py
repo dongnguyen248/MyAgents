@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from asf.orchestrator.execution import WorkflowExecution
@@ -53,11 +53,40 @@ def task_run(task_id: str) -> RunPredicate:
     return matches
 
 
+def split_context(run: WorkflowExecution) -> Mapping[str, Any]:
+    """The run's auto-split lineage block, or an empty mapping."""
+    split = run.context.get("split") if isinstance(run.context, Mapping) else None
+    return split if isinstance(split, Mapping) else {}
+
+
 def split_part_run(parent_task_id: str) -> RunPredicate:
     """Accept runs that are auto-split parts of the parent task."""
 
     def matches(run: WorkflowExecution) -> bool:
-        split = run.context.get("split") if isinstance(run.context, Mapping) else None
-        return isinstance(split, Mapping) and split.get("parentTaskId") == parent_task_id
+        return split_context(run).get("parentTaskId") == parent_task_id
 
     return matches
+
+
+def current_run_id(
+    runs: Sequence[WorkflowExecution],
+    matches: RunPredicate,
+) -> str | None:
+    """The id of the current run among `runs`, or None."""
+    current = select_current_run(runs, matches)
+    return current.id if current is not None else None
+
+
+def current_run_by_task(
+    runs: Sequence[WorkflowExecution],
+) -> dict[str, WorkflowExecution]:
+    """The current run of every task in `runs`, keyed by task id."""
+    grouped: dict[str, list[WorkflowExecution]] = {}
+    for run in runs:
+        grouped.setdefault(run.task_id, []).append(run)
+    latest: dict[str, WorkflowExecution] = {}
+    for task_id, group in grouped.items():
+        selected = select_current_run(group, task_run(task_id))
+        if selected is not None:
+            latest[task_id] = selected
+    return latest

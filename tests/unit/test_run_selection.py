@@ -12,6 +12,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from asf.api.service.run_selection import (
+    current_run_by_task,
+    current_run_id,
     select_current_run,
     split_part_run,
     task_run,
@@ -115,3 +117,18 @@ def test_split_part_predicate_matches_only_that_parents_parts() -> None:
     malformed = _run("r-bad", started=8, updated=8, context={"split": "nope"})
     runs = [part, other_part, plain, malformed]
     assert select_current_run(runs, split_part_run("parent")) is part
+
+
+def test_current_run_id_returns_the_id_or_none() -> None:
+    run = _run("r1", started=1, updated=1)
+    assert current_run_id([run], task_run("task-1")) == "r1"
+    assert current_run_id([run], task_run("other-task")) is None
+    assert current_run_id([], task_run("task-1")) is None
+
+
+def test_current_run_by_task_picks_each_tasks_current_run() -> None:
+    old = _run("r-old", started=1, updated=9)
+    new = _run("r-new", started=4, updated=4)
+    other = _run("r-other", started=2, updated=2, task_id="task-2")
+    latest = current_run_by_task([old, new, other])
+    assert latest == {"task-1": new, "task-2": other}

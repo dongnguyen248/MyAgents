@@ -34,6 +34,7 @@ from asf.api.service import (
     MetricsProtocol,
     _camelize,
     _iso,
+    run_selection,
 )
 from asf.api.service.review_state import (
     ai_review_waiting,
@@ -228,6 +229,7 @@ class QueriesMixin:
         assigned = self._agent_id_for_type(step.agent_type) if step is not None else None
         view: dict[str, Any] = {
             "id": run.task_id,
+            "currentRunId": run.id,
             "title": self._task_title(run),
             "projectId": run.project_id,
             "workflowType": self._workflow_type(run),
@@ -258,9 +260,7 @@ class QueriesMixin:
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
         criteria: dict[str, Any] = {**(filter or {}), **kwargs}
-        latest: dict[str, WorkflowExecution] = {}
-        for run in sorted(self._runs(), key=lambda item: item.updated_at):
-            latest[run.task_id] = run
+        latest = run_selection.current_run_by_task(self._runs())
         views = [self._task_view(run) for run in latest.values()]
         views.extend(
             view
@@ -336,21 +336,17 @@ class QueriesMixin:
         """
         children_by_parent: dict[str, list[WorkflowExecution]] = {}
         for run in latest.values():
-            split = run.context.get("split") if isinstance(run.context, Mapping) else None
-            if isinstance(split, Mapping) and isinstance(split.get("parentTaskId"), str):
-                children_by_parent.setdefault(split["parentTaskId"], []).append(run)
-
-        def split_of(run: WorkflowExecution) -> Mapping[str, Any]:
-            split = run.context.get("split") if isinstance(run.context, Mapping) else None
-            return split if isinstance(split, Mapping) else {}
+            parent = run_selection.split_context(run).get("parentTaskId")
+            if isinstance(parent, str):
+                children_by_parent.setdefault(parent, []).append(run)
 
         views: list[dict[str, Any]] = []
         for parent_id, children in children_by_parent.items():
             if parent_id in latest:
                 continue
-            children.sort(key=lambda run: split_of(run).get("index") or 0)
+            children.sort(key=lambda run: run_selection.split_context(run).get("index") or 0)
             first = children[0]
-            total_raw = split_of(first).get("total")
+            total_raw = run_selection.split_context(first).get("total")
             total = total_raw if isinstance(total_raw, int) and total_raw > 0 else len(children)
             completed = sum(1 for run in children if run.state.stage == "COMPLETED")
             active = next(
@@ -367,10 +363,12 @@ class QueriesMixin:
                 status = "COMPLETED"
             else:
                 status = "IMPLEMENTING"
-            title = split_of(first).get("title")
+            title = run_selection.split_context(first).get("title")
+            parts = run_selection.split_part_run(parent_id)
             views.append(
                 {
                     "id": parent_id,
+                    "currentRunId": run_selection.current_run_id(children, parts),
                     "title": title if isinstance(title, str) and title else parent_id,
                     "projectId": first.project_id,
                     "workflowType": self._workflow_type(first),
@@ -1023,8 +1021,7 @@ class QueriesMixin:
         runs = self._runs()
         run = next((item for item in runs if item.id == workflow_id), None)
         if run is None:
-            by_task = [item for item in runs if item.task_id == workflow_id]
-            run = by_task[-1] if by_task else None
+            run = run_selection.select_current_run(runs, run_selection.task_run(workflow_id))
         return self._workflow_view(run) if run is not None else None
 
     # ------------------------------------------------------------------
