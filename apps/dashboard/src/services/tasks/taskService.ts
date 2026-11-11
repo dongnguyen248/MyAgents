@@ -1,3 +1,4 @@
+import { pickTaskWorkflow } from '../../lib/currentRun';
 import type { StartRunInput, Task, TaskFilter } from '../../types/task';
 import type { Workflow } from '../../types/workflow';
 import { api } from '../api';
@@ -9,13 +10,14 @@ export const createTask = (input: StartRunInput): Promise<Workflow> => api.start
 
 export async function getTaskDetail(taskId: string) {
   const [task, events, workflows] = await Promise.all([api.getTask(taskId), api.listActivity({ taskId }), api.listWorkflows()]);
-  // Every run of this task, newest first; the page's workflow is the latest
-  // run, and the rest form the run history (a task is one row everywhere
-  // else, always reflecting its latest run). For an auto-split parent
-  // task, its parts are separate runs pointing back via parentTaskId —
-  // they belong on the parent's page as its parts.
-  const runs = workflows
-    .filter((w) => w.taskId === taskId || w.parentTaskId === taskId)
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  return { task, events, workflow: runs[0], runs };
+  // Every run of this task, in API order; the page's workflow is the
+  // task's current run (named by the backend, with the shared pick
+  // as fallback), and the rest form the run history (a task is one
+  // row everywhere else, always reflecting its current run). For an
+  // auto-split parent task, its parts are separate runs pointing
+  // back via parentTaskId — they belong on the parent's page as
+  // its parts. The history keeps its newest-first display sort.
+  const pool = workflows.filter((w) => w.taskId === taskId || w.parentTaskId === taskId);
+  const runs = [...pool].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return { task, events, workflow: pickTaskWorkflow(pool, task?.currentRunId), runs };
 }
