@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from asf.agents._shared.security import scan_secrets
+from asf.agents._shared.security import redact_text, scan_secrets
 from tests.unit._fake_secrets import fake_secret
 
 
@@ -291,3 +291,23 @@ def test_scan_secrets_no_secrets() -> None:
     content = "print('hello world')\nfoo = 'bar'"
     matches = scan_secrets(content, "main.py")
     assert len(matches) == 0
+
+
+def test_redact_text_removes_assignments_bearer_and_url_credentials() -> None:
+    text = (
+        "failed: password = 'sup3rsecretvalue9' with "
+        "bearer abcdefghijklmnopqrstuvwxyz123456 via "
+        "https://deploy:hunter2pass9@ci.internal.example/v1"
+    )
+    redacted = redact_text(text)
+    assert "sup3rsecretvalue9" not in redacted
+    assert "abcdefghijklmnopqrstuvwxyz123456" not in redacted
+    assert "hunter2pass9" not in redacted
+    assert "deploy:" not in redacted
+    assert redacted.count("[REDACTED]") == 3
+    assert "ci.internal.example/v1" in redacted
+
+
+def test_redact_text_leaves_plain_urls_and_prose_untouched() -> None:
+    text = "see https://example.com/docs for the model catalogue"
+    assert redact_text(text) == text

@@ -118,6 +118,12 @@ def _excluded(matched: str, exclude_patterns: list[re.Pattern[str]] | None) -> b
     return any(exc.search(matched) for exc in exclude_patterns)
 
 
+# Redaction-only pattern: credentials embedded in a URL of any
+# scheme. scan_secrets deliberately flags only database URLs in
+# code, but a quoted message must never display URL credentials.
+_URL_CREDENTIALS = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://[^:\s/@]+:[^@\s]+@")
+
+
 def redact_text(text: str) -> str:
     """Replace every secret-pattern span in ``text`` with ``[REDACTED]``.
 
@@ -127,11 +133,13 @@ def redact_text(text: str) -> str:
     for any surface that quotes potentially sensitive text (agent
     error messages on activity events, diagnostics).
     """
-    spans = sorted(
+    spans = [
         (match.start(), match.end())
         for _, pattern in SECRET_PATTERNS
         for match in pattern.finditer(text)
-    )
+    ]
+    spans += [(match.start(), match.end()) for match in _URL_CREDENTIALS.finditer(text)]
+    spans.sort()
     merged: list[tuple[int, int]] = []
     for start, end in spans:
         if merged and start <= merged[-1][1]:
