@@ -22,9 +22,11 @@ from asf.agents.base import AgentRuntime
 from asf.agents.loading import load_artifact_review_prompts
 from asf.approval.models import ApprovalDecision, ApprovalPolicy
 from asf.approval.service import ApprovalService
-from asf.contracts.models import AgentMetadata, Artifact
+from asf.contracts.models import AgentMetadata, Artifact, PlatformError
+from asf.models.errors import ModelGatewayError
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
+from asf.orchestrator.ai_review_apply import _short_error_message
 from asf.orchestrator.execution import WorkflowExecution
 from asf.orchestrator.gate_ops import approve_anyway, deliver_guidance
 from asf.state_machine.machine import InvalidTransition
@@ -399,6 +401,119 @@ def test_reviewer_failure_retries_once_then_escalates_reviewer_failed() -> None:
     escalated = harness.events(run.id, "WORKFLOW_ESCALATED")
     assert escalated and escalated[-1].metadata["reason"] == "REVIEWER_FAILED"
     assert all(d.decision != "APPROVED" for d in harness.decisions())
+
+
+class _RaisingModels:
+    """A models gateway whose every call fails with one fixed error."""
+
+    def __init__(self, error: ModelGatewayError) -> None:
+        self._error = error
+
+    def complete(self, request: Any) -> Any:
+        raise self._error
+
+
+def _drive_reviewer_failure(harness: Harness) -> WorkflowExecution:
+    run = harness.start()
+    harness.engine.tick(run.id)  # producer -> SPEC_REVIEW
+    harness.engine.tick(run.id)  # review attempt 1 fails -> retry scheduled
+    harness.clock.advance(10)
+    harness.engine.tick(run.id)  # review attempt 2 fails -> escalate
+    return harness.engine.get(run.id)
+
+
+def test_reviewer_gateway_failure_escalates_with_the_cause_on_the_event() -> None:
+    message = (
+        "The provider rejected the request after several retries in the "
+        "regional endpoint pool. Details: password = 'sup3rsecretvalue9' "
+        "was echoed; the call used bearer abcdefghijklmnopqrstuvwxyz123456 "
+        "against https://deploy:hunter2pass9@ci.internal.example/v1/models."
+    )
+    steps = [gated("spec", "spec", "SPEC", [])]
+    harness = Harness(
+        steps,
+        replies=[],
+        contents=full_contents(),
+        gateway_wrapper=lambda _inner: _RaisingModels(
+            ModelGatewayError("LLM_MODEL_NOT_SUPPORTED", message)
+        ),
+    )
+    run = _drive_reviewer_failure(harness)
+    assert run.state.stage == "SPEC_ESCALATED"
+    escalated = harness.events(run.id, "WORKFLOW_ESCALATED")
+    assert escalated and escalated[-1].metadata["reason"] == "REVIEWER_FAILED"
+    assert escalated[-1].message == "AI review of Spec escalated: REVIEWER_FAILED"
+    metadata = escalated[-1].metadata
+    assert metadata["errorCode"] == "LLM_MODEL_NOT_SUPPORTED"
+    assert "[REDACTED]" in metadata["errorMessage"]
+    assert len(metadata["errorMessage"]) <= 240
+    blob = json.dumps(escalated[-1].model_dump(mode="json"))
+    for secret in ("sup3rsecretvalue9", "abcdefghijklmnopqrstuvwxyz123456", "hunter2pass9"):
+        assert secret not in blob
+
+
+def test_reviewer_invalid_reply_escalates_with_its_error_code() -> None:
+    steps = [gated("spec", "spec", "SPEC", [])]
+    harness = Harness(steps, replies=["not json", "still not json"], contents=full_contents())
+    run = _drive_reviewer_failure(harness)
+    assert run.state.stage == "SPEC_ESCALATED"
+    escalated = harness.events(run.id, "WORKFLOW_ESCALATED")
+    assert escalated and escalated[-1].metadata["reason"] == "REVIEWER_FAILED"
+    assert escalated[-1].metadata["errorCode"] == "LLM_INVALID_RESPONSE"
+    assert escalated[-1].metadata["errorMessage"]
+
+
+def test_short_error_message_redacts_before_capping() -> None:
+    # The token starts early enough that capping first would leave an
+    # 18-char fragment — below the bearer pattern's 20-char threshold,
+    # so a later redaction would miss it and the fragment would leak.
+    message = "x" * 213 + " bearer abcdefghijklmnopqrstuvwxyz123456 trailing"
+    error = PlatformError(
+        code="LLM_TIMEOUT", message=message, category="LLM", retryable=True, timestamp=START
+    )
+    short = _short_error_message(error)
+    assert len(short) <= 240
+    assert "[REDACTED]" in short
+    assert "abcdefghijklmnopqr" not in short
+
+
+def test_other_escalation_events_carry_no_error_cause() -> None:
+    steps = [gated("spec", "spec", "SPEC", [], max_revisions=1)]
+    contents = {"spec": [md(GOOD_SPEC), md(GOOD_SPEC)]}
+    harness = Harness(steps, replies=[rc_reply(), rc_reply()], contents=contents)
+    run = harness.start()
+    run = harness.drive(run.id)
+    assert run.state.stage == "SPEC_ESCALATED"
+    escalated = harness.events(run.id, "WORKFLOW_ESCALATED")
+    assert escalated and escalated[-1].metadata["reason"] == "MAX_REVISIONS"
+    assert "errorCode" not in escalated[-1].metadata
+    assert "errorMessage" not in escalated[-1].metadata
+
+    steps = [
+        gated("spec", "spec", "SPEC", []),
+        gated("plan", "plan", "PLAN", ["SPEC"]),
+    ]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[APPROVE_REPLY], contents=contents)
+    run = harness.start(context={"approval": {"maxReviewRounds": 1}})
+    run = harness.drive(run.id)
+    assert run.state.stage == "PLAN_ESCALATED"
+    escalated = harness.events(run.id, "WORKFLOW_ESCALATED")
+    assert escalated and escalated[-1].metadata["reason"] == "BUDGET"
+    assert "errorCode" not in escalated[-1].metadata
+    assert "errorMessage" not in escalated[-1].metadata
+
+    trivial = GOOD_SPEC.replace("Build a calculator.", "Build a calculator!")
+    steps = [gated("spec", "spec", "SPEC", [], max_revisions=3)]
+    contents = {"spec": [md(GOOD_SPEC), md(trivial)]}
+    harness = Harness(steps, replies=[rc_reply(), rc_reply("STILL_OPEN")], contents=contents)
+    run = harness.start()
+    run = harness.drive(run.id)
+    assert run.state.stage == "SPEC_ESCALATED"
+    escalated = harness.events(run.id, "WORKFLOW_ESCALATED")
+    assert escalated and escalated[-1].metadata["reason"] == "NO_PROGRESS"
+    assert "errorCode" not in escalated[-1].metadata
+    assert "errorMessage" not in escalated[-1].metadata
 
 
 def test_review_round_budget_escalates_with_budget_reason() -> None:

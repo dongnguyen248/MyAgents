@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from asf.agents.artifact_review.prompts import ArtifactReviewContent
@@ -56,6 +57,19 @@ REVIEW_RETRY_DELAY_SECONDS = 5
 UPSTREAM_TYPES = {"SPEC": (), "PLAN": ("SPEC",), "TASK": ("SPEC", "PLAN")}
 
 _BUDGET_COMMENT = "AI review round budget exhausted (maxReviewRounds); escalating to a human."
+
+
+@dataclass(frozen=True)
+class Escalation:
+    """An AI-review escalation: its audit reason, the decision
+    comment, and — for a reviewer failure — the terminal error's
+    code and redacted message, carried on the escalation event so
+    the operator sees the cause, not just the reason."""
+
+    reason: str
+    comment: str
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 def ai_stage(engine: Orchestrator) -> AiReviewStage:
@@ -201,7 +215,7 @@ class AiReviewStage:
     def _budget_exhausted(self, run: WorkflowExecution, step: WorkflowStepDef) -> bool:
         if self._rounds_done(run) < max_review_rounds_from_context(run.context):
             return False
-        self._escalate(run, step, reason="BUDGET", comment=_BUDGET_COMMENT)
+        self._escalate(run, step, Escalation(reason="BUDGET", comment=_BUDGET_COMMENT))
         return True
 
     def _event_started(self, run: WorkflowExecution, step: WorkflowStepDef) -> None:
@@ -307,7 +321,7 @@ class AiReviewStage:
         )
 
     def _escalate(
-        self, run: WorkflowExecution, step: WorkflowStepDef, *, reason: str, comment: str
+        self, run: WorkflowExecution, step: WorkflowStepDef, escalation: Escalation
     ) -> None:
         """Force the gate to its ESCALATED stage with an audit reason.
 
@@ -317,18 +331,23 @@ class AiReviewStage:
         state machine's own REVISE guard takes the escalation edge.
         """
         engine = self._engine
-        self._decide(run, "REQUEST_CHANGES", comment or reason)
+        self._decide(run, "REQUEST_CHANGES", escalation.comment or escalation.reason)
         graph_max = engine._graph.max_revisions.get(step.id, 0)
         run.state = RunState(
             stage=run.state.stage,
             revisions={**run.state.revisions, step.id: graph_max},
         )
         engine._sync_approval(run)
+        metadata: dict[str, str] = {"stepId": step.id, "reason": escalation.reason}
+        if escalation.error_code is not None:
+            metadata["errorCode"] = escalation.error_code
+        if escalation.error_message is not None:
+            metadata["errorMessage"] = escalation.error_message
         engine._event(
             run,
             "WORKFLOW_ESCALATED",
-            f"AI review of {step.name} escalated: {reason}",
-            metadata={"stepId": step.id, "reason": reason},
+            f"AI review of {step.name} escalated: {escalation.reason}",
+            metadata=metadata,
         )
 
     def _failed_result(
