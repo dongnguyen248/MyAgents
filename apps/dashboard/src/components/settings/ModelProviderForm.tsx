@@ -40,6 +40,7 @@ const AGENT_FIELDS: { key: string; label: string }[] = [
   { key: 'implement', label: 'Implement agent' },
   { key: 'review', label: 'Review agent' },
   { key: 'fix', label: 'Fix agent' },
+  { key: 'artifact-review', label: 'Artifact review agent' },
 ];
 
 /**

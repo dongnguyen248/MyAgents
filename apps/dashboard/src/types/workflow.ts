@@ -69,6 +69,10 @@ export interface WorkflowWaiting {
   escalationReason?: string | null;
   /** For ESCALATED: open BLOCKER findings in the latest AI review of the stage. */
   openBlockers?: number;
+  /** For ESCALATED with REVIEWER_FAILED: the reviewer error's code. */
+  errorCode?: string | null;
+  /** For ESCALATED with REVIEWER_FAILED: the reviewer error's redacted, capped message. */
+  errorMessage?: string | null;
 }
 
 /** One finding of an AI artifact review (GET /runs/{id}/reviews). */

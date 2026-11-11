@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from asf.agents._shared.security import redact_text
 from asf.agents.artifact_review.prompts import ArtifactReviewContent
 from asf.agents.artifact_review.render import render_feedback
 from asf.agents.artifact_review.verdict import (
@@ -27,12 +28,13 @@ from asf.agents.artifact_review.verdict import (
     detect_stagnation,
 )
 from asf.approval.mode import ResolvedApproval
-from asf.contracts.models import AgentResult
+from asf.contracts.models import AgentResult, PlatformError
 from asf.orchestrator.ai_review import (
     MAX_REVIEW_ATTEMPTS,
     REVIEW_ARTIFACT_TYPE,
     REVIEW_RETRY_DELAY_SECONDS,
     AiReviewStage,
+    Escalation,
     _review_content,
     ai_stage,
 )
@@ -45,6 +47,17 @@ if TYPE_CHECKING:
 __all__ = ["AiReviewApply", "apply_review_result"]
 
 _UNREADABLE_RESULT_COMMENT = "AI reviewer returned an unreadable result; escalating to a human."
+
+#: Cap for the reviewer error message carried on the escalation
+#: event: long enough to name the fix, short enough for a panel.
+_ERROR_MESSAGE_LIMIT = 240
+
+
+def _short_error_message(error: PlatformError) -> str:
+    """The error's message made safe and short for the escalation
+    event: redacted first, so a secret the cap would cut in half
+    cannot survive in truncated form."""
+    return redact_text(error.message)[:_ERROR_MESSAGE_LIMIT]
 
 
 def apply_review_result(
@@ -73,9 +86,7 @@ class AiReviewApply:
             return
         content = self._result_content(result)
         if content is None:
-            self._stage._escalate(
-                run, step, reason="REVIEWER_FAILED", comment=_UNREADABLE_RESULT_COMMENT
-            )
+            self._escalate_unreadable(run, step)
             return
         resolved = self._stage.resolved(run, step)
         verdict = derive_verdict(
@@ -141,6 +152,13 @@ class AiReviewApply:
         engine._sync_approval(run)
         return True
 
+    def _escalate_unreadable(self, run: WorkflowExecution, step: WorkflowStepDef) -> None:
+        self._stage._escalate(
+            run,
+            step,
+            Escalation(reason="REVIEWER_FAILED", comment=_UNREADABLE_RESULT_COMMENT),
+        )
+
     def _apply_failure(
         self, run: WorkflowExecution, step: WorkflowStepDef, result: AgentResult
     ) -> None:
@@ -151,12 +169,21 @@ class AiReviewApply:
             delay = timedelta(seconds=REVIEW_RETRY_DELAY_SECONDS)
             run.retry_at = self._engine._now() + delay
             return
-        summary = "; ".join(f"{error.code}: {error.message}" for error in result.errors)
+        summary = "; ".join(
+            f"{error.code}: {redact_text(error.message)}" for error in result.errors
+        )
+        first = result.errors[0] if result.errors else None
         self._stage._escalate(
             run,
             step,
-            reason="REVIEWER_FAILED",
-            comment=f"AI reviewer failed after {attempts} attempts: {summary or 'unknown error'}",
+            Escalation(
+                reason="REVIEWER_FAILED",
+                comment=(
+                    f"AI reviewer failed after {attempts} attempts: {summary or 'unknown error'}"
+                ),
+                error_code=first.code if first is not None else None,
+                error_message=_short_error_message(first) if first is not None else None,
+            ),
         )
 
     def _apply_changes_requested(
@@ -180,7 +207,7 @@ class AiReviewApply:
             if resolved.on_exhausted == "accept_with_warnings":
                 self._accept_with_warnings(run, step, content)
                 return
-            self._stage._escalate(run, step, reason="MAX_REVISIONS", comment=feedback)
+            self._stage._escalate(run, step, Escalation(reason="MAX_REVISIONS", comment=feedback))
             return
         if previous is not None and detect_stagnation(
             previous, current, block_on=resolved.block_on
@@ -199,7 +226,7 @@ class AiReviewApply:
             f"AI review of {step.name} made no progress on the blocking findings",
             metadata={"stepId": step.id, "stage": step.stage.lower()},
         )
-        self._stage._escalate(run, step, reason="NO_PROGRESS", comment=feedback)
+        self._stage._escalate(run, step, Escalation(reason="NO_PROGRESS", comment=feedback))
 
     def _previous_outcome(
         self, run: WorkflowExecution, step: WorkflowStepDef

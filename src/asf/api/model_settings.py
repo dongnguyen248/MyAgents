@@ -57,10 +57,10 @@ __all__ = [
 
 PROVIDERS = ("scripted", "gemini", "openai", "github-models", "meta", "custom")
 
-#: Agents that call a model and may carry a per-agent model override,
-#: keyed by agent type. The Test agent is deterministic (no model
-#: calls), so it is deliberately absent.
-MODEL_AGENTS = ("spec", "plan", "task", "implement", "review", "fix")
+#: Agents that call a model and may carry a per-agent model override.
+#: Test (no model calls) and the decomposer (complex tier: always the
+#: shared model) are absent. Test-all cap: len(MODEL_AGENTS) + 1.
+MODEL_AGENTS = ("spec", "plan", "task", "implement", "review", "fix", "artifact-review")
 
 
 def agent_key(raw: Any) -> str | None:
@@ -425,7 +425,7 @@ def _unsupported_model_error(
     sent = model or request.model or "(gateway default)"
     details = {
         **error.details,
-        "agent": key or "unknown",
+        "agent": key or str(request.metadata.get("agentId") or "unknown"),
         "model": sent,
         "source": source,
         "provider": settings.current()["provider"],

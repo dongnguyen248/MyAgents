@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
+from asf.api.model_settings import ModelSettings, SettingsRoutingGateway, agent_key
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse, ModelUsage
 from asf.integrations.openai_compatible import OpenAICompatibleGateway
 from asf.integrations.retry import http_error_code, is_model_not_supported
@@ -252,6 +252,43 @@ def test_base_url_credentials_never_reach_the_error(tmp_path: Path) -> None:
     blob = _serialized(error)
     assert "passw0rd" not in blob
     assert "user" not in error.details["baseUrlHost"]
+
+
+def test_agent_key_maps_the_artifact_review_agent() -> None:
+    assert agent_key("agent-artifact-review") == "artifact-review"
+    assert agent_key("decomposer") is None
+
+
+def test_attribution_for_the_artifact_review_agent(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    error = _routed_error(settings, {"agentId": "agent-artifact-review"})
+    assert error.details["agent"] == "artifact-review"
+    assert error.details["model"] == "shared-model"
+    assert error.details["source"] == "shared"
+
+
+def test_attribution_for_an_artifact_review_override(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, agentModels={"artifact-review": "reviewer-model"})
+    error = _routed_error(settings, {"agentId": "agent-artifact-review"})
+    assert error.details["agent"] == "artifact-review"
+    assert error.details["model"] == "reviewer-model"
+    assert error.details["source"] == "agentModels.artifact-review"
+    assert "Artifact-review agent" in error.message
+    assert "clear the override" in error.message
+
+
+def test_attribution_for_an_unmapped_caller_names_the_stamped_id(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    error = _routed_error(settings, {"agentId": "decomposer", "modelTier": "complex"})
+    assert error.details["agent"] == "decomposer"
+    assert error.details["source"] == "complex-tier"
+
+
+def test_attribution_without_any_agent_id_stays_unknown(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    error = _routed_error(settings, {})
+    assert error.details["agent"] == "unknown"
+    assert error.details["source"] == "shared"
 
 
 def test_other_gateway_errors_pass_through_unenriched(tmp_path: Path) -> None:

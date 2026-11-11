@@ -85,7 +85,7 @@ let modelSettings: {
   provider: string; model: string; baseUrl: string; apiKey: string;
   agentModels: Record<string, string>;
 } = { provider: 'scripted', model: '', baseUrl: '', apiKey: '', agentModels: {} };
-const MODEL_AGENTS = ['spec', 'plan', 'task', 'implement', 'review', 'fix'];
+const MODEL_AGENTS = ['spec', 'plan', 'task', 'implement', 'review', 'fix', 'artifact-review'];
 const cleanAgentModels = (raw?: Record<string, string>): Record<string, string> => {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw ?? {})) {

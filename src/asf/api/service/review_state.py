@@ -111,6 +111,18 @@ def _escalation_reason(run: WorkflowExecution) -> str | None:
     return None
 
 
+def _escalation_cause(event: Any, waiting: dict[str, Any]) -> None:
+    """Copy the failure cause an escalation event carries (a reviewer
+    failure's error code and redacted message) into the waiting
+    block, so the panel can name why the reviewer failed."""
+    code = event.metadata.get("errorCode")
+    if isinstance(code, str):
+        waiting["errorCode"] = code
+    message = event.metadata.get("errorMessage")
+    if isinstance(message, str):
+        waiting["errorMessage"] = message
+
+
 def _latest_review(run: WorkflowExecution, stage: str) -> Any:
     latest: Any = None
     for artifact in run.artifact_history.values():
@@ -182,6 +194,7 @@ def escalation_waiting(
     if escalated is not None:
         waiting["since"] = escalated.timestamp.isoformat()
         waiting["reason"] = escalated.message
+        _escalation_cause(escalated, waiting)
     reason, open_blockers = escalation_detail(run, step)
     waiting["escalationReason"] = reason
     waiting["openBlockers"] = open_blockers

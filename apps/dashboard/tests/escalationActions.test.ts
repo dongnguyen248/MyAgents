@@ -91,6 +91,49 @@ test('the review summary keeps its gate, reason and blocker wording', () => {
   );
 });
 
+test('a reviewer failure summary names the error code and message', () => {
+  const failed = workflow({
+    waiting: waiting({
+      suggestedActions: ['resume', 'cancel'],
+      stage: 'PLAN',
+      escalationReason: 'REVIEWER_FAILED',
+      openBlockers: 0,
+      errorCode: 'LLM_MODEL_NOT_SUPPORTED',
+      errorMessage: "Model 'claude-sonnet-5.5' (source: shared) is not supported by the provider.",
+    }),
+  });
+  assert.equal(
+    escalationSummaryFor(failed),
+    'Reviewer failed: LLM_MODEL_NOT_SUPPORTED — ' +
+      "Model 'claude-sonnet-5.5' (source: shared) is not supported by the provider.",
+  );
+});
+
+test('a reviewer failure without a message names just the code', () => {
+  const failed = workflow({
+    waiting: waiting({
+      suggestedActions: ['resume', 'cancel'],
+      escalationReason: 'REVIEWER_FAILED',
+      errorCode: 'LLM_TIMEOUT',
+    }),
+  });
+  assert.equal(escalationSummaryFor(failed), 'Reviewer failed: LLM_TIMEOUT');
+});
+
+test('a reviewer failure without a cause keeps the generic wording', () => {
+  const failed = workflow({
+    waiting: waiting({
+      suggestedActions: ['resume', 'cancel'],
+      escalationReason: 'REVIEWER_FAILED',
+      openBlockers: 0,
+    }),
+  });
+  assert.equal(
+    escalationSummaryFor(failed),
+    'The AI review loop escalated this run (Reviewer Failed) with 0 blocker(s) still open.',
+  );
+});
+
 test('an escalation without a review reason gets a neutral summary', () => {
   const fix = workflow({ waiting: waiting({ suggestedActions: ['resume', 'cancel'] }) });
   const summary = escalationSummaryFor(fix);

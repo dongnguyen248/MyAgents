@@ -6,8 +6,13 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from asf.api.service.approval_context import approval_settings_view
-from asf.api.service.review_state import approval_view_fields, project_approval_fields
-from asf.orchestrator.execution import RunState, WorkflowExecution
+from asf.api.service.review_state import (
+    approval_view_fields,
+    escalation_waiting,
+    project_approval_fields,
+)
+from asf.contracts.models import ActivityEvent
+from asf.orchestrator.execution import Observation, RunState, WorkflowExecution
 from asf.workflow.definition import WorkflowStepDef
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -97,3 +102,41 @@ def test_project_approval_fields_copy_the_four_keys() -> None:
         "approvalMaxRevisions": 2,
         "approvalOnExhausted": "",
     }
+
+
+def _escalated_run(metadata: dict) -> WorkflowExecution:
+    run = _run({})
+    run.state = RunState(stage="SPEC_ESCALATED")
+    event = ActivityEvent(
+        id="evt-1",
+        timestamp=NOW,
+        project_id="proj",
+        event_type="WORKFLOW_ESCALATED",
+        message="AI review of Write spec escalated: REVIEWER_FAILED",
+        metadata=metadata,
+    )
+    run.observations.append(Observation(id="obs-1", event=event))
+    return run
+
+
+def test_escalation_waiting_carries_the_reviewer_cause() -> None:
+    run = _escalated_run(
+        {
+            "stepId": "spec",
+            "reason": "REVIEWER_FAILED",
+            "errorCode": "LLM_MODEL_NOT_SUPPORTED",
+            "errorMessage": "Model 'x' is not supported by the provider.",
+        }
+    )
+    waiting = escalation_waiting(run, _step(), {}, {"used": 0, "max": 3})
+    assert waiting["escalationReason"] == "REVIEWER_FAILED"
+    assert waiting["errorCode"] == "LLM_MODEL_NOT_SUPPORTED"
+    assert waiting["errorMessage"] == "Model 'x' is not supported by the provider."
+
+
+def test_escalation_waiting_without_a_cause_keeps_the_old_shape() -> None:
+    run = _escalated_run({"stepId": "spec", "reason": "MAX_REVISIONS"})
+    waiting = escalation_waiting(run, _step(), {}, {"used": 1, "max": 3})
+    assert waiting["escalationReason"] == "MAX_REVISIONS"
+    assert "errorCode" not in waiting
+    assert "errorMessage" not in waiting
