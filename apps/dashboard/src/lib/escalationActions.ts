@@ -40,10 +40,24 @@ const TEST_STOP_SUMMARY =
   'That is not a code failure and no fix was attempted; the run is ' +
   'waiting for a decision about its test commands.';
 
+/** The summary for a reviewer failure whose cause the backend
+ * carried on the waiting block; null when there is no cause. */
+function reviewerFailureSummary(waiting: WorkflowWaiting | null | undefined): string | null {
+  if (waiting?.escalationReason !== 'REVIEWER_FAILED' || !waiting.errorCode) {
+    return null;
+  }
+  const detail = waiting.errorMessage ? ` — ${waiting.errorMessage}` : '';
+  return `Reviewer failed: ${waiting.errorCode}${detail}`;
+}
+
 /** The panel's opening line, worded for the kind of escalation. */
 export function escalationSummaryFor(workflow: Workflow): string {
   if (isTestStop(workflow)) {
     return TEST_STOP_SUMMARY;
+  }
+  const failure = reviewerFailureSummary(workflow.waiting);
+  if (failure) {
+    return failure;
   }
   const waiting = workflow.waiting;
   const reason = waiting?.escalationReason ?? null;
