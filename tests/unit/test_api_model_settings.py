@@ -97,3 +97,39 @@ def test_settings_per_agent_models_round_trip(tmp_path: Path):
         },
     )
     assert bad.status_code == 422
+
+
+def test_settings_artifact_review_override_round_trip(tmp_path: Path):
+    client = _client(tmp_path)
+    # The artifact-review agent has its own override slot and its own
+    # connection test; the decomposer has neither (it always uses the
+    # shared model via the complex tier).
+    ok = client.post("/settings/model/test", json={"agent": "artifact-review"})
+    assert ok.status_code == 200
+    assert ok.json()["ok"] is True
+
+    updated = client.put(
+        "/settings/model",
+        json={
+            "provider": "custom",
+            "model": "shared-m",
+            "baseUrl": "http://127.0.0.1:4141/v1",
+            "apiKey": "placeholder",
+            "agentModels": {"artifact-review": "claude-reviewer"},
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["agentModels"] == {"artifact-review": "claude-reviewer"}
+    fetched = client.get("/settings/model")
+    assert fetched.json()["agentModels"]["artifact-review"] == "claude-reviewer"
+
+    bad = client.put(
+        "/settings/model",
+        json={
+            "provider": "custom",
+            "model": "shared-m",
+            "baseUrl": "http://127.0.0.1:4141/v1",
+            "agentModels": {"decomposer": "m"},
+        },
+    )
+    assert bad.status_code == 422
