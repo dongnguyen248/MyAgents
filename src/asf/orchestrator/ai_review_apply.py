@@ -169,7 +169,9 @@ class AiReviewApply:
             delay = timedelta(seconds=REVIEW_RETRY_DELAY_SECONDS)
             run.retry_at = self._engine._now() + delay
             return
-        summary = "; ".join(f"{error.code}: {error.message}" for error in result.errors)
+        summary = "; ".join(
+            f"{error.code}: {redact_text(error.message)}" for error in result.errors
+        )
         first = result.errors[0] if result.errors else None
         self._stage._escalate(
             run,

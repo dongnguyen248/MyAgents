@@ -20,6 +20,7 @@ import pytest
 from asf.agents.artifact_review import ArtifactReviewAgent, ArtifactReviewSettings
 from asf.agents.base import AgentRuntime
 from asf.agents.loading import load_artifact_review_prompts
+from asf.api.service.review_state import escalation_waiting
 from asf.approval.models import ApprovalDecision, ApprovalPolicy
 from asf.approval.service import ApprovalService
 from asf.contracts.models import AgentMetadata, Artifact, PlatformError
@@ -450,6 +451,59 @@ def test_reviewer_gateway_failure_escalates_with_the_cause_on_the_event() -> Non
     blob = json.dumps(escalated[-1].model_dump(mode="json"))
     for secret in ("sup3rsecretvalue9", "abcdefghijklmnopqrstuvwxyz123456", "hunter2pass9"):
         assert secret not in blob
+
+
+def test_reviewer_failure_comment_event_and_waiting_carry_no_secrets() -> None:
+    message = (
+        "The provider rejected the request after several retries in the "
+        "regional endpoint pool. Details: password = 'sup3rsecretvalue9' "
+        "was echoed; the call used bearer abcdefghijklmnopqrstuvwxyz123456 "
+        "against https://deploy:hunter2pass9@ci.internal.example/v1/models."
+    )
+    steps = [gated("spec", "spec", "SPEC", [])]
+    harness = Harness(
+        steps,
+        replies=[],
+        contents=full_contents(),
+        gateway_wrapper=lambda _inner: _RaisingModels(
+            ModelGatewayError("LLM_MODEL_NOT_SUPPORTED", message)
+        ),
+    )
+    run = _drive_reviewer_failure(harness)
+    assert run.state.stage == "SPEC_ESCALATED"
+    secrets = ("sup3rsecretvalue9", "abcdefghijklmnopqrstuvwxyz123456", "hunter2pass9")
+    decision = harness.decisions()[-1]
+    assert decision.decision == "REQUEST_CHANGES"
+    assert decision.comment.startswith(
+        "AI reviewer failed after 2 attempts: LLM_MODEL_NOT_SUPPORTED: "
+    )
+    assert "[REDACTED]" in decision.comment
+    for secret in secrets:
+        assert secret not in decision.comment
+    waiting = escalation_waiting(run, steps[0], {}, {"used": 0, "max": 3})
+    assert waiting["errorCode"] == "LLM_MODEL_NOT_SUPPORTED"
+    blob = json.dumps(waiting)
+    for secret in secrets:
+        assert secret not in blob
+
+
+def test_reviewer_failure_comment_is_byte_identical_without_secrets() -> None:
+    steps = [gated("spec", "spec", "SPEC", [])]
+    harness = Harness(
+        steps,
+        replies=[],
+        contents=full_contents(),
+        gateway_wrapper=lambda _inner: _RaisingModels(
+            ModelGatewayError("LLM_TIMEOUT", "provider exploded quietly")
+        ),
+    )
+    run = _drive_reviewer_failure(harness)
+    assert run.state.stage == "SPEC_ESCALATED"
+    decision = harness.decisions()[-1]
+    assert decision.decision == "REQUEST_CHANGES"
+    assert decision.comment == (
+        "AI reviewer failed after 2 attempts: LLM_TIMEOUT: provider exploded quietly"
+    )
 
 
 def test_reviewer_invalid_reply_escalates_with_its_error_code() -> None:
