@@ -6,6 +6,7 @@ from typing import Any
 from asf.agents.base import AgentRuntime
 from asf.agents.task.agent import TaskAgent, TaskSettings
 from asf.configuration.platform import PlatformConfig
+from asf.tools.ports import RepositoryPort
 
 __all__ = ["build_task_agent"]
 
@@ -14,6 +15,7 @@ def build_task_agent(
     runtime: AgentRuntime,
     platform: PlatformConfig,
     templates_dir: Path,
+    repository: RepositoryPort | None = None,
 ) -> TaskAgent:
     """Builds a configured TaskAgent instance."""
     from asf.agents.loading import load_task_prompts, load_task_template
@@ -34,4 +36,5 @@ def build_task_agent(
     return TaskAgent(
         runtime,
         TaskSettings(prompts=prompts, template=template, model=model, parameters=parameters),
+        repository=repository,
     )

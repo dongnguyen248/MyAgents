@@ -27,9 +27,10 @@ from dataclasses import dataclass
 
 from asf.tools.ports import RepositoryPort
 
-__all__ = ["build_repo_map"]
+__all__ = ["TREE_LISTING_MAX_PATHS", "TreeListing", "build_repo_map", "build_tree_listing"]
 
 MAX_TREE_PATHS = 200
+TREE_LISTING_MAX_PATHS = 400
 MAX_TREE_DEPTH = 6
 MAX_OUTLINE_FILES = 12
 MAX_OUTLINE_ENTRIES = 14
@@ -52,6 +53,8 @@ _PRUNED_DIRS = {
     "out",
     "bin",
     "obj",
+    "packages",
+    ".vs",
 }
 
 _PY_IMPORT = re.compile(r"^\s*(?:from\s+([\w\.]+)\s+import|import\s+([\w\.]+))")
@@ -74,16 +77,45 @@ _JAVA_METHOD = re.compile(
 )
 
 
+def _is_kept(path: str) -> bool:
+    parts = path.split("/")
+    if any(part in _PRUNED_DIRS for part in parts[:-1]):
+        return False
+    return len(parts) <= MAX_TREE_DEPTH
+
+
 def _kept_paths(tree: tuple[str, ...]) -> list[str]:
-    kept: list[str] = []
-    for path in tree:
-        parts = path.split("/")
-        if any(part in _PRUNED_DIRS for part in parts[:-1]):
-            continue
-        if len(parts) > MAX_TREE_DEPTH:
-            continue
-        kept.append(path)
-    return sorted(kept)
+    return sorted(path for path in tree if _is_kept(path))
+
+
+@dataclass(frozen=True)
+class TreeListing:
+    """A bounded repository tree for prompt injection.
+
+    ``paths`` holds every kept path in display order (shallowest
+    first); ``text`` renders at most the first ``max_paths`` of them
+    and states how many were left out, so a reader (human or model)
+    can tell the listing is incomplete.
+    """
+
+    paths: tuple[str, ...]
+    text: str
+
+
+def build_tree_listing(
+    repository: RepositoryPort,
+    *,
+    ref: str,
+    max_paths: int = TREE_LISTING_MAX_PATHS,
+) -> TreeListing:
+    """Builds the tree listing body (empty text when there is none)."""
+    kept = [path for path in _tree(repository, ref) if _is_kept(path)]
+    kept.sort(key=lambda path: (path.count("/"), path))
+    lines = [f"- {path}" for path in kept[:max_paths]]
+    hidden = len(kept) - len(lines)
+    if hidden > 0:
+        lines.append(f"… {hidden} more paths not shown")
+    return TreeListing(paths=tuple(kept), text="\n".join(lines))
 
 
 def _imported_paths(

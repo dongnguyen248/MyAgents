@@ -88,6 +88,7 @@ class TaskPromptContext:
     previous_task: tuple[str, str] | None = None
     feedback: Sequence[ApprovalFeedback] = ()
     harness: HarnessComponents | None = None
+    repo_listing: str | None = None
 
 
 def validate_task_output(task_text: str) -> list[str]:
@@ -128,10 +129,17 @@ def build_user_message(context: TaskPromptContext) -> str:
         linked_artifact_section(context.plan_artifact, "Linked PLAN"),
         f"## Output language\n{lang_str}",
         project_context_section(context.project_context),
+        *_listing_sections(context.repo_listing),
         f"## Template\n{context.template.text}",
         *revision_sections(context.previous_task, "Previous task", context.feedback),
     ]
     return "\n\n".join(sections)
+
+
+def _listing_sections(repo_listing: str | None) -> list[str]:
+    if not repo_listing:
+        return []
+    return [f"## Repository files\n{repo_listing}"]
 
 
 def _components(context: TaskPromptContext) -> HarnessComponents:

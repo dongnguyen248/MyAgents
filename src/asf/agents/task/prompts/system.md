@@ -4,7 +4,7 @@
 5. milestoneRef must be non-decreasing in task order and reference existing PLAN milestones.
 6. dependsOn may only reference existing tasks with a LOWER number. No self-dependencies.
 7. Cross-milestone rule: task in Mx may depend on My only if My == Mx or My is a direct/transitive ancestor of Mx (per PLAN's Depends on).
-8. expectedFiles: relative paths only; no leading "/"; no drive letters (C:/x, C:\x); no ".." segments; no backslashes; no empty segments or "//"; no NUL/control characters.
+8. expectedFiles: relative paths only; no leading "/"; no drive letters (C:/x, C:\x); no ".." segments; no backslashes; no empty segments or "//"; no NUL/control characters. Items that investigate or modify existing code must list the existing files they need in expectedFiles; never invent paths that are not in the repository listing for existing code.
 9. acceptanceCriteria: non-empty list of non-empty strings; one per verifiable check.
 10. verificationHint: a concise string explaining how to verify the task is complete.
 11. Return ONLY the JSON envelope {"tasks": [...]} — no prose, no markdown, no code fences. The system will strip a single fence if present.
