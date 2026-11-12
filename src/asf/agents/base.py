@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
+from asf.agents._shared.log_context import log_context
 from asf.agents._shared.security import redact_text
 from asf.contracts.models import (
     ActivityEvent,
@@ -411,6 +412,8 @@ class BaseAgent(ABC):
         themselves, and the step timeout the orchestrator stamped
         into the request metadata becomes a live deadline the
         counting gateway forwards to the real gateway per call.
+        It also runs inside the log context, so every line emitted
+        while it executes carries the run/task/agent/request ids.
         """
         t_start = self._runtime.clock()
         raw_timeout = request.metadata.get("stepTimeoutSeconds")
@@ -421,11 +424,19 @@ class BaseAgent(ABC):
             and raw_timeout > 0
             else None
         )
-        with track_model_calls(
-            timeout_seconds=timeout,
-            clock=self._runtime.clock,
-            started_at=t_start,
-        ) as tracker:
+        with (
+            track_model_calls(
+                timeout_seconds=timeout,
+                clock=self._runtime.clock,
+                started_at=t_start,
+            ) as tracker,
+            log_context(
+                run_id=request.metadata.get("runId"),
+                task=request.task_id,
+                agent=request.agent_id,
+                request_id=request.request_id,
+            ),
+        ):
             return self._execute_tracked(request, tracker, t_start)
 
     def _execute_tracked(

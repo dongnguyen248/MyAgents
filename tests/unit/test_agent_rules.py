@@ -71,7 +71,11 @@ class AgentRulesTests(unittest.TestCase):
         (asf.agents._shared.harness) is allowlisted on the same
         terms: pure (hashlib/json/dataclasses only), it holds the
         harness components every agent assembles its system prompt
-        from and the fingerprint stamped on artifacts.
+        from and the fingerprint stamped on artifacts. The log-context
+        helper (asf.agents._shared.log_context) is allowlisted on the
+        same terms: pure (contextvars only), it carries the run, task,
+        agent and request ids of the execution in progress into the
+        backend's log lines.
         """
         agents_dir = REPO_ROOT / "src" / "asf" / "agents"
         logic_modules = [
@@ -98,6 +102,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.reply_text",
             "asf.agents._shared.prompt_context",
             "asf.agents._shared.harness",
+            "asf.agents._shared.log_context",
             "asf.models.counting",
             "asf.agents.spec",
             "asf.agents.spec.agent",

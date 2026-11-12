@@ -32,6 +32,7 @@ from uuid import uuid4
 import yaml
 
 import asf
+from asf import logging_setup
 from asf.agents.artifact_review.factory import build_artifact_review_agent
 from asf.agents.base import AgentRuntime
 from asf.agents.fix.factory import build_fix_agent
@@ -1035,31 +1036,20 @@ def _load_dotenv(path: Path) -> bool:
     return True
 
 
-def configure_logging() -> None:
+def configure_logging(log_dir: Path | None = None, *, dotenv_path: Path | None = None) -> None:
     """Send ASF's own log lines to this process's console.
 
-    Agent failures and provider errors otherwise surface only as a
-    one-line dashboard banner; the recorded causes (which model was
-    sent, why a reply was rejected) are logged under the ``asf``
-    namespace and would go nowhere without a handler. Idempotent.
-    Level from ASF_LOG_LEVEL (default INFO).
+    The full setup (context fields, redaction, and the rotating
+    file handler when ``log_dir`` is given) lives in
+    :mod:`asf.logging_setup`; this stays as the entry callers and
+    tests import from the demo module.
     """
-    logger = logging.getLogger("asf")
-    if getattr(logger, "_asf_console_configured", False):
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(os.environ.get("ASF_LOG_LEVEL", "INFO").upper())
-    logger.propagate = False
-    logger._asf_console_configured = True  # type: ignore[attr-defined]
+    logging_setup.configure_logging(log_dir, dotenv_path=dotenv_path)
 
 
 def main() -> None:
-    configure_logging()
     dotenv_path = Path(asf.__file__).resolve().parents[2] / ".env"
-    if _load_dotenv(dotenv_path):
-        print(f"Loaded environment from {dotenv_path}")
+    loaded = _load_dotenv(dotenv_path)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
@@ -1075,6 +1065,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     data_dir = _resolve_data_dir(selftest=args.selftest)
+    configure_logging(data_dir / "logs", dotenv_path=dotenv_path if loaded else None)
     try:
         service, engine, store = build_demo(
             data_dir,
