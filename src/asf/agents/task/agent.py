@@ -11,6 +11,7 @@ from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.paths import CONTROL_CHAR_BOUND
 from asf.agents._shared.reply_text import unwrap_code_fence
+from asf.agents._shared.repomap import TreeListing
 from asf.agents._shared.request_checks import (
     artifacts_of,
     check_agent_id,
@@ -37,6 +38,11 @@ from asf.agents.task.prompts import (
     TaskTemplate,
     build_task_messages,
 )
+from asf.agents.task.repo_listing import (
+    expected_file_warnings,
+    log_expected_file_warnings,
+    repository_listing,
+)
 from asf.contracts.models import (
     AgentMetadata,
     AgentRequest,
@@ -45,6 +51,7 @@ from asf.contracts.models import (
     ModelRequest,
     ModelResponse,
 )
+from asf.tools.ports import RepositoryPort
 
 __all__ = [
     "MAX_TASK_CHARS",
@@ -354,13 +361,20 @@ def _previous_task_text(previous: Artifact | None) -> tuple[str, str] | None:
 class TaskAgent(BaseAgent):
     """Agent responsible for breaking down plans into implementation tasks."""
 
-    def __init__(self, runtime: AgentRuntime, settings: TaskSettings) -> None:
+    def __init__(
+        self,
+        runtime: AgentRuntime,
+        settings: TaskSettings,
+        *,
+        repository: RepositoryPort | None = None,
+    ) -> None:
         super().__init__(runtime)
         self._prompts = settings.prompts
         self._template = settings.template
         self._harness = settings.harness
         self._model = settings.model
         self._parameters = dict(settings.parameters or {})
+        self._repository = repository
         self._metadata = AgentMetadata(
             id="agent-task",
             name="Task Agent",
@@ -407,12 +421,13 @@ class TaskAgent(BaseAgent):
 
     def _run(self, request: AgentRequest) -> tuple[dict[str, Any], list[Artifact]]:
         run = _task_run(request)
-        messages = self._build_messages(run)
+        listing = repository_listing(self._repository)
+        messages = self._build_messages(run, listing)
         response = call_model(self._runtime.models, self._model_request(request, messages))
         tasks = self._checked_tasks(response, run.plan)
-        return self._assemble(run, tasks, response)
+        return self._assemble(run, tasks, response, listing)
 
-    def _build_messages(self, run: _TaskRun) -> list[ModelMessage]:
+    def _build_messages(self, run: _TaskRun, listing: TreeListing | None) -> list[ModelMessage]:
         request = run.request
         context = TaskPromptContext(
             prompts=self._prompts,
@@ -424,6 +439,7 @@ class TaskAgent(BaseAgent):
             previous_task=_previous_task_text(run.previous),
             feedback=request.feedback,
             harness=self._harness,
+            repo_listing=listing.text if listing is not None else None,
         )
         return build_task_messages(context)
 
@@ -463,6 +479,7 @@ class TaskAgent(BaseAgent):
         run: _TaskRun,
         tasks: list[TaskItem],
         response: ModelResponse,
+        listing: TreeListing | None,
     ) -> tuple[dict[str, Any], list[Artifact]]:
         previous = run.previous
         version = str(int(previous.version) + 1) if previous is not None else "1"
@@ -474,7 +491,9 @@ class TaskAgent(BaseAgent):
                 f"Rendered task output exceeds {MAX_TASK_TEXT_CHARS} characters",
                 details={"charCount": len(rendered), "limit": MAX_TASK_TEXT_CHARS},
             )
-        metadata = self._artifact_metadata(run, response)
+        warnings = expected_file_warnings(tasks, listing)
+        log_expected_file_warnings(warnings)
+        metadata = self._artifact_metadata(run, response, warnings)
         artifact = self._task_artifact(tasks, rendered, version, metadata)
         summary = "Task breakdown revised" if previous is not None else "Task breakdown created"
         output = {"summary": summary, "artifactId": artifact.id, "version": version}
@@ -506,7 +525,12 @@ class TaskAgent(BaseAgent):
         components = self._harness or self._prompts.to_components()
         return fingerprint(components)
 
-    def _artifact_metadata(self, run: _TaskRun, response: ModelResponse) -> dict[str, Any]:
+    def _artifact_metadata(
+        self,
+        run: _TaskRun,
+        response: ModelResponse,
+        warnings: list[dict[str, str]],
+    ) -> dict[str, Any]:
         metadata: dict[str, Any] = {
             "template": "task",
             "harnessFingerprint": self._harness_fingerprint(),
@@ -525,6 +549,8 @@ class TaskAgent(BaseAgent):
         language = run.request.input.get("language")
         if isinstance(language, str) and language.strip():
             metadata["language"] = language
+        if warnings:
+            metadata["expectedFileWarnings"] = warnings
         return metadata
 
 

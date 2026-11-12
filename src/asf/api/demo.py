@@ -696,38 +696,28 @@ def _build_registry(deps: _RegistryDeps) -> AgentRegistry:
     registry = AgentRegistry()
     registry.register(build_spec_agent(runtime, platform, templates_dir))
     registry.register(build_plan_agent(runtime, platform, templates_dir))
-    registry.register(build_task_agent(runtime, platform, templates_dir))
     registry.register(build_review_agent(runtime, platform, templates_dir))
     registry.register(build_artifact_review_agent(runtime, platform, templates_dir))
     _register_workspace_agents(registry, deps)
     return registry
 
 
+def _register_bound(registry: AgentRegistry, deps: _RegistryDeps, agent: Any, role: str) -> None:
+    registry.register(_WorkspaceBindingAgent(agent, deps.workspace, role=role))
+
+
 def _register_workspace_agents(registry: AgentRegistry, deps: _RegistryDeps) -> None:
     runtime = deps.runtime
     platform = deps.platform
     templates_dir = deps.templates_dir
-    registry.register(
-        _WorkspaceBindingAgent(
-            build_implement_agent(runtime, platform, templates_dir, deps.repository),
-            deps.workspace,
-            role="implement",
-        )
-    )
-    registry.register(
-        _WorkspaceBindingAgent(
-            build_test_agent(runtime, platform, templates_dir, deps.sandbox),
-            deps.workspace,
-            role="test",
-        )
-    )
-    registry.register(
-        _WorkspaceBindingAgent(
-            build_fix_agent(runtime, platform, templates_dir, deps.repository),
-            deps.workspace,
-            role="fix",
-        )
-    )
+    task = build_task_agent(runtime, platform, templates_dir, deps.repository)
+    _register_bound(registry, deps, task, "task")
+    implement = build_implement_agent(runtime, platform, templates_dir, deps.repository)
+    _register_bound(registry, deps, implement, "implement")
+    test = build_test_agent(runtime, platform, templates_dir, deps.sandbox)
+    _register_bound(registry, deps, test, "test")
+    fix = build_fix_agent(runtime, platform, templates_dir, deps.repository)
+    _register_bound(registry, deps, fix, "fix")
 
 
 def build_demo(
