@@ -126,12 +126,14 @@ def test_escalation_waiting_carries_the_reviewer_cause() -> None:
             "reason": "REVIEWER_FAILED",
             "errorCode": "LLM_MODEL_NOT_SUPPORTED",
             "errorMessage": "Model 'x' is not supported by the provider.",
+            "providerMessage": "The requested model is not supported.",
         }
     )
     waiting = escalation_waiting(run, _step(), {}, {"used": 0, "max": 3})
     assert waiting["escalationReason"] == "REVIEWER_FAILED"
     assert waiting["errorCode"] == "LLM_MODEL_NOT_SUPPORTED"
     assert waiting["errorMessage"] == "Model 'x' is not supported by the provider."
+    assert waiting["providerMessage"] == "The requested model is not supported."
 
 
 def test_escalation_waiting_without_a_cause_keeps_the_old_shape() -> None:
@@ -140,3 +142,4 @@ def test_escalation_waiting_without_a_cause_keeps_the_old_shape() -> None:
     assert waiting["escalationReason"] == "MAX_REVISIONS"
     assert "errorCode" not in waiting
     assert "errorMessage" not in waiting
+    assert "providerMessage" not in waiting

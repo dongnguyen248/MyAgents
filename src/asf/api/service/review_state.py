@@ -113,14 +113,19 @@ def _escalation_reason(run: WorkflowExecution) -> str | None:
 
 def _escalation_cause(event: Any, waiting: dict[str, Any]) -> None:
     """Copy the failure cause an escalation event carries (a reviewer
-    failure's error code and redacted message) into the waiting
-    block, so the panel can name why the reviewer failed."""
+    failure's error code and redacted message, plus the provider's
+    own message when the failure came from a provider call) into
+    the waiting block, so the panel can name why the reviewer
+    failed."""
     code = event.metadata.get("errorCode")
     if isinstance(code, str):
         waiting["errorCode"] = code
     message = event.metadata.get("errorMessage")
     if isinstance(message, str):
         waiting["errorMessage"] = message
+    provider = event.metadata.get("providerMessage")
+    if isinstance(provider, str):
+        waiting["providerMessage"] = provider
 
 
 def _latest_review(run: WorkflowExecution, stage: str) -> Any:

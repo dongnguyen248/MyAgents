@@ -49,7 +49,7 @@ const KIND_PHASES: Record<string, string> = {
   PAUSED: 'PAUSED',
 };
 
-/** The phases whose attempt counter may show (and that can go quiet). */
+/** The phases whose attempt counter may show. */
 const ATTEMPT_PHASES = new Set([
   'PRODUCING',
   'AI_REVIEWING',
@@ -57,6 +57,13 @@ const ATTEMPT_PHASES = new Set([
   'RETRYING',
   'WAITING_ON_CI',
 ]);
+
+/**
+ * The phases that can go quiet. The attempt set plus RUNNING_TESTS:
+ * a silent test run is exactly what the hint is for, but a test run
+ * has no attempt counter worth showing.
+ */
+const QUIET_PHASES = new Set([...ATTEMPT_PHASES, 'RUNNING_TESTS']);
 
 /** Phases whose label leads the line when no agent is acting. */
 const LEAD_PHASES = new Set(['WAITING_FOR_APPROVAL', 'RETRYING', 'ESCALATED', 'STALLED', 'PAUSED']);
@@ -196,7 +203,7 @@ export function lastActivityLine(activity: WorkflowCurrentActivity, nowMs: numbe
  */
 export function quietHint(activity: WorkflowCurrentActivity, nowMs: number): string | null {
   const phase = effectivePhase(activity);
-  if (!phase || !ATTEMPT_PHASES.has(phase)) {
+  if (!phase || !QUIET_PHASES.has(phase)) {
     return null;
   }
   const basis = activity.lastEventAt ?? activity.since;
