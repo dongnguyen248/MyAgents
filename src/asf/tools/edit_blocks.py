@@ -95,7 +95,23 @@ Rules:
 
 
 class EditBlockError(ValueError):
-    """The model's edit blocks are malformed or cannot be applied."""
+    """The model's edit blocks are malformed or cannot be applied.
+
+    ``path`` and ``existing_content`` are set only by the
+    create-for-an-existing-file failure, so a caller can show the
+    model the content it collided with when asking for a repair.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        path: str | None = None,
+        existing_content: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.path = path
+        self.existing_content = existing_content
 
 
 def _check_path(path: str, expected: Collection[str] | None) -> None:
@@ -169,12 +185,19 @@ def parse_edit_blocks(
     *,
     existing_files: Mapping[str, str],
     expected_files: Collection[str] | None = None,
+    replaceable_paths: Collection[str] = (),
 ) -> ChangeSet:
     """Parses an edit-block reply into a full-content ChangeSet.
 
     ``existing_files`` maps path -> current content for files that
     exist at the base ref (used to apply SEARCH/REPLACE blocks and
     to reject modifying files that do not exist).
+
+    A CREATE section for a path in ``replaceable_paths`` is accepted
+    even though the path appears in ``existing_files``: the caller
+    vouches that the path exists only as a pending change, so the
+    section is a wholesale replacement of that pending entry rather
+    than a collision with a real file.
     """
     text = reply.replace("\r\n", "\n").replace("\r", "\n")
     lines = text.split("\n")
@@ -282,24 +305,7 @@ def parse_edit_blocks(
                 )
             )
         elif section.kind == "create":
-            if section.file_content is None:
-                raise fail(
-                    f"CREATE section for {section.path!r} has no FILE"
-                    " block with the file's content",
-                )
-            if section.path in existing_files:
-                raise fail(
-                    f"Cannot create {section.path!r}: the file already"
-                    " exists; use a FILE section with SEARCH/REPLACE"
-                    " blocks to modify it",
-                )
-            changes.append(
-                FileChange(
-                    path=section.path,
-                    operation="create",
-                    content=section.file_content,
-                )
-            )
+            changes.append(_create_change(section, existing_files, replaceable_paths))
         else:
             if not section.blocks:
                 raise fail(
@@ -329,3 +335,35 @@ def parse_edit_blocks(
         return ChangeSet(changes=changes)
     except ValueError as error:
         raise EditBlockError(str(error)) from None
+
+
+def _create_change(
+    section: _Section,
+    existing_files: Mapping[str, str],
+    replaceable_paths: Collection[str],
+) -> FileChange:
+    """Builds a CREATE section's change.
+
+    A replaceable path (the caller vouches it exists only as a
+    pending change) is a wholesale replacement of that pending
+    entry, not a collision; any other existing path is the
+    create-for-an-existing-file failure, carrying the path and its
+    current content so the caller can show the model what it hit.
+    """
+    if section.file_content is None:
+        raise EditBlockError(
+            f"CREATE section for {section.path!r} has no FILE block with the file's content"
+        )
+    if section.path in existing_files and section.path not in replaceable_paths:
+        raise EditBlockError(
+            f"Cannot create {section.path!r}: the file already"
+            " exists; use a FILE section with SEARCH/REPLACE"
+            " blocks to modify it",
+            path=section.path,
+            existing_content=existing_files[section.path],
+        )
+    return FileChange(
+        path=section.path,
+        operation="create",
+        content=section.file_content,
+    )

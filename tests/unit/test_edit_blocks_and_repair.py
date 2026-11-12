@@ -28,6 +28,7 @@ from asf.contracts.models import (
     ModelUsage,
 )
 from asf.models.fake import ScriptedModelGateway
+from asf.tools.changeset import FileChange
 from asf.tools.edit_blocks import EditBlockError, parse_edit_blocks
 from asf.tools.fake import InMemoryRepository
 from tests.unit.implement_helpers import counter_id, make_implement_request
@@ -132,6 +133,31 @@ def test_create_delete_and_scope_rules():
             "Here is your change:\nDELETE: src/old.py\n",
             existing_files={"src/old.py": "x\n"},
         )
+
+
+def test_create_for_a_replaceable_path_is_a_wholesale_replacement():
+    changeset = parse_edit_blocks(
+        "CREATE: src/util.py\n<<<<<<< FILE\ndef help():\n    return 2\n>>>>>>> FILE\n",
+        existing_files={"src/util.py": "def help():\n    return 1\n"},
+        replaceable_paths={"src/util.py"},
+    )
+    assert changeset.changes == [
+        FileChange(
+            path="src/util.py",
+            operation="create",
+            content="def help():\n    return 2\n",
+        )
+    ]
+
+
+def test_create_collision_error_carries_the_path_and_its_content():
+    with pytest.raises(EditBlockError) as caught:
+        parse_edit_blocks(
+            "CREATE: src/util.py\n<<<<<<< FILE\nx\n>>>>>>> FILE\n",
+            existing_files={"src/util.py": "y\n"},
+        )
+    assert caught.value.path == "src/util.py"
+    assert caught.value.existing_content == "y\n"
 
 
 # -- the implement agent ----------------------------------------------------------
@@ -255,6 +281,17 @@ def test_blocks_are_the_default_and_the_prompt_says_so():
     assert result.status == "SUCCESS"
     user = gateway.requests[0].messages[-1].content
     assert "SEARCH" in user and "Full file contents only" not in user
+
+
+def test_implement_create_for_an_existing_file_still_fails():
+    """The replaceable-path allowance is the Fix agent's: Implement
+    parses without it, so a CREATE for a file in its snapshot keeps
+    failing exactly as before."""
+    reply = "CREATE: src/calculator.py\n<<<<<<< FILE\nx = 1\n>>>>>>> FILE\n"
+    agent, _ = _implement_agent([_response(reply), _response(reply)], _repo_with_calc())
+    result = agent.execute(make_implement_request())
+    assert result.status == "FAILED"
+    assert "already exists" in result.errors[0].message
 
 
 # -- the fix agent -----------------------------------------------------------------

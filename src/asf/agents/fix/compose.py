@@ -13,6 +13,7 @@ __all__ = [
     "check_delete_targets",
     "compose_replacement",
     "effective_existing",
+    "replaceable_paths",
 ]
 
 
@@ -27,6 +28,20 @@ def effective_existing(existing: dict[str, str], previous_changeset: ChangeSet) 
         elif change.content is not None:
             effective[change.path] = change.content
     return effective
+
+
+def replaceable_paths(
+    existing: dict[str, str],
+    effective: dict[str, str],
+    previous_changeset: ChangeSet,
+) -> set[str]:
+    """Paths a CREATE edit may replace wholesale: files that exist
+    in the effective state only because the previous changeset
+    created them. They are not in the base snapshot (not on disk),
+    so replacing the pending entry is unambiguous; a path the base
+    snapshot holds keeps the create collision, as before."""
+    previous = {change.path for change in previous_changeset.changes}
+    return (previous & set(effective)) - set(existing)
 
 
 def compose_replacement(
