@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,6 +32,7 @@ from asf.configuration.project import ProjectProfile
 from asf.contracts.models import ModelRequest, ModelResponse
 from asf.models.fake import ScriptedModelGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
+from asf.orchestrator.execution import RunState, WorkflowExecution
 from asf.storage.memory import InMemoryApprovalRepository, InMemoryStore
 from asf.workflow.definition import WorkflowDefinition, WorkflowStepDef
 from tests.integration.test_chain import make_plan_artifact, make_spec_artifact
@@ -359,6 +362,159 @@ def test_store_discovered_runs_are_listed(tmp_path):
         assert len(service.list_approvals()) == 1
     finally:
         store.close()
+
+
+def _payload(run_id: str, project_id: str) -> str:
+    return WorkflowExecution(
+        id=run_id,
+        task_id="task-1",
+        project_id=project_id,
+        state=RunState(stage="COMPLETED"),
+        started_at=NOW,
+        updated_at=NOW,
+    ).model_dump_json()
+
+
+class StubDiscoveryStore:
+    """Store stub at the MariaDB read boundary: summaries + payloads.
+
+    Summaries filter by project like the real store and
+    ``get_execution`` deserializes the payload string exactly like
+    the MariaDB store, so discovery sees production-shaped data.
+    """
+
+    def __init__(self, rows, *, summaries_error=None, payload_error=False, config=None):
+        self._rows = rows
+        self._summaries_error = summaries_error
+        self._payload_error = payload_error
+        self._config = config
+
+    def list_execution_summaries(self, project_id=None):
+        if self._summaries_error is not None:
+            raise self._summaries_error
+        return [
+            {
+                "id": run_id,
+                "projectId": pid,
+                "taskId": "task-1",
+                "workflowId": "software-development",
+                "stage": "COMPLETED",
+                "status": "COMPLETED",
+                "startedAt": "2026-11-05T08:00:00Z",
+                "updatedAt": "2026-11-05T08:30:00Z",
+            }
+            for run_id, pid, _payload_text in self._rows
+            if project_id is None or pid == project_id
+        ]
+
+    def get_execution(self, run_id: str) -> WorkflowExecution:
+        if self._payload_error:
+            raise ValueError("payload does not validate")
+        for rid, _pid, payload in self._rows:
+            if rid == run_id:
+                return WorkflowExecution.model_validate_json(payload)
+        raise KeyError(run_id)
+
+
+def _service_with_store(store, projects=PROJECTS) -> FactoryService:
+    return FactoryService(
+        build_engine(),
+        projects=projects,
+        metrics=FakeMetrics(),
+        store=store,
+        clock=lambda: NOW,
+    )
+
+
+def _zero_run_warnings(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if "found no runs" in r.getMessage()]
+
+
+def test_discovery_warns_once_when_no_registry_project_has_rows(caplog):
+    rows = [("run-1", "messenger", _payload("run-1", "messenger"))]
+    service = _service_with_store(StubDiscoveryStore(rows))
+    with caplog.at_level(logging.WARNING, logger="asf.api.service"):
+        assert service.list_tasks() == []
+        service._invalidate_runs_cache()
+        assert service.list_tasks() == []
+    warnings = _zero_run_warnings(caplog)
+    assert len(warnings) == 1
+    assert "StubDiscoveryStore" in warnings[0]
+    assert "2 registered project(s)" in warnings[0]
+    assert "unregistered project(s): messenger" in warnings[0]
+
+
+def test_discovery_warns_once_when_every_payload_fails_to_load(caplog):
+    rows = [("run-1", "proj-1", "unused"), ("run-2", "proj-1", "unused")]
+    service = _service_with_store(StubDiscoveryStore(rows, payload_error=True))
+    with caplog.at_level(logging.WARNING, logger="asf.api.service"):
+        assert service.list_tasks() == []
+    load_warnings = [r for r in caplog.records if "Could not load stored run" in r.getMessage()]
+    assert len(load_warnings) == 2
+    warnings = _zero_run_warnings(caplog)
+    assert len(warnings) == 1
+    assert "unregistered" not in warnings[0]
+
+
+def test_discovery_warns_once_when_the_store_query_fails(caplog):
+    store = StubDiscoveryStore([], summaries_error=ConnectionError("down"))
+    service = _service_with_store(store)
+    with caplog.at_level(logging.WARNING, logger="asf.api.service"):
+        assert service.list_tasks() == []
+    discovery = [r for r in caplog.records if "Could not discover stored runs" in r.getMessage()]
+    assert len(discovery) == 2  # one per registered project, unchanged
+    assert len(_zero_run_warnings(caplog)) == 1
+
+
+def test_discovery_stays_quiet_and_logs_the_store_label_when_runs_exist(caplog):
+    store = InMemoryStore()
+    try:
+        engine = build_engine(store)
+        run = engine.start(
+            task_id="task-9",
+            project_id="proj-1",
+            inputs={"spec": {"requirement": "Stored run"}},
+        )
+        engine.tick(run.id)
+        service = FactoryService(
+            engine,
+            projects=PROJECTS,
+            store=store,
+            clock=lambda: NOW,
+        )
+        with caplog.at_level(logging.INFO, logger="asf.api.service"):
+            assert [t["id"] for t in service.list_tasks()] == ["task-9"]
+            assert service.list_tasks() != []
+        assert _zero_run_warnings(caplog) == []
+        labels = [r.getMessage() for r in caplog.records if r.getMessage().startswith("Run store:")]
+        assert labels == ["Run store: InMemoryStore"]
+    finally:
+        store.close()
+
+
+def test_discovery_does_not_warn_when_the_registry_is_empty(caplog):
+    rows = [("run-1", "messenger", _payload("run-1", "messenger"))]
+    service = _service_with_store(StubDiscoveryStore(rows), projects={})
+    with caplog.at_level(logging.WARNING, logger="asf.api.service"):
+        assert service.list_tasks() == []
+    assert _zero_run_warnings(caplog) == []
+
+
+def test_store_label_never_contains_credentials(caplog):
+    config = SimpleNamespace(
+        host="db.internal",
+        port=3309,
+        database="asf",
+        user="asf",
+        password="s3cr3t-value",
+    )
+    service = _service_with_store(StubDiscoveryStore([], config=config))
+    with caplog.at_level(logging.INFO, logger="asf.api.service"):
+        assert service.list_tasks() == []
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "s3cr3t-value" not in text
+    assert "db.internal:3309/asf" in text
+    assert len(_zero_run_warnings(caplog)) == 1
 
 
 NEW_PROJECT = {

@@ -264,6 +264,7 @@ def _camelize(key: str) -> str:
 # package, so they can only be imported after those definitions.
 from asf.api.service.approval_context import approval_settings_view  # noqa: E402
 from asf.api.service.commands import CommandsMixin  # noqa: E402
+from asf.api.service.discovery_watch import DiscoveryWatchMixin  # noqa: E402
 from asf.api.service.driver import DriverMixin  # noqa: E402
 from asf.api.service.queries import QueriesMixin  # noqa: E402
 
@@ -276,7 +277,7 @@ __all__ = [
 ]
 
 
-class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
+class FactoryService(QueriesMixin, CommandsMixin, DriverMixin, DiscoveryWatchMixin):
     """Dashboard-shaped read/write views over one ``Orchestrator`` instance."""
 
     def __init__(
@@ -512,7 +513,7 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
             return self._store_runs.get(run_id)
 
     def _discover_store_runs(self) -> None:
-        if self._store is None:
+        if not self._begin_discovery():
             return
         summaries = getattr(self._store, "list_execution_summaries", None)
         for project_id in self._projects:
@@ -530,14 +531,14 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
                         if run.id not in self._tracked:
                             self._tracked.append(run.id)
             except Exception:
-                # Discovery used to swallow this silently, which made
-                # a broken store look like "no runs exist".
+                # A broken store must not look like "no runs exist".
                 logger.warning(
                     "Could not discover stored runs for project %s",
                     project_id,
                     exc_info=True,
                 )
                 continue
+        self._note_discovery_result()
 
     def _refresh_store_run(self, summary: Mapping[str, Any]) -> None:
         run_id = summary.get("id")
@@ -559,12 +560,10 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin):
                 exc_info=True,
             )
 
-    # List endpoints poll: the dashboard asks for the run list every
-    # few seconds. Assembling it costs a store discovery + an engine
-    # read per run, so the assembled list is cached for a breath —
-    # long enough to absorb a poll burst, short enough that a human
-    # never acts on stale state. Every mutating service method and
-    # every finished drive invalidates it immediately.
+    # List endpoints poll every few seconds; assembling the list costs
+    # a store discovery + an engine read per run, so it is cached for
+    # a breath. Every mutating service method and every finished drive
+    # invalidates it immediately.
     _RUNS_CACHE_TTL_SECONDS = 1.5
 
     def _invalidate_runs_cache(self) -> None:
