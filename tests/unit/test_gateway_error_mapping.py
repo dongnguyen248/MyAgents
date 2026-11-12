@@ -353,3 +353,57 @@ def test_jitter_is_capped_at_sixty_seconds() -> None:
         rand=lambda _lo, hi: hi,
     ).complete(_request())
     assert sleeps == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 60.0, 60.0]
+
+
+# -- provider evidence in the error details -------------------------------
+
+
+def _failing_openai(status: int, payload: object) -> ModelGatewayError:
+    transport = OpenAiTransport([(status, {}, payload)])
+    with pytest.raises(ModelGatewayError) as caught:
+        _openai(transport).complete(_request())
+    return caught.value
+
+
+def test_provider_code_and_message_ride_in_details() -> None:
+    error = _failing_openai(
+        400,
+        {
+            "error": {
+                "message": "max_tokens is too large for this model",
+                "code": "invalid_parameter",
+            }
+        },
+    )
+    assert error.code == "LLM_BAD_REQUEST"
+    assert error.details["providerCode"] == "invalid_parameter"
+    assert error.details["providerMessage"] == "max_tokens is too large for this model"
+    assert error.message.startswith("Model provider error (HTTP 400): max_tokens")
+
+
+def test_provider_message_is_redacted_in_message_and_details() -> None:
+    secret = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    error = _failing_openai(
+        400,
+        {"error": {"message": f"denied for token {secret} here", "code": "bad"}},
+    )
+    blob = error.message + json.dumps(error.details)
+    assert secret not in blob
+    assert error.details["providerMessage"].startswith("denied for token")
+
+
+def test_provider_message_is_capped_in_details() -> None:
+    error = _failing_openai(
+        400,
+        {"error": {"message": "word " * 120, "code": "invalid_parameter"}},
+    )
+    assert len(error.details["providerMessage"]) == 240
+    assert error.details["providerCode"] == "invalid_parameter"
+    assert error.details["httpStatus"] == 400
+
+
+def test_opaque_error_body_yields_no_provider_fields() -> None:
+    error = _failing_openai(400, b"not json at all")
+    assert error.code == "LLM_BAD_REQUEST"
+    assert error.details == {"httpStatus": 400}
+    assert error.message == "Model provider error (HTTP 400)"
