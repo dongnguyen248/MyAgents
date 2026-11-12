@@ -21,6 +21,7 @@ from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.parsing import strip_code_fence
 from asf.agents._shared.routing import tier_metadata
+from asf.agents._shared.schema_reason import schema_problems, schema_reason
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.review.prompts import (
     MAX_FINDINGS,
@@ -51,23 +52,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
-
-def _schema_problems(exc: Exception) -> str:
-    """Field locations and error kinds from a validation failure.
-
-    Input values are deliberately excluded (``include_input=False``):
-    the model reply is untrusted content and must not be echoed, but
-    "findings.0.line: int_parsing" is exactly what an operator needs
-    to tell a truncated reply from a wrong-typed field.
-    """
-    if isinstance(exc, ValidationError):
-        parts = []
-        for entry in exc.errors(include_input=False):
-            loc = ".".join(str(part) for part in entry["loc"]) or "(root)"
-            parts.append(f"{loc}: {entry['type']}")
-        return "; ".join(parts[:5])[:400] or "unparseable reply"
-    return type(exc).__name__
 
 
 @dataclass(frozen=True)
@@ -248,19 +232,21 @@ def _parse_review(response: ModelResponse) -> ReviewContent:
     raw = response.content
     if len(raw) > MAX_REPLY_CHARS or not raw.strip():
         raise invalid_response("Review response is empty or exceeds the size limit")
+    stripped = strip_code_fence(raw)
     try:
-        return ReviewContent.model_validate_json(strip_code_fence(raw))
+        return ReviewContent.model_validate_json(stripped)
     except (ValueError, ValidationError, RecursionError) as exc:
-        # The result keeps its no-echo contract (no model content in
-        # error details), so the specific problem goes to the backend
-        # log instead: field locations and error kinds only.
         logger.warning(
             "review reply rejected: %s (replyChars=%d finishReason=%s)",
-            _schema_problems(exc),
+            schema_problems(exc),
             len(raw),
             response.finish_reason,
         )
-        raise invalid_response("Review response does not match the required schema") from None
+        reason = schema_reason(exc, stripped)
+        raise invalid_response(
+            f"Review response does not match the required schema: {reason}",
+            details={"reason": reason},
+        ) from None
 
 
 def _check_finding_paths(review: ReviewContent, changes: ChangeSet) -> None:

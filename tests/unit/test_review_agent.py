@@ -22,7 +22,7 @@ from asf.agents.review.prompts import (
     render_review_markdown,
 )
 from asf.configuration.platform import PlatformConfig
-from asf.contracts.models import AgentRequest, AgentResult, Artifact
+from asf.contracts.models import AgentRequest, AgentResult, Artifact, PlatformError
 from asf.models.errors import ModelGatewayError
 from asf.models.fake import ScriptedModelGateway
 from tests.unit.contract_models import validator_for
@@ -146,7 +146,9 @@ def assert_invalid(result: AgentResult) -> None:
         "LLM",
         True,
     )
-    assert error.details == {}
+    # Schema rejections carry exactly the schema reason (facts only,
+    # never the reply); every other invalid reply carries no details.
+    assert error.details == {} or set(error.details) == {"reason"}
     assert result.events[-1].event_type == "AGENT_FAILED"
 
 
@@ -261,6 +263,105 @@ def test_validation_error_never_echoes_model_payload() -> None:
     assert_invalid(result)
     assert marker not in json.dumps(result.to_contract())
     assert "ValidationError" not in json.dumps(result.to_contract())
+
+
+def _rejection(reply: str) -> PlatformError:
+    agent, _gateway = make_agent(reply)
+    result = agent.execute(make_request())
+    assert result.status == "FAILED"
+    assert result.errors[0].code == "LLM_INVALID_RESPONSE"
+    return result.errors[0]
+
+
+def test_rejection_reason_for_a_non_json_reply() -> None:
+    error = _rejection("not json at all")
+    assert error.details["reason"] == "not valid JSON"
+    assert "not valid JSON" in error.message
+
+
+def test_rejection_reason_for_prose_before_the_json() -> None:
+    error = _rejection('Here is my review: {"findings": [], "verdict": "APPROVE"}')
+    assert error.details["reason"] == "extra text before the JSON"
+    assert "Here is my review" not in error.message
+
+
+def test_rejection_reason_for_prose_after_the_json() -> None:
+    error = _rejection('{"findings": [], "verdict": "APPROVE"} hope this helps')
+    assert error.details["reason"] == "extra text after the JSON value"
+    assert "hope this helps" not in error.message
+
+
+def test_rejection_reason_for_a_missing_verdict() -> None:
+    error = _rejection('{"findings": []}')
+    assert error.details["reason"] == "missing field 'verdict'"
+
+
+def test_rejection_reason_for_an_unexpected_field() -> None:
+    error = _rejection('{"findings": [], "verdict": "APPROVE", "summary": "ok"}')
+    assert error.details["reason"] == "unexpected field 'summary'"
+
+
+def test_rejection_reason_for_an_unknown_verdict_value() -> None:
+    error = _rejection('{"findings": [], "verdict": "LGTM"}')
+    reason = error.details["reason"]
+    assert reason == "unknown value at 'verdict' (expected 'APPROVE' or 'CHANGES_REQUESTED')"
+    assert "LGTM" not in error.message
+
+
+def test_rejection_reason_for_an_unknown_severity_value() -> None:
+    error = _rejection(reply_for([finding(severity="BLOCKER")]))
+    reason = error.details["reason"]
+    assert reason.startswith("unknown value at 'findings.0.severity' (expected ")
+    assert "'ERROR'" in reason
+
+
+def test_rejection_reason_for_a_wrong_type() -> None:
+    error = _rejection('{"findings": {}, "verdict": "APPROVE"}')
+    assert error.details["reason"] == "wrong type at 'findings'"
+
+
+def test_rejection_reason_for_a_non_integer_line() -> None:
+    error = _rejection(reply_for([finding(line="12")]))
+    assert error.details["reason"] == "wrong type at 'findings.0.line'"
+
+
+def test_rejection_reason_for_a_line_below_one() -> None:
+    error = _rejection(reply_for([finding(line=0)]))
+    assert error.details["reason"] == "findings.0.line: greater_than_equal"
+
+
+def test_rejection_reason_for_approve_with_an_error_finding() -> None:
+    error = _rejection(reply_for([finding()], "APPROVE"))
+    assert error.details["reason"] == "APPROVE must not contain ERROR findings"
+
+
+def test_rejection_reason_for_too_many_findings() -> None:
+    error = _rejection(reply_for([finding()] * (MAX_FINDINGS + 1)))
+    assert error.details["reason"] == "'findings' has too many items (max 100)"
+
+
+def test_rejection_reason_for_a_blank_description() -> None:
+    error = _rejection(reply_for([finding(description=" ")]))
+    assert error.details["reason"] == "findings.0.description: String fields must not be blank"
+
+
+def test_rejection_reason_is_capped_at_240_chars() -> None:
+    reply = reply_for([finding(severity="BLOCKER"), finding(severity="FATAL")])
+    error = _rejection(reply)
+    reason = error.details["reason"]
+    assert len(reason) <= 240
+    assert reason.startswith("unknown value at 'findings.0.severity'")
+
+
+def test_outside_code_rejection_keeps_its_message_and_empty_details() -> None:
+    error = _rejection(reply_for([finding(path="outside.py")]))
+    assert error.message == "Review finding references a path outside CODE"
+    assert error.details == {}
+
+
+def test_agent_accepts_a_fenced_reply_unchanged() -> None:
+    agent, _gateway = make_agent("```json\n" + APPROVE + "\n```")
+    assert_success(agent.execute(make_request()))
 
 
 def test_parse_error_never_echoes_model_payload() -> None:
