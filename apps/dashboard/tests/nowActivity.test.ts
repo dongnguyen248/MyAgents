@@ -186,14 +186,11 @@ test('quietHint fires only for working phases past the threshold', () => {
     lastEventAt: '2026-11-12T03:09:30.000Z',
   });
   assert.equal(quietHint(withEvent, NOW), null);
+  // A test run can go quiet too (but still shows no attempt segment).
+  const testing = activity({ phase: 'RUNNING_TESTS', agentName: 'Test Agent', model: null });
+  assert.ok(quietHint(testing, NOW + 86_400_000)?.startsWith('No activity for'));
   // Human waits, stalls and stops never earn the hint.
-  for (const phase of [
-    'WAITING_FOR_APPROVAL',
-    'STALLED',
-    'ESCALATED',
-    'PAUSED',
-    'RUNNING_TESTS',
-  ] as const) {
+  for (const phase of ['WAITING_FOR_APPROVAL', 'STALLED', 'ESCALATED', 'PAUSED'] as const) {
     assert.equal(quietHint(activity({ phase }), NOW + 86_400_000), null, phase);
   }
   // Nor does an old payload with no derivable phase.

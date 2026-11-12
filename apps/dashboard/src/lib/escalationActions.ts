@@ -50,6 +50,15 @@ function reviewerFailureSummary(waiting: WorkflowWaiting | null | undefined): st
   return `Reviewer failed: ${waiting.errorCode}${detail}`;
 }
 
+/** The provider's own words for a reviewer failure, as the panel's
+ * second line ("Provider: …"); null when the failure carried none. */
+export function providerMessageLine(waiting: WorkflowWaiting | null | undefined): string | null {
+  if (!waiting?.providerMessage) {
+    return null;
+  }
+  return `Provider: ${waiting.providerMessage}`;
+}
+
 /** The panel's opening line, worded for the kind of escalation. */
 export function escalationSummaryFor(workflow: Workflow): string {
   if (isTestStop(workflow)) {

@@ -5,6 +5,7 @@ import {
   escalationButtonsFor,
   escalationSummaryFor,
   isTestStop,
+  providerMessageLine,
   type EscalationButtonId,
 } from '../../lib/escalationActions';
 import type { Workflow } from '../../types/workflow';
@@ -57,7 +58,13 @@ async function runEscalationAction(params: ActParams): Promise<void> {
 }
 
 function EscalationSummary({ workflow }: { workflow: Workflow }) {
-  return <p>{escalationSummaryFor(workflow)}</p>;
+  const providerLine = providerMessageLine(workflow.waiting);
+  return (
+    <>
+      <p>{escalationSummaryFor(workflow)}</p>
+      {providerLine ? <p>{providerLine}</p> : null}
+    </>
+  );
 }
 
 interface FieldsProps {

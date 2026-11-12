@@ -60,6 +60,14 @@ def _short_error_message(error: PlatformError) -> str:
     return redact_text(error.message)[:_ERROR_MESSAGE_LIMIT]
 
 
+def _provider_message(error: PlatformError) -> str | None:
+    """The provider's own message from the error's details, when the
+    gateway recorded one — already redacted and capped at its source
+    (the gateway's providerMessage detail), so it is copied as-is."""
+    raw = error.details.get("providerMessage")
+    return raw if isinstance(raw, str) and raw else None
+
+
 def apply_review_result(
     engine: Orchestrator, run: WorkflowExecution, result: AgentResult | None
 ) -> None:
@@ -183,6 +191,7 @@ class AiReviewApply:
                 ),
                 error_code=first.code if first is not None else None,
                 error_message=_short_error_message(first) if first is not None else None,
+                provider_message=_provider_message(first) if first is not None else None,
             ),
         )
 

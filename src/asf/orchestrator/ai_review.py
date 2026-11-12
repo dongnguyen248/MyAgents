@@ -64,12 +64,16 @@ class Escalation:
     """An AI-review escalation: its audit reason, the decision
     comment, and — for a reviewer failure — the terminal error's
     code and redacted message, carried on the escalation event so
-    the operator sees the cause, not just the reason."""
+    the operator sees the cause, not just the reason. When the
+    failure came from a provider call, the provider's own message
+    (from the error's details, already redacted and capped at its
+    source) rides along the same way."""
 
     reason: str
     comment: str
     error_code: str | None = None
     error_message: str | None = None
+    provider_message: str | None = None
 
 
 def ai_stage(engine: Orchestrator) -> AiReviewStage:
@@ -343,6 +347,8 @@ class AiReviewStage:
             metadata["errorCode"] = escalation.error_code
         if escalation.error_message is not None:
             metadata["errorMessage"] = escalation.error_message
+        if escalation.provider_message is not None:
+            metadata["providerMessage"] = escalation.provider_message
         engine._event(
             run,
             "WORKFLOW_ESCALATED",

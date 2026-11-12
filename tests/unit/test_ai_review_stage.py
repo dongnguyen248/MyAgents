@@ -453,6 +453,50 @@ def test_reviewer_gateway_failure_escalates_with_the_cause_on_the_event() -> Non
         assert secret not in blob
 
 
+def test_reviewer_provider_message_rides_the_escalation_to_the_waiting_block() -> None:
+    steps = [gated("spec", "spec", "SPEC", [])]
+    harness = Harness(
+        steps,
+        replies=[],
+        contents=full_contents(),
+        gateway_wrapper=lambda _inner: _RaisingModels(
+            ModelGatewayError(
+                "LLM_MODEL_NOT_SUPPORTED",
+                "Model 'claude-sonnet-5.5' (source: shared) is not supported",
+                details={
+                    "httpStatus": 400,
+                    "providerCode": "model_not_supported",
+                    "providerMessage": "The requested model is not supported.",
+                },
+            )
+        ),
+    )
+    run = _drive_reviewer_failure(harness)
+    assert run.state.stage == "SPEC_ESCALATED"
+    escalated = harness.events(run.id, "WORKFLOW_ESCALATED")
+    assert escalated[-1].metadata["providerMessage"] == "The requested model is not supported."
+    waiting = escalation_waiting(run, steps[0], {}, {"used": 0, "max": 3})
+    assert waiting["providerMessage"] == "The requested model is not supported."
+
+
+def test_reviewer_failure_without_provider_details_has_no_provider_message() -> None:
+    steps = [gated("spec", "spec", "SPEC", [])]
+    harness = Harness(
+        steps,
+        replies=[],
+        contents=full_contents(),
+        gateway_wrapper=lambda _inner: _RaisingModels(
+            ModelGatewayError("LLM_TIMEOUT", "provider exploded quietly")
+        ),
+    )
+    run = _drive_reviewer_failure(harness)
+    assert run.state.stage == "SPEC_ESCALATED"
+    escalated = harness.events(run.id, "WORKFLOW_ESCALATED")
+    assert "providerMessage" not in escalated[-1].metadata
+    waiting = escalation_waiting(run, steps[0], {}, {"used": 0, "max": 3})
+    assert "providerMessage" not in waiting
+
+
 def test_reviewer_failure_comment_event_and_waiting_carry_no_secrets() -> None:
     message = (
         "The provider rejected the request after several retries in the "

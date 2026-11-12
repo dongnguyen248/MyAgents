@@ -7,6 +7,7 @@ import {
   escalationButtonsFor,
   escalationSummaryFor,
   isTestStop,
+  providerMessageLine,
 } from '../src/lib/escalationActions.ts';
 import { parseTestCommands, testCommandError } from '../src/lib/testCommands.ts';
 import type { Workflow, WorkflowWaiting } from '../src/types/workflow.ts';
@@ -107,6 +108,30 @@ test('a reviewer failure summary names the error code and message', () => {
     'Reviewer failed: LLM_MODEL_NOT_SUPPORTED — ' +
       "Model 'claude-sonnet-5.5' (source: shared) is not supported by the provider.",
   );
+});
+
+test('the provider line shows the provider words when the waiting block carries them', () => {
+  const withProvider = waiting({
+    escalationReason: 'REVIEWER_FAILED',
+    errorCode: 'LLM_MODEL_NOT_SUPPORTED',
+    providerMessage: 'The requested model is not supported.',
+  });
+  assert.equal(
+    providerMessageLine(withProvider),
+    'Provider: The requested model is not supported.',
+  );
+  assert.equal(providerMessageLine(waiting({ errorCode: 'LLM_TIMEOUT' })), null);
+  assert.equal(providerMessageLine(waiting({ providerMessage: '' })), null);
+  assert.equal(providerMessageLine(null), null);
+  assert.equal(providerMessageLine(undefined), null);
+});
+
+test('the panel renders the provider line under the summary', () => {
+  const source = readFileSync(
+    new URL('../src/components/workflows/EscalatedPanel.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.ok(source.includes('providerMessageLine(workflow.waiting)'), 'panel uses the lib line');
 });
 
 test('a reviewer failure without a message names just the code', () => {

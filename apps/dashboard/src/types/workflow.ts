@@ -109,6 +109,9 @@ export interface WorkflowWaiting {
   errorCode?: string | null;
   /** For ESCALATED with REVIEWER_FAILED: the reviewer error's redacted, capped message. */
   errorMessage?: string | null;
+  /** For ESCALATED with REVIEWER_FAILED: the provider's own message
+   * (redacted, capped at 240 chars by the gateway), when it sent one. */
+  providerMessage?: string | null;
 }
 
 /** One finding of an AI artifact review (GET /runs/{id}/reviews). */
