@@ -34,6 +34,7 @@ from asf.api.service import (
     MetricsProtocol,
     _camelize,
     _iso,
+    now_activity,
     run_selection,
 )
 from asf.api.service.review_state import (
@@ -862,16 +863,15 @@ class QueriesMixin:
         self,
         run: WorkflowExecution,
         steps: list[dict[str, Any]],
+        detail: bool = False,
     ) -> dict[str, Any] | None:
         """What the run is doing or waiting for, for the live strip.
 
         Covers EVERY non-terminal state, so the strip never just
-        disappears on a stuck run: a step in flight (``in_flight``
-        is stamped and saved before dispatch, so a minutes-long
-        model call still reports its step and start), a scheduled
-        retry, an approval gate, an escalation, or a stall (same
-        derivation as the view's ``waiting`` block). Terminal runs
-        return None — their own cards explain those states.
+        disappears on a stuck run (same derivation as the view's
+        ``waiting`` block). Terminal runs return None — their own
+        cards explain those states. ``detail`` adds the Now-card
+        enrichment and is set only by the single-run view.
         """
         if run.state.stage in _TERMINAL_STAGES:
             return None
@@ -887,9 +887,10 @@ class QueriesMixin:
             "retryAt": waiting["retryAt"],
         }
         kind = waiting["kind"]
-        return {**base, "kind": kind if kind != "NONE" else "STEP_RUNNING"}
+        activity = {**base, "kind": kind if kind != "NONE" else "STEP_RUNNING"}
+        return now_activity.enrich_activity(self, run, activity) if detail else activity
 
-    def _workflow_view(self, run: WorkflowExecution) -> dict[str, Any]:
+    def _workflow_view(self, run: WorkflowExecution, *, detail: bool = False) -> dict[str, Any]:
         definition = self._definition(run)
         status = self._workflow_status(run)
         steps = self._step_states(run, definition, status) if definition else []
@@ -919,7 +920,7 @@ class QueriesMixin:
             # Approval gates this task asked to skip at creation; the
             # matching approval steps render as "skipped" once passed.
             "skippedApprovals": self._skip_approvals_of(run),
-            "currentActivity": self._current_activity(run, steps),
+            "currentActivity": self._current_activity(run, steps, detail=detail),
             # What the run is waiting for (approval / escalation /
             # retry / stall) and the drive's own state — the fields
             # an operator needs before deciding what to do with a
@@ -1022,7 +1023,7 @@ class QueriesMixin:
         run = next((item for item in runs if item.id == workflow_id), None)
         if run is None:
             run = run_selection.select_current_run(runs, run_selection.task_run(workflow_id))
-        return self._workflow_view(run) if run is not None else None
+        return self._workflow_view(run, detail=True) if run is not None else None
 
     # ------------------------------------------------------------------
     # projects
