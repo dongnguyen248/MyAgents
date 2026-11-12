@@ -307,17 +307,11 @@ class ModelSettings:
         if gateway is None:
             return {"ok": False, "message": "No provider configured."}
         try:
-            response = gateway.complete(
-                ModelRequest(
-                    messages=[
-                        ModelMessage(
-                            role="user",
-                            content="Reply with the single word OK",
-                        )
-                    ],
-                    model=self.effective_model(agent_name) or None,
-                )
+            request = ModelRequest(
+                messages=[ModelMessage(role="user", content="Reply with the single word OK")],
+                model=self.effective_model(agent_name) or None,
             )
+            response = gateway.complete(request)
         except ModelGatewayError as error:
             return {"ok": False, "message": error.message}
         except Exception as error:  # transport-level surprises
@@ -325,8 +319,9 @@ class ModelSettings:
         if response.content.strip():
             return {
                 "ok": True,
-                "message": f"Provider answered with model "
-                f"'{response.model}': {response.content.strip()[:80]!r}",
+                "message": f"Provider answered with model '{response.model}': "
+                f"{response.content.strip()[:80]!r} — reachability and the "
+                "model id only; a full agent request can still be rejected.",
             }
         return {"ok": False, "message": "Provider answered with empty content."}
 

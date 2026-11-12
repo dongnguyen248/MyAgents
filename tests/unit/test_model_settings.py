@@ -191,6 +191,9 @@ def test_connection_test_paths(tmp_path: Path):
     ok = settings.test(_OkTransport())
     assert ok["ok"] is True
     assert "gpt-x" in ok["message"]
+    # The success copy states what the tiny probe actually proves.
+    assert "reachability and the model id only" in ok["message"]
+    assert "a full agent request can still be rejected" in ok["message"]
 
 
 # ---------------------------------------------------------------------------

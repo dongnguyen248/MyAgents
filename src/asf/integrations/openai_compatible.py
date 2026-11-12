@@ -19,8 +19,9 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import Any, Protocol
+from typing import Any, NoReturn, Protocol
 
+from asf.agents._shared.security import redact_text
 from asf.contracts.models import ModelRequest, ModelResponse, ModelUsage
 from asf.integrations.retry import (
     backoff_delay,
@@ -53,6 +54,11 @@ DEFAULT_MAX_RETRIES = 2
 # model ASF is used with; a request may override it via the
 # ``max_tokens`` model parameter.
 DEFAULT_MAX_TOKENS = 16384
+
+# Cap for the provider's own error message when it is carried in
+# error details (providerMessage): long enough to hold the actual
+# diagnosis, short enough for a run record and a banner line.
+_PROVIDER_MESSAGE_MAX = 240
 
 
 class HttpTransport(Protocol):
@@ -199,13 +205,7 @@ class OpenAICompatibleGateway:
             timeout_seconds=effective_timeout(self._timeout, request),
         )
         if status >= 400:
-            detail, provider_code = _provider_error(raw)
-            code = _error_code(status, provider_code, detail, raw)
-            raise ModelGatewayError(
-                code,
-                f"Model provider error (HTTP {status})" + (f": {detail}" if detail else ""),
-                details={"httpStatus": status},
-            )
+            _raise_provider_error(status, raw)
         try:
             data = json.loads(raw.decode("utf-8"))
             choice = data["choices"][0]
@@ -307,6 +307,31 @@ def _provider_error(body: bytes) -> tuple[str, str]:
         if isinstance(data.get("message"), str):
             return data["message"], ""
     return "", ""
+
+
+def _raise_provider_error(status: int, raw: bytes) -> NoReturn:
+    """Raise the classified gateway error for a failed response.
+
+    The provider's parsed code and message ride in the details
+    (providerCode / providerMessage, the message redacted and
+    capped): friendlier rewrites higher up replace the message
+    text, and without the details the provider's own diagnosis
+    would survive only in a log line. The raised message keeps
+    the provider text after the status, redacted the same way.
+    Classification still reads the unredacted text.
+    """
+    detail, provider_code = _provider_error(raw)
+    safe = redact_text(detail)
+    details: dict[str, Any] = {"httpStatus": status}
+    if provider_code:
+        details["providerCode"] = redact_text(provider_code)
+    if safe:
+        details["providerMessage"] = safe[:_PROVIDER_MESSAGE_MAX]
+    raise ModelGatewayError(
+        _error_code(status, provider_code, detail, raw),
+        f"Model provider error (HTTP {status})" + (f": {safe}" if safe else ""),
+        details=details,
+    )
 
 
 def _error_code(status: int, provider_code: str, detail: str, raw: bytes) -> str:

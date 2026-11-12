@@ -78,13 +78,21 @@ def test_json_model_not_supported_at_400_is_the_new_code() -> None:
     assert error.code == "LLM_MODEL_NOT_SUPPORTED"
     assert error.category == "LLM"
     assert error.retryable is False
-    assert error.details == {"httpStatus": 400}
+    assert error.details == {
+        "httpStatus": 400,
+        "providerCode": "model_not_supported",
+        "providerMessage": "The requested model is not supported.",
+    }
 
 
 def test_json_model_not_supported_at_404_is_the_new_code() -> None:
     error = _classify(404, UNSUPPORTED_BODY)
     assert error.code == "LLM_MODEL_NOT_SUPPORTED"
-    assert error.details == {"httpStatus": 404}
+    assert error.details == {
+        "httpStatus": 404,
+        "providerCode": "model_not_supported",
+        "providerMessage": "The requested model is not supported.",
+    }
 
 
 def test_provider_code_case_and_wording_variants() -> None:
@@ -303,3 +311,30 @@ def test_other_gateway_errors_pass_through_unenriched(tmp_path: Path) -> None:
         router.complete(_request({"agentId": "agent-fix"}))
     assert caught.value is raw
     assert "agent" not in caught.value.details
+
+
+def test_routing_rewrite_keeps_the_provider_evidence(tmp_path: Path) -> None:
+    """The friendly rewrite replaces the message; the provider's own
+    code and message must survive in the details — they are the only
+    place the actual diagnosis remains once the rewrite lands."""
+    settings = _settings(tmp_path)
+    raw = ModelGatewayError(
+        "LLM_MODEL_NOT_SUPPORTED",
+        "Model provider error (HTTP 400): The requested model is not supported.",
+        details={
+            "httpStatus": 400,
+            "providerCode": "model_not_supported",
+            "providerMessage": "The requested model is not supported.",
+        },
+    )
+    router = SettingsRoutingGateway(
+        settings,
+        _OkGateway(),
+        gateway_factory=lambda s, t: _RaisingGateway(raw),
+    )
+    with pytest.raises(ModelGatewayError) as caught:
+        router.complete(_request({"agentId": "agent-fix"}))
+    error = caught.value
+    assert "is not supported by the provider" in error.message
+    assert error.details["providerCode"] == "model_not_supported"
+    assert error.details["providerMessage"] == "The requested model is not supported."
