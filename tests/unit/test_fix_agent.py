@@ -479,17 +479,179 @@ def fix_agent_blocks(
     replies: list[Any],
     *,
     repair_attempts: int = 0,
+    repository: InMemoryRepository | None = None,
 ) -> tuple[FixAgent, ScriptedModelGateway]:
     gateway = ScriptedModelGateway(replies)
     return FixAgent(
         AgentRuntime(gateway, lambda: T_AWARE, counter_id("fix-")),
-        InMemoryRepository(),
+        repository or InMemoryRepository(),
         FixSettings(
             prompts=FixPrompts("Return a complete replacement ChangeSet"),
             edit_format="blocks",
             repair_attempts=repair_attempts,
         ),
     ), gateway
+
+
+def fix_request_with(
+    previous_changes: list[dict[str, Any]], expected_files: list[str]
+) -> AgentRequest:
+    request = make_implement_request(expected_files=expected_files)
+    implement, _ = make_agent_and_gateway([make_valid_changeset_reply(changes=previous_changes)])
+    result = implement.execute(request)
+    if result.status != "SUCCESS":
+        raise AssertionError("Implement fixture failed")
+    code = result.artifacts[0]
+    review = Artifact(
+        id="review-1",
+        type="CODE_REVIEW",
+        name="CODE_REVIEW.md",
+        version="1",
+        content={
+            "format": "json",
+            "text": "Changes requested",
+            "review": {"findings": [], "verdict": "CHANGES_REQUESTED"},
+        },
+        created_by="agent-review",
+        created_at=T_AWARE,
+        metadata={"codeArtifactId": code.id, "codeVersion": code.version, "taskItemId": "T1"},
+    )
+    return request.model_copy(
+        update={"agent_id": "agent-fix", "artifacts": [*request.artifacts, code, review]}
+    )
+
+
+_DOC_V1 = "# Root cause\n\nFirst draft.\n"
+_DOC_V2 = "# Root cause\n\nRevised draft.\n"
+_DOC_CREATE_REPLY = "CREATE: docs/x.md\n<<<<<<< FILE\n" + _DOC_V2 + ">>>>>>> FILE\n"
+
+
+def test_fix_blocks_create_replaces_a_file_the_previous_changeset_created():
+    """Repro of the live MESSENGER failure: the previous changeset
+    created docs/x.md (nothing was ever written to disk), and the fix
+    reply replaces it wholesale with a CREATE section. The parser
+    rejected that with "the file already exists" and the run died."""
+    request = fix_request_with(
+        [{"path": "docs/x.md", "operation": "create", "content": _DOC_V1}],
+        ["docs/x.md"],
+    )
+    agent, _ = fix_agent_blocks([_DOC_CREATE_REPLY])
+    result = agent.execute(request)
+    assert result.status == "SUCCESS"
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    assert changes == [{"path": "docs/x.md", "operation": "create", "content": _DOC_V2}]
+
+
+def test_fix_json_create_replaces_a_file_the_previous_changeset_created():
+    request = fix_request_with(
+        [{"path": "docs/x.md", "operation": "create", "content": _DOC_V1}],
+        ["docs/x.md"],
+    )
+    reply = json.dumps(
+        {"changes": [{"path": "docs/x.md", "operation": "create", "content": _DOC_V2}]}
+    )
+    agent, _ = fix_agent([reply])
+    result = agent.execute(request)
+    assert result.status == "SUCCESS"
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    assert changes == [{"path": "docs/x.md", "operation": "create", "content": _DOC_V2}]
+
+
+def test_fix_blocks_create_for_a_base_file_still_fails():
+    """A CREATE for a path the base snapshot holds (on disk / an
+    expected file) is still the collision it always was — the
+    allowance covers only previous-changeset creations."""
+    request = fix_request_with(
+        [{"path": "src/calculator.py", "operation": "create", "content": "x = 1\n"}],
+        ["docs/x.md", "src/calculator.py"],
+    )
+    repository = InMemoryRepository({"main": {"docs/x.md": "# Base doc\n"}})
+    agent, _ = fix_agent_blocks([_DOC_CREATE_REPLY], repository=repository)
+    result = agent.execute(request)
+    assert result.status == "FAILED"
+    assert result.errors[0].code == "LLM_INVALID_RESPONSE"
+    assert "Cannot create 'docs/x.md': the file already exists" in result.errors[0].message
+
+
+def test_fix_blocks_create_for_a_previous_modify_still_fails():
+    """A previous changeset MODIFY of a base file is not a pending
+    creation: the path is in the base snapshot, so CREATE for it
+    keeps failing."""
+    request = fix_request_with(
+        [{"path": "src/calculator.py", "operation": "create", "content": "value = 1\n"}],
+        ["src/calculator.py"],
+    )
+    code = next(a for a in request.artifacts if a.type == "CODE")
+    updated = code.model_copy(
+        update={
+            "content": {
+                "text": "Previous complete code",
+                "changeSet": {
+                    "changes": [
+                        {
+                            "path": "src/calculator.py",
+                            "operation": "modify",
+                            "content": "value = 2\n",
+                        }
+                    ]
+                },
+            }
+        }
+    )
+    request = request.model_copy(
+        update={"artifacts": [updated if a.type == "CODE" else a for a in request.artifacts]}
+    )
+    repository = InMemoryRepository({"main": {"src/calculator.py": "value = 1\n"}})
+    reply = "CREATE: src/calculator.py\n<<<<<<< FILE\nvalue = 3\n>>>>>>> FILE\n"
+    agent, _ = fix_agent_blocks([reply], repository=repository)
+    result = agent.execute(request)
+    assert result.status == "FAILED"
+    assert "Cannot create 'src/calculator.py': the file already exists" in result.errors[0].message
+
+
+_BASE_DOC = "# Base doc\n\nOld text.\n"
+_REPAIR_REPLY = "FILE: docs/x.md\n<<<<<<< SEARCH\nOld text.\n=======\nNew text.\n>>>>>>> REPLACE\n"
+
+
+def _collision_request() -> AgentRequest:
+    return fix_request_with(
+        [{"path": "src/calculator.py", "operation": "create", "content": "x = 1\n"}],
+        ["docs/x.md", "src/calculator.py"],
+    )
+
+
+def test_fix_repair_prompt_carries_the_colliding_files_content():
+    """When a CREATE still collides (a base file), the repair
+    request shows the model the file's current content, so it can
+    answer with SEARCH/REPLACE blocks against real text."""
+    repository = InMemoryRepository({"main": {"docs/x.md": _BASE_DOC}})
+    agent, gateway = fix_agent_blocks(
+        [_DOC_CREATE_REPLY, _REPAIR_REPLY], repair_attempts=1, repository=repository
+    )
+    result = agent.execute(_collision_request())
+    assert result.status == "SUCCESS"
+    repair_message = gateway.requests[1].messages[-1].content
+    assert "the file already exists" in repair_message
+    assert "Current content of docs/x.md:" in repair_message
+    assert "Old text." in repair_message
+    changes = result.artifacts[0].content["changeSet"]["changes"]
+    by_path = {change["path"]: change for change in changes}
+    assert by_path["docs/x.md"]["content"] == "# Base doc\n\nNew text.\n"
+
+
+def test_fix_repair_prompt_caps_the_colliding_files_content():
+    big = "# Base doc\n\n" + "x" * 9000 + "\n"
+    repository = InMemoryRepository({"main": {"docs/x.md": big}})
+    agent, gateway = fix_agent_blocks(
+        [_DOC_CREATE_REPLY, _REPAIR_REPLY], repair_attempts=1, repository=repository
+    )
+    result = agent.execute(_collision_request())
+    # The repair SEARCH cannot match the capped content, so the run
+    # still fails — the point is what the repair request contained.
+    assert result.status == "FAILED"
+    repair_message = gateway.requests[1].messages[-1].content
+    assert "x" * 9000 not in repair_message
+    assert "x" * 100 in repair_message
 
 
 def test_fix_blocks_mode_replacement_is_cumulative():

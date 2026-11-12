@@ -43,6 +43,7 @@ from asf.tools.changeset import ChangeSet
 __all__ = [
     "CodeGenerationCall",
     "RepairableOutputError",
+    "enrich_parse_error",
     "run_code_generation",
     "summarize_validation_issues",
 ]
@@ -73,6 +74,19 @@ class RepairableOutputError(Exception):
         self.message = message
         self.model_message = model_message or message
         self.details = dict(details or {})
+
+
+def enrich_parse_error(message: str, *, path: str | None, existing_content: str | None) -> str:
+    """The repair prompt's version of a parse failure that knows
+    the content it collided with (a create for an existing file):
+    the file's current content rides along, capped like the bad
+    reply itself, so the model can answer with SEARCH/REPLACE
+    blocks against text it has actually seen. Without collision
+    details the message passes through unchanged."""
+    if path is None or existing_content is None:
+        return message
+    content = existing_content[:MAX_REPAIR_REPLY_CHARS]
+    return f"{message}\n\nCurrent content of {path}:\n{content}"
 
 
 def _sum_usage(total: ModelUsage, extra: ModelUsage) -> ModelUsage:

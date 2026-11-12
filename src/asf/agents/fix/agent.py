@@ -31,6 +31,7 @@ from asf.agents._shared.paths import validate_relative_path
 from asf.agents._shared.repair import (
     CodeGenerationCall,
     RepairableOutputError,
+    enrich_parse_error,
     run_code_generation,
     summarize_validation_issues,
 )
@@ -49,6 +50,7 @@ from asf.agents.fix.compose import (
     check_delete_targets,
     compose_replacement,
     effective_existing,
+    replaceable_paths,
 )
 from asf.agents.fix.prompts import FixMessageOptions, FixPrompts, build_fix_messages
 from asf.agents.implement.prompts import CodeMarkdownContext, render_code_markdown
@@ -419,10 +421,16 @@ class FixAgent(BaseAgent):
                 reply.strip(),
                 existing_files=run.effective_existing,
                 expected_files=run.expected,
+                replaceable_paths=replaceable_paths(
+                    run.existing, run.effective_existing, run.previous_changeset
+                ),
             )
         except EditBlockError as error:
             raise RepairableOutputError(
                 str(error),
+                model_message=enrich_parse_error(
+                    str(error), path=error.path, existing_content=error.existing_content
+                ),
                 details={
                     "cause": str(error),
                     "replyChars": len(reply),
