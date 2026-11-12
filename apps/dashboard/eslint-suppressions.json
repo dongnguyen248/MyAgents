@@ -109,17 +109,8 @@
     }
   },
   "src/components/workflows/RunLiveActivity.tsx": {
-    "complexity": {
-      "count": 1
-    },
     "max-lines-per-function": {
       "count": 1
-    },
-    "max-statements-per-line": {
-      "count": 1
-    },
-    "no-nested-ternary": {
-      "count": 4
     }
   },
   "src/components/workflows/WorkflowArtifacts.tsx": {

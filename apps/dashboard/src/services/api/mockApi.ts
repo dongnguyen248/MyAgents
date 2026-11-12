@@ -10,10 +10,136 @@ import type { ActivityEvent } from '../../types/activity';
 import type { Approval, ApprovalStatus } from '../../types/approval';
 import type { Project, ProjectProfileInput } from '../../types/project';
 import type { Task } from '../../types/task';
-import type { RunDiagnostics, StepState, Workflow, WorkflowStep, WorkflowStepId } from '../../types/workflow';
+import type { RunDiagnostics, StepState, Workflow, WorkflowCurrentActivity, WorkflowStep, WorkflowStepId, WorkflowWaiting } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
+/** Mock parity for the backend's Now-card fields, by active step. */
+const NOW_BY_STEP: Record<string, Partial<WorkflowCurrentActivity>> = {
+  spec: { agentId: 'agent-spec', agentName: 'Specification Agent', model: 'claude-haiku-4.5', phase: 'PRODUCING' },
+  plan: { agentId: 'agent-plan', agentName: 'Planning Agent', model: 'claude-haiku-4.5', phase: 'PRODUCING' },
+  task: { agentId: 'agent-task', agentName: 'Task Agent', model: 'claude-haiku-4.5', phase: 'PRODUCING' },
+  implementation: { agentId: 'agent-implement', agentName: 'Implementation Agent', model: 'claude-sonnet-5.5', phase: 'PRODUCING' },
+  code_review: { agentId: 'agent-review', agentName: 'Review Agent', model: 'gpt-4.1', phase: 'PRODUCING' },
+  testing: { agentId: 'agent-test', agentName: 'Test Agent', model: null, phase: 'RUNNING_TESTS' },
+  ci: { agentId: null, agentName: null, model: null, phase: 'WAITING_ON_CI' },
+  merge: { agentId: null, agentName: null, model: null, phase: 'WAITING_FOR_MERGE' },
+};
+
+interface MockNowExample {
+  waiting?: Partial<WorkflowWaiting>;
+  activity: Omit<WorkflowCurrentActivity, 'since' | 'lastEventAt' | 'recentEvents'>;
+  /** Recent events, newest last; agoSec is relative to the workflow's updatedAt. */
+  events: { type: string; message: string; agoSec: number }[];
+}
+
+/** Full Now-card examples for specific seed workflows. */
+const NOW_EXAMPLES: Record<string, MockNowExample> = {
+  'wf-vhpc-1024': {
+    waiting: {
+      kind: 'AI_REVIEW',
+      stage: 'SPEC',
+      round: 2,
+      maxRounds: 4,
+      reason: 'AI review of Write specification in progress (round 2 of 4)',
+      suggestedActions: ['approve', 'reject', 'cancel'],
+    },
+    activity: {
+      kind: 'AI_REVIEW',
+      stepId: 'spec_approval',
+      stepLabel: 'Spec Approval',
+      stage: 'SPEC_REVIEW',
+      reason: 'AI review of Write specification in progress (round 2 of 4)',
+      retryAt: null,
+      agentId: 'agent-artifact-review',
+      agentName: 'Artifact Review Agent',
+      model: 'gpt-4.1',
+      phase: 'AI_REVIEWING',
+      attempt: 2,
+      attemptMax: 4,
+    },
+    events: [
+      { type: 'AI_REVIEW_STARTED', message: 'AI review started for SPEC', agoSec: 240 },
+      { type: 'AGENT_COMPLETED', message: 'Specification Agent produced SPEC v2', agoSec: 180 },
+      { type: 'AI_REVIEW_STARTED', message: 'AI review round 2 started for SPEC', agoSec: 45 },
+    ],
+  },
+  'wf-vnpc-2041': {
+    activity: {
+      kind: 'APPROVAL',
+      stepId: 'plan_approval',
+      stepLabel: 'Plan Approval',
+      stage: 'PLAN_REVIEW',
+      reason: 'Waiting for approval',
+      retryAt: null,
+      agentId: null,
+      agentName: null,
+      model: null,
+      phase: 'WAITING_FOR_APPROVAL',
+      attempt: null,
+      attemptMax: null,
+    },
+    events: [{ type: 'APPROVAL_REQUESTED', message: 'Approval requested for PLAN', agoSec: 600 }],
+  },
+  'wf-vhpc-1023': {
+    activity: {
+      kind: 'STEP_RUNNING',
+      stepId: 'implementation',
+      stepLabel: 'Implementation',
+      stage: 'CODE_FIX',
+      reason: null,
+      retryAt: null,
+      agentId: 'agent-fix',
+      agentName: 'Fix Agent',
+      model: 'claude-sonnet-5.5',
+      phase: 'FIXING',
+      attempt: 2,
+      attemptMax: 3,
+    },
+    events: [
+      { type: 'WORKFLOW_STAGE_CHANGED', message: 'Stage changed to CODE_FIX', agoSec: 900 },
+      { type: 'AGENT_STARTED', message: 'Fix Agent started fix attempt 2', agoSec: 870 },
+      { type: 'TEST_FAILED', message: 'Tests failed: 2 of 48 assertions', agoSec: 300 },
+    ],
+  },
+};
+
+/** The generic enriched activity for a running mock workflow. */
+const nowActivityFor = (workflow: Workflow, active: WorkflowStep | undefined): WorkflowCurrentActivity => ({
+  kind: 'STEP_RUNNING',
+  stepId: active?.id ?? null,
+  stepLabel: active?.label ?? null,
+  stage: null,
+  since: workflow.updatedAt,
+  retryAt: null,
+  agentId: null,
+  agentName: null,
+  model: null,
+  phase: null,
+  attempt: null,
+  attemptMax: null,
+  lastEventAt: workflow.updatedAt,
+  recentEvents: [],
+  ...(active ? NOW_BY_STEP[active.id] : undefined),
+});
+
+/** A seed workflow's full example activity, with times made relative. */
+const exampleActivity = (workflow: Workflow, example: MockNowExample): WorkflowCurrentActivity => {
+  const base = Date.parse(workflow.updatedAt);
+  const events = example.events.map((event) => ({
+    type: event.type,
+    message: event.message,
+    at: new Date(base - event.agoSec * MS_PER_SECOND).toISOString(),
+  }));
+  return {
+    ...example.activity,
+    since: workflow.updatedAt,
+    lastEventAt: events.length ? events[events.length - 1].at : workflow.updatedAt,
+    recentEvents: events,
+  };
+};
+
 const LATENCY_MS = 150;
+const MS_PER_SECOND = 1000;
 const delay = <T>(value: T): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(structuredClone(value)), LATENCY_MS));
 
@@ -44,21 +170,19 @@ const withLiveActivity = (workflow: Workflow): Workflow => {
       lastStopReason: null,
     },
   };
+  const example = NOW_EXAMPLES[workflow.id];
+  if (example) {
+    return {
+      ...base,
+      waiting: { ...base.waiting!, ...example.waiting },
+      currentActivity: exampleActivity(workflow, example),
+    };
+  }
   if (workflow.status !== 'RUNNING') {
     return base;
   }
   const active = workflow.steps.find((s) => s.state === 'active');
-  return {
-    ...base,
-    currentActivity: {
-      kind: 'STEP_RUNNING',
-      stepId: active?.id ?? null,
-      stepLabel: active?.label ?? null,
-      stage: null,
-      since: workflow.updatedAt,
-      retryAt: null,
-    },
-  };
+  return { ...base, currentActivity: nowActivityFor(workflow, active) };
 };
 
 // Mutable in-memory state so mock approval actions are visible until reload.

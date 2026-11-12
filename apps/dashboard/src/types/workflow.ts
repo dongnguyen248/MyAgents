@@ -35,9 +35,17 @@ export interface WorkflowArtifact {
   content?: string | null;
 }
 
+/** One recent event of a live run's current stage (Now card). */
+export interface WorkflowRecentEvent {
+  type: string;
+  /** Operator-visible text; the backend redacts it before sending. */
+  message: string;
+  at: string;
+}
+
 /** What a live run is doing right now (absent for terminal/waiting runs). */
 export interface WorkflowCurrentActivity {
-  kind: 'STEP_RUNNING' | 'RETRY_WAIT' | 'APPROVAL' | 'ESCALATED' | 'STALLED' | 'PAUSED';
+  kind: 'STEP_RUNNING' | 'RETRY_WAIT' | 'APPROVAL' | 'AI_REVIEW' | 'ESCALATED' | 'STALLED' | 'PAUSED';
   stepId?: string | null;
   stepLabel?: string | null;
   stage?: string | null;
@@ -47,6 +55,34 @@ export interface WorkflowCurrentActivity {
   reason?: string | null;
   /** For RETRY_WAIT: when the next attempt is due. */
   retryAt?: string | null;
+  /** Now card: the acting agent's registry id (null for human/CI waits). */
+  agentId?: string | null;
+  /** Now card: the acting agent's display name. */
+  agentName?: string | null;
+  /** Now card: the settings-effective model NAME at view time (never a key). */
+  model?: string | null;
+  /** Now card: the phase, when derivable from persisted state. */
+  phase?:
+    | 'PRODUCING'
+    | 'AI_REVIEWING'
+    | 'WAITING_FOR_APPROVAL'
+    | 'RETRYING'
+    | 'RUNNING_TESTS'
+    | 'FIXING'
+    | 'WAITING_ON_CI'
+    | 'WAITING_FOR_MERGE'
+    | 'ESCALATED'
+    | 'STALLED'
+    | 'PAUSED'
+    | null;
+  /** Now card: the current attempt where a real budget exists. */
+  attempt?: number | null;
+  /** Now card: the budget the attempt counts against. */
+  attemptMax?: number | null;
+  /** Now card: when the run last emitted any event. */
+  lastEventAt?: string | null;
+  /** Now card: the current stage's recent events, oldest first. */
+  recentEvents?: WorkflowRecentEvent[];
 }
 
 /** What a non-terminal run is waiting for, in operator terms. */
