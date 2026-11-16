@@ -21,6 +21,7 @@ from asf.agents._shared.request_checks import (
 )
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
+from asf.agents.plan.linked_spec import linked_spec_issues, stamp_linked_spec
 from asf.agents.plan.prompts import (
     MilestoneValidationError,
     PlanPromptContext,
@@ -88,47 +89,6 @@ def _previous_plan_text(previous: Artifact | None) -> tuple[str, str] | None:
     if "text" not in previous.content:
         return None
     return (previous.version, previous.content["text"])
-
-
-def _linked_spec_values(reply: str) -> tuple[bool, str | None, str | None]:
-    found_section = False
-    found_id: str | None = None
-    found_version: str | None = None
-    for line in reply.splitlines():
-        stripped = line.strip()
-        if stripped == "## Linked SPEC":
-            found_section = True
-            continue
-        if not found_section:
-            continue
-        if stripped.startswith("## "):
-            break
-        if stripped.startswith("ID:"):
-            found_id = stripped[3:].strip()
-        elif stripped.startswith("Version:"):
-            found_version = stripped[8:].strip()
-    return found_section, found_id, found_version
-
-
-def _linked_spec_issues(reply: str, spec_art: Artifact) -> list[str]:
-    found_section, found_id, found_version = _linked_spec_values(reply)
-    if not found_section:
-        return ["Missing '## Linked SPEC' section"]
-    issues: list[str] = []
-    if found_id is None:
-        issues.append("Linked SPEC section missing 'ID:' line")
-    elif found_id != spec_art.id:
-        issues.append(
-            f"Linked SPEC ID '{found_id}' does not match input SPEC artifact ID '{spec_art.id}'"
-        )
-    if found_version is None:
-        issues.append("Linked SPEC section missing 'Version:' line")
-    elif found_version != spec_art.version:
-        issues.append(
-            f"Linked SPEC version '{found_version}' does not match "
-            f"input SPEC artifact version '{spec_art.version}'"
-        )
-    return issues
 
 
 class PlanAgent(BaseAgent):
@@ -225,6 +185,7 @@ class PlanAgent(BaseAgent):
         reply = unwrap_code_fence(response.content.strip())
         if not reply:
             raise invalid_response("Model returned an empty response")
+        reply = stamp_linked_spec(reply, spec_art)
         self._require_sections(reply)
         self._require_milestones(reply)
         self._require_linked_spec(reply, spec_art)
@@ -249,7 +210,7 @@ class PlanAgent(BaseAgent):
             ) from None
 
     def _require_linked_spec(self, reply: str, spec_art: Artifact) -> None:
-        issues = _linked_spec_issues(reply, spec_art)
+        issues = linked_spec_issues(reply, spec_art)
         if issues:
             raise invalid_response(
                 "Model response has invalid Linked SPEC section",
@@ -313,4 +274,4 @@ class PlanAgent(BaseAgent):
 
         Returns a list of issue strings (empty if valid).
         """
-        return _linked_spec_issues(reply, spec_art)
+        return linked_spec_issues(reply, spec_art)
