@@ -116,3 +116,20 @@ class WorkflowExecution(BaseModel):
 
     def touch(self, now: datetime) -> None:
         self.updated_at = now
+
+
+def request_feedback(
+    feedback: list[ApprovalFeedback],
+    produces: list[str],
+    artifacts: list[Artifact],
+) -> list[ApprovalFeedback]:
+    """The feedback a dispatch may carry.
+
+    Feedback is a request to revise a previous artifact, so it may
+    only travel with that artifact; without one in the request the
+    feedback is stale (left over from another gate) and is dropped
+    instead of failing the dispatch as an orphan.
+    """
+    if any(artifact.type in produces for artifact in artifacts):
+        return feedback
+    return []
