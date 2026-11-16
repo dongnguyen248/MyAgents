@@ -922,40 +922,28 @@ class PlanAgentTests(unittest.TestCase):
         self.assertEqual(len(ancestors["M12"]), 11)
         self.assertEqual(ancestors["M1"], frozenset())
 
-    def test_linked_spec_wrong_artifact_id_in_output(self):
-        """Test LLM output with wrong SPEC artifact ID in Linked SPEC section."""
-        # Valid reply but with wrong SPEC ID in the output
+    def test_linked_spec_wrong_artifact_id_is_corrected(self):
+        """A wrong SPEC ID in the model's Linked SPEC section is stamped over."""
         wrong_reply = self.valid_reply.replace("ID: spec-123", "ID: wrong-spec-999")
         agent, _ = self._make_agent([wrong_reply])
         res = agent.execute(self._make_request())
-        self.assertEqual(res.status, "FAILED")
-        self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
-        self.assertIn("linkedSpecIssues", res.errors[0].details)
-        self.assertTrue(
-            any(
-                "does not match input SPEC artifact ID" in issue
-                for issue in res.errors[0].details["linkedSpecIssues"]
-            )
-        )
+        self.assertEqual(res.status, "SUCCESS")
+        text = res.artifacts[0].content["text"]
+        self.assertIn("ID: spec-123", text)
+        self.assertNotIn("wrong-spec-999", text)
 
-    def test_linked_spec_wrong_version_in_output(self):
-        """Test LLM output with wrong SPEC version in Linked SPEC section."""
+    def test_linked_spec_wrong_version_is_corrected(self):
+        """A wrong SPEC version in the model's Linked SPEC section is stamped over."""
         wrong_reply = self.valid_reply.replace("Version: 1", "Version: 999")
         agent, _ = self._make_agent([wrong_reply])
         res = agent.execute(self._make_request())
-        self.assertEqual(res.status, "FAILED")
-        self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
-        self.assertIn("linkedSpecIssues", res.errors[0].details)
-        self.assertTrue(
-            any(
-                "does not match input SPEC artifact version" in issue
-                for issue in res.errors[0].details["linkedSpecIssues"]
-            )
-        )
+        self.assertEqual(res.status, "SUCCESS")
+        text = res.artifacts[0].content["text"]
+        self.assertIn("Version: 1", text)
+        self.assertNotIn("Version: 999", text)
 
-    def test_linked_spec_missing_reference_in_output(self):
-        """Test LLM output with Linked SPEC section header but missing ID/Version lines."""
-        # Keep the section header but remove ID and Version lines
+    def test_linked_spec_missing_reference_is_stamped(self):
+        """A Linked SPEC header without ID/Version lines gets them stamped in."""
         lines = self.valid_reply.splitlines()
         filtered = []
         for line in lines:
@@ -967,20 +955,23 @@ class PlanAgentTests(unittest.TestCase):
 
         agent, _ = self._make_agent([reply])
         res = agent.execute(self._make_request())
-        self.assertEqual(res.status, "FAILED")
-        self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
-        self.assertIn("linkedSpecIssues", res.errors[0].details)
-        self.assertTrue(
-            any(
-                "missing 'ID:' line" in issue for issue in res.errors[0].details["linkedSpecIssues"]
-            )
-        )
-        self.assertTrue(
-            any(
-                "missing 'Version:' line" in issue
-                for issue in res.errors[0].details["linkedSpecIssues"]
-            )
-        )
+        self.assertEqual(res.status, "SUCCESS")
+        text = res.artifacts[0].content["text"]
+        self.assertIn("ID: spec-123", text)
+        self.assertIn("Version: 1", text)
+
+    def test_linked_spec_missing_section_is_inserted(self):
+        """A reply with no Linked SPEC section gets one inserted after the title."""
+        sections = [s for s in self.template.required_sections if s != "## Linked SPEC"]
+        reply = make_valid_plan_reply(sections, spec_id="spec-123", spec_version="1")
+        agent, _ = self._make_agent([reply])
+        res = agent.execute(self._make_request())
+        self.assertEqual(res.status, "SUCCESS")
+        text = res.artifacts[0].content["text"]
+        self.assertIn("## Linked SPEC", text)
+        self.assertIn("ID: spec-123", text)
+        self.assertIn("Version: 1", text)
+        self.assertLess(text.index("## Linked SPEC"), text.index("## Scope and out of scope"))
 
     def test_linked_spec_correct_reference_accepted(self):
         """Test that correct Linked SPEC reference in LLM output is accepted."""
