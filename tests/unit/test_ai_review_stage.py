@@ -21,7 +21,7 @@ from asf.agents.artifact_review import ArtifactReviewAgent, ArtifactReviewSettin
 from asf.agents.base import AgentRuntime
 from asf.agents.loading import load_artifact_review_prompts
 from asf.api.service.review_state import escalation_waiting
-from asf.approval.models import ApprovalDecision, ApprovalPolicy
+from asf.approval.models import ApprovalDecision, ApprovalFeedback, ApprovalPolicy
 from asf.approval.service import ApprovalService
 from asf.contracts.models import AgentMetadata, Artifact, PlatformError
 from asf.models.errors import ModelGatewayError
@@ -975,3 +975,45 @@ def test_resume_guidance_reaches_the_producer_as_feedback() -> None:
     assert any(
         item.reviewer == "dashboard" and item.comment == "Focus on REQ-2 only." for item in feedback
     )
+
+
+def test_approve_anyway_clears_the_escalation_feedback() -> None:
+    steps = [
+        gated("spec", "spec", "SPEC", [], max_revisions=1),
+        plain("plan", "plan", "PLAN", ["SPEC"]),
+    ]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[rc_reply(), rc_reply()], contents=contents)
+    run = harness.drive(harness.start().id)
+    assert run.state.stage == "SPEC_ESCALATED"
+    pending = harness.engine.get(run.id).feedback
+    assert len(pending) == 1
+    assert "REQ-2 has no acceptance criterion" in pending[0].comment
+    run = approve_anyway(
+        harness.engine, run.id, reviewer="dashboard", comment="Business accepted the risk."
+    )
+    assert run.feedback == []
+    run = harness.drive(run.id)
+    assert run.state.stage == "COMPLETED"
+    assert harness.requests["plan"][0].feedback == []
+
+
+def test_dispatch_never_sends_feedback_without_a_previous_artifact() -> None:
+    steps = [plain("spec", "spec", "SPEC", []), plain("plan", "plan", "PLAN", ["SPEC"])]
+    contents = {"spec": [md(GOOD_SPEC)], "plan": [md(GOOD_PLAN)]}
+    harness = Harness(steps, replies=[], contents=contents)
+    run = harness.start()
+    harness.engine.tick(run.id)
+    run = harness.engine.get(run.id)
+    assert run.state.stage == "PLAN"
+    stale = ApprovalFeedback(
+        approval_id="approval-stale",
+        reviewer="dashboard",
+        decision="REQUEST_CHANGES",
+        comment="Feedback left over from an earlier gate.",
+    )
+    with harness.engine._edit(run.id) as stored:
+        stored.feedback = [stale]
+    run = harness.drive(run.id)
+    assert run.state.stage == "COMPLETED"
+    assert harness.requests["plan"][0].feedback == []

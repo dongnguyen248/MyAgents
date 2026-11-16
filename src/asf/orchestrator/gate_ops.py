@@ -95,6 +95,9 @@ def _record_override(ctx: _Override, service: ApprovalService, policy: ApprovalP
 
 
 def _advance_override(ctx: _Override) -> None:
+    # The override accepts the artifact as-is, so the gate's pending
+    # revision feedback (stored by the escalation for a resume) is moot.
+    ctx.run.feedback = []
     ctx.run.state = apply(ctx.engine._graph, ctx.run.state, Trigger.APPROVED)
     ctx.run.state = apply(ctx.engine._graph, ctx.run.state, Trigger.ADVANCE)
     ctx.run.recovery_notes.append(ctx.comment)

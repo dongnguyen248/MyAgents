@@ -24,7 +24,7 @@ from asf.orchestrator.code_loop import (
     loop_graph,
     ordered_task_ids,
 )
-from asf.orchestrator.execution import Observation, WorkflowExecution
+from asf.orchestrator.execution import Observation, WorkflowExecution, request_feedback
 from asf.orchestrator.ports import (
     ConcurrentModificationError,
     EventPublisher,
@@ -610,7 +610,7 @@ class Orchestrator:
             input=inputs,
             context=deepcopy(run.context),
             artifacts=deepcopy(artifacts),
-            feedback=deepcopy(run.feedback),
+            feedback=deepcopy(request_feedback(run.feedback, step.produces, artifacts)),
             metadata=request_metadata,
         )
         run.attempts[step.id] = attempt
