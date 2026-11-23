@@ -15,6 +15,7 @@ from asf.agents._shared.harness import (
     HarnessComponents,
 )
 from asf.agents._shared.prompt_context import project_context_section, revision_sections
+from asf.agents._shared.rules import detect_task_stack
 from asf.contracts.models import ApprovalFeedback, ModelMessage
 
 __all__ = [
@@ -102,9 +103,12 @@ def _components(context: SpecPromptContext) -> HarnessComponents:
 
 def _system_content(context: SpecPromptContext) -> str:
     components = _components(context)
+    tech = (context.project_context or {}).get("technology")
+    stack = detect_task_stack(context.language, tech, text_signal=context.requirement)
     opts = DesignSystemOptions(
         agent_type="spec",
         rules_intro=_RULES_INTRO,
+        task_stack=stack,
         is_revision=context.previous_spec is not None,
     )
     return build_design_system_content(components, context.project_context, opts)

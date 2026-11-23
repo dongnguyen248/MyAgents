@@ -207,7 +207,7 @@ def classify_section_scope(heading: str, body: str) -> str:
 
 
 _DESIGN_SCOPES: dict[str, set[str]] = {
-    "spec": {"security", "api", "naming", "general"},
+    "spec": {"security", "api", "structure", "naming", "general"},
     "plan": {"security", "api", "structure", "naming", "general"},
     "task": {"security", "api", "structure", "naming", "general"},
 }

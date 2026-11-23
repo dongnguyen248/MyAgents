@@ -20,6 +20,7 @@ from asf.agents._shared.prompt_context import (
     project_context_section,
     revision_sections,
 )
+from asf.agents._shared.rules import detect_task_stack
 from asf.agents.plan.milestones import (
     MAX_MILESTONES,
     milestone_ancestors,
@@ -148,11 +149,26 @@ def _components(context: TaskPromptContext) -> HarnessComponents:
     return context.prompts.to_components()
 
 
+def _artifact_text(artifact: Mapping[str, Any] | None) -> str:
+    if not isinstance(artifact, dict):
+        return ""
+    content = artifact.get("content")
+    if isinstance(content, dict):
+        text = content.get("text")
+        return text if isinstance(text, str) else ""
+    return content if isinstance(content, str) else ""
+
+
 def _system_content(context: TaskPromptContext) -> str:
     components = _components(context)
+    tech = (context.project_context or {}).get("technology")
+    spec_text = _artifact_text(context.spec_artifact)
+    plan_text = _artifact_text(context.plan_artifact)
+    stack = detect_task_stack(context.language, tech, text_signal=f"{spec_text}\n{plan_text}")
     opts = DesignSystemOptions(
         agent_type="task",
         rules_intro=_RULES_INTRO,
+        task_stack=stack,
         is_revision=context.previous_task is not None,
     )
     return build_design_system_content(components, context.project_context, opts)

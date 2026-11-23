@@ -25,6 +25,18 @@ No prose, no markdown, no code fences.
 | expected_files | "expectedFiles" | list[string] | Relative paths only; no drive letters, no "..", no backslashes, no empty segments, no control chars; no duplicates |
 | verification_hint | "verificationHint" | string | Non-empty |
 
+## Validation Rules (summary)
+1. Envelope: object with exactly one key "tasks" (array).
+2. Task IDs: strictly sequential T1..Tn (numeric: T10 after T9).
+3. milestoneRef: must exist in the input PLAN; sequence across tasks must be non-decreasing.
+4. dependsOn: only existing lower-numbered task IDs; no self-dependency.
+5. Cross-milestone dependsOn allowed ONLY when the dependency task's milestone is the SAME or an ANCESTOR of the dependent task's milestone (transitive per PLAN dependencies).
+6. Every PLAN milestone must have ≥1 task assigned.
+7. Max 100 tasks total.
+8. acceptanceCriteria: non-empty list of non-empty strings; no duplicates.
+9. expectedFiles: relative POSIX paths; no drive letters, no "..", no backslashes, no empty segments, no control chars; no duplicates.
+10. verificationHint: non-empty string.
+
 ## Worked Example (3 tasks across 2 milestones, with a dependency)
 ```json
 {
@@ -82,3 +94,5 @@ No prose, no markdown, no code fences.
   ]
 }
 ```
+
+(Note: PLAN for this example must contain milestones M1 and M2 where M2 depends on M1, making M1 an ancestor of M2. The cross-milestone dependency T3→T2 is valid because M1 is ancestor of M2.)
