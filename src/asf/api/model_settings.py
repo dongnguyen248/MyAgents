@@ -47,6 +47,7 @@ from urllib.parse import urlsplit
 from asf.api.agent_connections import (
     CleanContext,
     Profile,
+    check_profiles,
     clean_connections,
     load_connections,
     public_connections,
@@ -332,16 +333,7 @@ class ModelSettings:
         connections: dict[str, Profile],
         data: dict[str, str],
     ) -> None:
-        """Mirror the shared custom-provider rule per profile: when
-        the effective provider is custom, an http(s) base URL must
-        exist in the profile or the shared settings."""
-        for name, profile in connections.items():
-            provider = profile["provider"] or data["provider"]
-            base_url = profile["baseUrl"] or data["baseUrl"]
-            if provider == "custom" and not base_url.startswith(("https://", "http://")):
-                raise ValueError(
-                    f"agentConnections.{name}: the custom provider needs a base URL (http/https)",
-                )
+        check_profiles(connections, data)
 
     def test(
         self,
