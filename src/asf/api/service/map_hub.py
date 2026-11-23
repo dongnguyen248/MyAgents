@@ -30,6 +30,18 @@ MAX_EVENTS_PER_RUN = 1000
 MAX_RUNS = 16
 CLOSED_RUN_TTL_SECONDS = 600.0
 ENV_LIVE_MAP = "ASF_LIVE_MAP"
+ENV_MAX_RUNS = "ASF_LIVE_MAP_MAX_RUNS"
+ENV_CLOSED_TTL = "ASF_LIVE_MAP_CLOSED_TTL_SECONDS"
+
+
+def _env_positive(raw: str | None, default: float) -> float:
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 class _Counters:
@@ -74,6 +86,8 @@ class MapHub:
         self._runs: dict[str, _RunHistory] = {}
         self._limit_tokens: int | None = None
         self._limit_calls: int | None = None
+        self._max_runs = int(_env_positive(os.environ.get(ENV_MAX_RUNS), float(MAX_RUNS)))
+        self._closed_ttl = _env_positive(os.environ.get(ENV_CLOSED_TTL), CLOSED_RUN_TTL_SECONDS)
 
     def set_budget_limits(self, limit_tokens: int | None, limit_calls: int | None) -> None:
         self._limit_tokens = limit_tokens
@@ -148,11 +162,11 @@ class MapHub:
         stale = [
             run_id
             for run_id, history in self._runs.items()
-            if history.closed_at is not None and now - history.closed_at > CLOSED_RUN_TTL_SECONDS
+            if history.closed_at is not None and now - history.closed_at > self._closed_ttl
         ]
         for run_id in stale:
             del self._runs[run_id]
-        while len(self._runs) > MAX_RUNS:
+        while len(self._runs) > self._max_runs:
             closed = [r for r, h in self._runs.items() if h.closed_at is not None]
             pool = closed if closed else list(self._runs)
             oldest = min(pool, key=lambda r: self._runs[r].last_seen)
