@@ -228,3 +228,169 @@ class MapTapPulseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SlowGateway:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        self.calls += 1
+        time.sleep(0.03)
+        return ModelResponse(
+            content="ok",
+            model="fake-1",
+            usage=ModelUsage(prompt_tokens=1, completion_tokens=1),
+            finish_reason="stop",
+        )
+
+
+class MapTapOrderingTests(unittest.TestCase):
+    def test_second_call_starts_no_earlier_than_the_first_ends(self) -> None:
+        from asf.models.map_tap import MapTapGateway, map_call_context
+
+        tap = RecordingTap()
+        gateway = MapTapGateway(SlowGateway(), tap)
+        request = ModelRequest(
+            messages=[ModelMessage(role="user", content="write it")],
+            model="fake-1",
+            metadata={"agentId": "agent-spec"},
+        )
+        with map_call_context(make_request(), T_START):
+            gateway.complete(request)
+            gateway.complete(request)
+        model_events = [e for e in tap.events if e.type == "model"]
+        kinds = [(e.phase, e.ts) for e in model_events]
+        self.assertEqual([phase for phase, _ in kinds], ["start", "end", "start", "end"])
+        self.assertGreaterEqual(kinds[2][1], kinds[1][1])
+
+
+class HostGateway(SlowGateway):
+    def endpoint_label(self, agent_id: str | None) -> str | None:
+        return "127.0.0.1:18610"
+
+
+class RaisingHostGateway(SlowGateway):
+    def endpoint_label(self, agent_id: str | None) -> str | None:
+        raise RuntimeError("resolver broke")
+
+
+class FlakyGateway:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        self.calls += 1
+        time.sleep(0.03)
+        if self.calls == 1:
+            raise ModelGatewayError("LLM_TIMEOUT", "provider is down")
+        return ModelResponse(
+            content="ok",
+            model="fake-1",
+            usage=ModelUsage(prompt_tokens=1, completion_tokens=1),
+            finish_reason="stop",
+        )
+
+
+def _tap_gateway(inner: Any, tap: RecordingTap) -> Any:
+    from asf.models.map_tap import MapTapGateway
+
+    return MapTapGateway(inner, tap)
+
+
+def _model_request(**overrides: Any) -> ModelRequest:
+    fields: dict[str, Any] = {
+        "messages": [ModelMessage(role="user", content="write it")],
+        "model": "fake-1",
+        "metadata": {"agentId": "agent-spec"},
+    }
+    fields.update(overrides)
+    return ModelRequest(**fields)
+
+
+class MapTapDebugFieldTests(unittest.TestCase):
+    def test_attempt_and_prompt_chars_on_both_calls(self) -> None:
+        from asf.models.map_tap import map_call_context
+
+        tap = RecordingTap()
+        gateway = _tap_gateway(SlowGateway(), tap)
+        with map_call_context(make_request(), T_START):
+            gateway.complete(_model_request())
+            gateway.complete(_model_request())
+        starts = [e for e in tap.events if e.phase == "start"]
+        ends = [e for e in tap.events if e.phase == "end"]
+        self.assertEqual([e.attempt for e in starts], [1, 2])
+        self.assertEqual([e.attempt for e in ends], [1, 2])
+        self.assertEqual([e.prompt_chars for e in starts], [8, 8])
+        self.assertEqual([e.prompt_chars for e in ends], [8, 8])
+
+    def test_prompt_chars_counts_only_text_parts_of_list_content(self) -> None:
+        from asf.models.map_tap import map_call_context
+
+        tap = RecordingTap()
+        gateway = _tap_gateway(SlowGateway(), tap)
+        request = ModelRequest.model_construct(
+            messages=[
+                ModelMessage.model_construct(
+                    role="user",
+                    content=["ab", {"text": "cde"}, {"image": "x"}, 42, None],
+                )
+            ],
+            model="fake-1",
+            metadata={"agentId": "agent-spec"},
+        )
+        with map_call_context(make_request(), T_START):
+            gateway.complete(request)
+        starts = [e for e in tap.events if e.phase == "start"]
+        self.assertEqual(starts[0].prompt_chars, 5)
+
+    def test_host_label_suffixes_start_and_end(self) -> None:
+        from asf.models.map_tap import map_call_context
+
+        tap = RecordingTap()
+        gateway = _tap_gateway(HostGateway(), tap)
+        with map_call_context(make_request(), T_START):
+            gateway.complete(_model_request())
+        labels = [e.label for e in tap.events if e.type == "model"]
+        self.assertEqual(labels, ["fake-1 @127.0.0.1:18610", "fake-1 @127.0.0.1:18610"])
+
+    def test_broken_host_resolver_falls_back_to_plain_label(self) -> None:
+        from asf.models.map_tap import map_call_context
+
+        tap = RecordingTap()
+        gateway = _tap_gateway(RaisingHostGateway(), tap)
+        with map_call_context(make_request(), T_START):
+            response = gateway.complete(_model_request())
+        self.assertEqual(response.content, "ok")
+        labels = [e.label for e in tap.events if e.type == "model"]
+        self.assertEqual(labels, ["fake-1", "fake-1"])
+
+    def test_second_call_starts_after_a_failed_first_call_ends(self) -> None:
+        from asf.models.map_tap import map_call_context
+
+        tap = RecordingTap()
+        gateway = _tap_gateway(FlakyGateway(), tap)
+        with map_call_context(make_request(), T_START):
+            with self.assertRaises(ModelGatewayError):
+                gateway.complete(_model_request())
+            gateway.complete(_model_request())
+        kinds = [(e.phase, e.ts) for e in tap.events if e.type == "model"]
+        self.assertEqual([phase for phase, _ in kinds], ["start", "end", "start", "end"])
+        self.assertGreaterEqual(kinds[2][1], kinds[1][1])
+
+
+class MapTapAmbientClockTests(unittest.TestCase):
+    def test_ambient_wall_clock_raises_the_start_floor(self) -> None:
+        from asf.models.map_tap import MapTapGateway, map_call_context, set_default_map_clock
+
+        later = T_START + timedelta(hours=1)
+        set_default_map_clock(lambda: later)
+        try:
+            tap = RecordingTap()
+            gateway = MapTapGateway(SlowGateway(), tap)
+            with map_call_context(make_request(), T_START):
+                gateway.complete(_model_request())
+        finally:
+            set_default_map_clock(None)
+        starts = [e for e in tap.events if e.phase == "start"]
+        self.assertEqual(starts[0].ts, later)
