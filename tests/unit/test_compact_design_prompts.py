@@ -105,6 +105,28 @@ def test_stack_detection_priority(caplog):
     assert "Stack unknown for task; omitting language rule packs" in caplog.text
 
 
+def test_detect_stack_aliases_and_framework_signals(caplog):
+    """Verifies framework signals (React, FastAPI) and alias mappings (ts -> typescript)."""
+    caplog.set_level(logging.INFO)
+    tech = {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]}
+
+    # (1) Task only mentions "React component" without .tsx or "typescript" -> loads TS pack
+    stack_react = detect_task_stack(
+        None, tech, text_signal="Build a React component for bidding", files=[]
+    )
+    assert stack_react == frozenset({"typescript"})
+
+    # (2) Explicit language="ts" alias -> loads TS pack
+    stack_ts = detect_task_stack("ts", tech, text_signal="Build something", files=[])
+    assert stack_ts == frozenset({"typescript"})
+
+    # (3) Task only mentions "FastAPI" -> loads python pack
+    stack_fastapi = detect_task_stack(
+        None, tech, text_signal="Create FastAPI router endpoints", files=[]
+    )
+    assert stack_fastapi == frozenset({"python"})
+
+
 def test_rules_stack_filtering_and_formatting_omission():
     # When task stack is python, typescript rules are omitted
     filtered = filter_rules_for_task(FIXTURE_RULES, agent="spec", stack=frozenset({"python"}))
