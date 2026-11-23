@@ -1,6 +1,6 @@
-import { STATION_ORDER, stationCounts } from '../../lib/mapBoard';
+import { spokeWidth, STATION_ORDER, stationCounts } from '../../lib/mapBoard';
 import type { BoardState, StationCount } from '../../lib/mapBoard';
-import type { MapStationId } from '../../types/map';
+import type { MapCounters, MapStationId } from '../../types/map';
 
 export interface MapPulse {
   key: string;
@@ -38,6 +38,9 @@ const PERCENT_WHOLE = 100;
 const FULL_CIRCLE = 360;
 const TOP_ANGLE = -90;
 const STATION_STEP = 40;
+const CLOCK_RADIUS = 21;
+const CLOCK_HOUR_LENGTH = 7;
+const CLOCK_MINUTE_LENGTH = 11;
 
 export function stationPoint(station: MapStationId): { x: number; y: number } {
   const index = STATION_ORDER.findIndex((s) => s.id === station);
@@ -144,6 +147,45 @@ function StationLabels({
   );
 }
 
+function ClockHand({
+  point,
+  length,
+  dur,
+  className,
+}: {
+  point: { x: number; y: number };
+  length: number;
+  dur: string;
+  className: string;
+}) {
+  const centre = `${point.x} ${point.y}`;
+  return (
+    <line x1={point.x} y1={point.y} x2={point.x} y2={point.y - length} className={className}>
+      <animateTransform
+        attributeName="transform"
+        type="rotate"
+        from={`0 ${centre}`}
+        to={`360 ${centre}`}
+        dur={dur}
+        repeatCount="indefinite"
+      />
+    </line>
+  );
+}
+
+function StationClock({ point, running }: { point: { x: number; y: number }; running: number }) {
+  if (running === 0) {
+    return null;
+  }
+  return (
+    <g>
+      <circle cx={point.x} cy={point.y} r={CLOCK_RADIUS} className="lm-clock-face" />
+      <ClockHand point={point} length={CLOCK_HOUR_LENGTH} dur="12s" className="lm-clock-hour" />
+      <ClockHand point={point} length={CLOCK_MINUTE_LENGTH} dur="2s" className="lm-clock-minute" />
+    </g>
+  );
+}
+
 function StationNode({
   stationId,
   label,
@@ -163,9 +205,11 @@ function StationNode({
         x2={point.x}
         y2={point.y}
         className={running > 0 ? 'lm-spoke active' : 'lm-spoke'}
+        strokeWidth={spokeWidth(count?.total ?? 0)}
       />
       <StationHalo point={point} running={running} />
       <circle cx={point.x} cy={point.y} r={STATION_RADIUS} className="lm-station" />
+      <StationClock point={point} running={running} />
       <StationLabels point={point} label={label} total={count?.total ?? 0} />
       <StationBadges point={point} count={count} />
     </g>
@@ -231,8 +275,8 @@ function CentreNode({
   );
 }
 
-function StationLayer({ board }: { board: BoardState }) {
-  const counts = stationCounts(board);
+function StationLayer({ board, counters }: { board: BoardState; counters: MapCounters | null }) {
+  const counts = stationCounts(board, counters);
   return (
     <g>
       {STATION_ORDER.map((station) => (
@@ -249,12 +293,14 @@ function StationLayer({ board }: { board: BoardState }) {
 
 export function MapCanvas({
   board,
+  counters,
   pulses,
   budgetPercent,
   budgetText,
   runStatus,
 }: {
   board: BoardState;
+  counters: MapCounters | null;
   pulses: MapPulse[];
   budgetPercent: number | null;
   budgetText: string;
@@ -267,7 +313,7 @@ export function MapCanvas({
       role="img"
       aria-label="Live agent map"
     >
-      <StationLayer board={board} />
+      <StationLayer board={board} counters={counters} />
       {pulses.map((pulse) => (
         <PulseDot key={pulse.key} pulse={pulse} />
       ))}

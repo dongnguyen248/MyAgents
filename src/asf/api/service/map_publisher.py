@@ -12,16 +12,34 @@ streams merge in the hub.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
+from datetime import datetime
 from typing import Any
 
-from asf.api.service.map_hub import MapHub, active_map_hub, set_active_map_hub
+from asf.api.service.map_hub import MapHub, active_map_hub, live_map_enabled, set_active_map_hub
 from asf.contracts.map_events import MapEvent, MapStatus, clean_label
-from asf.contracts.models import ActivityEvent
-from asf.models.map_tap import set_default_map_tap
+from asf.contracts.models import ActivityEvent, AgentRequest, AgentResult
+from asf.integrations.hosting.actions import ProfileSource, build_hosting_actions
+from asf.integrations.hosting.http import Transport, UrllibTransport
+from asf.models.map_tap import map_call_context, set_default_map_tap
+from asf.tools.fake import InMemoryRepository, ScriptedSandbox
+from asf.tools.local import WorkspaceRepository, WorkspaceSandbox
+from asf.tools.map_wrap import MapRepository, MapSandbox, MapTransport
+from asf.tools.ports import RepositoryPort, SandboxPort
 
-__all__ = ["MapPublisher", "install_live_map", "wrap_live_map_publisher"]
+__all__ = [
+    "MapPublisher",
+    "build_map_hosting_actions",
+    "build_map_tool_ports",
+    "install_live_map",
+    "map_transport",
+    "wrap_actions_for_map",
+    "wrap_live_map_publisher",
+    "wrap_tool_ports",
+]
+
+ActionHandler = Callable[[AgentRequest], AgentResult]
 
 _TERMINAL = {"WORKFLOW_COMPLETED", "WORKFLOW_FAILED", "WORKFLOW_CANCELLED"}
 
@@ -149,3 +167,67 @@ def wrap_live_map_publisher(inner: Any) -> Any:
     if hub is None or inner is None:
         return inner
     return MapPublisher(inner, hub)
+
+
+def wrap_actions_for_map(
+    actions: Mapping[str, ActionHandler],
+    clock: Callable[[], datetime],
+) -> dict[str, ActionHandler]:
+    """Gives workflow actions a map context for their tool pulses.
+
+    Actions (run-pipeline, await-merge) are invoked by the engine
+    outside any agent execution, so nothing ambient names their run;
+    wrapping the handler enters the same context an agent execution
+    would, and the hosting transport's pulses attribute to the run.
+    """
+
+    def wrap(handler: ActionHandler) -> ActionHandler:
+        def run(request: AgentRequest) -> AgentResult:
+            with map_call_context(request, clock()):
+                return handler(request)
+
+        return run
+
+    return {name: wrap(handler) for name, handler in actions.items()}
+
+
+def wrap_tool_ports(
+    repository: RepositoryPort,
+    sandbox: SandboxPort,
+    workspace: Any,
+) -> tuple[RepositoryPort, SandboxPort]:
+    """Wraps the workspace ports so file and shell calls pulse."""
+    return (
+        MapRepository(repository, workspace.bound_run, workspace.bound_project),
+        MapSandbox(sandbox, workspace.bound_run, workspace.bound_project),
+    )
+
+
+def map_transport(workspace: Any) -> Transport:
+    """The hosting transport wrapped so HTTP calls pulse by host."""
+    return MapTransport(UrllibTransport(), workspace.bound_run, workspace.bound_project)
+
+
+def build_map_tool_ports(workspace: Any) -> tuple[RepositoryPort, SandboxPort]:
+    """The demo's workspace ports, map-wrapped when the map is on."""
+    repository: RepositoryPort = WorkspaceRepository(workspace, InMemoryRepository())
+    sandbox: SandboxPort = WorkspaceSandbox(workspace, ScriptedSandbox())
+    if live_map_enabled():
+        return wrap_tool_ports(repository, sandbox, workspace)
+    return repository, sandbox
+
+
+def build_map_hosting_actions(
+    profiles: ProfileSource,
+    clock: Callable[[], datetime],
+    tokens: Callable[[str], str | None],
+    workspace: Any,
+) -> dict[str, ActionHandler]:
+    """The hosting actions with a pulsing transport and map context."""
+    transport = map_transport(workspace) if live_map_enabled() else None
+    actions = build_hosting_actions(
+        profiles=profiles, clock=clock, tokens=tokens, transport=transport
+    )
+    if live_map_enabled():
+        return wrap_actions_for_map(actions, clock)
+    return actions

@@ -111,6 +111,20 @@ important to be precise about what that means:
   per-run git **worktree**, never in the operator's working tree,
   so a failed or cancelled run leaves the real tree untouched.
 
+## Local API and live map
+
+The demo serves the API on **127.0.0.1 only** and the API has no
+authentication layer — anyone who can reach the port can use it.
+The dashboard's live map (`ASF_LIVE_MAP`, on by default) shows what
+agents are doing in real time, and its pulses deliberately carry
+metadata only: the last two levels of a file path, a command's name
+without its arguments, and a URL's host without credentials, path
+or query. Even so, treat those names as operator information: do
+not rebind the demo to a public interface or forward its port
+beyond the local machine unless you put your own authenticated
+proxy in front of it. `ASF_LIVE_MAP=0` disables the map and its
+endpoints completely.
+
 ## Environment variables
 
 Configuration files never contain secrets; they reference these
@@ -123,6 +137,7 @@ variables (or the backend's own settings stores):
 | `ASF_MODEL_SETTINGS_FILE` | Where the dashboard's model settings (provider/model/key) persist; defaults to `model-settings.json` beside the run database |
 | `ASF_HOSTING_TOKENS_FILE` | Same, for per-project hosting tokens (`hosting-tokens.json`) |
 | `ASF_LOG_LEVEL` | Backend console log level for the `asf` namespace (default INFO) |
+| `ASF_LIVE_MAP` | Live map on the dashboard: on unless set to `0`/`false`/`no`/`off` |
 | `ASF_TEST_MARIADB` | Test-only: set to `1` to run the MariaDB integration tests |
 | `ASF_LIVE_GEMINI_API_KEY` / `ASF_LIVE_GEMINI_MODEL` | Test-only: credentials for the opt-in live Gemini tests |
 

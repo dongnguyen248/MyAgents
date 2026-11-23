@@ -10,6 +10,7 @@ import {
   childrenOf,
   emptyBoard,
   feedRows,
+  spokeWidth,
   stationCounts,
 } from '../src/lib/mapBoard.ts';
 import type { MapEvent } from '../src/types/map.ts';
@@ -193,4 +194,47 @@ test('budgetPercent is null without a limit and capped at 100', () => {
   assert.equal(budgetPercent(500, null), null);
   assert.equal(budgetPercent(500, 1000), 50);
   assert.equal(budgetPercent(1500, 1000), 100);
+});
+
+test('stationCounts prefers hub counters over the visible entries', () => {
+  const board = applyMapEvents(emptyBoard(), [
+    event({ id: 'e1', phase: 'end', status: 'error' }),
+    event({ id: 'e2', spanId: 'span-2', phase: 'start', status: 'running' }),
+  ]);
+  const fromEntries = stationCounts(board);
+  assert.equal(fromEntries.model?.total, 2);
+  const counters = { stations: { model: 1500 }, agents: {}, errors: { model: 40 } };
+  const fromCounters = stationCounts(board, counters);
+  assert.equal(fromCounters.model?.total, 1500);
+  assert.equal(fromCounters.model?.faults, 40);
+  assert.equal(fromCounters.model?.running, 1);
+});
+
+test('consecutive tool calls fold by station even with different labels', () => {
+  const tool = (id: string, spanId: string, label: string, ts: string) =>
+    event({
+      id,
+      spanId,
+      ts,
+      type: 'tool',
+      station: 'files',
+      phase: 'end',
+      status: 'ok',
+      label,
+      agentId: 'agent-task',
+    });
+  const board = applyMapEvents(emptyBoard(), [
+    tool('e1', 's1', 'api/demo.py', '2026-11-23T09:00:01Z'),
+    tool('e2', 's2', 'api/routes.py', '2026-11-23T09:00:02Z'),
+    tool('e3', 's3', 'tools/local.py', '2026-11-23T09:00:03Z'),
+  ]);
+  const rows = feedRows(board, null);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].times, 3);
+});
+
+test('spokeWidth grows with use and is capped', () => {
+  assert.equal(spokeWidth(0), 1.5);
+  assert.equal(spokeWidth(25), 3.5);
+  assert.equal(spokeWidth(10000), 5.5);
 });

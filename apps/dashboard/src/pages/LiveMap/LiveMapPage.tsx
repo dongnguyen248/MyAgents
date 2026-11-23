@@ -78,6 +78,7 @@ function MapLayout({ live, selection }: { live: LiveMapData; selection: MapSelec
       <Card title="Map" flush>
         <MapCanvas
           board={live.board}
+          counters={live.counters}
           pulses={live.pulses}
           budgetPercent={percent}
           budgetText={budgetText}

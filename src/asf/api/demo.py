@@ -51,7 +51,12 @@ from asf.api.map_routes import register_map_routes
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
 from asf.api.service import FactoryService
 from asf.api.service.map_hub import live_map_enabled
-from asf.api.service.map_publisher import install_live_map, wrap_live_map_publisher
+from asf.api.service.map_publisher import (
+    build_map_hosting_actions,
+    build_map_tool_ports,
+    install_live_map,
+    wrap_live_map_publisher,
+)
 from asf.approval.mode import DEFAULT_MAX_REVIEW_ROUNDS
 from asf.approval.models import ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
@@ -70,7 +75,6 @@ from asf.contracts.models import (
     AgentResult,
     ValidationResult,
 )
-from asf.integrations.hosting.actions import build_hosting_actions
 from asf.models.limited import ConcurrencyLimitedGateway
 from asf.orchestrator import AgentRegistry, Orchestrator
 from asf.orchestrator.budget import RunBudget
@@ -78,7 +82,6 @@ from asf.orchestrator.code_loop import CodeLoopPolicy
 from asf.orchestrator.ports import ExecutionStore
 from asf.storage.mariadb import MariaDbConfig, MariaDbExecutionStore
 from asf.storage.memory import InMemoryStore
-from asf.tools.fake import InMemoryRepository, ScriptedSandbox
 from asf.tools.journal import JournalStore
 from asf.tools.local import (
     DirectWorkspace,
@@ -87,9 +90,8 @@ from asf.tools.local import (
     RunWorkspaceOutcome,
     SandboxResourceLimits,
     SandboxSettings,
-    WorkspaceRepository,
-    WorkspaceSandbox,
 )
+from asf.tools.ports import RepositoryPort, SandboxPort
 from asf.tools.worktree import GitWorktreeWorkspace
 from asf.workflow.loader import load_workflow
 
@@ -688,8 +690,8 @@ class _RegistryDeps:
     platform: PlatformConfig
     templates_dir: Path
     workspace: LocalWorkspace
-    repository: WorkspaceRepository
-    sandbox: WorkspaceSandbox
+    repository: RepositoryPort
+    sandbox: SandboxPort
 
 
 def _build_registry(deps: _RegistryDeps) -> AgentRegistry:
@@ -809,8 +811,7 @@ def build_demo(
             },
         ),
     )
-    repository = WorkspaceRepository(workspace, InMemoryRepository())
-    sandbox = WorkspaceSandbox(workspace, ScriptedSandbox())
+    repository, sandbox = build_map_tool_ports(workspace)
     deps = _RegistryDeps(runtime, platform, templates_dir, workspace, repository, sandbox)
     registry = _build_registry(deps)
 
@@ -849,11 +850,7 @@ def build_demo(
             max_completion_tokens=platform.budget.max_completion_tokens,
             max_model_calls=platform.budget.max_model_calls,
         ),
-        actions=build_hosting_actions(
-            profiles=profile_of,
-            clock=clock,
-            tokens=hosting_tokens.get,
-        ),
+        actions=build_map_hosting_actions(profile_of, clock, hosting_tokens.get, workspace),
         events=metrics if hasattr(metrics, "publish") else None,
         metrics=metrics if hasattr(metrics, "record") else None,
     )

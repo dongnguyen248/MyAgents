@@ -187,11 +187,9 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
 }
 .lm-spoke {
   stroke: var(--border);
-  stroke-width: 1.5;
 }
 .lm-spoke.active {
   stroke: var(--accent);
-  stroke-width: 2.5;
 }
 .lm-station {
   fill: var(--surface);
@@ -417,4 +415,21 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
 .lm-detail-sub {
   font-size: 0.9rem;
   margin: 12px 0 6px;
+}
+.lm-clock-face {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.8;
+}
+.lm-clock-hour {
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.lm-clock-minute {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }

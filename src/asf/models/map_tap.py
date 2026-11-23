@@ -33,6 +33,7 @@ from asf.models.ports import ModelGateway
 __all__ = [
     "MapTap",
     "MapTapGateway",
+    "current_map_context",
     "default_map_tap",
     "emit_safely",
     "map_call_context",
@@ -76,9 +77,15 @@ class MapCallContext:
     request_id: str
     started_at: datetime
     calls: int = 0
+    tool_calls: int = 0
 
 
 _current: ContextVar[MapCallContext | None] = ContextVar("asf_map_context", default=None)
+
+
+def current_map_context() -> MapCallContext | None:
+    """The execution context tool wrappers attribute their pulses to."""
+    return _current.get()
 
 
 @contextmanager

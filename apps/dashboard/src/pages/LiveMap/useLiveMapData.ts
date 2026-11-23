@@ -3,7 +3,7 @@ import { agentColor, applyMapEvent, emptyBoard } from '../../lib/mapBoard';
 import type { BoardState, MapEntry } from '../../lib/mapBoard';
 import type { MapPulse } from '../../components/livemap/MapCanvas';
 import { api } from '../../services/api';
-import type { MapBudget, MapEvent, MapSnapshot } from '../../types/map';
+import type { MapBudget, MapCounters, MapEvent, MapSnapshot } from '../../types/map';
 import type { Workflow } from '../../types/workflow';
 
 const PULSE_FRESH_MS = 4000;
@@ -16,6 +16,7 @@ interface MapViewState {
   forRun: string;
   board: BoardState;
   budget: MapBudget | null;
+  counters: MapCounters | null;
   status: string;
   missed: boolean;
 }
@@ -23,6 +24,7 @@ interface MapViewState {
 export interface LiveMapData {
   board: BoardState;
   budget: MapBudget | null;
+  counters: MapCounters | null;
   runStatus: string;
   missed: boolean;
   pulses: MapPulse[];
@@ -30,7 +32,14 @@ export interface LiveMapData {
 }
 
 function emptyView(runId: string): MapViewState {
-  return { forRun: runId, board: emptyBoard(), budget: null, status: '', missed: false };
+  return {
+    forRun: runId,
+    board: emptyBoard(),
+    budget: null,
+    counters: null,
+    status: '',
+    missed: false,
+  };
 }
 
 function usedTokensOf(board: BoardState): number {
@@ -142,7 +151,12 @@ function makeSnapshotApplier(
       if (snapshot === undefined) {
         return { ...base, missed: true };
       }
-      return { ...base, budget: snapshot.budget, status: snapshot.status };
+      return {
+        ...base,
+        budget: snapshot.budget,
+        counters: snapshot.counters,
+        status: snapshot.status,
+      };
     });
   };
 }
@@ -169,6 +183,7 @@ export function useLiveMapData(runId: string): LiveMapData {
   return {
     board: current.board,
     budget: current.budget,
+    counters: current.counters,
     runStatus: current.status,
     missed: current.missed,
     pulses,

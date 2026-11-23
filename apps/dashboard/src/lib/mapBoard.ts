@@ -5,11 +5,20 @@
 // share a span id and become one entry; consecutive finished entries
 // at one station for one agent fold into a single feed row. Nothing
 // here touches the network or the DOM, so it is unit-testable as-is.
-import type { MapEvent, MapStationId, MapStatus } from '../types/map.ts';
+import type { MapCounters, MapEvent, MapStationId, MapStatus } from '../types/map.ts';
 
 const PERCENT_WHOLE = 100;
 const MS_PER_SECOND = 1000;
 const DEFAULT_FEED_LIMIT = 16;
+
+const SPOKE_BASE_WIDTH = 1.5;
+const SPOKE_MAX_BONUS = 4;
+const SPOKE_CALLS_PER_STEP = 10;
+
+export function spokeWidth(total: number): number {
+  const bonus = Math.min(SPOKE_MAX_BONUS, Math.floor(total / SPOKE_CALLS_PER_STEP));
+  return SPOKE_BASE_WIDTH + bonus;
+}
 
 export interface MapEntry {
   spanId: string;
@@ -147,8 +156,23 @@ export function applyMapEvents(board: BoardState, events: MapEvent[]): BoardStat
   return next;
 }
 
-export function stationCounts(board: BoardState): Partial<Record<MapStationId, StationCount>> {
-  const counts: Partial<Record<MapStationId, StationCount>> = {};
+type CountMap = Partial<Record<MapStationId, StationCount>>;
+
+function mergeCounters(counts: CountMap, counters: MapCounters): void {
+  for (const station of STATION_ORDER) {
+    const total = counters.stations[station.id];
+    if (total === undefined) {
+      continue;
+    }
+    const current = counts[station.id] ?? { total: 0, running: 0, faults: 0 };
+    current.total = Math.max(current.total, total);
+    current.faults = Math.max(current.faults, counters.errors[station.id] ?? 0);
+    counts[station.id] = current;
+  }
+}
+
+export function stationCounts(board: BoardState, counters?: MapCounters | null): CountMap {
+  const counts: CountMap = {};
   for (const entry of board.entries) {
     const current = counts[entry.station] ?? { total: 0, running: 0, faults: 0 };
     current.total += 1;
@@ -160,10 +184,16 @@ export function stationCounts(board: BoardState): Partial<Record<MapStationId, S
     }
     counts[entry.station] = current;
   }
+  if (counters) {
+    mergeCounters(counts, counters);
+  }
   return counts;
 }
 
 function foldKey(entry: MapEntry): string {
+  if (entry.type === 'tool') {
+    return `${entry.station}|${entry.agentId ?? ''}|${entry.type}`;
+  }
   return `${entry.station}|${entry.agentId ?? ''}|${entry.type}|${entry.label}`;
 }
 

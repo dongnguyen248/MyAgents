@@ -27,6 +27,7 @@ __all__ = [
     "MapStatus",
     "clean_label",
     "host_label",
+    "path_label",
     "shell_label",
 ]
 
@@ -44,7 +45,7 @@ MapStation = Literal[
     "store",
     "gates",
 ]
-MapEventType = Literal["agent", "model", "step", "gate", "run"]
+MapEventType = Literal["agent", "model", "step", "gate", "run", "tool"]
 MapPhase = Literal["start", "end", "moment"]
 MapStatus = Literal["running", "ok", "error", "blocked"]
 
@@ -140,3 +141,17 @@ def host_label(url: str) -> str:
     if parts.hostname:
         return clean_label(parts.hostname, 40)
     return clean_label(parts.scheme or "", 40)
+
+
+_PATH_SEPARATORS = re.compile(r"[/\\]+")
+
+
+def path_label(path: str) -> str:
+    """The path a files pulse may show: the last two levels only.
+
+    Folder depth is the sensitive part of a path (drive, user home,
+    project root), so a pulse keeps just ``parent/name`` - enough to
+    recognise the file, never enough to locate the machine's layout.
+    """
+    parts = [part for part in _PATH_SEPARATORS.split(path.strip()) if part and part != "."]
+    return clean_label("/".join(parts[-2:]), 80)

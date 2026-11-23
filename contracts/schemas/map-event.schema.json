@@ -2,15 +2,123 @@
   "additionalProperties": false,
   "description": "One pulse on the live map: a start, an end, or a moment.",
   "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agentid"
+    },
+    "completionTokens": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completiontokens"
+    },
+    "durationMs": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Durationms"
+    },
+    "errorCode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Errorcode"
+    },
     "id": {
       "minLength": 1,
       "title": "Id",
       "type": "string"
     },
-    "ts": {
-      "format": "date-time",
-      "title": "Ts",
+    "label": {
+      "maxLength": 120,
+      "title": "Label",
       "type": "string"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "parentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parentid"
+    },
+    "phase": {
+      "enum": [
+        "start",
+        "end",
+        "moment"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "projectId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Projectid"
+    },
+    "promptTokens": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompttokens"
     },
     "runId": {
       "minLength": 1,
@@ -20,17 +128,6 @@
     "spanId": {
       "minLength": 1,
       "title": "Spanid",
-      "type": "string"
-    },
-    "type": {
-      "enum": [
-        "agent",
-        "model",
-        "step",
-        "gate",
-        "run"
-      ],
-      "title": "Type",
       "type": "string"
     },
     "station": {
@@ -49,15 +146,6 @@
       "title": "Station",
       "type": "string"
     },
-    "phase": {
-      "enum": [
-        "start",
-        "end",
-        "moment"
-      ],
-      "title": "Phase",
-      "type": "string"
-    },
     "status": {
       "enum": [
         "running",
@@ -67,59 +155,6 @@
       ],
       "title": "Status",
       "type": "string"
-    },
-    "label": {
-      "maxLength": 120,
-      "title": "Label",
-      "type": "string"
-    },
-    "taskId": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Taskid"
-    },
-    "projectId": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Projectid"
-    },
-    "agentId": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Agentid"
-    },
-    "parentId": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Parentid"
     },
     "stepId": {
       "anyOf": [
@@ -133,7 +168,7 @@
       "default": null,
       "title": "Stepid"
     },
-    "model": {
+    "taskId": {
       "anyOf": [
         {
           "type": "string"
@@ -143,58 +178,24 @@
         }
       ],
       "default": null,
-      "title": "Model"
+      "title": "Taskid"
     },
-    "durationMs": {
-      "anyOf": [
-        {
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Durationms"
+    "ts": {
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
     },
-    "promptTokens": {
-      "anyOf": [
-        {
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
+    "type": {
+      "enum": [
+        "agent",
+        "model",
+        "step",
+        "gate",
+        "run",
+        "tool"
       ],
-      "default": null,
-      "title": "Prompttokens"
-    },
-    "completionTokens": {
-      "anyOf": [
-        {
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Completiontokens"
-    },
-    "errorCode": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Errorcode"
+      "title": "Type",
+      "type": "string"
     }
   },
   "required": [

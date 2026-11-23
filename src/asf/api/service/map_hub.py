@@ -32,12 +32,38 @@ CLOSED_RUN_TTL_SECONDS = 600.0
 ENV_LIVE_MAP = "ASF_LIVE_MAP"
 
 
+class _Counters:
+    """Cumulative totals for one run: unlike the bounded history
+    these never drop entries, so dashboard totals stay true after
+    the history evicts old pulses."""
+
+    def __init__(self) -> None:
+        self.station_totals: dict[str, int] = {}
+        self.agent_totals: dict[str, int] = {}
+        self.station_errors: dict[str, int] = {}
+        self.used_tokens: int = 0
+        self.used_calls: int = 0
+
+    def count(self, event: MapEvent) -> None:
+        """Fold one pulse into the cumulative counters."""
+        if event.phase in ("start", "moment"):
+            self.station_totals[event.station] = self.station_totals.get(event.station, 0) + 1
+            if event.agent_id:
+                self.agent_totals[event.agent_id] = self.agent_totals.get(event.agent_id, 0) + 1
+        if event.phase == "end" and event.status in ("error", "blocked"):
+            self.station_errors[event.station] = self.station_errors.get(event.station, 0) + 1
+        if event.type == "model" and event.phase == "end":
+            self.used_calls += 1
+            self.used_tokens += (event.prompt_tokens or 0) + (event.completion_tokens or 0)
+
+
 class _RunHistory:
     def __init__(self) -> None:
         self.events: deque[MapEvent] = deque(maxlen=MAX_EVENTS_PER_RUN)
         self.seen: int = 0
         self.closed_at: float | None = None
         self.last_seen: float = 0.0
+        self.counters = _Counters()
 
 
 class MapHub:
@@ -58,6 +84,7 @@ class MapHub:
         with suppress(Exception), self._lock:
             history = self._history_for(event.run_id)
             history.events.append(event)
+            history.counters.count(event)
             history.seen += 1
             history.last_seen = time.monotonic()
             self._sweep_locked()
@@ -85,20 +112,29 @@ class MapHub:
             return run_id in self._runs
 
     def budget(self, run_id: str) -> dict[str, int | None]:
-        """Token/call usage summed from the run's model pulses."""
-        events, _ = self.snapshot(run_id)
-        used_tokens = 0
-        used_calls = 0
-        for event in events:
-            if event.type == "model" and event.phase == "end":
-                used_calls += 1
-                used_tokens += (event.prompt_tokens or 0) + (event.completion_tokens or 0)
+        """Token/call usage from the run's cumulative counters."""
+        with self._lock:
+            history = self._runs.get(run_id)
+            used_tokens = history.counters.used_tokens if history is not None else 0
+            used_calls = history.counters.used_calls if history is not None else 0
         return {
             "usedTokens": used_tokens,
             "limitTokens": self._limit_tokens,
             "usedCalls": used_calls,
             "limitCalls": self._limit_calls,
         }
+
+    def counters(self, run_id: str) -> dict[str, dict[str, int]]:
+        """Cumulative per-station, per-agent and per-station-error totals."""
+        with self._lock:
+            history = self._runs.get(run_id)
+            if history is None:
+                return {"stations": {}, "agents": {}, "errors": {}}
+            return {
+                "stations": dict(history.counters.station_totals),
+                "agents": dict(history.counters.agent_totals),
+                "errors": dict(history.counters.station_errors),
+            }
 
     def _history_for(self, run_id: str) -> _RunHistory:
         history = self._runs.get(run_id)
