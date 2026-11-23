@@ -411,6 +411,28 @@ class DemoFactoryService(FactoryService):
             parts.append(inline.strip())
         return "\n\n".join(parts)
 
+    def _build_initial_context(self, project_id: str, context: Any) -> dict[str, Any]:
+        merged: dict[str, Any] = {
+            "project": {"testCommands": self._default_test_commands(project_id)},
+        }
+        profile = self._project_profiles.get(project_id) or {}
+        tech = profile.get("technology")
+        if tech:
+            merged["project"]["technology"] = tech
+        review_rules = self._review_rules(project_id)
+        if review_rules:
+            merged["project"]["reviewRules"] = review_rules
+        skills = self._project_skills(project_id)
+        if skills:
+            merged["project"]["skills"] = skills
+            merged["project"]["enabledSkills"] = [skill["id"] for skill in skills]
+        for key, value in dict(context or {}).items():
+            if key == "project" and isinstance(value, dict):
+                merged["project"] = {**merged["project"], **value}
+            else:
+                merged[key] = value
+        return merged
+
     def start_run(
         self,
         task_id: str,
@@ -423,21 +445,7 @@ class DemoFactoryService(FactoryService):
         }
         for step, values in dict(inputs or {}).items():
             merged_inputs[step] = {**merged_inputs.get(step, {}), **dict(values)}
-        merged_context: dict[str, Any] = {
-            "project": {"testCommands": self._default_test_commands(project_id)},
-        }
-        review_rules = self._review_rules(project_id)
-        if review_rules:
-            merged_context["project"]["reviewRules"] = review_rules
-        skills = self._project_skills(project_id)
-        if skills:
-            merged_context["project"]["skills"] = skills
-            merged_context["project"]["enabledSkills"] = [skill["id"] for skill in skills]
-        for key, value in dict(context or {}).items():
-            if key == "project" and isinstance(value, dict):
-                merged_context["project"] = {**merged_context["project"], **value}
-            else:
-                merged_context[key] = value
+        merged_context = self._build_initial_context(project_id, context)
         return super().start_run(
             task_id,
             project_id,
