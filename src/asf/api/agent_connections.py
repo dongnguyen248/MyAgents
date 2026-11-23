@@ -19,6 +19,15 @@ an http/https scheme and a host. Localhost and private addresses are
 ALLOWED - the operator's real routes are local proxies - but the
 cloud metadata address 169.254.169.254 is blocked, and plain http is
 flagged in the public view as a soft warning, not an error.
+
+Key-inheritance policy (operator decision, 2026-11-23): a profile
+that points at a DIFFERENT endpoint than the shared settings (its own
+provider or base URL) must not silently spend the shared key there.
+For Gemini and Anthropic endpoints an own key is mandatory - saving
+without one is rejected, and the effective-settings merge blanks the
+key so even a hand-edited settings file cannot leak the shared key to
+the other endpoint. For OpenAI-compatible endpoints an own key is
+optional and inheritance is a deliberate operator choice.
 """
 
 from __future__ import annotations
@@ -29,14 +38,18 @@ from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 __all__ = [
+    "check_profiles",
     "clean_connections",
     "effective_settings",
+    "endpoint_differs",
+    "key_required",
     "load_connections",
     "public_connections",
     "stored_connections",
 ]
 
 BLOCKED_HOST = "169.254.169.254"
+ANTHROPIC_HOST = "api.anthropic.com"
 MAX_HEADERS = 20
 MAX_HEADER_VALUE_CHARS = 500
 MIN_TIMEOUT_SECONDS = 1
@@ -268,6 +281,31 @@ def _clean_timeout(name: str, raw: Any) -> int | None:
     return raw
 
 
+def check_profiles(connections: Mapping[str, Profile], shared: Mapping[str, str]) -> None:
+    """Save-time per-profile rules (raises ValueError): mirror the
+    shared custom-provider base-URL rule, and enforce the
+    key-inheritance policy - a profile pointing at a different
+    Gemini/Anthropic endpoint must carry its own key; the shared key
+    never travels there."""
+    for name, profile in connections.items():
+        provider = profile["provider"] or shared["provider"]
+        base_url = profile["baseUrl"] or shared["baseUrl"]
+        if provider == "custom" and not base_url.startswith(("https://", "http://")):
+            raise ValueError(
+                f"agentConnections.{name}: the custom provider needs a base URL (http/https)",
+            )
+        if (
+            not profile["apiKey"]
+            and endpoint_differs(shared, profile)
+            and key_required(provider, base_url)
+        ):
+            raise ValueError(
+                f"agentConnections.{name}: this agent's endpoint differs from the "
+                "shared settings, so it needs its own API key - the shared key is "
+                "never sent to a different Gemini/Anthropic endpoint",
+            )
+
+
 def public_connections(connections: Mapping[str, Profile]) -> dict[str, Any]:
     """The masked public view: key hint only, header values masked."""
     return {name: _public_profile(profile) for name, profile in connections.items()}
@@ -295,10 +333,34 @@ def stored_connections(connections: Mapping[str, Profile]) -> dict[str, Any]:
     }
 
 
+def endpoint_differs(shared: Mapping[str, str], profile: Profile) -> bool:
+    """True when the profile points at another endpoint than shared:
+    it names a different provider or a different base URL."""
+    return bool(
+        (profile["provider"] and profile["provider"] != shared.get("provider"))
+        or (profile["baseUrl"] and profile["baseUrl"] != shared.get("baseUrl"))
+    )
+
+
+def key_required(provider: str, base_url: str) -> bool:
+    """Whether an endpoint demands the agent's own key: Gemini, and
+    Anthropic's endpoint, never receive the shared key."""
+    if provider == "gemini":
+        return True
+    try:
+        return urlsplit(base_url).hostname == ANTHROPIC_HOST
+    except ValueError:
+        return False
+
+
 def effective_settings(shared: Mapping[str, str], profile: Profile | None) -> dict[str, Any]:
     """The gateway-factory input for one agent: shared, overridden
     field by field by the agent's profile where the profile sets a
-    value; headers and timeout ride along for the factory."""
+    value; headers and timeout ride along for the factory. When the
+    profile points at a Gemini/Anthropic endpoint different from the
+    shared one without an own key, the key is blanked - the factory
+    then fails loudly for that agent instead of leaking the shared
+    key to the other endpoint."""
     effective: dict[str, Any] = dict(shared)
     effective["headers"] = {}
     effective["timeoutSeconds"] = None
@@ -309,4 +371,10 @@ def effective_settings(shared: Mapping[str, str], profile: Profile | None) -> di
             effective[field] = profile[field]
     effective["headers"] = dict(profile["headers"])
     effective["timeoutSeconds"] = profile["timeoutSeconds"]
+    if (
+        not profile["apiKey"]
+        and endpoint_differs(shared, profile)
+        and key_required(str(effective["provider"]), str(effective["baseUrl"]))
+    ):
+        effective["apiKey"] = ""
     return effective

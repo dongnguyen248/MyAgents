@@ -319,3 +319,81 @@ def test_header_transport_merges_and_forwards_kwargs():
     assert seen["headers"]["X-Extra"] == "1"
     assert seen["headers"]["Authorization"] == "Bearer real"
     assert seen["max_response_bytes"] == 99
+
+
+def test_save_rejects_a_gemini_endpoint_change_without_an_own_key(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    settings.update({"provider": "gemini", "model": "g", "apiKey": "shared-gemini-key"})
+    with pytest.raises(ValueError, match="own API key"):
+        settings.update(
+            {
+                "agentConnections": {
+                    "spec": {"baseUrl": "https://generativelanguage.googleapis.com/v1beta"}
+                }
+            }
+        )
+    with pytest.raises(ValueError, match="own API key"):
+        settings.update({"agentConnections": {"spec": {"baseUrl": "https://api.anthropic.com/v1"}}})
+    settings.update(
+        {
+            "agentConnections": {
+                "spec": {
+                    "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+                    "apiKey": "spec-own-key",
+                }
+            }
+        }
+    )
+    assert settings.effective_settings("spec")["apiKey"] == "spec-own-key"
+
+
+def test_openai_compatible_endpoint_change_may_inherit_the_key(tmp_path: Path):
+    settings = _settings(tmp_path)
+    settings.update({"agentConnections": {"spec": {"baseUrl": "https://other.example/v1"}}})
+    assert settings.effective_settings("spec")["apiKey"] == "shared-key-0001"
+
+
+def test_shared_key_never_reaches_a_different_gemini_endpoint(tmp_path: Path):
+    path = tmp_path / "model-settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "provider": "gemini",
+                "model": "g",
+                "baseUrl": "",
+                "apiKey": "shared-gemini-key",
+                "agentConnections": {
+                    "spec": {"baseUrl": "https://generativelanguage.googleapis.com/v1beta"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = ModelSettings(path)
+    assert settings.effective_settings("spec")["apiKey"] == ""
+    transport = _RecordingTransport()
+    with pytest.raises(ValueError, match="No API key"):
+        build_configured_gateway(settings.effective_settings("spec"), transport)
+    assert transport.calls == []
+
+
+def test_a_failing_profile_endpoint_never_falls_back_to_shared(tmp_path: Path):
+    settings = _settings(tmp_path)
+    settings.update({"agentConnections": {"spec": {"baseUrl": "https://spec.example/v1"}}})
+    shared_calls: list[str] = []
+
+    class _TrackingEcho(_EchoGateway):
+        def complete(self, request: ModelRequest) -> ModelResponse:
+            shared_calls.append(str(self.settings.get("baseUrl")))
+            return super().complete(request)
+
+    def factory(settings_map: Any, transport: Any) -> Any:
+        if settings_map.get("baseUrl") == "https://spec.example/v1":
+            return _FailingGateway()
+        return _TrackingEcho(dict(settings_map))
+
+    router = SettingsRoutingGateway(settings, _EchoGateway({}), gateway_factory=factory)
+    with pytest.raises(ModelGatewayError):
+        router.complete(_request("spec"))
+    assert shared_calls == []
+    assert router.complete(_request("plan")).content == "https://shared.example/v1"
