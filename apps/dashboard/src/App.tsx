@@ -6,6 +6,7 @@ import { AgentSettingsIndexPage, AgentSettingsPage } from './pages/Agents/AgentS
 import { AgentsPage } from './pages/Agents/AgentsPage';
 import { ApprovalsPage } from './pages/Approvals/ApprovalsPage';
 import { DashboardPage } from './pages/Dashboard/DashboardPage';
+import { LiveMapPage } from './pages/LiveMap/LiveMapPage';
 import { MetricsPage } from './pages/Metrics/MetricsPage';
 import { ProjectsPage } from './pages/Projects/ProjectsPage';
 import { SettingsPage } from './pages/Settings/SettingsPage';
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="tasks" element={<TasksPage />} />
         <Route path="tasks/:taskId" element={<TaskDetailPage />} />
         <Route path="workflows" element={<WorkflowsPage />} />
+        <Route path="live-map" element={<LiveMapPage />} />
         <Route path="workflows/:workflowId" element={<WorkflowDetailPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="activity" element={<ActivityPage />} />

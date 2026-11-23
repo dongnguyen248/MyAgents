@@ -1,3 +1,4 @@
+import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { Project } from '../../types/project';
 import type { RunDiagnostics, Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
@@ -107,6 +108,22 @@ export function createHttpApi(baseUrl: string): FactoryApi {
       source.onmessage = (msg) => {
         try {
           onEvent(JSON.parse(msg.data));
+        } catch {
+          // Ignore malformed frames rather than tearing down the stream.
+        }
+      };
+      source.onerror = () => undefined;
+      return () => source.close();
+    },
+
+    getMapSnapshot: (runId) => getOpt<MapSnapshot>(`/map/snapshot${qs({ runId })}`),
+    subscribeMapEvents: (runId, onEvent) => {
+      // Same pattern as subscribeActivity: EventSource reconnects on its
+      // own and a dead stream must never break the dashboard.
+      const source = new EventSource(`${baseUrl}/map/events${qs({ runId })}`);
+      source.onmessage = (msg) => {
+        try {
+          onEvent(JSON.parse(msg.data) as MapEvent);
         } catch {
           // Ignore malformed frames rather than tearing down the stream.
         }

@@ -178,13 +178,18 @@ class ModelsGatewayTests(unittest.TestCase):
         assert_pure_package(self, models_dir, include=["fake.py"])
 
         # Import boundary check: asf.models may import only asf.contracts and asf.models
+        # (map_events: the live map's event contract, read by the map tap
+        # gateway; finish: the shared finish-reason classifier)
         allowed_asf_modules = {
             "asf.contracts",
             "asf.contracts.models",
+            "asf.contracts.map_events",
             "asf.models",
             "asf.models.errors",
             "asf.models.fake",
+            "asf.models.finish",
             "asf.models.limited",
+            "asf.models.map_tap",
             "asf.models.ports",
         }
 

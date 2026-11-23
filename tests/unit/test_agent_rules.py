@@ -75,7 +75,16 @@ class AgentRulesTests(unittest.TestCase):
         helper (asf.agents._shared.log_context) is allowlisted on the
         same terms: pure (contextvars only), it carries the run, task,
         agent and request ids of the execution in progress into the
-        backend's log lines.
+        backend's log lines. The live-map helper
+        (asf.agents._shared.map_emit) is allowlisted on the same
+        terms: it is the one place agents report display-only map
+        pulses (execution boundaries, one pulse pair per model call);
+        reporting is fire-and-forget, swallows every tap error and
+        never reads anything back, so it cannot affect execution. The
+        map tap gateway (asf.models.map_tap) is allowlisted on the
+        same terms as the counting gateway: BaseAgent wraps every
+        agent's gateway in it when a tap is installed, so model
+        pulses are a platform concern, not agent bookkeeping.
         """
         agents_dir = REPO_ROOT / "src" / "asf" / "agents"
         logic_modules = [
@@ -103,7 +112,9 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.prompt_context",
             "asf.agents._shared.harness",
             "asf.agents._shared.log_context",
+            "asf.agents._shared.map_emit",
             "asf.models.counting",
+            "asf.models.map_tap",
             "asf.agents.spec",
             "asf.agents.spec.agent",
             "asf.agents.spec.prompts",

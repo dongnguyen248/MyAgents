@@ -716,6 +716,11 @@ export const mockApi: FactoryApi = {
     return () => clearInterval(timer);
   },
 
+  // The live map exists only on the real backend; mock mode has no pulses.
+  getMapSnapshot: () => delay(undefined),
+
+  subscribeMapEvents: () => () => undefined,
+
   getMetricsOverview: () => delay(metricsOverview),
 
   getModelSettings: () => delay(modelSettingsView()),

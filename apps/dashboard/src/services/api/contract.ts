@@ -1,6 +1,7 @@
 import type { ActivityEvent, ActivityFilter } from '../../types/activity';
 import type { Agent, AgentConfig, AgentRun } from '../../types/agent';
 import type { Approval, ApprovalDecisionInput } from '../../types/approval';
+import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { MetricsOverview } from '../../types/metrics';
 import type { Project, ProjectProfileInput } from '../../types/project';
 import type { ModelSettings, ModelSettingsInput, ModelTestResult } from '../../types/settings';
@@ -67,6 +68,11 @@ export interface FactoryApi {
   listActivity(filter?: ActivityFilter): Promise<ActivityEvent[]>;
   /** Push channel. Mock: timer. Later: WebSocket or Server-Sent Events. */
   subscribeActivity(onEvent: (e: ActivityEvent) => void): Unsubscribe;
+
+  /** Live map snapshot for one run; undefined when the run or map is absent. */
+  getMapSnapshot(runId: string): Promise<MapSnapshot | undefined>;
+  /** Live map pulse stream for one run (SSE on the real backend). */
+  subscribeMapEvents(runId: string, onEvent: (e: MapEvent) => void): Unsubscribe;
 
   getMetricsOverview(): Promise<MetricsOverview>;
 
