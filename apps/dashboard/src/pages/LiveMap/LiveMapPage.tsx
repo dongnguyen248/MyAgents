@@ -4,6 +4,7 @@ import { MapFeed } from '../../components/livemap/MapFeed';
 import { AgentList, EntryDetail } from '../../components/livemap/MapSidePanel';
 import { agentStates, budgetPercent, feedItems } from '../../lib/mapBoard';
 import type { BoardState } from '../../lib/mapBoard';
+import type { MapHosting } from '../../types/map';
 import type { Workflow } from '../../types/workflow';
 import { useLiveMapData, useMapSelection, useWorkflowRuns } from './useLiveMapData';
 import type { LiveMapData, MapSelection } from './useLiveMapData';
@@ -42,14 +43,27 @@ function RunPicker({
   );
 }
 
-function SideStack({ board, selection }: { board: BoardState; selection: MapSelection }) {
+function SideStack({
+  board,
+  hosting,
+  selection,
+}: {
+  board: BoardState;
+  hosting: MapHosting | null;
+  selection: MapSelection;
+}) {
   return (
     <div className="stack">
       <Card title="Agents">
         <AgentList agents={agentStates(board)} onPick={selection.pickAgent} />
       </Card>
       <Card title="Detail">
-        <EntryDetail board={board} entry={selection.selected} onSelect={selection.selectEntry} />
+        <EntryDetail
+          board={board}
+          entry={selection.selected}
+          hosting={hosting}
+          onSelect={selection.selectEntry}
+        />
       </Card>
     </div>
   );
@@ -85,7 +99,7 @@ function MapLayout({ live, selection }: { live: LiveMapData; selection: MapSelec
           runStatus={live.runStatus}
         />
       </Card>
-      <SideStack board={live.board} selection={selection} />
+      <SideStack board={live.board} hosting={live.hosting} selection={selection} />
       <FeedCard board={live.board} selection={selection} />
     </div>
   );
