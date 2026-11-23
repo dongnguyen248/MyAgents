@@ -3279,6 +3279,7 @@ class TaskAgentTests(unittest.TestCase):
         # Required sections from template
         self.assertIn("## Output Format", template_text)
         self.assertIn("## Task Object Fields", template_text)
+        self.assertIn("## Validation Rules", template_text)
         self.assertIn("## Worked Example", template_text)
 
         # Check worked example has valid JSON structure
@@ -3349,6 +3350,7 @@ class TaskAgentTests(unittest.TestCase):
         self.assertIn("# TASK Breakdown Specification", template)
         self.assertIn("## Output Format", template)
         self.assertIn("## Task Object Fields", template)
+        self.assertIn("## Validation Rules", template)
         self.assertIn("## Worked Example", template)
 
     def test_rendered_output_includes_all_task_fields(self):

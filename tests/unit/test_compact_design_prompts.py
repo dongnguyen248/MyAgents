@@ -102,6 +102,49 @@ def test_rules_stack_filtering_and_formatting_omission():
     assert "Security and Permissions" in filtered
 
 
+def test_rules_typescript_react_positive_filtering(caplog):
+    caplog.set_level(logging.WARNING)
+    ts_rules = (
+        "<!-- stack: typescript -->\n# TypeScript and React Standards\n\n"
+        "## API Contract and DTOs\nExport explicit DTO types for endpoints.\n\n"
+        "## Security and Authorization\nValidate tokens and object-level permissions.\n\n"
+        "## Component Structure\nGroup components by feature folder.\n\n"
+        "## Naming Conventions\nUse PascalCase for components and camelCase for hooks.\n\n"
+        "## Prettier and Formatting\nUse 2 spaces and no semicolons.\n\n"
+        "## Test Style Guidelines\nUse Jest and RTL.\n\n"
+        "## Overflow Notes\n" + ("Extra details for budget overflow test. " * 60)
+    )
+    filtered = filter_rules_for_task(
+        ts_rules, agent="spec", stack=frozenset({"typescript"}), budget=2500
+    )
+    # (a) API, security, structure, naming are loaded
+    assert "## API Contract and DTOs" in filtered
+    assert "## Security and Authorization" in filtered
+    assert "## Component Structure" in filtered
+    assert "## Naming Conventions" in filtered
+    # (b) Formatting and test style are NOT loaded
+    assert "Prettier and Formatting" not in filtered
+    assert "Test Style Guidelines" not in filtered
+    # (c) Budget <= 2500 chars and dropped section is logged
+    assert len(filtered) <= 2500
+    assert "omitted from agent 'spec': exceeded character budget" in caplog.text
+
+
+def test_rules_python_positive_loading():
+    py_rules = (
+        "<!-- stack: python -->\n# Python Standards\n\n"
+        "## API Models and Schemas\nUse Pydantic models for request bodies.\n\n"
+        "## Security Policies\nEnforce object-level authorization checks.\n"
+    )
+    filtered = filter_rules_for_task(
+        py_rules, agent="spec", stack=frozenset({"python"}), budget=2500
+    )
+    assert "## API Models and Schemas" in filtered
+    assert "Use Pydantic models" in filtered
+    assert "## Security Policies" in filtered
+    assert "Enforce object-level authorization checks" in filtered
+
+
 def test_rules_budget_enforcement_and_logging(caplog):
     caplog.set_level(logging.WARNING)
     long_section = "## 1. Security\n" + ("x" * 2000)
