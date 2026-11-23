@@ -124,11 +124,13 @@ def detect_task_stack(
     if language and language.strip():
         canon = _canonical_stack(language)
         if canon:
+            logger.info("Stack detected from metadata: %s", canon)
             return frozenset({canon})
     declared = _extract_declared_stacks(project_tech)
     signals = _detect_signals(text_signal, files)
     matched = declared & signals
     if matched:
+        logger.info("Stack detected from signals: %s", sorted(matched))
         return frozenset(matched)
     logger.warning("Stack unknown for task; omitting language rule packs")
     return frozenset()
