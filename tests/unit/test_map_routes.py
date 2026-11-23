@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 from datetime import UTC, datetime
 from typing import Any
@@ -123,6 +124,21 @@ class MapRoutesTests(unittest.TestCase):
             payload["hosting"],
             {"url": "https://git.example.com/g/p/-/merge_requests/42", "number": "42"},
         )
+
+    def test_snapshot_strips_userinfo_query_and_fragment_from_the_url(self) -> None:
+        dirty = (
+            "https://oauth2:tok-userinfo-1@git.example.com:8443/g/p/-/merge_requests/42"
+            "?access_token=tok-query-2#tok-fragment-3"
+        )
+        run = StubRun("run-1", [StubResult({"changeRequest": {"id": "42", "url": dirty}})])
+        payload = self.snapshot_payload(StubService([run]))
+        self.assertEqual(
+            payload["hosting"],
+            {"url": "https://git.example.com:8443/g/p/-/merge_requests/42", "number": "42"},
+        )
+        blob = json.dumps(payload)
+        for secret in ("tok-userinfo-1", "tok-query-2", "tok-fragment-3", "oauth2"):
+            self.assertNotIn(secret, blob)
 
     def test_snapshot_hides_hosting_without_metadata_or_with_a_bad_url(self) -> None:
         self.assertIsNone(self.snapshot_payload(StubService())["hosting"])
