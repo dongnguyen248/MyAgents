@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Mapping
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from asf.api.service.map_hub import MapHub, active_map_hub, live_map_enabled, set_active_map_hub
@@ -22,7 +22,7 @@ from asf.contracts.map_events import MapEvent, MapStatus, clean_label
 from asf.contracts.models import ActivityEvent, AgentRequest, AgentResult
 from asf.integrations.hosting.actions import ProfileSource, build_hosting_actions
 from asf.integrations.hosting.http import Transport, UrllibTransport
-from asf.models.map_tap import map_call_context, set_default_map_tap
+from asf.models.map_tap import map_call_context, set_default_map_clock, set_default_map_tap
 from asf.tools.fake import InMemoryRepository, ScriptedSandbox
 from asf.tools.local import WorkspaceRepository, WorkspaceSandbox
 from asf.tools.map_wrap import MapRepository, MapSandbox, MapTransport
@@ -151,6 +151,7 @@ def install_live_map(budget: Any) -> MapHub:
     hub.set_budget_limits(limit_tokens, budget.max_model_calls)
     set_active_map_hub(hub)
     set_default_map_tap(hub)
+    set_default_map_clock(lambda: datetime.now(UTC))
     return hub
 
 
