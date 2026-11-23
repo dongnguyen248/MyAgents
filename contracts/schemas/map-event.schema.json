@@ -14,6 +14,19 @@
       "default": null,
       "title": "Agentid"
     },
+    "attempt": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt"
+    },
     "completionTokens": {
       "anyOf": [
         {
@@ -106,6 +119,19 @@
       ],
       "default": null,
       "title": "Projectid"
+    },
+    "promptChars": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Promptchars"
     },
     "promptTokens": {
       "anyOf": [
