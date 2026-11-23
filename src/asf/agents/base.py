@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from asf.agents._shared.log_context import log_context
+from asf.agents._shared.map_emit import emit_agent_result, emit_agent_start
 from asf.agents._shared.security import redact_text
 from asf.contracts.models import (
     ActivityEvent,
@@ -22,6 +23,7 @@ from asf.contracts.models import (
 )
 from asf.models.counting import CountingGateway, ModelCallTracker, track_model_calls
 from asf.models.errors import ModelGatewayError
+from asf.models.map_tap import MapTapGateway, default_map_tap, map_call_context
 from asf.models.ports import ModelGateway
 
 logger = logging.getLogger(__name__)
@@ -331,8 +333,12 @@ class BaseAgent(ABC):
         # gateway: usage accounting and step-deadline injection are
         # platform concerns, never the agent's own bookkeeping.
         if not isinstance(runtime.models, CountingGateway):
+            models = runtime.models
+            tap = default_map_tap()
+            if tap is not None:
+                models = MapTapGateway(models, tap)
             runtime = AgentRuntime(
-                models=CountingGateway(runtime.models),
+                models=CountingGateway(models),
                 clock=runtime.clock,
                 new_id=runtime.new_id,
             )
@@ -424,6 +430,7 @@ class BaseAgent(ABC):
             and raw_timeout > 0
             else None
         )
+        emit_agent_start(request, t_start)
         with (
             track_model_calls(
                 timeout_seconds=timeout,
@@ -436,8 +443,11 @@ class BaseAgent(ABC):
                 agent=request.agent_id,
                 request_id=request.request_id,
             ),
+            map_call_context(request, t_start),
         ):
-            return self._execute_tracked(request, tracker, t_start)
+            result = self._execute_tracked(request, tracker, t_start)
+        emit_agent_result(request, result, t_start)
+        return result
 
     def _execute_tracked(
         self,

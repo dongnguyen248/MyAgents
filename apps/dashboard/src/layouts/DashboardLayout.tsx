@@ -4,7 +4,7 @@ import { backendBaseUrl } from '../services/api';
 
 const GROUPS: { title?: string; links: [string, string][] }[] = [
   { links: [['/', 'Dashboard']] },
-  { title: 'Workspace', links: [['/agents', 'Agents'], ['/tasks', 'Tasks'], ['/workflows', 'Workflows'], ['/approvals', 'Approvals'], ['/activity', 'Activity']] },
+  { title: 'Workspace', links: [['/agents', 'Agents'], ['/tasks', 'Tasks'], ['/workflows', 'Workflows'], ['/live-map', 'Live Map'], ['/approvals', 'Approvals'], ['/activity', 'Activity']] },
   { title: 'Projects', links: [['/projects', 'Projects']] },
   { title: 'Analytics', links: [['/metrics', 'Metrics']] },
   { title: 'System', links: [['/agent-settings', 'Agent Settings'], ['/settings', 'Settings']] },

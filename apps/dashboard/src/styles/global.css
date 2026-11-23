@@ -171,3 +171,250 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
   .main { padding: 16px; }
   .two-col, .grid-cards { grid-template-columns: 1fr; }
 }
+
+/* live map */
+.lm-layout {
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  align-items: start;
+}
+.lm-layout > .card:last-child {
+  grid-column: 1 / -1;
+}
+.lm-map {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.lm-spoke {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.lm-spoke.active {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+.lm-station {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.lm-station-halo {
+  fill: var(--accent);
+  opacity: 0.3;
+}
+.lm-station-label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+.lm-station-count {
+  fill: var(--muted);
+  font-size: 11px;
+  text-anchor: middle;
+}
+.lm-station-badge {
+  fill: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.lm-fault-dot {
+  fill: var(--danger);
+}
+.lm-fault-count {
+  fill: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+.lm-centre {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.lm-budget-ring {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.lm-centre-title {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+.lm-centre-budget {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+.lm-centre-caption {
+  fill: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-anchor: middle;
+}
+.lm-centre-status {
+  fill: var(--muted);
+  font-size: 11px;
+  text-anchor: middle;
+}
+.lm-pulse {
+  pointer-events: none;
+}
+.lm-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.lm-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.lm-chip.active {
+  border-color: var(--accent);
+  background: var(--info-bg);
+}
+.lm-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.lm-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.lm-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.lm-row:hover {
+  background: var(--surface-2);
+}
+.lm-row.selected {
+  border-color: var(--accent);
+  background: var(--info-bg);
+}
+.lm-symbol {
+  width: 14px;
+  text-align: center;
+  flex: none;
+}
+.lm-symbol.running {
+  color: var(--accent);
+}
+.lm-symbol.ok {
+  color: var(--muted);
+}
+.lm-symbol.error,
+.lm-symbol.blocked {
+  color: var(--danger);
+}
+.lm-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-fold {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.lm-row-agent {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-left: auto;
+}
+.lm-row-time {
+  color: var(--muted);
+  font-size: 0.85rem;
+  flex: none;
+}
+.lm-agents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.lm-agent-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.lm-agent-row:hover {
+  background: var(--surface-2);
+}
+.lm-agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-agent-status {
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+.lm-agent-status.running {
+  color: var(--accent);
+}
+.lm-agent-status.failed {
+  color: var(--danger);
+}
+.lm-agent-status.done {
+  color: var(--ok);
+}
+.lm-detail {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.lm-detail-row {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 8px;
+}
+.lm-detail-row dt {
+  color: var(--muted);
+}
+.lm-detail-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.lm-detail-sub {
+  font-size: 0.9rem;
+  margin: 12px 0 6px;
+}

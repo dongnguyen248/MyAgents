@@ -47,8 +47,11 @@ from asf.api.decomposer import RequirementDecomposer
 from asf.api.demo_gateway import DemoRoutingGateway
 from asf.api.demo_selftest import run_selftest
 from asf.api.hosting_tokens import HostingTokens
+from asf.api.map_routes import register_map_routes
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
 from asf.api.service import FactoryService
+from asf.api.service.map_hub import live_map_enabled
+from asf.api.service.map_publisher import install_live_map, wrap_live_map_publisher
 from asf.approval.mode import DEFAULT_MAX_REVIEW_ROUNDS
 from asf.approval.models import ApprovalPolicy
 from asf.configuration.loader import load_platform_config, load_projects
@@ -690,6 +693,10 @@ class _RegistryDeps:
 
 
 def _build_registry(deps: _RegistryDeps) -> AgentRegistry:
+    # The live map's tap must be the agents' default before any agent
+    # is constructed: BaseAgent picks it up when wrapping its gateway.
+    if live_map_enabled():
+        install_live_map(deps.platform.budget)
     runtime = deps.runtime
     platform = deps.platform
     templates_dir = deps.templates_dir
@@ -809,7 +816,7 @@ def build_demo(
 
     if store is None:
         store = InMemoryStore() if ephemeral else _mariadb_store_from_env()
-    metrics = _load_metrics()
+    metrics = wrap_live_map_publisher(_load_metrics())
     # Hosting actions (Phase 8): projects whose profile links a GitLab /
     # GitHub repository (repository.url + provider, token from the
     # environment) get real push / change-request / pipeline behavior at
@@ -1091,7 +1098,7 @@ def main() -> None:
         # remaining connections close and the process exits; run state
         # lives in the store and mid-flight runs heal on the next boot.
         uvicorn.run(
-            create_app(service),
+            register_map_routes(create_app(service), service),
             host="127.0.0.1",
             port=args.port,
             timeout_graceful_shutdown=5,

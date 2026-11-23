@@ -1,0 +1,213 @@
+{
+  "additionalProperties": false,
+  "description": "One pulse on the live map: a start, an end, or a moment.",
+  "properties": {
+    "id": {
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "ts": {
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    },
+    "runId": {
+      "minLength": 1,
+      "title": "Runid",
+      "type": "string"
+    },
+    "spanId": {
+      "minLength": 1,
+      "title": "Spanid",
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "agent",
+        "model",
+        "step",
+        "gate",
+        "run"
+      ],
+      "title": "Type",
+      "type": "string"
+    },
+    "station": {
+      "enum": [
+        "core",
+        "operator",
+        "model",
+        "files",
+        "shell",
+        "network",
+        "agents",
+        "skills",
+        "store",
+        "gates"
+      ],
+      "title": "Station",
+      "type": "string"
+    },
+    "phase": {
+      "enum": [
+        "start",
+        "end",
+        "moment"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "running",
+        "ok",
+        "error",
+        "blocked"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "label": {
+      "maxLength": 120,
+      "title": "Label",
+      "type": "string"
+    },
+    "taskId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Taskid"
+    },
+    "projectId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Projectid"
+    },
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agentid"
+    },
+    "parentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parentid"
+    },
+    "stepId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stepid"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "durationMs": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Durationms"
+    },
+    "promptTokens": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompttokens"
+    },
+    "completionTokens": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completiontokens"
+    },
+    "errorCode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Errorcode"
+    }
+  },
+  "required": [
+    "id",
+    "ts",
+    "runId",
+    "spanId",
+    "type",
+    "station",
+    "phase",
+    "status",
+    "label"
+  ],
+  "title": "MapEvent",
+  "type": "object"
+}

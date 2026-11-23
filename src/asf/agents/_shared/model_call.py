@@ -19,11 +19,10 @@ Anything else returns the response untouched.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from asf.agents._shared.model_errors import invalid_response
 from asf.contracts.models import ModelRequest, ModelResponse
 from asf.models.errors import ModelGatewayError
+from asf.models.finish import FinishKind, classify_finish_reason
 from asf.models.ports import ModelGateway
 
 __all__ = [
@@ -32,30 +31,6 @@ __all__ = [
     "classify_finish_reason",
     "ensure_complete",
 ]
-
-FinishKind = Literal["ok", "truncated", "blocked"]
-
-_TRUNCATED = {"length", "max_tokens", "MAX_TOKENS"}
-_BLOCKED = {
-    "content_filter",
-    "safety",
-    "SAFETY",
-    "RECITATION",
-    "BLOCKLIST",
-    "PROHIBITED_CONTENT",
-    "SPAM",
-    "IMAGE_SAFETY",
-    "MALFORMED_FUNCTION_CALL",
-}
-
-
-def classify_finish_reason(finish_reason: str) -> FinishKind:
-    """Normalizes provider finish reasons into three buckets."""
-    if finish_reason in _TRUNCATED:
-        return "truncated"
-    if finish_reason in _BLOCKED:
-        return "blocked"
-    return "ok"
 
 
 def ensure_complete(response: ModelResponse) -> ModelResponse:
