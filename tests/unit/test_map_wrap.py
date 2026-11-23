@@ -157,6 +157,45 @@ class MapWrapTests(unittest.TestCase):
         self.assertNotIn(SECRET, self.tap.dumped())
         self.assertNotIn("api-key", self.tap.dumped())
 
+    def test_sandbox_pulses_are_sequential_never_parallel(self) -> None:
+        result = SandboxResult(
+            commands=(
+                CommandResult(exit_code=0, stdout="", stderr="", duration_ms=100),
+                CommandResult(exit_code=0, stdout="", stderr="", duration_ms=200),
+                CommandResult(exit_code=-1, stdout="", stderr="", duration_ms=0, skipped=True),
+            )
+        )
+        sandbox = MapSandbox(FakeSandbox(result=result))
+        commands = [
+            CommandSpec(argv=("python", "-m", "pytest")),
+            CommandSpec(argv=("npm", "test")),
+            CommandSpec(argv=("dotnet", "test")),
+        ]
+        with map_call_context(make_request(), STARTED):
+            sandbox.run(commands, changes(), "main")
+        sequence = [(e.phase, e.label) for e in self.tap.events]
+        self.assertEqual(
+            sequence,
+            [
+                ("start", "python"),
+                ("end", "python"),
+                ("start", "npm"),
+                ("end", "npm"),
+                ("start", "dotnet"),
+                ("end", "dotnet"),
+            ],
+        )
+        open_spans = 0
+        for event in self.tap.events:
+            open_spans += 1 if event.phase == "start" else -1
+            self.assertLessEqual(open_spans, 1)
+        starts = self.tap.events[0::2]
+        ends = self.tap.events[1::2]
+        self.assertEqual((ends[0].ts - starts[0].ts).total_seconds(), 0.1)
+        self.assertEqual(starts[1].ts, ends[0].ts)
+        self.assertEqual((ends[1].ts - starts[1].ts).total_seconds(), 0.2)
+        self.assertEqual(ends[2].status, "blocked")
+
     def test_sandbox_exception_ends_first_command_as_error(self) -> None:
         sandbox = MapSandbox(FakeSandbox(error=SandboxError("spawn failed")))
         commands = [CommandSpec(argv=("python", "-m", "pytest")), CommandSpec(argv=("npm", "test"))]
