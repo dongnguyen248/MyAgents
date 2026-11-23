@@ -125,11 +125,15 @@ def validate_task_output(task_text: str) -> list[str]:
 
 def build_user_message(context: TaskPromptContext) -> str:
     """Builds the user prompt message with fixed sections."""
+    tech = (context.project_context or {}).get("technology")
+    spec_text = _artifact_text(context.spec_artifact)
+    plan_text = _artifact_text(context.plan_artifact)
+    stack = detect_task_stack(context.language, tech, text_signal=f"{spec_text}\n{plan_text}")
     sections = [
         linked_artifact_section(context.spec_artifact, "Linked SPEC"),
         linked_artifact_section(context.plan_artifact, "Linked PLAN"),
         format_language_section(context.language),
-        project_context_section(context.project_context),
+        project_context_section(context.project_context, task_stack=stack),
         *_listing_sections(context.repo_listing),
         f"## Template\n{context.template.text}",
         *revision_sections(context.previous_task, "Previous task", context.feedback),

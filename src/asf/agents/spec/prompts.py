@@ -85,10 +85,12 @@ class SpecPromptContext:
 
 def build_user_message(context: SpecPromptContext) -> str:
     """Builds the user prompt message with fixed sections."""
+    tech = (context.project_context or {}).get("technology")
+    stack = detect_task_stack(context.language, tech, text_signal=context.requirement)
     sections = [
         f"## Requirement\n{context.requirement}",
         format_language_section(context.language),
-        project_context_section(context.project_context),
+        project_context_section(context.project_context, task_stack=stack),
         f"## Template\n{context.template.text}",
         *revision_sections(context.previous_spec, "Previous specification", context.feedback),
     ]

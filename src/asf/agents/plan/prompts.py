@@ -115,10 +115,13 @@ def validate_milestones(plan_text: str) -> None:
 
 def build_user_message(context: PlanPromptContext) -> str:
     """Builds the user prompt message with fixed sections."""
+    tech = (context.project_context or {}).get("technology")
+    spec_text = _artifact_text(context.spec_artifact)
+    stack = detect_task_stack(context.language, tech, text_signal=spec_text)
     sections = [
         linked_artifact_section(context.spec_artifact, "Linked SPEC"),
         format_language_section(context.language),
-        project_context_section(context.project_context),
+        project_context_section(context.project_context, task_stack=stack),
         f"## Template\n{context.template.text}",
         *revision_sections(context.previous_plan, "Previous plan", context.feedback),
     ]

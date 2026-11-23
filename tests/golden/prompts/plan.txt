@@ -36,11 +36,7 @@ en
 ## Project context
 {
   "name": "AuthService",
-  "description": "Handles authentication",
-  "technology": [
-    "python",
-    "fastapi"
-  ]
+  "description": "Handles authentication"
 }
 
 ## Template

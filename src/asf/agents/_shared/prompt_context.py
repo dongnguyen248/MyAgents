@@ -11,12 +11,37 @@ from asf.contracts.models import ApprovalFeedback
 PROJECT_CONTEXT_KEYS = ("name", "description", "technology")
 
 
-def project_context_section(project_context: dict[str, Any] | None) -> str:
+def _filter_technology(
+    technology: Any,
+    task_stack: frozenset[str] | None,
+) -> dict[str, list[str]] | None:
+    if not isinstance(technology, dict) or not task_stack:
+        return None
+    from asf.agents._shared.rules import _canonical_stack
+
+    filtered: dict[str, list[str]] = {}
+    for group, items in technology.items():
+        if isinstance(items, list):
+            matching = [str(item) for item in items if _canonical_stack(str(item)) in task_stack]
+            if matching:
+                filtered[str(group)] = matching
+    return filtered or None
+
+
+def project_context_section(
+    project_context: dict[str, Any] | None,
+    task_stack: frozenset[str] | None = None,
+) -> str:
     if not project_context:
         return ""
-    whitelisted = {
-        key: project_context[key] for key in PROJECT_CONTEXT_KEYS if key in project_context
-    }
+    whitelisted: dict[str, Any] = {}
+    for key in ("name", "description"):
+        if key in project_context:
+            whitelisted[key] = project_context[key]
+    if "technology" in project_context:
+        filtered_tech = _filter_technology(project_context["technology"], task_stack)
+        if filtered_tech:
+            whitelisted["technology"] = filtered_tech
     if not whitelisted:
         return ""
     proj_str = json.dumps(whitelisted, indent=2)
