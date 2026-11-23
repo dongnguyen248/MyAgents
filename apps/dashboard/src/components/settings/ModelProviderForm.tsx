@@ -4,6 +4,7 @@ import { testModelSettings, updateModelSettings } from '../../features/settings'
 import {
   buildConnectionsPayload,
   connStatesFromViews,
+  sharedKeyStatusText,
   type ConnFormState,
 } from '../../lib/agentConnections';
 import { AgentConnectionFields } from './AgentConnectionFields';
@@ -249,7 +250,12 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
       {needsKey && (
         <>
           <label className="field block">
-            <span>API key</span>
+            <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span>API key</span>
+              <span className="muted small" style={{ fontWeight: 'normal' }}>
+                {sharedKeyStatusText(saved.keyConfigured, saved.keyHint)}
+              </span>
+            </span>
             <input
               {...API_KEY_INPUT_ATTRS}
               type="password"

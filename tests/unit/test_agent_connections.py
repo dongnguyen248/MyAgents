@@ -397,3 +397,49 @@ def test_a_failing_profile_endpoint_never_falls_back_to_shared(tmp_path: Path):
         router.complete(_request("spec"))
     assert shared_calls == []
     assert router.complete(_request("plan")).content == "https://shared.example/v1"
+
+
+def test_save_reload_and_wire_request_uses_agent_own_key(tmp_path: Path):
+    path = tmp_path / "model-settings.json"
+    settings = ModelSettings(path)
+    settings.update(
+        {
+            "provider": "custom",
+            "model": "shared-m",
+            "baseUrl": "https://shared.example/v1",
+            "apiKey": "shared-secret-0001",
+            "agentConnections": {
+                "spec": {
+                    "baseUrl": "https://spec.example/v1",
+                    "apiKey": "spec-own-key-9999",
+                }
+            },
+        }
+    )
+    assert path.exists()
+
+    reloaded = ModelSettings(path)
+    view = reloaded.public()
+    assert view["keyConfigured"] is True
+    assert view["keyHint"] == "…0001"
+    assert view["agentConnections"]["spec"]["keyConfigured"] is True
+    assert view["agentConnections"]["spec"]["keyHint"] == "…9999"
+
+    transport = _RecordingTransport()
+    router = SettingsRoutingGateway(
+        reloaded,
+        fallback=_EchoGateway({}),
+        transport=transport,
+    )
+
+    router.complete(_request("spec"))
+    assert len(transport.calls) == 1
+    spec_call = transport.calls[0]
+    assert spec_call["url"] == "https://spec.example/v1/chat/completions"
+    assert spec_call["headers"]["Authorization"] == "Bearer spec-own-key-9999"
+
+    router.complete(_request("review"))
+    assert len(transport.calls) == 2
+    review_call = transport.calls[1]
+    assert review_call["url"] == "https://shared.example/v1/chat/completions"
+    assert review_call["headers"]["Authorization"] == "Bearer shared-secret-0001"

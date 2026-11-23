@@ -4,7 +4,10 @@ import {
   buildConnectionInput,
   buildConnectionsPayload,
   connStateFromView,
+  ownKeyPlaceholder,
+  ownKeyStatusText,
   parseHeadersText,
+  sharedKeyStatusText,
 } from '../src/lib/agentConnections.ts';
 import type { AgentConnectionView } from '../src/types/settings.ts';
 
@@ -58,4 +61,26 @@ test('edited headers replace the set; a bad timeout is rejected', () => {
   const bad = connStateFromView(undefined);
   bad.timeoutText = 'abc';
   assert.throws(() => buildConnectionInput(bad, undefined));
+});
+
+test('key status text and placeholders reflect own key and shared key state', () => {
+  // 1. Per-agent connection with key configured
+  assert.equal(ownKeyStatusText(VIEW), 'Own key saved (…9999)');
+  assert.equal(ownKeyPlaceholder(VIEW), 'Leave blank to keep this agent’s key');
+
+  // 2. Per-agent connection without key (fallback to shared)
+  const noKeyView: AgentConnectionView = {
+    ...VIEW,
+    keyConfigured: false,
+    keyHint: '',
+  };
+  assert.equal(ownKeyStatusText(noKeyView), 'No own key — using shared key');
+  assert.equal(ownKeyPlaceholder(noKeyView), 'No own key — using shared key');
+  assert.equal(ownKeyStatusText(undefined), 'No own key — using shared key');
+  assert.equal(ownKeyPlaceholder(undefined), 'No own key — using shared key');
+
+  // 3. Shared key status text
+  assert.equal(sharedKeyStatusText(true, '…1234'), 'Stored key (…1234)');
+  assert.equal(sharedKeyStatusText(true, ''), 'Stored key (…)');
+  assert.equal(sharedKeyStatusText(false, ''), 'No key stored yet');
 });

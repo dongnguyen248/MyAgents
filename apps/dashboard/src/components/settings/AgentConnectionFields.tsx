@@ -1,4 +1,5 @@
 import type { ConnFormState } from '../../lib/agentConnections';
+import { ownKeyPlaceholder, ownKeyStatusText } from '../../lib/agentConnections';
 import type { AgentConnectionView } from '../../types/settings';
 import {
   agentConnectionInputName,
@@ -79,19 +80,31 @@ function ConnectionUrlField({ agentKey, state, disabled, onChange }: FieldsProps
 }
 
 function ConnectionKeyField({ agentKey, state, saved, disabled, onChange }: FieldsProps) {
+  const status = ownKeyStatusText(saved);
+  const placeholder = ownKeyPlaceholder(saved);
   return (
     <>
       <label className="field block">
-        <span>API key (own)</span>
+        <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span>API key (own)</span>
+          <span className="muted small" style={{ fontWeight: 'normal' }}>
+            {status}
+          </span>
+        </span>
         <input
           {...agentKeyInputAttrs(agentKey)}
           type="password"
           value={state.apiKey}
           onChange={(e) => onChange({ apiKey: e.target.value })}
-          placeholder={saved?.keyConfigured ? 'Leave blank to keep this agent’s key' : 'Shared key'}
+          placeholder={placeholder}
           disabled={disabled}
         />
       </label>
+      <p className="muted small">
+        {saved?.keyConfigured
+          ? `An own key is stored for this agent (${saved.keyHint || 'hidden'}). It is never shown again.`
+          : 'This agent currently inherits the shared API key above.'}
+      </p>
       {saved?.keyConfigured && (
         <label className="field check">
           <input

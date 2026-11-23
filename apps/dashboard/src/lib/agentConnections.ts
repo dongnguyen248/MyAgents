@@ -152,3 +152,24 @@ export function buildConnectionsPayload(
   }
   return Object.keys(payload).length > 0 ? payload : undefined;
 }
+
+export function ownKeyStatusText(view?: AgentConnectionView): string {
+  if (view?.keyConfigured) {
+    return `Own key saved (${view.keyHint || '…'})`;
+  }
+  return 'No own key — using shared key';
+}
+
+export function ownKeyPlaceholder(view?: AgentConnectionView): string {
+  if (view?.keyConfigured) {
+    return 'Leave blank to keep this agent’s key';
+  }
+  return 'No own key — using shared key';
+}
+
+export function sharedKeyStatusText(keyConfigured: boolean, keyHint: string): string {
+  if (keyConfigured) {
+    return `Stored key (${keyHint || '…'})`;
+  }
+  return 'No key stored yet';
+}
