@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  agentColor,
   agentStates,
   applyMapEvent,
   applyMapEvents,
@@ -13,6 +14,7 @@ import {
   feedRows,
   isModelFlashing,
   modelChanges,
+  runningAgents,
   spokeWidth,
   stationCounts,
 } from '../src/lib/mapBoard.ts';
@@ -281,4 +283,21 @@ test('the model flash lasts only while the change is fresh on the board timeline
   ]);
   assert.equal(isModelFlashing(stale), false);
   assert.equal(isModelFlashing(emptyBoard()), false);
+});
+
+test('running agents list one orbit entry per in-flight execution, coloured per agent', () => {
+  const board = applyMapEvents(emptyBoard(), [
+    event({ id: 'e1', spanId: 'a1', type: 'agent', station: 'agents', agentId: 'spec' }),
+    event({ id: 'e2', spanId: 'a2', type: 'agent', station: 'agents', agentId: 'implement' }),
+    event({ id: 'e3', spanId: 'a3', type: 'agent', station: 'agents', agentId: 'review' }),
+    event({ id: 'e4', spanId: 'a3', type: 'agent', station: 'agents', phase: 'end', status: 'ok' }),
+    event({ id: 'e5', spanId: 'm1', type: 'model', station: 'model' }),
+  ]);
+  const running = runningAgents(board);
+  assert.deepEqual(
+    running.map((agent) => agent.agentId),
+    ['spec', 'implement'],
+  );
+  assert.equal(running[0].color, agentColor('spec'));
+  assert.equal(runningAgents(emptyBoard()).length, 0);
 });

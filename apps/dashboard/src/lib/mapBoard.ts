@@ -225,6 +225,25 @@ export function isModelFlashing(board: BoardState): boolean {
   return latestBoardTs(board) - changeAt <= MODEL_FLASH_WINDOW_MS;
 }
 
+export interface RunningAgent {
+  spanId: string;
+  agentId: string | null;
+  color: string;
+}
+
+/** One entry per agent execution in flight - the orbit dots around
+ * the Agents station. An execution that ended leaves the list, so
+ * its dot disappears with its span. */
+export function runningAgents(board: BoardState): RunningAgent[] {
+  return board.entries
+    .filter((entry) => entry.type === 'agent' && entry.status === 'running')
+    .map((entry) => ({
+      spanId: entry.spanId,
+      agentId: entry.agentId,
+      color: agentColor(entry.agentId),
+    }));
+}
+
 export type FeedItem = { kind: 'row'; row: FeedRow } | { kind: 'change'; change: ModelChange };
 
 /** Feed rows and model-change markers merged newest-first. */
