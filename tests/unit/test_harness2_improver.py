@@ -40,7 +40,7 @@ from tests.unit.test_harness2_recursion import FakeAdapter
 
 FROZEN_LINE = "Return only the final markdown document."
 ANCHOR = (
-    "5. Return only the final markdown document. "
+    "6. Return only the final markdown document. "
     "Do not wrap the response in conversational text or external greetings."
 )
 

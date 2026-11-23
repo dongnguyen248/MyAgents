@@ -101,12 +101,19 @@ def _plan_reply(user_text: str, complete_output: bool) -> str:
     return "\n".join(blocks)
 
 
+def _user_prompt(request: ModelRequest) -> str:
+    for m in request.messages:
+        if m.role == "user" and "## Template" in m.content:
+            return m.content
+    return request.messages[-1].content if request.messages else ""
+
+
 class HarnessAwareGateway:
     """Request-aware fake gateway: the reply depends on the harness."""
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         system = request.messages[0].content if request.messages else ""
-        user = request.messages[-1].content if request.messages else ""
+        user = _user_prompt(request)
         complete_output = SOLVER_MARKER in system
         agent_id = (request.metadata or {}).get("agentId", "")
         if agent_id == "agent-plan":

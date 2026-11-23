@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,6 +18,7 @@ from asf.agents._shared.request_checks import (
     is_positive_version,
 )
 from asf.agents._shared.routing import tier_metadata
+from asf.agents._shared.security import redact_text
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.spec.prompts import (
     SpecPromptContext,
@@ -31,9 +33,54 @@ from asf.contracts.models import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    ModelUsage,
 )
 
 __all__ = ["MAX_REQUIREMENT_CHARS", "SpecAgent", "SpecSettings"]
+
+logger = logging.getLogger(__name__)
+
+PREVIEW_LIMIT: int = 500
+
+
+def _log_rejected(attempt: int, missing: list[str], content: str) -> None:
+    preview = redact_text(content[:PREVIEW_LIMIT])
+    logger.warning(
+        "Spec model response rejected due to missing sections (attempt %d, missing=%s): %r",
+        attempt,
+        missing,
+        preview,
+    )
+
+
+def _build_retry_messages(
+    messages: list[ModelMessage],
+    reply_content: str,
+    missing: list[str],
+) -> list[ModelMessage]:
+    missing_str = ", ".join(missing)
+    instruction = (
+        f"Your response is missing required template sections: {missing_str}.\n"
+        "Never ask questions, request clarification, or engage in conversation.\n"
+        "If information is missing, make reasonable assumptions and document them under"
+        " ## Open questions.\n"
+        "Output the complete specification immediately with all 7 required sections,"
+        " starting with '## Background / Goal'."
+    )
+    return [
+        *messages,
+        ModelMessage(role="assistant", content=reply_content),
+        ModelMessage(role="user", content=instruction),
+    ]
+
+
+def _merge_response(first: ModelResponse, second: ModelResponse) -> ModelResponse:
+    total_usage = ModelUsage(
+        prompt_tokens=first.usage.prompt_tokens + second.usage.prompt_tokens,
+        completion_tokens=first.usage.completion_tokens + second.usage.completion_tokens,
+    )
+    return second.model_copy(update={"usage": total_usage})
+
 
 # Generous on purpose: users paste whole briefs/test-case documents as
 # the requirement. 200k chars matches the task agent's text cap
@@ -176,9 +223,44 @@ class SpecAgent(BaseAgent):
     def _run(self, request: AgentRequest) -> tuple[dict[str, Any], list[Artifact]]:
         previous = _previous_spec(request)
         messages = self._build_messages(request, previous)
-        response = call_model(self._runtime.models, self._model_request(request, messages))
-        reply = self._checked_reply(response)
+        reply, response = self._obtain_valid_reply(request, messages)
         return self._assemble(request, previous, reply, response)
+
+    def _obtain_valid_reply(
+        self,
+        request: AgentRequest,
+        messages: list[ModelMessage],
+    ) -> tuple[str, ModelResponse]:
+        reply, response, missing = self._execute_turn(request, messages)
+        if not missing:
+            return reply, response
+        _log_rejected(1, missing, response.content)
+        retry_msgs = _build_retry_messages(messages, response.content, missing)
+        reply2, response2, missing2 = self._execute_turn(request, retry_msgs)
+        if missing2:
+            _log_rejected(2, missing2, response2.content)
+            raise invalid_response(
+                f"Model response is missing required template sections: {missing2}",
+                details={"missingSections": missing2},
+            )
+        return reply2, _merge_response(response, response2)
+
+    def _execute_turn(
+        self,
+        request: AgentRequest,
+        messages: list[ModelMessage],
+    ) -> tuple[str, ModelResponse, list[str]]:
+        response = call_model(self._runtime.models, self._model_request(request, messages))
+        reply, missing = self._extract_reply(response)
+        return reply, response, missing
+
+    def _extract_reply(self, response: ModelResponse) -> tuple[str, list[str]]:
+        reply = unwrap_code_fence(response.content.strip())
+        if not reply:
+            raise invalid_response("Model returned an empty response")
+        headings = heading_lines(reply)
+        missing = [s for s in self._template.required_sections if s not in headings]
+        return reply, missing
 
     def _build_messages(
         self, request: AgentRequest, previous: Artifact | None
@@ -209,11 +291,7 @@ class SpecAgent(BaseAgent):
         )
 
     def _checked_reply(self, response: ModelResponse) -> str:
-        reply = unwrap_code_fence(response.content.strip())
-        if not reply:
-            raise invalid_response("Model returned an empty response")
-        headings = heading_lines(reply)
-        missing = [s for s in self._template.required_sections if s not in headings]
+        reply, missing = self._extract_reply(response)
         if missing:
             raise invalid_response(
                 f"Model response is missing required template sections: {missing}",

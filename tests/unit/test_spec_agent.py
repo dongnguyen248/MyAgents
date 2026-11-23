@@ -503,15 +503,16 @@ class SpecAgentTests(unittest.TestCase):
         self.assertEqual(res_empty.status, "FAILED")
         self.assertEqual(res_empty.errors[0].code, "LLM_INVALID_RESPONSE")
 
-        # 2. Reply missing one required section -> missingSections details
+        # 2. Reply missing one required section -> retried once, fails on second attempt
         sections_without_one = list(self.template.required_sections)
         missing_sec = sections_without_one.pop(2)  # remove one section
         reply_missing = make_valid_reply(sections_without_one)
-        agent_missing, _ = self._make_agent([reply_missing])
+        agent_missing, gateway_missing = self._make_agent([reply_missing, reply_missing])
         res_missing = agent_missing.execute(self._make_request())
         self.assertEqual(res_missing.status, "FAILED")
         self.assertEqual(res_missing.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertEqual(res_missing.errors[0].details.get("missingSections"), [missing_sec])
+        self.assertEqual(len(gateway_missing.requests), 2)
 
         # 3. Reply wrapped in single fenced code block -> unwrapped and accepted
         wrapped_reply = f"```markdown\n{self.valid_reply}\n```"
@@ -520,13 +521,14 @@ class SpecAgentTests(unittest.TestCase):
         self.assertEqual(res_wrapped.status, "SUCCESS")
         self.assertEqual(res_wrapped.artifacts[0].content["text"], self.valid_reply)
 
-        # 4. Reply with different case in heading -> rejected
+        # 4. Reply with different case in heading -> retried once, rejected
         reply_diff_case = self.valid_reply.replace("## Background / Goal", "## background / goal")
-        agent_case, _ = self._make_agent([reply_diff_case])
+        agent_case, gateway_case = self._make_agent([reply_diff_case, reply_diff_case])
         res_case = agent_case.execute(self._make_request())
         self.assertEqual(res_case.status, "FAILED")
         self.assertEqual(res_case.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("## Background / Goal", res_case.errors[0].details.get("missingSections", []))
+        self.assertEqual(len(gateway_case.requests), 2)
 
     def test_unexpected_gateway_exception_redacted(self):
         agent, _ = self._make_agent([RuntimeError("DATABASE_PASSWORD_SECRET_987")])
@@ -570,3 +572,47 @@ class SpecAgentTests(unittest.TestCase):
 
         self.assertEqual(req, req_copy)
         self.assertEqual(res1.to_contract(), res2.to_contract())
+
+    def test_retry_succeeds_on_second_attempt(self):
+        sections_without_one = list(self.template.required_sections)
+        missing_sec = sections_without_one.pop(1)
+        reply_missing = make_valid_reply(sections_without_one)
+        agent, gateway = self._make_agent([reply_missing, self.valid_reply])
+
+        res = agent.execute(self._make_request())
+        self.assertEqual(res.status, "SUCCESS")
+        self.assertEqual(len(gateway.requests), 2)
+
+        retry_user_msg = gateway.requests[1].messages[-1].content
+        self.assertIn(missing_sec, retry_user_msg)
+        self.assertIn("Never ask questions", retry_user_msg)
+
+        usage = res.artifacts[0].metadata["usage"]
+        self.assertGreater(usage["promptTokens"], 0)
+        self.assertGreater(usage["completionTokens"], 0)
+
+    def test_retry_fails_both_attempts_logs_both(self):
+        sections_without_one = list(self.template.required_sections)
+        missing_sec = sections_without_one.pop(2)
+        reply_missing = make_valid_reply(sections_without_one)
+        agent, gateway = self._make_agent([reply_missing, reply_missing])
+
+        with self.assertLogs("asf.agents.spec.agent", level="WARNING") as log_ctx:
+            res = agent.execute(self._make_request())
+
+        self.assertEqual(res.status, "FAILED")
+        self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
+        self.assertEqual(len(gateway.requests), 2)
+        log_text = "\n".join(log_ctx.output)
+        self.assertIn("attempt 1", log_text)
+        self.assertIn("attempt 2", log_text)
+        self.assertIn(missing_sec, log_text)
+
+    def test_no_retry_on_gateway_error(self):
+        timeout_err = ModelGatewayError("LLM_TIMEOUT", "Request timed out")
+        agent, gateway = self._make_agent([timeout_err])
+
+        res = agent.execute(self._make_request())
+        self.assertEqual(res.status, "FAILED")
+        self.assertEqual(res.errors[0].code, "LLM_TIMEOUT")
+        self.assertEqual(len(gateway.requests), 1)

@@ -133,7 +133,9 @@ def test_execute_is_idempotent_by_run_id(tmp_path: Path) -> None:
     first = adapter.execute("calculator", None, run_id="calculator-base-0")
     second = adapter.execute("calculator", None, run_id="calculator-base-0")
     assert first == second
-    assert calls["count"] == 1
+    # Missing sections triggers 1 retry during the first run (2 calls total);
+    # the second run is cached.
+    assert calls["count"] == 2
 
 
 @pytest.mark.parametrize("mode", ["parallel", "sequential"])
