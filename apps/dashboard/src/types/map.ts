@@ -12,7 +12,7 @@ export type MapStationId =
   | 'store'
   | 'gates';
 
-export type MapEventType = 'agent' | 'model' | 'step' | 'gate' | 'run';
+export type MapEventType = 'agent' | 'model' | 'step' | 'gate' | 'run' | 'tool';
 export type MapPhase = 'start' | 'end' | 'moment';
 export type MapStatus = 'running' | 'ok' | 'error' | 'blocked';
 
@@ -45,9 +45,16 @@ export interface MapBudget {
   limitCalls: number | null;
 }
 
+export interface MapCounters {
+  stations: Record<string, number>;
+  agents: Record<string, number>;
+  errors: Record<string, number>;
+}
+
 export interface MapSnapshot {
   runId: string;
   status: string;
   budget: MapBudget;
+  counters: MapCounters;
   events: MapEvent[];
 }

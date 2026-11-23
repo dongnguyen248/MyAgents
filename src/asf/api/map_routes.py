@@ -43,6 +43,7 @@ def _snapshot_payload(service: Any, hub: MapHub, run_id: str) -> dict[str, Any] 
         "runId": run_id,
         "status": status or "UNKNOWN",
         "budget": hub.budget(run_id),
+        "counters": hub.counters(run_id),
         "events": [event.to_contract() for event in events],
     }
 

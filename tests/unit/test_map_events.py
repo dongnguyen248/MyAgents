@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from asf.contracts.map_events import MapEvent, clean_label, host_label, shell_label
+from asf.contracts.map_events import MapEvent, clean_label, host_label, path_label, shell_label
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "map-event.schema.json"
@@ -72,6 +72,19 @@ class LabelTests(unittest.TestCase):
         cleaned = clean_label("x" * 200)
         self.assertEqual(len(cleaned), 120)
         self.assertTrue(cleaned.endswith("…"))
+
+    def test_path_label_keeps_only_the_last_two_levels(self) -> None:
+        self.assertEqual(path_label("src/asf/api/demo.py"), "api/demo.py")
+        self.assertEqual(path_label("demo.py"), "demo.py")
+        self.assertEqual(path_label(""), "")
+
+    def test_path_label_hides_windows_roots_and_home(self) -> None:
+        label = path_label(r"E:\develops\JAVA\MyAgents\src\asf\api\demo.py")
+        self.assertEqual(label, "api/demo.py")
+        label = path_label("/home/dong/projects/secret-repo/passwords.txt")
+        self.assertEqual(label, "secret-repo/passwords.txt")
+        self.assertNotIn("dong", label)
+        self.assertNotIn("home", label)
 
 
 if __name__ == "__main__":

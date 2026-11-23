@@ -62,7 +62,7 @@ function FeedRowItem({
         <span className={`lm-symbol ${entry.status}`}>{statusSymbol(entry.status)}</span>
         <span className="lm-dot" style={{ background: agentColor(entry.agentId) }} />
         <span className="lm-row-label">{entry.label}</span>
-        {row.times > 1 && <span className="lm-fold">×{row.times}</span>}
+        {row.times > 1 && <span className="lm-fold">+{row.times - 1}</span>}
         {entry.agentId && <span className="lm-row-agent">{entry.agentId}</span>}
         <span className="lm-row-time">{formatDuration(entry.durationMs)}</span>
       </button>

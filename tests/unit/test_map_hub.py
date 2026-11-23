@@ -93,6 +93,35 @@ class MapHubTests(unittest.TestCase):
         hub.emit(make_event("run-final", 1))
         self.assertTrue(hub.has_run("run-final"))
 
+    def test_counters_survive_history_eviction(self) -> None:
+        hub = MapHub()
+        total = MAX_EVENTS_PER_RUN + 50
+        for number in range(total):
+            hub.emit(make_event("run-1", number, phase="start", status="running"))
+            hub.emit(make_event("run-1", number))
+        events, _ = hub.snapshot("run-1")
+        self.assertEqual(len(events), MAX_EVENTS_PER_RUN)
+        counters = hub.counters("run-1")
+        self.assertEqual(counters["stations"], {"model": total})
+        budget = hub.budget("run-1")
+        self.assertEqual(budget["usedCalls"], total)
+        self.assertEqual(budget["usedTokens"], total * 15)
+
+    def test_counters_track_agents_and_errors(self) -> None:
+        hub = MapHub()
+        hub.emit(make_event("run-1", 1, phase="start", status="running", agent_id="agent-test"))
+        hub.emit(make_event("run-1", 2, status="error", agent_id="agent-test"))
+        hub.emit(make_event("run-1", 3, type="agent", station="agents", phase="moment"))
+        counters = hub.counters("run-1")
+        self.assertEqual(counters["stations"], {"model": 1, "agents": 1})
+        self.assertEqual(counters["agents"], {"agent-test": 1})
+        self.assertEqual(counters["errors"], {"model": 1})
+
+    def test_counters_for_unknown_run_are_empty(self) -> None:
+        hub = MapHub()
+        self.assertEqual(hub.counters("nope"), {"stations": {}, "agents": {}, "errors": {}})
+        self.assertEqual(hub.budget("nope")["usedTokens"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
