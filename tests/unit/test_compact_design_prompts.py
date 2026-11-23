@@ -262,12 +262,13 @@ def test_clean_retry_history():
     assert "Never ask questions" in retry_msgs[1].content
 
 
-def test_runtime_pipeline_stack_and_standards(tmp_path):
+def test_runtime_pipeline_ts_and_python_tasks(tmp_path):
     """Verifies runtime behavior via DemoFactoryService context building."""
+    from unittest.mock import patch
+
     from asf.agents.loading import load_spec_prompts, load_spec_template
     from asf.api.demo import DemoFactoryService
 
-    # Setup demo service with myagent profile
     demo = DemoFactoryService.__new__(DemoFactoryService)
     demo._max_review_rounds = None
     demo._projects_dir = tmp_path
@@ -275,7 +276,6 @@ def test_runtime_pipeline_stack_and_standards(tmp_path):
     demo._skills_dir.mkdir(parents=True, exist_ok=True)
     templates_dir = Path("templates")
 
-    # (a) project có technology + task TS -> standards khác rỗng, chỉ có section đúng nhãn, <= trần
     ts_file = tmp_path / "rules" / "languages" / "typescript.md"
     ts_file.parent.mkdir(parents=True, exist_ok=True)
     ts_file.write_text(
@@ -295,8 +295,6 @@ def test_runtime_pipeline_stack_and_standards(tmp_path):
     demo._STEP_DEFAULTS = {}
     demo._default_test_commands = lambda pid: [["pytest"]]
 
-    from unittest.mock import patch
-
     def mock_start(self, tid, pid, inputs=None, context=None):
         return context
 
@@ -308,7 +306,6 @@ def test_runtime_pipeline_stack_and_standards(tmp_path):
         )["project"]
 
     assert "technology" in ctx_ts
-
     spec_ctx_ts = SpecPromptContext(
         prompts=load_spec_prompts(),
         template=load_spec_template(templates_dir),
@@ -321,11 +318,9 @@ def test_runtime_pipeline_stack_and_standards(tmp_path):
     assert "## Security Auth" in msgs_ts[0].content
     assert "Formatting" not in msgs_ts[0].content
     assert len(msgs_ts[0].content) <= 3000
-    # Project context in user message contains ONLY frontend
     assert "frontend" in msgs_ts[1].content
     assert "backend" not in msgs_ts[1].content
 
-    # (b) project has technology + python task -> standards empty, context has no react/typescript
     spec_ctx_py = SpecPromptContext(
         prompts=load_spec_prompts(),
         template=load_spec_template(templates_dir),
@@ -334,29 +329,135 @@ def test_runtime_pipeline_stack_and_standards(tmp_path):
         project_context=ctx_ts,
     )
     msgs_py = build_spec_messages(spec_ctx_py)
-    # TS standards are omitted
     assert "TS Rules" not in msgs_py[0].content
     assert "## API DTO" not in msgs_py[0].content
-    # Project context has python, NOT react/typescript
     assert "react" not in msgs_py[1].content
     assert "typescript" not in msgs_py[1].content
     assert "backend" in msgs_py[1].content
 
-    # (b2) project has technology + task with NO signals -> context empty, standards empty
-    spec_ctx_nosig = SpecPromptContext(
+
+def test_runtime_pipeline_case_b_real_profile(caplog):
+    """Case (b): real project profile with technology + task with no signals.
+
+    Verifies demo.start_run context for Spec, Plan, Task omits rules & technology
+    and logs 'Stack unknown for task; omitting language rule packs'.
+    """
+    from unittest.mock import patch
+
+    from asf.agents.loading import (
+        load_plan_prompts,
+        load_plan_template,
+        load_spec_prompts,
+        load_spec_template,
+        load_task_prompts,
+        load_task_template,
+    )
+    from asf.agents.plan.prompts import PlanPromptContext, build_plan_messages
+    from asf.agents.task.prompts import TaskPromptContext, build_task_messages
+    from asf.api.demo import DemoFactoryService
+
+    caplog.set_level(logging.WARNING)
+    templates_dir = Path("templates")
+    profile = {
+        "id": "myagent",
+        "name": "MyAgent",
+        "technology": {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]},
+        "enabledSkills": ["python", "react", "git", "testing", "security"],
+    }
+
+    demo = DemoFactoryService.__new__(DemoFactoryService)
+    demo._max_review_rounds = None
+    demo._projects_dir = Path("projects")
+    demo._skills_dir = Path("skills")
+    demo._projects = {"myagent": {"technologies": ["typescript", "react"]}}
+    demo._project_profiles = {"myagent": profile}
+    demo._STEP_DEFAULTS = {}
+    demo._default_test_commands = lambda pid: [["pytest"]]
+
+    def mock_start(self, tid, pid, inputs=None, context=None):
+        return context
+
+    with patch.object(DemoFactoryService.__bases__[0], "start_run", mock_start):
+        res = demo.start_run(
+            "t-nosig",
+            "myagent",
+            inputs={"spec": {"requirement": "Do generic task without any code or files"}},
+        )
+        ctx = res["project"]
+
+    # 1. Spec Agent
+    spec_ctx = SpecPromptContext(
         prompts=load_spec_prompts(),
         template=load_spec_template(templates_dir),
-        requirement="Do a generic task without any code or files",
+        requirement="Do generic task without any code or files",
         language=None,
-        project_context=ctx_ts,
+        project_context=ctx,
     )
-    msgs_nosig = build_spec_messages(spec_ctx_nosig)
-    assert "Project standards" not in msgs_nosig[0].content
-    assert "technology" not in msgs_nosig[1].content
+    msgs_spec = build_spec_messages(spec_ctx)
+    assert "Project standards" not in msgs_spec[0].content
+    assert "technology" not in msgs_spec[1].content
 
-    # (c) project không khai báo technology -> stack unknown, standards rỗng
-    demo._project_profiles["no_tech"] = {"enabledSkills": []}
-    demo._projects["no_tech"] = {}
+    # 2. Plan Agent
+    plan_ctx = PlanPromptContext(
+        prompts=load_plan_prompts(),
+        template=load_plan_template(templates_dir),
+        spec_artifact={
+            "id": "spec-1",
+            "version": "1",
+            "content": {"text": "## Background / Goal\nGeneric"},
+        },
+        language=None,
+        project_context=ctx,
+    )
+    msgs_plan = build_plan_messages(plan_ctx)
+    assert "Project development rules" not in msgs_plan[0].content
+    assert "technology" not in msgs_plan[1].content
+
+    # 3. Task Agent
+    task_ctx = TaskPromptContext(
+        prompts=load_task_prompts(),
+        template=load_task_template(templates_dir),
+        spec_artifact={
+            "id": "spec-1",
+            "version": "1",
+            "content": {"text": "## Background / Goal\nGeneric"},
+        },
+        plan_artifact={
+            "id": "plan-1",
+            "version": "1",
+            "content": {"text": "## Milestones\nM1"},
+        },
+        language=None,
+        project_context=ctx,
+    )
+    msgs_task = build_task_messages(task_ctx)
+    assert "Project development rules" not in msgs_task[0].content
+    assert "technology" not in msgs_task[1].content
+
+    # 4. Assert log warning
+    assert "Stack unknown for task; omitting language rule packs" in caplog.text
+
+
+def test_runtime_pipeline_case_c_no_technology(tmp_path):
+    """Case (c): project does not declare technology -> stack unknown."""
+    from unittest.mock import patch
+
+    from asf.agents.loading import load_spec_prompts, load_spec_template
+    from asf.api.demo import DemoFactoryService
+
+    demo = DemoFactoryService.__new__(DemoFactoryService)
+    demo._max_review_rounds = None
+    demo._projects_dir = tmp_path
+    demo._skills_dir = tmp_path / "skills"
+    demo._skills_dir.mkdir(parents=True, exist_ok=True)
+    demo._projects = {"no_tech": {}}
+    demo._project_profiles = {"no_tech": {"enabledSkills": []}}
+    demo._STEP_DEFAULTS = {}
+    demo._default_test_commands = lambda pid: [["pytest"]]
+
+    def mock_start(self, tid, pid, inputs=None, context=None):
+        return context
+
     with patch.object(DemoFactoryService.__bases__[0], "start_run", mock_start):
         res_none = demo.start_run(
             "t-none",
@@ -366,7 +467,7 @@ def test_runtime_pipeline_stack_and_standards(tmp_path):
         ctx_no_tech = res_none["project"]
     spec_ctx_none = SpecPromptContext(
         prompts=load_spec_prompts(),
-        template=load_spec_template(templates_dir),
+        template=load_spec_template(Path("templates")),
         requirement="Build task with calc.py",
         language=None,
         project_context=ctx_no_tech,
@@ -374,14 +475,52 @@ def test_runtime_pipeline_stack_and_standards(tmp_path):
     msgs_none = build_spec_messages(spec_ctx_none)
     assert "Project standards" not in msgs_none[0].content
 
-    # (d) language="vi" không bị coi là stack kỹ thuật
-    spec_ctx_vi = SpecPromptContext(
-        prompts=load_spec_prompts(),
-        template=load_spec_template(templates_dir),
-        requirement="Create CreateBiddingForm.tsx with React",
-        language="vi",
-        project_context=ctx_ts,
-    )
-    msgs_vi = build_spec_messages(spec_ctx_vi)
-    assert "## Output language\nvi" in msgs_vi[1].content
-    assert "## API DTO" in msgs_vi[0].content
+
+def test_explicit_language_overrides_project_technology(caplog):
+    """Priority 1: explicit language in metadata overrides project technology declarations."""
+    caplog.set_level(logging.INFO)
+
+    # 1. Project does NOT declare technology, but task metadata has language="typescript"
+    caplog.clear()
+    detected_none = detect_task_stack("typescript", project_tech=None)
+    assert detected_none == frozenset({"typescript"})
+    assert "Stack detected from metadata: typescript" in caplog.text
+
+    # 2. Project declares ONLY python backend, but task metadata has language="typescript"
+    caplog.clear()
+    detected_py = detect_task_stack("typescript", project_tech={"backend": ["python"]})
+    assert detected_py == frozenset({"typescript"})
+    assert "Stack detected from metadata: typescript" in caplog.text
+
+
+def test_spec_template_headings_present_in_all_fixtures():
+    """Verifies Spec prompt contains all 7 template headings for every fixture."""
+    from asf.agents.loading import load_spec_prompts, load_spec_template
+
+    prompts = load_spec_prompts()
+    template = load_spec_template(Path("templates"))
+    assert len(template.required_sections) == 7
+
+    fixtures = [
+        "Create Python word count utility in word_count.py",
+        "Create CreateBiddingForm.tsx with React form validation",
+        "Fullstack feature with FastAPI auctions.py and React CreateBiddingForm.tsx",
+    ]
+    proj_ctx = {
+        "skills": [{"id": "security", "digest": "Specify explicit security requirements."}],
+        "reviewRules": "<!-- stack: typescript -->\n## 1. General\nclean code",
+        "technology": {"frontend": ["react", "typescript"], "backend": ["python"]},
+    }
+
+    for req in fixtures:
+        ctx = SpecPromptContext(
+            prompts=prompts,
+            template=template,
+            requirement=req,
+            language=None,
+            project_context=proj_ctx,
+        )
+        msgs = build_spec_messages(ctx)
+        user_content = msgs[1].content
+        for heading in template.required_sections:
+            assert heading in user_content, f"Missing heading {heading} in fixture: {req}"
