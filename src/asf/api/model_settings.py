@@ -27,6 +27,12 @@ its own model on the same provider/endpoint/key, and an agent without
 an override uses the shared model. The routing gateway picks the model
 per call from the calling agent's ``agentId`` request metadata. The
 Test agent never calls a model, so it has no override.
+
+A second, transport-level override layer lives in
+:mod:`asf.api.agent_connections`: **per-agent connection profiles**
+(``agentConnections``) give one agent its own provider, base URL, API
+key, extra headers and timeout, inherited field by field from the
+shared settings when unset.
 """
 
 from __future__ import annotations
@@ -38,10 +44,21 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from asf.api.agent_connections import (
+    CleanContext,
+    Profile,
+    clean_connections,
+    load_connections,
+    public_connections,
+    stored_connections,
+)
+from asf.api.agent_connections import effective_settings as merge_connection
+from asf.api.configured_gateway import DEFAULT_BASE_URLS, build_configured_gateway
 from asf.api.model_ids import checked_model_id, normalize_stored_model_id
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse
-from asf.integrations.gemini import GeminiModelGateway
-from asf.integrations.openai_compatible import HttpTransport, OpenAICompatibleGateway
+from asf.integrations.openai_compatible import (
+    HttpTransport,
+)
 from asf.models.errors import ModelGatewayError
 from asf.models.ports import ModelGateway
 
@@ -99,18 +116,20 @@ def _load_agent_models(raw: Any) -> dict[str, str]:
     return cleaned
 
 
+def _load_overrides(
+    stored: Mapping[str, Any],
+) -> tuple[dict[str, str], dict[str, Profile]]:
+    models = _load_agent_models(stored.get("agentModels"))
+    connections = load_connections(stored.get("agentConnections"), MODEL_AGENTS, PROVIDERS)
+    return models, connections
+
+
 def _clean_field_value(field: str, value: str) -> str:
     """The stored form of a settings text field (model ids are checked)."""
     if field == "model":
         return checked_model_id("model", value)
     return value.strip()
 
-
-DEFAULT_BASE_URLS = {
-    "openai": "https://api.openai.com/v1",
-    "github-models": "https://models.github.ai/inference",
-    "meta": "https://api.meta.ai/v1",
-}
 
 _DEFAULTS: dict[str, str] = {
     "provider": "scripted",
@@ -127,6 +146,7 @@ class ModelSettings:
         self._path = path
         self._data: dict[str, str] = dict(_DEFAULTS)
         self._agent_models: dict[str, str] = {}
+        self._agent_connections: dict[str, Profile] = {}
         if path is not None and path.is_file():
             try:
                 stored = json.loads(path.read_text(encoding="utf-8"))
@@ -142,7 +162,7 @@ class ModelSettings:
                     "model",
                     self._data["model"],
                 )
-                self._agent_models = _load_agent_models(stored.get("agentModels"))
+                self._agent_models, self._agent_connections = _load_overrides(stored)
 
     @staticmethod
     def _clean_agent_models(raw: Any, *, strict: bool) -> dict[str, str]:
@@ -182,6 +202,27 @@ class ModelSettings:
     def agent_models(self) -> dict[str, str]:
         """Per-agent model overrides (agent type -> model); may be empty."""
         return dict(self._agent_models)
+
+    def agent_connections(self) -> dict[str, Profile]:
+        """Per-agent connection profiles (agent type -> profile)."""
+        return {
+            name: {**profile, "headers": dict(profile["headers"])}
+            for name, profile in self._agent_connections.items()
+        }
+
+    def effective_settings(self, agent: str | None = None) -> dict[str, Any]:
+        """Gateway-factory input for one agent: the shared settings
+        overridden field by field by the agent's connection profile,
+        with the profile's headers and timeout riding along."""
+        key = agent_key(agent)
+        profile = self._agent_connections.get(key) if key is not None else None
+        return merge_connection(self._data, profile)
+
+    def provider_host(self, agent: str | None = None) -> tuple[str, str]:
+        """The effective provider and endpoint hostname for an agent -
+        the two facts an error detail may carry about the endpoint."""
+        effective = self.effective_settings(agent)
+        return str(effective["provider"]), _host_of(effective)
 
     def effective_model(
         self,
@@ -231,6 +272,7 @@ class ModelSettings:
             "model": self._data["model"],
             "baseUrl": self._data["baseUrl"],
             "agentModels": dict(self._agent_models),
+            "agentConnections": public_connections(self._agent_connections),
             "keyConfigured": bool(key),
             "keyHint": f"…{key[-4:]}" if len(key) >= 4 else "",
         }
@@ -250,12 +292,7 @@ class ModelSettings:
                 if not isinstance(value, str):
                     raise ValueError(f"{field} must be a string")
                 data[field] = _clean_field_value(field, value)
-        agent_models = self._agent_models
-        if "agentModels" in payload:
-            agent_models = self._clean_agent_models(
-                payload["agentModels"],
-                strict=True,
-            )
+        agent_models, agent_connections = self._clean_overrides(payload)
         if payload.get("clearKey") is True:
             data["apiKey"] = ""
         api_key = payload.get("apiKey")
@@ -271,10 +308,40 @@ class ModelSettings:
             raise ValueError(
                 "The custom provider needs a base URL (http/https)",
             )
+        self._check_profiles(agent_connections, data)
         self._data = data
-        self._agent_models = agent_models
+        self._agent_models, self._agent_connections = agent_models, agent_connections
         self._persist()
         return self.public()
+
+    def _clean_overrides(
+        self,
+        payload: Mapping[str, Any],
+    ) -> tuple[dict[str, str], dict[str, Profile]]:
+        agent_models = self._agent_models
+        if "agentModels" in payload:
+            agent_models = self._clean_agent_models(payload["agentModels"], strict=True)
+        connections = self._agent_connections
+        if "agentConnections" in payload:
+            context = CleanContext(connections, MODEL_AGENTS, PROVIDERS, agent_key)
+            connections = clean_connections(payload["agentConnections"], context)
+        return agent_models, connections
+
+    def _check_profiles(
+        self,
+        connections: dict[str, Profile],
+        data: dict[str, str],
+    ) -> None:
+        """Mirror the shared custom-provider rule per profile: when
+        the effective provider is custom, an http(s) base URL must
+        exist in the profile or the shared settings."""
+        for name, profile in connections.items():
+            provider = profile["provider"] or data["provider"]
+            base_url = profile["baseUrl"] or data["baseUrl"]
+            if provider == "custom" and not base_url.startswith(("https://", "http://")):
+                raise ValueError(
+                    f"agentConnections.{name}: the custom provider needs a base URL (http/https)",
+                )
 
     def test(
         self,
@@ -287,7 +354,7 @@ class ModelSettings:
         (its override, else the shared model) so a per-agent choice can
         be verified on its own.
         """
-        settings = self.current()
+        settings = self.effective_settings(agent_key(agent))
         agent_name = agent_key(agent) if agent is not None else None
         if agent is not None and agent_name is None:
             return {
@@ -331,53 +398,22 @@ class ModelSettings:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         record: dict[str, Any] = dict(self._data)
         record["agentModels"] = dict(self._agent_models)
+        record["agentConnections"] = stored_connections(self._agent_connections)
         self._path.write_text(
             json.dumps(record, indent=2),
             encoding="utf-8",
         )
 
 
-def build_configured_gateway(
-    settings: Mapping[str, str],
-    transport: HttpTransport | None = None,
-) -> ModelGateway | None:
-    """The real provider gateway for the settings, or None for scripted."""
-    provider = settings.get("provider", "scripted")
-    if provider == "scripted":
-        return None
-    model = (settings.get("model") or "").strip()
-    api_key = settings.get("apiKey") or ""
-    if not api_key:
-        raise ValueError(
-            f"No API key stored for provider '{provider}'. Save a key in Settings first.",
-        )
-    if provider == "gemini":
-        return GeminiModelGateway(model=model, api_key=api_key)
-    base_url = (settings.get("baseUrl") or "").strip() or DEFAULT_BASE_URLS.get(
-        provider,
-        "",
-    )
-    return OpenAICompatibleGateway(
-        base_url=base_url,
-        model=model,
-        api_key=api_key,
-        transport=transport,
-        # Anthropic's OpenAI-compatible endpoint understands
-        # cache_control content parts; enable the agents' cache
-        # prefix hint only there.
-        prompt_cache="anthropic" in base_url,
-    )
-
-
-def _base_url_host(settings: ModelSettings) -> str:
-    """The configured endpoint's hostname only, for error details.
+def _host_of(current: Mapping[str, Any]) -> str:
+    """The endpoint's hostname only, for error details and logs.
 
     Never the credentials, port, path or query of the URL: an error
     detail is shown on dashboards and stored on runs, so it carries
     just enough to recognise which endpoint rejected the model.
     """
-    current = settings.current()
-    base = current["baseUrl"].strip() or DEFAULT_BASE_URLS.get(current["provider"], "")
+    base = str(current.get("baseUrl") or "").strip()
+    base = base or DEFAULT_BASE_URLS.get(str(current.get("provider") or ""), "")
     try:
         return urlsplit(base).hostname or ""
     except ValueError:
@@ -418,13 +454,14 @@ def _unsupported_model_error(
     tier = request.metadata.get("modelTier")
     source = settings.model_source(key, tier)
     sent = model or request.model or "(gateway default)"
+    provider, host = settings.provider_host(key)
     details = {
         **error.details,
         "agent": key or str(request.metadata.get("agentId") or "unknown"),
         "model": sent,
         "source": source,
-        "provider": settings.current()["provider"],
-        "baseUrlHost": _base_url_host(settings),
+        "provider": provider,
+        "baseUrlHost": host,
     }
     return ModelGatewayError(
         "LLM_MODEL_NOT_SUPPORTED",
@@ -442,7 +479,7 @@ class SettingsRoutingGateway:
         fallback: ModelGateway,
         transport: HttpTransport | None = None,
         gateway_factory: Callable[
-            [Mapping[str, str], HttpTransport | None],
+            [Mapping[str, Any], HttpTransport | None],
             ModelGateway | None,
         ] = build_configured_gateway,
     ) -> None:
@@ -450,16 +487,16 @@ class SettingsRoutingGateway:
         self._fallback = fallback
         self._transport = transport
         self._factory = gateway_factory
-        self._cached_for: dict[str, str] | None = None
-        self._cached: ModelGateway | None = None
+        self._cache: dict[str, ModelGateway | None] = {}
 
     def complete(self, request: ModelRequest) -> ModelResponse:
-        current = self._settings.current()
-        gateway = self._resolve(current)
+        key = agent_key(request.metadata.get("agentId"))
+        effective = self._settings.effective_settings(key)
+        gateway = self._resolve(effective)
         if gateway is None:
             return self._fallback.complete(request)
         model = self._settings.effective_model(
-            agent_key(request.metadata.get("agentId")),
+            key,
             request.metadata.get("modelTier"),
         ).strip()
         if model:
@@ -467,18 +504,7 @@ class SettingsRoutingGateway:
         try:
             return gateway.complete(request)
         except ModelGatewayError as error:
-            # Name the exact model that was sent: a provider's
-            # "model not supported" is unactionable without it, and
-            # the effective model depends on the calling agent and
-            # the run's complexity tier.
-            logger.warning(
-                "model call failed: agent=%s tier=%s model=%s code=%s message=%s",
-                request.metadata.get("agentId"),
-                request.metadata.get("modelTier"),
-                model or "(gateway default)",
-                error.code,
-                error.message,
-            )
+            self._log_failure(request, effective, model, error)
             if error.code == "LLM_MODEL_NOT_SUPPORTED":
                 raise _unsupported_model_error(
                     error,
@@ -488,16 +514,39 @@ class SettingsRoutingGateway:
                 ) from error
             raise
 
-    def _resolve(self, current: dict[str, str]) -> ModelGateway | None:
-        if self._cached_for is not None and self._cached_for == current:
-            return self._cached
+    def _log_failure(
+        self,
+        request: ModelRequest,
+        effective: dict[str, Any],
+        model: str,
+        error: ModelGatewayError,
+    ) -> None:
+        # Name the exact model that was sent: a provider's "model not
+        # supported" is unactionable without it, and the effective
+        # model depends on the calling agent and the run's complexity
+        # tier. The endpoint is named by provider + host only - never
+        # the key, the headers or the rest of the URL.
+        logger.warning(
+            "model call failed: agent=%s tier=%s model=%s provider=%s host=%s code=%s message=%s",
+            request.metadata.get("agentId"),
+            request.metadata.get("modelTier"),
+            model or "(gateway default)",
+            effective["provider"],
+            _host_of(effective),
+            error.code,
+            error.message,
+        )
+
+    def _resolve(self, effective: dict[str, Any]) -> ModelGateway | None:
+        fingerprint = json.dumps(effective, sort_keys=True, default=str)
+        if fingerprint in self._cache:
+            return self._cache[fingerprint]
         try:
-            gateway = self._factory(current, self._transport)
+            gateway = self._factory(effective, self._transport)
         except (ValueError, ModelGatewayError) as error:
             raise ModelGatewayError(
                 "INTEGRATION_UNAVAILABLE",
                 f"Configured model provider is unusable: {error}",
             ) from None
-        self._cached_for = dict(current)
-        self._cached = gateway
+        self._cache[fingerprint] = gateway
         return gateway

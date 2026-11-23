@@ -2,6 +2,12 @@ import { useState } from 'react';
 import type { ModelSettings, ModelTestResult } from '../../types/settings';
 import { testModelSettings, updateModelSettings } from '../../features/settings';
 import {
+  buildConnectionsPayload,
+  connStatesFromViews,
+  type ConnFormState,
+} from '../../lib/agentConnections';
+import { AgentConnectionFields } from './AgentConnectionFields';
+import {
   API_KEY_INPUT_ATTRS,
   BASE_URL_INPUT_NAME,
   SHARED_MODEL_INPUT_NAME,
@@ -54,6 +60,11 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
   const [agentModels, setAgentModels] = useState<Record<string, string>>(
     () => ({ ...(initial.agentModels ?? {}) }),
   );
+  const [connections, setConnections] = useState<Record<string, ConnFormState>>(
+    () => connStatesFromViews(AGENT_FIELDS.map((a) => a.key), initial.agentConnections ?? {}),
+  );
+  const patchConnection = (key: string, patch: Partial<ConnFormState>) =>
+    setConnections((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   const [apiKey, setApiKey] = useState('');
   const [clearKey, setClearKey] = useState(false);
   const [saved, setSaved] = useState<ModelSettings>(initial);
@@ -66,18 +77,22 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
   const needsKey = provider !== 'scripted';
   const showBaseUrl = provider === 'custom' || provider in DEFAULT_BASE_URLS;
 
-  const buildInput = () => ({
-    provider,
-    model: model.trim(),
-    baseUrl: baseUrl.trim(),
-    agentModels: Object.fromEntries(
-      Object.entries(agentModels)
-        .map(([k, v]) => [k, v.trim()] as const)
-        .filter(([, v]) => v),
-    ),
-    ...(apiKey ? { apiKey } : {}),
-    ...(clearKey ? { clearKey: true } : {}),
-  });
+  const buildInput = () => {
+    const agentConnections = buildConnectionsPayload(connections, saved.agentConnections ?? {});
+    return {
+      provider,
+      model: model.trim(),
+      baseUrl: baseUrl.trim(),
+      agentModels: Object.fromEntries(
+        Object.entries(agentModels)
+          .map(([k, v]) => [k, v.trim()] as const)
+          .filter(([, v]) => v),
+      ),
+      ...(agentConnections ? { agentConnections } : {}),
+      ...(apiKey ? { apiKey } : {}),
+      ...(clearKey ? { clearKey: true } : {}),
+    };
+  };
 
   const save = async (): Promise<boolean> => {
     setBusy(true);
@@ -88,6 +103,9 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
       setModel(next.model);
       setBaseUrl(next.baseUrl);
       setAgentModels({ ...(next.agentModels ?? {}) });
+      setConnections(
+        connStatesFromViews(AGENT_FIELDS.map((a) => a.key), next.agentConnections ?? {}),
+      );
       setApiKey('');
       setClearKey(false);
       setNotice('Saved. The new provider applies to the next agent calls — no restart needed.');
@@ -202,6 +220,31 @@ export function ModelProviderForm({ initial }: { initial: ModelSettings }) {
             </div>
           ))}
         </div>
+      </fieldset>
+      <fieldset>
+        <legend>Per-agent connections (optional)</legend>
+        <p className="muted small">
+          Give one agent its own API endpoint, key, headers or timeout — for example a local
+          proxy for one agent and a hosted provider for the rest. Every field left blank
+          inherits the shared settings above, and an agent with no connection here behaves
+          exactly as before. The per-agent Test button above checks that agent’s own
+          connection.
+        </p>
+        {AGENT_FIELDS.map((a) => (
+          <details key={a.key} className="agent-conn-details">
+            <summary>
+              {a.label}
+              {saved.agentConnections?.[a.key] ? ' — own connection' : ''}
+            </summary>
+            <AgentConnectionFields
+              agentKey={a.key}
+              state={connections[a.key]}
+              saved={saved.agentConnections?.[a.key]}
+              disabled={busy}
+              onChange={(patch) => patchConnection(a.key, patch)}
+            />
+          </details>
+        ))}
       </fieldset>
       {needsKey && (
         <>

@@ -61,6 +61,7 @@ def test_defaults_and_public_view_hide_the_key(tmp_path: Path):
         "model": "",
         "baseUrl": "",
         "agentModels": {},
+        "agentConnections": {},
         "keyConfigured": False,
         "keyHint": "",
     }

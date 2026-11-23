@@ -448,3 +448,18 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
 .lm-symbol.change {
   color: var(--accent);
 }
+
+/* Per-agent connection blocks in Settings (collapsible per agent). */
+.agent-conn-details {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.agent-conn-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.agent-conn {
+  margin-bottom: 12px;
+}

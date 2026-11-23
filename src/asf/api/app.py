@@ -57,6 +57,26 @@ class ModelSettingsBody(BaseModel):
     apiKey: str | None = None
     clearKey: bool = False
     agentModels: dict[str, str] | None = None
+    agentConnections: dict[str, Any] | None = None
+
+
+def _settings_payload(body: ModelSettingsBody) -> dict[str, Any]:
+    """The update() payload for a settings PUT: the shared fields
+    always; the key only when one was typed; each per-agent map only
+    when present (an empty agentModels still clears the overrides)."""
+    payload: dict[str, Any] = {
+        "provider": body.provider,
+        "model": body.model,
+        "baseUrl": body.baseUrl,
+        "clearKey": body.clearKey,
+    }
+    if body.apiKey:
+        payload["apiKey"] = body.apiKey
+    for field in ("agentModels", "agentConnections"):
+        value = getattr(body, field)
+        if value is not None:
+            payload[field] = value
+    return payload
 
 
 class ModelTestBody(BaseModel):
@@ -377,18 +397,8 @@ def create_app(service: FactoryService) -> FastAPI:
 
     @app.put("/settings/model")
     def update_model_settings(body: ModelSettingsBody) -> Any:
-        payload: dict[str, Any] = {
-            "provider": body.provider,
-            "model": body.model,
-            "baseUrl": body.baseUrl,
-            "clearKey": body.clearKey,
-        }
-        if body.apiKey:
-            payload["apiKey"] = body.apiKey
-        if body.agentModels is not None:
-            payload["agentModels"] = body.agentModels
         try:
-            updated = service.update_model_settings(payload)
+            updated = service.update_model_settings(_settings_payload(body))
         except ValueError as error:
             return JSONResponse(status_code=422, content={"detail": str(error)})
         if updated is None:
