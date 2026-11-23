@@ -121,12 +121,12 @@ def measure_target(target_dir: Path) -> dict[str, Any]:
         review_rules_path.read_text("utf-8") if review_rules_path.exists() else ""
     )
 
-    # Real runtime: demo._run_pipeline builds merged_context["project"] containing
-    # keys testCommands, reviewRules, skills, and enabledSkills.
-    # It does NOT inject "technology" into merged_context["project"].
+    # Real runtime: demo.start_run populates merged_context["project"] with
+    # testCommands, reviewRules, skills, enabledSkills, and technology from profile.
     project_context = {
         "skills": real_skills,
         "reviewRules": review_rules_content,
+        "technology": {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]},
     }
 
     res: dict[str, Any] = {}

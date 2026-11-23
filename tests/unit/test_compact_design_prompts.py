@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from asf.agents._shared.design_prompts import (
     build_design_user_content,
@@ -126,8 +127,8 @@ def test_rules_typescript_react_positive_filtering(caplog):
         "## Naming Conventions\nUse PascalCase for components and camelCase for hooks.\n\n"
         "## Prettier and Formatting\nUse 2 spaces and no semicolons.\n\n"
         "## Test Style Guidelines\nUse Jest and RTL.\n\n"
-        "## Overflow Notes\n<!-- tags: structure -->\n"
-        + ("Extra details for budget overflow test. " * 60)
+        "## Extended Structure Details\n<!-- tags: structure -->\n"
+        + ("Extra component architecture details for budget test. " * 60)
     )
     filtered = filter_rules_for_task(
         ts_rules, agent="spec", stack=frozenset({"typescript"}), budget=2500
@@ -162,8 +163,8 @@ def test_rules_python_positive_loading():
 
 def test_rules_budget_enforcement_and_logging(caplog):
     caplog.set_level(logging.WARNING)
-    long_section = "## 1. Security\n" + ("x" * 2000)
-    second_section = "## 2. API\n" + ("y" * 1000)
+    long_section = "## 1. API Contract\n" + ("x" * 2000)
+    second_section = "## 2. Security\n" + ("y" * 1000)
     rules_text = long_section + "\n\n" + second_section
 
     # With budget=2500, the second section cannot fit (2000 + 1000 > 2500)
@@ -171,8 +172,8 @@ def test_rules_budget_enforcement_and_logging(caplog):
     filtered = filter_rules_for_task(
         rules_text, agent="spec", stack=frozenset({"all"}), budget=2500
     )
-    assert "## 2. API" in filtered
-    assert "## 1. Security" not in filtered
+    assert "## 1. API Contract" in filtered
+    assert "## 2. Security" not in filtered
     assert len(filtered) <= 2500
     assert "omitted from agent 'spec': exceeded character budget" in caplog.text
 
@@ -259,3 +260,116 @@ def test_clean_retry_history():
     )
     assert expected_note in retry_msgs[1].content
     assert "Never ask questions" in retry_msgs[1].content
+
+
+def test_runtime_pipeline_stack_and_standards(tmp_path):
+    """Verifies runtime behavior via DemoFactoryService context building."""
+    from asf.agents.loading import load_spec_prompts, load_spec_template
+    from asf.api.demo import DemoFactoryService
+
+    # Setup demo service with myagent profile
+    demo = DemoFactoryService.__new__(DemoFactoryService)
+    demo._max_review_rounds = None
+    demo._projects_dir = tmp_path
+    demo._skills_dir = tmp_path / "skills"
+    demo._skills_dir.mkdir(parents=True, exist_ok=True)
+    templates_dir = Path("templates")
+
+    # (a) project có technology + task TS -> standards khác rỗng, chỉ có section đúng nhãn, <= trần
+    ts_file = tmp_path / "rules" / "languages" / "typescript.md"
+    ts_file.parent.mkdir(parents=True, exist_ok=True)
+    ts_file.write_text(
+        "<!-- stack: typescript -->\n# TS Rules\n\n"
+        "## API DTO\nDefine explicit DTOs.\n\n"
+        "## Security Auth\nEnforce object permissions.\n\n"
+        "## Formatting\nUse 2 spaces.\n",
+        encoding="utf-8",
+    )
+    demo._projects = {"myagent": {"technologies": ["typescript", "react"]}}
+    demo._project_profiles = {
+        "myagent": {
+            "technology": {"frontend": ["react", "typescript"], "backend": ["python"]},
+            "enabledSkills": [],
+        }
+    }
+    demo._STEP_DEFAULTS = {}
+    demo._default_test_commands = lambda pid: [["pytest"]]
+
+    from unittest.mock import patch
+
+    def mock_start(self, tid, pid, inputs=None, context=None):
+        return context
+
+    with patch.object(DemoFactoryService.__bases__[0], "start_run", mock_start):
+        ctx_ts = demo.start_run(
+            "t-ts",
+            "myagent",
+            inputs={"spec": {"requirement": "Create CreateBiddingForm.tsx with React"}},
+        )["project"]
+
+    assert "technology" in ctx_ts
+
+    spec_ctx_ts = SpecPromptContext(
+        prompts=load_spec_prompts(),
+        template=load_spec_template(templates_dir),
+        requirement="Create CreateBiddingForm.tsx with React",
+        language=None,
+        project_context=ctx_ts,
+    )
+    msgs_ts = build_spec_messages(spec_ctx_ts)
+    assert "## API DTO" in msgs_ts[0].content
+    assert "## Security Auth" in msgs_ts[0].content
+    assert "Formatting" not in msgs_ts[0].content
+    assert len(msgs_ts[0].content) <= 3000
+    # Project context in user message contains ONLY frontend
+    assert "frontend" in msgs_ts[1].content
+    assert "backend" not in msgs_ts[1].content
+
+    # (b) project has technology + python task -> standards empty, context has no react/typescript
+    spec_ctx_py = SpecPromptContext(
+        prompts=load_spec_prompts(),
+        template=load_spec_template(templates_dir),
+        requirement="Build word count with pytest in calc.py",
+        language=None,
+        project_context=ctx_ts,
+    )
+    msgs_py = build_spec_messages(spec_ctx_py)
+    # TS standards are omitted
+    assert "TS Rules" not in msgs_py[0].content
+    assert "## API DTO" not in msgs_py[0].content
+    # Project context has python, NOT react/typescript
+    assert "react" not in msgs_py[1].content
+    assert "typescript" not in msgs_py[1].content
+    assert "backend" in msgs_py[1].content
+
+    # (c) project không khai báo technology -> stack unknown, standards rỗng
+    demo._project_profiles["no_tech"] = {"enabledSkills": []}
+    demo._projects["no_tech"] = {}
+    with patch.object(DemoFactoryService.__bases__[0], "start_run", mock_start):
+        res_none = demo.start_run(
+            "t-none",
+            "no_tech",
+            inputs={"spec": {"requirement": "Build task"}},
+        )
+        ctx_no_tech = res_none["project"]
+    spec_ctx_none = SpecPromptContext(
+        prompts=load_spec_prompts(),
+        template=load_spec_template(templates_dir),
+        requirement="Build task with calc.py",
+        language=None,
+        project_context=ctx_no_tech,
+    )
+    msgs_none = build_spec_messages(spec_ctx_none)
+    assert "Project standards" not in msgs_none[0].content
+
+    # (d) language="vi" không bị coi là stack kỹ thuật
+    spec_ctx_vi = SpecPromptContext(
+        prompts=load_spec_prompts(),
+        template=load_spec_template(templates_dir),
+        requirement="Create CreateBiddingForm.tsx with React",
+        language="vi",
+        project_context=ctx_ts,
+    )
+    msgs_vi = build_spec_messages(spec_ctx_vi)
+    assert "## Output language\nvi" in msgs_vi[1].content
+    assert "## API DTO" in msgs_vi[0].content
