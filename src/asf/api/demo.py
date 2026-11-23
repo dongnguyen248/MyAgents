@@ -33,6 +33,7 @@ import yaml
 
 import asf
 from asf import logging_setup
+from asf.agents._shared.skills import extract_skill_digest
 from asf.agents.artifact_review.factory import build_artifact_review_agent
 from asf.agents.base import AgentRuntime
 from asf.agents.fix.factory import build_fix_agent
@@ -288,8 +289,12 @@ class DemoFactoryService(FactoryService):
                     f" but {path} cannot be read: {error}",
                 ) from error
             body = _skill_body(text)
+            digest = extract_skill_digest(text)
             if body:
-                resolved.append({"id": skill_id, "content": body})
+                item = {"id": skill_id, "content": body}
+                if digest:
+                    item["digest"] = digest
+                resolved.append(item)
         return resolved
 
     def _default_test_commands(self, project_id: str) -> list[list[str]]:
