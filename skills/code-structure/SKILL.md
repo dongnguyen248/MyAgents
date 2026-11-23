@@ -1,6 +1,7 @@
 ---
 name: code-structure
 description: The numeric code-structure rules every produced or reviewed file must satisfy — function size, parameters, nesting and complexity limits; class and file limits; explicit syntax (braces, one statement per line); the comments policy; and the self-verification pass. Applies when planning, breaking down, writing or reviewing code in any language.
+digest: Max 30 lines per function, 4 parameters, nesting depth 3, complexity 10; max 300 lines per class, 500 per file; explicit syntax and braces; no comments that restate code.
 ---
 
 # Code Structure Rules

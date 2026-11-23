@@ -55,22 +55,18 @@ def _log_rejected(attempt: int, missing: list[str], content: str) -> None:
 
 def _build_retry_messages(
     messages: list[ModelMessage],
-    reply_content: str,
     missing: list[str],
 ) -> list[ModelMessage]:
     missing_str = ", ".join(missing)
-    instruction = (
-        f"Your response is missing required template sections: {missing_str}.\n"
-        "Never ask questions, request clarification, or engage in conversation.\n"
-        "If information is missing, make reasonable assumptions and document them under"
-        " ## Open questions.\n"
-        "Output the complete specification immediately with all 7 required sections,"
-        " starting with '## Background / Goal'."
+    note = (
+        f"\n\nNote: Previous attempt omitted required template section(s): {missing_str}.\n"
+        "Output the complete specification immediately with all required sections.\n"
+        "Never ask questions, request clarification, or engage in conversation."
     )
+    user_msg = messages[-1]
     return [
-        *messages,
-        ModelMessage(role="assistant", content=reply_content),
-        ModelMessage(role="user", content=instruction),
+        *messages[:-1],
+        ModelMessage(role="user", content=user_msg.content + note),
     ]
 
 
@@ -235,7 +231,7 @@ class SpecAgent(BaseAgent):
         if not missing:
             return reply, response
         _log_rejected(1, missing, response.content)
-        retry_msgs = _build_retry_messages(messages, response.content, missing)
+        retry_msgs = _build_retry_messages(messages, missing)
         reply2, response2, missing2 = self._execute_turn(request, retry_msgs)
         if missing2:
             _log_rejected(2, missing2, response2.content)

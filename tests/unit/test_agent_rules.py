@@ -110,6 +110,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.request_checks",
             "asf.agents._shared.reply_text",
             "asf.agents._shared.prompt_context",
+            "asf.agents._shared.design_prompts",
             "asf.agents._shared.harness",
             "asf.agents._shared.log_context",
             "asf.agents._shared.map_emit",

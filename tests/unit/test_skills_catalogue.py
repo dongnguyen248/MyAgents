@@ -81,13 +81,13 @@ def test_agent_skill_ids_reflect_the_map():
 def test_skills_section_filters_by_agent():
     project = {
         "skills": [
-            {"id": "general", "content": "GENERAL BODY"},
+            {"id": "general", "content": "GENERAL BODY", "digest": "GENERAL DIGEST"},
             {"id": "git", "content": "GIT BODY"},
             {"id": "testing", "content": "TESTING BODY"},
         ],
     }
     spec = skills_section(project, "spec")
-    assert "GENERAL BODY" in spec
+    assert "GENERAL DIGEST" in spec
     assert "GIT BODY" not in spec  # git does not apply to spec
     assert "TESTING BODY" not in spec
 
@@ -96,7 +96,7 @@ def test_skills_section_filters_by_agent():
     assert "GIT BODY" in implement
     assert "TESTING BODY" in implement
 
-    assert skills_for_agent(project, "plan") == [("general", "GENERAL BODY")]
+    assert skills_for_agent(project, "plan") == [("general", "GENERAL DIGEST")]
     assert skills_section({}, "spec") == ""
     assert skills_section({"skills": "nope"}, "spec") == ""
 

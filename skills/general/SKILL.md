@@ -1,6 +1,7 @@
 ---
 name: general
 description: Core working agreements for every agent on any task — read the existing material before writing, keep changes minimal and scoped, make assumptions explicit, verify results instead of assuming them, and communicate uncertainty honestly. Applies to all specification, planning, coding, review and fixing work.
+digest: Keep changes minimal and scoped, make assumptions explicit, verify results mechanically, and respect agreed boundaries.
 ---
 
 # General working agreements

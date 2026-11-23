@@ -13,11 +13,13 @@ PROJECT_CONTEXT_KEYS = ("name", "description", "technology")
 
 def project_context_section(project_context: dict[str, Any] | None) -> str:
     if not project_context:
-        return "## Project context\nnone"
+        return ""
     whitelisted = {
         key: project_context[key] for key in PROJECT_CONTEXT_KEYS if key in project_context
     }
-    proj_str = json.dumps(whitelisted, indent=2) if whitelisted else "none"
+    if not whitelisted:
+        return ""
+    proj_str = json.dumps(whitelisted, indent=2)
     return f"## Project context\n{proj_str}"
 
 
