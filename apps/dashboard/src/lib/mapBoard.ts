@@ -171,6 +171,84 @@ function mergeCounters(counts: CountMap, counters: MapCounters): void {
   }
 }
 
+export interface ModelChange {
+  key: string;
+  at: string;
+  fromModel: string;
+  toModel: string;
+  agentId: string | null;
+}
+
+/** Model switches inside this board's run: consecutive model spans
+ * whose model differs. Compared within the run only - a board never
+ * holds another run's entries. */
+export function modelChanges(board: BoardState): ModelChange[] {
+  const spans = board.entries
+    .filter((entry) => entry.type === 'model' && entry.model)
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const changes: ModelChange[] = [];
+  let previous: string | null = null;
+  for (const entry of spans) {
+    if (previous !== null && entry.model !== previous) {
+      changes.push({
+        key: `change:${entry.spanId}`,
+        at: entry.startedAt,
+        fromModel: previous,
+        toModel: entry.model as string,
+        agentId: entry.agentId,
+      });
+    }
+    previous = entry.model;
+  }
+  return changes;
+}
+
+export const MODEL_FLASH_WINDOW_MS = 4000;
+
+function latestBoardTs(board: BoardState): number {
+  let latest = 0;
+  for (const entry of board.entries) {
+    latest = Math.max(latest, Date.parse(entry.endedAt ?? entry.startedAt));
+  }
+  return latest;
+}
+
+/** True while the newest model change is still fresh relative to the
+ * board's own timeline (not the wall clock, so a loaded snapshot of
+ * a finished run does not flash forever). */
+export function isModelFlashing(board: BoardState): boolean {
+  const changes = modelChanges(board);
+  if (changes.length === 0) {
+    return false;
+  }
+  const changeAt = Date.parse(changes[changes.length - 1].at);
+  return latestBoardTs(board) - changeAt <= MODEL_FLASH_WINDOW_MS;
+}
+
+export type FeedItem = { kind: 'row'; row: FeedRow } | { kind: 'change'; change: ModelChange };
+
+/** Feed rows and model-change markers merged newest-first. */
+export function feedItems(
+  board: BoardState,
+  agentFilter: string | null,
+  limit: number = DEFAULT_FEED_LIMIT,
+): FeedItem[] {
+  const items: { at: string; rank: number; item: FeedItem }[] = feedRows(
+    board,
+    agentFilter,
+    limit * 2,
+  ).map((row) => ({ at: row.entry.startedAt, rank: 1, item: { kind: 'row', row } as FeedItem }));
+  for (const change of modelChanges(board)) {
+    if (!agentFilter || change.agentId === agentFilter) {
+      items.push({ at: change.at, rank: 0, item: { kind: 'change', change } });
+    }
+  }
+  return items
+    .sort((a, b) => b.at.localeCompare(a.at) || a.rank - b.rank)
+    .slice(0, limit)
+    .map((entry) => entry.item);
+}
+
 export function stationCounts(board: BoardState, counters?: MapCounters | null): CountMap {
   const counts: CountMap = {};
   for (const entry of board.entries) {
