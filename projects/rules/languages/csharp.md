@@ -1,3 +1,4 @@
+<!-- stack: csharp -->
 # C# Coding Rules
 
 > **Scope:** C# / .NET code (ASP.NET Core backends and shared libraries).
