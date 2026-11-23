@@ -342,6 +342,18 @@ def test_runtime_pipeline_stack_and_standards(tmp_path):
     assert "typescript" not in msgs_py[1].content
     assert "backend" in msgs_py[1].content
 
+    # (b2) project has technology + task with NO signals -> context empty, standards empty
+    spec_ctx_nosig = SpecPromptContext(
+        prompts=load_spec_prompts(),
+        template=load_spec_template(templates_dir),
+        requirement="Do a generic task without any code or files",
+        language=None,
+        project_context=ctx_ts,
+    )
+    msgs_nosig = build_spec_messages(spec_ctx_nosig)
+    assert "Project standards" not in msgs_nosig[0].content
+    assert "technology" not in msgs_nosig[1].content
+
     # (c) project không khai báo technology -> stack unknown, standards rỗng
     demo._project_profiles["no_tech"] = {"enabledSkills": []}
     demo._projects["no_tech"] = {}
