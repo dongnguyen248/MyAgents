@@ -35,6 +35,8 @@ export interface MapEvent {
   durationMs?: number | null;
   promptTokens?: number | null;
   completionTokens?: number | null;
+  attempt?: number | null;
+  promptChars?: number | null;
   errorCode?: string | null;
 }
 
@@ -59,6 +61,7 @@ export interface MapHosting {
 export interface MapSnapshot {
   runId: string;
   status: string;
+  tracked: boolean;
   budget: MapBudget;
   counters: MapCounters;
   hosting: MapHosting | null;
