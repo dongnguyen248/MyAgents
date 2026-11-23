@@ -30,11 +30,28 @@ def make_event(run_id: str, number: int) -> MapEvent:
     )
 
 
+class StubResult:
+    def __init__(self, output: Any) -> None:
+        self.output = output
+
+
+class StubRun:
+    def __init__(self, run_id: str, results: list[StubResult]) -> None:
+        self.id = run_id
+        self.results = results
+
+
 class StubService:
+    def __init__(self, runs: list[StubRun] | None = None) -> None:
+        self._stored = runs or []
+
     def get_workflow(self, run_id: str) -> dict[str, Any] | None:
         if run_id == "run-1":
             return {"status": "RUNNING"}
         return None
+
+    def _runs(self) -> list[StubRun]:
+        return list(self._stored)
 
 
 class StubRequest:
@@ -73,6 +90,46 @@ class MapRoutesTests(unittest.TestCase):
         self.assertEqual(payload["counters"]["stations"], {"agents": 1})
         self.assertEqual(payload["counters"]["agents"], {"agent-spec": 1})
         self.assertIn("budget", payload)
+
+    def snapshot_payload(self, service: StubService) -> dict[str, Any]:
+        hub = MapHub()
+        hub.emit(make_event("run-1", 1))
+        set_active_map_hub(hub)
+        app = register_map_routes(FastAPI(), service)
+        client = TestClient(app)
+        response = client.get("/map/snapshot", params={"runId": "run-1"})
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
+    def test_snapshot_exposes_the_change_request_link(self) -> None:
+        run = StubRun(
+            "run-1",
+            [
+                StubResult({"hosting": "skipped"}),
+                StubResult(
+                    {
+                        "changeRequest": {
+                            "id": "42",
+                            "url": "https://git.example.com/g/p/-/merge_requests/42",
+                            "state": "opened",
+                        },
+                        "pipeline": {"status": "success"},
+                    }
+                ),
+            ],
+        )
+        payload = self.snapshot_payload(StubService([run]))
+        self.assertEqual(
+            payload["hosting"],
+            {"url": "https://git.example.com/g/p/-/merge_requests/42", "number": "42"},
+        )
+
+    def test_snapshot_hides_hosting_without_metadata_or_with_a_bad_url(self) -> None:
+        self.assertIsNone(self.snapshot_payload(StubService())["hosting"])
+        odd = StubRun("run-1", [StubResult({"changeRequest": {"id": "7", "url": "ftp://x/7"}})])
+        self.assertIsNone(self.snapshot_payload(StubService([odd]))["hosting"])
+        no_id = StubRun("run-1", [StubResult({"changeRequest": {"url": "https://x/7"}})])
+        self.assertIsNone(self.snapshot_payload(StubService([no_id]))["hosting"])
 
     def test_snapshot_unknown_run_is_404(self) -> None:
         set_active_map_hub(MapHub())

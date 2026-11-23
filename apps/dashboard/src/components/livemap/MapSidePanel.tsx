@@ -1,5 +1,6 @@
 import { agentColor, childrenOf, formatDuration } from '../../lib/mapBoard';
 import type { AgentState, BoardState, MapEntry } from '../../lib/mapBoard';
+import type { MapHosting } from '../../types/map';
 
 function agentStatusText(status: AgentState['status']): string {
   if (status === 'running') {
@@ -103,20 +104,46 @@ function DetailRows({ entry }: { entry: MapEntry }) {
   );
 }
 
+function HostingLink({ hosting }: { hosting: MapHosting | null }) {
+  if (hosting === null) {
+    return null;
+  }
+  return (
+    <dl className="lm-detail">
+      <div className="lm-detail-row">
+        <dt>PR / MR</dt>
+        <dd>
+          <a href={hosting.url} target="_blank" rel="noreferrer">
+            #{hosting.number}
+          </a>
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
 export function EntryDetail({
   board,
   entry,
+  hosting,
   onSelect,
 }: {
   board: BoardState;
   entry: MapEntry | null;
+  hosting: MapHosting | null;
   onSelect: (entry: MapEntry) => void;
 }) {
   if (entry === null) {
-    return <p className="muted">Select a feed row or an agent to see what it did.</p>;
+    return (
+      <div>
+        <HostingLink hosting={hosting} />
+        <p className="muted">Select a feed row or an agent to see what it did.</p>
+      </div>
+    );
   }
   return (
     <div>
+      <HostingLink hosting={hosting} />
       <DetailRows entry={entry} />
       <ChildrenList children={childrenOf(board, entry.spanId)} onSelect={onSelect} />
     </div>

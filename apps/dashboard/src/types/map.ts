@@ -51,10 +51,16 @@ export interface MapCounters {
   errors: Record<string, number>;
 }
 
+export interface MapHosting {
+  url: string;
+  number: string;
+}
+
 export interface MapSnapshot {
   runId: string;
   status: string;
   budget: MapBudget;
   counters: MapCounters;
+  hosting: MapHosting | null;
   events: MapEvent[];
 }
