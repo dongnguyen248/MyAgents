@@ -1,5 +1,5 @@
 import { agentColor, formatDuration, statusSymbol } from '../../lib/mapBoard';
-import type { AgentState, FeedRow, MapEntry } from '../../lib/mapBoard';
+import type { AgentState, FeedItem, FeedRow, MapEntry, ModelChange } from '../../lib/mapBoard';
 
 function AgentChip({
   agentId,
@@ -70,41 +70,60 @@ function FeedRowItem({
   );
 }
 
+function ChangeRowItem({ change }: { change: ModelChange }) {
+  return (
+    <li>
+      <div className="lm-row lm-change">
+        <span className="lm-symbol change">◆</span>
+        <span className="lm-dot" style={{ background: agentColor(change.agentId) }} />
+        <span className="lm-row-label">
+          {change.fromModel} → {change.toModel}
+        </span>
+        <span className="lm-row-agent">model</span>
+      </div>
+    </li>
+  );
+}
+
 function FeedList({
-  rows,
+  items,
   selectedSpanId,
   onSelect,
 }: {
-  rows: FeedRow[];
+  items: FeedItem[];
   selectedSpanId: string | null;
   onSelect: (entry: MapEntry) => void;
 }) {
-  if (rows.length === 0) {
+  if (items.length === 0) {
     return <p className="muted">No pulses yet for this run.</p>;
   }
   return (
     <ul className="lm-feed">
-      {rows.map((row) => (
-        <FeedRowItem
-          key={row.entry.spanId}
-          row={row}
-          selectedSpanId={selectedSpanId}
-          onSelect={onSelect}
-        />
-      ))}
+      {items.map((item) =>
+        item.kind === 'change' ? (
+          <ChangeRowItem key={item.change.key} change={item.change} />
+        ) : (
+          <FeedRowItem
+            key={item.row.entry.spanId}
+            row={item.row}
+            selectedSpanId={selectedSpanId}
+            onSelect={onSelect}
+          />
+        ),
+      )}
     </ul>
   );
 }
 
 export function MapFeed({
-  rows,
+  items,
   agents,
   filter,
   selectedSpanId,
   onFilter,
   onSelect,
 }: {
-  rows: FeedRow[];
+  items: FeedItem[];
   agents: AgentState[];
   filter: string | null;
   selectedSpanId: string | null;
@@ -114,7 +133,7 @@ export function MapFeed({
   return (
     <div>
       <AgentChips agents={agents} filter={filter} onFilter={onFilter} />
-      <FeedList rows={rows} selectedSpanId={selectedSpanId} onSelect={onSelect} />
+      <FeedList items={items} selectedSpanId={selectedSpanId} onSelect={onSelect} />
     </div>
   );
 }

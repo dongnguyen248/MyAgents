@@ -1,5 +1,11 @@
-import { spokeWidth, STATION_ORDER, stationCounts } from '../../lib/mapBoard';
-import type { BoardState, StationCount } from '../../lib/mapBoard';
+import {
+  isModelFlashing,
+  runningAgents,
+  spokeWidth,
+  STATION_ORDER,
+  stationCounts,
+} from '../../lib/mapBoard';
+import type { BoardState, RunningAgent, StationCount } from '../../lib/mapBoard';
 import type { MapCounters, MapStationId } from '../../types/map';
 
 export interface MapPulse {
@@ -41,6 +47,11 @@ const STATION_STEP = 40;
 const CLOCK_RADIUS = 21;
 const CLOCK_HOUR_LENGTH = 7;
 const CLOCK_MINUTE_LENGTH = 11;
+const ORBIT_RADIUS = 27;
+const ORBIT_DOT_RADIUS = 4;
+const ORBIT_OFFSET_STEP = 60;
+const FULL_TURN = 360;
+const NO_ORBITS: RunningAgent[] = [];
 
 export function stationPoint(station: MapStationId): { x: number; y: number } {
   const index = STATION_ORDER.findIndex((s) => s.id === station);
@@ -147,6 +158,44 @@ function StationLabels({
   );
 }
 
+function StationSpoke({
+  point,
+  running,
+  total,
+}: {
+  point: { x: number; y: number };
+  running: number;
+  total: number;
+}) {
+  return (
+    <line
+      x1={CENTER_X}
+      y1={CENTER_Y}
+      x2={point.x}
+      y2={point.y}
+      className={running > 0 ? 'lm-spoke active' : 'lm-spoke'}
+      strokeWidth={spokeWidth(total)}
+    />
+  );
+}
+
+function StationCircle({
+  point,
+  flashing,
+}: {
+  point: { x: number; y: number };
+  flashing: boolean;
+}) {
+  return (
+    <circle
+      cx={point.x}
+      cy={point.y}
+      r={STATION_RADIUS}
+      className={flashing ? 'lm-station lm-flash' : 'lm-station'}
+    />
+  );
+}
+
 function ClockHand({
   point,
   length,
@@ -186,29 +235,73 @@ function StationClock({ point, running }: { point: { x: number; y: number }; run
   );
 }
 
+function OrbitDot({
+  point,
+  color,
+  offset,
+}: {
+  point: { x: number; y: number };
+  color: string;
+  offset: number;
+}) {
+  const centre = `${point.x} ${point.y}`;
+  return (
+    <g>
+      <animateTransform
+        attributeName="transform"
+        type="rotate"
+        from={`${offset} ${centre}`}
+        to={`${offset + FULL_TURN} ${centre}`}
+        dur="7s"
+        repeatCount="indefinite"
+      />
+      <circle cx={point.x + ORBIT_RADIUS} cy={point.y} r={ORBIT_DOT_RADIUS} fill={color} />
+    </g>
+  );
+}
+
+function AgentOrbits({
+  point,
+  agents,
+}: {
+  point: { x: number; y: number };
+  agents: RunningAgent[];
+}) {
+  return (
+    <g>
+      {agents.map((agent, index) => (
+        <OrbitDot
+          key={agent.spanId}
+          point={point}
+          color={agent.color}
+          offset={index * ORBIT_OFFSET_STEP}
+        />
+      ))}
+    </g>
+  );
+}
+
 function StationNode({
   stationId,
   label,
   count,
+  flashing,
+  orbits,
 }: {
   stationId: MapStationId;
   label: string;
   count: StationCount | undefined;
+  flashing: boolean;
+  orbits: RunningAgent[];
 }) {
   const point = stationPoint(stationId);
   const running = count?.running ?? 0;
   return (
     <g>
-      <line
-        x1={CENTER_X}
-        y1={CENTER_Y}
-        x2={point.x}
-        y2={point.y}
-        className={running > 0 ? 'lm-spoke active' : 'lm-spoke'}
-        strokeWidth={spokeWidth(count?.total ?? 0)}
-      />
+      <StationSpoke point={point} running={running} total={count?.total ?? 0} />
       <StationHalo point={point} running={running} />
-      <circle cx={point.x} cy={point.y} r={STATION_RADIUS} className="lm-station" />
+      <StationCircle point={point} flashing={flashing} />
+      {stationId === 'agents' && <AgentOrbits point={point} agents={orbits} />}
       <StationClock point={point} running={running} />
       <StationLabels point={point} label={label} total={count?.total ?? 0} />
       <StationBadges point={point} count={count} />
@@ -247,20 +340,33 @@ function CentreTexts({ budgetText, runStatus }: { budgetText: string; runStatus:
   );
 }
 
+function CentreCircle({ flashing }: { flashing: boolean }) {
+  return (
+    <circle
+      cx={CENTER_X}
+      cy={CENTER_Y}
+      r={CENTRE_RADIUS}
+      className={flashing ? 'lm-centre lm-flash' : 'lm-centre'}
+    />
+  );
+}
+
 function CentreNode({
   budgetPercent,
   budgetText,
   runStatus,
+  flashing,
 }: {
   budgetPercent: number | null;
   budgetText: string;
   runStatus: string;
+  flashing: boolean;
 }) {
   const ringLength = 2 * Math.PI * RING_RADIUS;
   const ringFilled = budgetPercent === null ? 0 : (budgetPercent / PERCENT_WHOLE) * ringLength;
   return (
     <g>
-      <circle cx={CENTER_X} cy={CENTER_Y} r={CENTRE_RADIUS} className="lm-centre" />
+      <CentreCircle flashing={flashing} />
       <circle
         cx={CENTER_X}
         cy={CENTER_Y}
@@ -275,8 +381,17 @@ function CentreNode({
   );
 }
 
-function StationLayer({ board, counters }: { board: BoardState; counters: MapCounters | null }) {
+function StationLayer({
+  board,
+  counters,
+  flashing,
+}: {
+  board: BoardState;
+  counters: MapCounters | null;
+  flashing: boolean;
+}) {
   const counts = stationCounts(board, counters);
+  const orbits = runningAgents(board);
   return (
     <g>
       {STATION_ORDER.map((station) => (
@@ -285,10 +400,21 @@ function StationLayer({ board, counters }: { board: BoardState; counters: MapCou
           stationId={station.id}
           label={station.label}
           count={counts[station.id]}
+          flashing={flashing && station.id === 'model'}
+          orbits={station.id === 'agents' ? orbits : NO_ORBITS}
         />
       ))}
     </g>
   );
+}
+
+interface MapCanvasProps {
+  board: BoardState;
+  counters: MapCounters | null;
+  pulses: MapPulse[];
+  budgetPercent: number | null;
+  budgetText: string;
+  runStatus: string;
 }
 
 export function MapCanvas({
@@ -298,14 +424,9 @@ export function MapCanvas({
   budgetPercent,
   budgetText,
   runStatus,
-}: {
-  board: BoardState;
-  counters: MapCounters | null;
-  pulses: MapPulse[];
-  budgetPercent: number | null;
-  budgetText: string;
-  runStatus: string;
-}) {
+}: MapCanvasProps) {
+  const flashing = isModelFlashing(board);
+  const centre = { budgetPercent, budgetText, runStatus, flashing };
   return (
     <svg
       viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
@@ -313,11 +434,11 @@ export function MapCanvas({
       role="img"
       aria-label="Live agent map"
     >
-      <StationLayer board={board} counters={counters} />
+      <StationLayer board={board} counters={counters} flashing={flashing} />
       {pulses.map((pulse) => (
         <PulseDot key={pulse.key} pulse={pulse} />
       ))}
-      <CentreNode budgetPercent={budgetPercent} budgetText={budgetText} runStatus={runStatus} />
+      <CentreNode {...centre} />
     </svg>
   );
 }

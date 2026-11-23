@@ -3,7 +3,7 @@ import { agentColor, applyMapEvent, emptyBoard } from '../../lib/mapBoard';
 import type { BoardState, MapEntry } from '../../lib/mapBoard';
 import type { MapPulse } from '../../components/livemap/MapCanvas';
 import { api } from '../../services/api';
-import type { MapBudget, MapCounters, MapEvent, MapSnapshot } from '../../types/map';
+import type { MapBudget, MapCounters, MapEvent, MapHosting, MapSnapshot } from '../../types/map';
 import type { Workflow } from '../../types/workflow';
 
 const PULSE_FRESH_MS = 4000;
@@ -17,6 +17,7 @@ interface MapViewState {
   board: BoardState;
   budget: MapBudget | null;
   counters: MapCounters | null;
+  hosting: MapHosting | null;
   status: string;
   missed: boolean;
 }
@@ -25,6 +26,7 @@ export interface LiveMapData {
   board: BoardState;
   budget: MapBudget | null;
   counters: MapCounters | null;
+  hosting: MapHosting | null;
   runStatus: string;
   missed: boolean;
   pulses: MapPulse[];
@@ -37,6 +39,7 @@ function emptyView(runId: string): MapViewState {
     board: emptyBoard(),
     budget: null,
     counters: null,
+    hosting: null,
     status: '',
     missed: false,
   };
@@ -155,6 +158,7 @@ function makeSnapshotApplier(
         ...base,
         budget: snapshot.budget,
         counters: snapshot.counters,
+        hosting: snapshot.hosting,
         status: snapshot.status,
       };
     });
@@ -184,6 +188,7 @@ export function useLiveMapData(runId: string): LiveMapData {
     board: current.board,
     budget: current.budget,
     counters: current.counters,
+    hosting: current.hosting,
     runStatus: current.status,
     missed: current.missed,
     pulses,

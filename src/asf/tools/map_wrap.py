@@ -68,11 +68,11 @@ class _Reporter:
         self._bound_project = bound_project
         self._counter = itertools.count(1)
 
-    def start(self, station: MapStation, label: str) -> _Span | None:
+    def start(self, station: MapStation, label: str, at: datetime | None = None) -> _Span | None:
         tap = default_map_tap()
         if tap is None:
             return None
-        span = self._attributed_span(station, label)
+        span = self._attributed_span(station, label, at)
         if span is None:
             return None
         emit_safely(tap, self._event(span, "start", "running", _Outcome()))
@@ -84,17 +84,20 @@ class _Reporter:
         status: MapStatus,
         error_code: str | None = None,
         duration_ms: int | None = None,
-    ) -> None:
+    ) -> datetime | None:
         if span is None:
-            return
+            return None
         tap = default_map_tap()
         if tap is None:
-            return
+            return None
         if duration_ms is None:
             duration_ms = int((perf_counter() - span.started_perf) * 1000)
         emit_safely(tap, self._event(span, "end", status, _Outcome(error_code, duration_ms)))
+        return span.started_at + timedelta(milliseconds=duration_ms)
 
-    def _attributed_span(self, station: MapStation, label: str) -> _Span | None:
+    def _attributed_span(
+        self, station: MapStation, label: str, at: datetime | None
+    ) -> _Span | None:
         ctx = current_map_context()
         if ctx is not None:
             ctx.tool_calls += 1
@@ -107,12 +110,12 @@ class _Reporter:
                 project_id=None,
                 agent_id=ctx.agent_id,
                 parent_id=ctx.request_id,
-                started_at=datetime.now(UTC),
+                started_at=at or datetime.now(UTC),
                 started_perf=perf_counter(),
             )
-        return self._bound_span(station, label)
+        return self._bound_span(station, label, at)
 
-    def _bound_span(self, station: MapStation, label: str) -> _Span | None:
+    def _bound_span(self, station: MapStation, label: str, at: datetime | None) -> _Span | None:
         run_id = self._bound_run() if self._bound_run is not None else None
         if not run_id:
             return None
@@ -125,7 +128,7 @@ class _Reporter:
             project_id=self._bound_project() if self._bound_project is not None else None,
             agent_id=None,
             parent_id=None,
-            started_at=datetime.now(UTC),
+            started_at=at or datetime.now(UTC),
             started_perf=perf_counter(),
         )
 
@@ -188,7 +191,17 @@ class MapRepository:
 
 
 class MapSandbox:
-    """SandboxPort wrapper reporting one shell pulse per command."""
+    """SandboxPort wrapper reporting one shell pulse per command.
+
+    The port takes the whole batch at once, but the commands run
+    sequentially inside it, so the pulses must not pretend they ran
+    in parallel: only the first command's start is emitted up front.
+    Each later start is emitted when the previous command's end is
+    known, stamped with that end's timestamp and the command's own
+    measured duration from its CommandResult - the emitted sequence
+    is start, end, start, end, and at most one shell span is ever
+    open at a time.
+    """
 
     def __init__(
         self,
@@ -207,30 +220,41 @@ class MapSandbox:
         *,
         fail_fast: bool = True,
     ) -> SandboxResult:
-        spans = [self._reporter.start("shell", _command_label(spec)) for spec in commands]
+        spans: list[_Span | None] = []
+        if commands:
+            spans.append(self._reporter.start("shell", _command_label(commands[0])))
         try:
             result = self._inner.run(commands, changes, ref, fail_fast=fail_fast)
         except Exception as error:
-            self._end_failed(spans, error)
+            self._end_failed(spans, commands, error)
             raise
-        self._end_results(spans, result)
+        self._end_sequence(spans, commands, result)
         return result
 
-    def _end_results(self, spans: list[_Span | None], result: SandboxResult) -> None:
-        for index, span in enumerate(spans):
+    def _end_sequence(
+        self, spans: list[_Span | None], commands: Sequence[CommandSpec], result: SandboxResult
+    ) -> None:
+        at: datetime | None = None
+        for index in range(len(commands)):
+            span = spans[index] if index < len(spans) else None
             outcome = result.commands[index] if index < len(result.commands) else None
             if outcome is None:
-                self._reporter.end(span, "blocked")
+                at = self._reporter.end(span, "blocked", None, 0)
             else:
                 status, code = _command_status(outcome)
-                self._reporter.end(span, status, code, outcome.duration_ms)
+                at = self._reporter.end(span, status, code, outcome.duration_ms)
+            if index + 1 < len(commands):
+                spans.append(
+                    self._reporter.start("shell", _command_label(commands[index + 1]), at=at)
+                )
 
-    def _end_failed(self, spans: list[_Span | None], error: Exception) -> None:
-        for index, span in enumerate(spans):
-            if index == 0:
-                self._reporter.end(span, "error", type(error).__name__)
-            else:
-                self._reporter.end(span, "blocked")
+    def _end_failed(
+        self, spans: list[_Span | None], commands: Sequence[CommandSpec], error: Exception
+    ) -> None:
+        at = self._reporter.end(spans[0] if spans else None, "error", type(error).__name__)
+        for spec in commands[1:]:
+            span = self._reporter.start("shell", _command_label(spec), at=at)
+            at = self._reporter.end(span, "blocked", None, 0)
 
 
 def _command_label(spec: CommandSpec) -> str:
