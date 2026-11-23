@@ -69,25 +69,39 @@ FIXTURE_SKILLS = [
 ]
 
 
-def test_stack_detection_priority():
-    # Priority 1: metadata language
-    tech = {"backend": ["python"], "frontend": ["react"]}
-    assert detect_task_stack("python", tech) == frozenset({"python"})
-    assert detect_task_stack("typescript", tech) == frozenset({"typescript"})
+def test_stack_detection_priority(caplog):
+    caplog.set_level(logging.INFO)
+    tech = {"backend": ["python"], "frontend": ["react", "typescript"]}
+
+    # (a) metadata language=python, requirement has no signals -> stack python, log from metadata
+    caplog.clear()
+    detected_a = detect_task_stack("python", tech, text_signal="do something generic", files=[])
+    assert detected_a == frozenset({"python"})
+    assert "Stack detected from metadata: python" in caplog.text
+
+    # (b) metadata language conflicts with text signal -> metadata wins
+    caplog.clear()
+    detected_b = detect_task_stack(
+        "python", tech, text_signal="Build a React component with App.tsx", files=["App.tsx"]
+    )
+    assert detected_b == frozenset({"python"})
+    assert "Stack detected from metadata: python" in caplog.text
 
     # Priority 2: intersection of project stack with signals
-    detected = detect_task_stack(
+    detected_sig = detect_task_stack(
         None, tech, text_signal="Run pytest on tests/test_calc.py", files=["calc.py"]
     )
-    assert detected == frozenset({"python"})
+    assert detected_sig == frozenset({"python"})
 
     # Union when multiple stacks detected in signals
     detected_multi = detect_task_stack(None, tech, text_signal="test", files=["calc.py", "App.tsx"])
     assert detected_multi == frozenset({"python", "typescript"})
 
-    # Priority 3: unknown stack -> returns empty frozenset (omits language packs)
+    # (c) Priority 3: empty signals / unknown stack -> returns empty frozenset, logs unknown
+    caplog.clear()
     unknown = detect_task_stack(None, tech, text_signal="no signals here", files=[])
     assert unknown == frozenset()
+    assert "Stack unknown for task; omitting language rule packs" in caplog.text
 
 
 def test_rules_stack_filtering_and_formatting_omission():
