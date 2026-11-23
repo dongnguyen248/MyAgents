@@ -394,3 +394,48 @@ class MapTapAmbientClockTests(unittest.TestCase):
             set_default_map_clock(None)
         starts = [e for e in tap.events if e.phase == "start"]
         self.assertEqual(starts[0].ts, later)
+
+
+class MapTapClockBranchTests(unittest.TestCase):
+    def _run_two_calls(self, make_gateway: Any) -> list[MapEvent]:
+        from asf.models.map_tap import map_call_context, set_default_map_clock
+
+        set_default_map_clock(None)
+        tap = RecordingTap()
+        gateway = make_gateway(tap)
+        with map_call_context(make_request(), T_START):
+            gateway.complete(_model_request())
+            gateway.complete(_model_request())
+        return [e for e in tap.events if e.type == "model"]
+
+    def test_clock_earlier_than_the_previous_end_falls_back_to_the_floor(self) -> None:
+        from asf.models.map_tap import MapTapGateway
+
+        early = T_START - timedelta(hours=1)
+        events = self._run_two_calls(
+            lambda tap: MapTapGateway(SlowGateway(), tap, clock=lambda: early)
+        )
+        starts = [e.ts for e in events if e.phase == "start"]
+        ends = [e.ts for e in events if e.phase == "end"]
+        self.assertEqual(starts[0], T_START)
+        self.assertEqual(starts[1], ends[0])
+
+    def test_clock_later_than_the_floor_wins(self) -> None:
+        from asf.models.map_tap import MapTapGateway
+
+        moments = iter([T_START + timedelta(hours=1), T_START + timedelta(hours=2)])
+        events = self._run_two_calls(
+            lambda tap: MapTapGateway(SlowGateway(), tap, clock=lambda: next(moments))
+        )
+        starts = [e.ts for e in events if e.phase == "start"]
+        self.assertEqual(starts[0], T_START + timedelta(hours=1))
+        self.assertEqual(starts[1], T_START + timedelta(hours=2))
+
+    def test_no_clock_uses_the_elapsed_floor(self) -> None:
+        from asf.models.map_tap import MapTapGateway
+
+        events = self._run_two_calls(lambda tap: MapTapGateway(SlowGateway(), tap))
+        starts = [e.ts for e in events if e.phase == "start"]
+        ends = [e.ts for e in events if e.phase == "end"]
+        self.assertEqual(starts[0], T_START)
+        self.assertEqual(starts[1], ends[0])
