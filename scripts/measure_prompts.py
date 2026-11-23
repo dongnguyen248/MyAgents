@@ -1,7 +1,7 @@
 """Unified prompt measurement for master (Step 0) vs feat/compact-design-agent-prompts (Step 1).
 
-Measures Spec, Plan, and Task prompts against a fixed, reproducible task fixture
-and project definition. Prints the complete, verified before/after breakdown.
+Measures Spec, Plan, and Task prompts against fixed, reproducible task fixtures
+and project definition across 3 stack configurations.
 """
 # ruff: noqa: E501, PLR0915, PLR2004, S101
 
@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import inspect
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# noqa: E501
-FIXTURE_REQUIREMENT = (
+FIXTURE_REQUIREMENT_PY = (
     "Create a small, self-contained Python utility for counting words in text.\n\n"
     "Context:\n"
     "- Python 3.10+, standard library only, no third-party dependencies.\n"
@@ -43,7 +43,7 @@ FIXTURE_REQUIREMENT = (
     "Non-functional: type hints and a short docstring on each public function."
 )
 
-FIXTURE_SPEC_TEXT = """## Background / Goal
+FIXTURE_SPEC_TEXT_PY = """## Background / Goal
 Create a small, self-contained Python utility for counting words in text.
 
 ## Scope (in / out)
@@ -66,7 +66,7 @@ None.
 ## Revision history
 v1: Initial draft."""
 
-FIXTURE_PLAN_TEXT = """## Milestones
+FIXTURE_PLAN_TEXT_PY = """## Milestones
 - M1: Implement core text_utils module (text_utils/word_count.py)
   - Deliverables: text_utils/__init__.py, text_utils/word_count.py
   - Acceptance criteria: count_words and top_words implemented
@@ -76,32 +76,249 @@ FIXTURE_PLAN_TEXT = """## Milestones
   - Acceptance criteria: pytest passes
   - Depends on: M1"""
 
+FIXTURE_REQUIREMENT_TS = (
+    "Create a React bidding form component (CreateBiddingForm.tsx).\n\n"
+    "Context:\n"
+    "- TypeScript, React, Vite.\n"
+    "- File: src/features/bidding/CreateBiddingForm.tsx.\n\n"
+    "Functional requirements:\n"
+    "1. Form allows entering auctionId, amount, and optional note.\n"
+    "2. Validate amount must be positive and greater than current bid.\n"
+    "3. Submit bid via POST /api/bids endpoint.\n"
+    "4. Show confirmation banner or error notification.\n\n"
+    "Acceptance criteria:\n"
+    "- CreateBiddingForm renders with input fields and submit button.\n"
+    "- Validates input values with inline error messages.\n"
+    "- Unit tests in src/features/bidding/__tests__/CreateBiddingForm.test.tsx pass with vitest."
+)
+
+FIXTURE_SPEC_TEXT_TS = """## Background / Goal
+Create CreateBiddingForm.tsx with React form validation and bid submission.
+
+## Scope (in / out)
+In scope: CreateBiddingForm.tsx component, validation, API submission.
+Out of scope: Payment gateway processing.
+
+## Functional requirements
+1. Input fields for auctionId, amount, note.
+2. Submit via POST /api/bids.
+
+## Non-functional requirements
+TypeScript, React hooks, proper form validation.
+
+## Acceptance criteria
+Form submits correctly and tests pass.
+
+## Open questions
+None.
+
+## Revision history
+v1: Initial draft."""
+
+FIXTURE_PLAN_TEXT_TS = """## Milestones
+- M1: Implement CreateBiddingForm component
+  - Deliverables: src/features/bidding/CreateBiddingForm.tsx
+  - Acceptance criteria: Component renders and validates input
+  - Depends on: none
+- M2: Implement test suite
+  - Deliverables: src/features/bidding/__tests__/CreateBiddingForm.test.tsx
+  - Acceptance criteria: Vitest tests pass
+  - Depends on: M1"""
+
+FIXTURE_REQUIREMENT_FS = (
+    "Implement Auction Bidding feature with FastAPI backend and React frontend.\n\n"
+    "Context:\n"
+    "- Backend: Python 3.10+, FastAPI in src/api/auctions.py.\n"
+    "- Frontend: TypeScript, React in src/features/bidding/CreateBiddingForm.tsx.\n\n"
+    "Functional requirements:\n"
+    "1. Backend endpoint POST /api/bids creates a bid and validates amount.\n"
+    "2. Frontend form submits bid to backend and shows confirmation.\n"
+    "3. Unit tests for both backend (pytest) and frontend (vitest).\n\n"
+    "Acceptance criteria:\n"
+    "- POST /api/bids returns 201 Created with bid ID.\n"
+    "- CreateBiddingForm interacts with the endpoint successfully.\n"
+    "- All backend and frontend tests pass."
+)
+
+FIXTURE_SPEC_TEXT_FS = """## Background / Goal
+Auction bidding fullstack feature with FastAPI backend and React frontend.
+
+## Scope (in / out)
+In scope: POST /api/bids in FastAPI and CreateBiddingForm in React.
+Out of scope: Payment gateway integration.
+
+## Functional requirements
+1. FastAPI endpoint POST /api/bids.
+2. React form CreateBiddingForm.tsx.
+
+## Non-functional requirements
+Type hints in Python, strict TypeScript, responsive UI.
+
+## Acceptance criteria
+All tests pass.
+
+## Open questions
+None.
+
+## Revision history
+v1: Initial draft."""
+
+FIXTURE_PLAN_TEXT_FS = """## Milestones
+- M1: Implement FastAPI backend endpoint
+  - Deliverables: src/api/auctions.py, tests/test_auctions.py
+  - Acceptance criteria: pytest passes
+  - Depends on: none
+- M2: Implement React frontend form
+  - Deliverables: src/features/bidding/CreateBiddingForm.tsx
+  - Acceptance criteria: vitest passes
+  - Depends on: M1"""
+
 SAMPLE_FAULTY_REPLY = (
     "I understand your request. Here is a brief plan to count words.\n"
     "Could you please clarify if you want any additional punctuation stripped?"
 )
 
 
-def measure_target(target_dir: Path) -> dict[str, Any]:
-    # Clear cached asf modules
+@dataclass(frozen=True)
+class PromptFixture:
+    name: str
+    requirement: str
+    spec_text: str
+    plan_text: str
+
+
+FIXTURES: list[PromptFixture] = [
+    PromptFixture(
+        "Fixture 1: Python thuần (word-count-util)",
+        FIXTURE_REQUIREMENT_PY,
+        FIXTURE_SPEC_TEXT_PY,
+        FIXTURE_PLAN_TEXT_PY,
+    ),
+    PromptFixture(
+        "Fixture 2: TypeScript / React (CreateBiddingForm)",
+        FIXTURE_REQUIREMENT_TS,
+        FIXTURE_SPEC_TEXT_TS,
+        FIXTURE_PLAN_TEXT_TS,
+    ),
+    PromptFixture(
+        "Fixture 3: Fullstack (FastAPI + React)",
+        FIXTURE_REQUIREMENT_FS,
+        FIXTURE_SPEC_TEXT_FS,
+        FIXTURE_PLAN_TEXT_FS,
+    ),
+]
+
+
+def _measure_spec(
+    target_dir: Path, templates_dir: Path, project_context: dict[str, Any], req: str
+) -> dict[str, Any]:
+    from asf.agents.loading import load_spec_prompts, load_spec_template
+    from asf.agents.spec.agent import _build_retry_messages
+    from asf.agents.spec.prompts import SpecPromptContext, build_spec_messages
+
+    spec_p = load_spec_prompts()
+    spec_t = load_spec_template(templates_dir)
+    spec_ctx = SpecPromptContext(
+        prompts=spec_p,
+        template=spec_t,
+        requirement=req,
+        language=None,
+        project_context=project_context,
+    )
+    spec_m = build_spec_messages(spec_ctx)
+    spec_sys = spec_m[0].content
+    spec_user = spec_m[1].content
+    spec_t1 = len(spec_sys) + len(spec_user)
+
+    sig = inspect.signature(_build_retry_messages)
+    if len(sig.parameters) == 3:
+        spec_retry = _build_retry_messages(spec_m, SAMPLE_FAULTY_REPLY, ["## Background / Goal"])
+    else:
+        spec_retry = _build_retry_messages(spec_m, ["## Background / Goal"])
+    spec_t2 = sum(len(m.content) for m in spec_retry)
+
+    return {
+        "sys": len(spec_sys),
+        "user": len(spec_user),
+        "turn1": spec_t1,
+        "turn2": spec_t2,
+        "retry_delta": spec_t2 - spec_t1,
+        "sys_text": spec_sys,
+        "user_text": spec_user,
+    }
+
+
+def _measure_plan(
+    target_dir: Path, templates_dir: Path, project_context: dict[str, Any], spec_text: str
+) -> dict[str, Any]:
+    from asf.agents.loading import load_plan_prompts, load_plan_template
+    from asf.agents.plan.prompts import PlanPromptContext, build_plan_messages
+
+    spec_art = {"id": "spec-1", "version": "1", "content": {"text": spec_text}}
+    plan_p = load_plan_prompts()
+    plan_t = load_plan_template(templates_dir)
+    plan_ctx = PlanPromptContext(
+        prompts=plan_p,
+        template=plan_t,
+        spec_artifact=spec_art,
+        language=None,
+        project_context=project_context,
+    )
+    plan_m = build_plan_messages(plan_ctx)
+    plan_sys = plan_m[0].content
+    plan_user = plan_m[1].content
+    plan_t1 = len(plan_sys) + len(plan_user)
+
+    return {
+        "sys": len(plan_sys),
+        "user": len(plan_user),
+        "turn1": plan_t1,
+        "sys_text": plan_sys,
+        "user_text": plan_user,
+    }
+
+
+def _measure_task(
+    target_dir: Path,
+    templates_dir: Path,
+    project_context: dict[str, Any],
+    fixture: PromptFixture,
+) -> dict[str, Any]:
+    from asf.agents.loading import load_task_prompts, load_task_template
+    from asf.agents.task.prompts import TaskPromptContext, build_task_messages
+
+    spec_art = {"id": "spec-1", "version": "1", "content": {"text": fixture.spec_text}}
+    plan_art = {"id": "plan-1", "version": "1", "content": {"text": fixture.plan_text}}
+    task_p = load_task_prompts()
+    task_t = load_task_template(templates_dir)
+    task_ctx = TaskPromptContext(
+        prompts=task_p,
+        template=task_t,
+        spec_artifact=spec_art,
+        plan_artifact=plan_art,
+        language=None,
+        project_context=project_context,
+    )
+    task_m = build_task_messages(task_ctx)
+    task_sys = task_m[0].content
+    task_user = task_m[1].content
+    task_t1 = len(task_sys) + len(task_user)
+
+    return {
+        "sys": len(task_sys),
+        "user": len(task_user),
+        "turn1": task_t1,
+        "sys_text": task_sys,
+        "user_text": task_user,
+    }
+
+
+def measure_target(target_dir: Path, fixture: PromptFixture) -> dict[str, Any]:
     to_remove = [k for k in sys.modules if k.startswith("asf")]
     for k in to_remove:
         del sys.modules[k]
 
     sys.path.insert(0, str(target_dir / "src"))
-
-    from asf.agents.loading import (
-        load_plan_prompts,
-        load_plan_template,
-        load_spec_prompts,
-        load_spec_template,
-        load_task_prompts,
-        load_task_template,
-    )
-    from asf.agents.plan.prompts import PlanPromptContext, build_plan_messages
-    from asf.agents.spec.agent import _build_retry_messages
-    from asf.agents.spec.prompts import SpecPromptContext, build_spec_messages
-    from asf.agents.task.prompts import TaskPromptContext, build_task_messages
     from asf.api.demo import DemoFactoryService
 
     templates_dir = target_dir / "templates"
@@ -121,95 +338,16 @@ def measure_target(target_dir: Path) -> dict[str, Any]:
         review_rules_path.read_text("utf-8") if review_rules_path.exists() else ""
     )
 
-    # Real runtime: demo.start_run populates merged_context["project"] with
-    # testCommands, reviewRules, skills, enabledSkills, and technology from profile.
     project_context = {
         "skills": real_skills,
         "reviewRules": review_rules_content,
         "technology": {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]},
     }
 
-    res: dict[str, Any] = {}
-
-    # 1. SPEC
-    spec_p = load_spec_prompts()
-    spec_t = load_spec_template(templates_dir)
-    spec_ctx = SpecPromptContext(
-        prompts=spec_p,
-        template=spec_t,
-        requirement=FIXTURE_REQUIREMENT,
-        language=None,
-        project_context=project_context,
-    )
-    spec_m = build_spec_messages(spec_ctx)
-    spec_sys = spec_m[0].content
-    spec_user = spec_m[1].content
-    spec_t1 = len(spec_sys) + len(spec_user)
-
-    sig = inspect.signature(_build_retry_messages)
-    if len(sig.parameters) == 3:
-        spec_retry = _build_retry_messages(spec_m, SAMPLE_FAULTY_REPLY, ["## Background / Goal"])
-    else:
-        spec_retry = _build_retry_messages(spec_m, ["## Background / Goal"])
-    spec_t2 = sum(len(m.content) for m in spec_retry)
-
-    res["spec"] = {
-        "sys": len(spec_sys),
-        "user": len(spec_user),
-        "turn1": spec_t1,
-        "turn2": spec_t2,
-        "retry_delta": spec_t2 - spec_t1,
-        "sys_text": spec_sys,
-        "user_text": spec_user,
-    }
-
-    # 2. PLAN
-    spec_art = {"id": "spec-1", "version": "1", "content": {"text": FIXTURE_SPEC_TEXT}}
-    plan_p = load_plan_prompts()
-    plan_t = load_plan_template(templates_dir)
-    plan_ctx = PlanPromptContext(
-        prompts=plan_p,
-        template=plan_t,
-        spec_artifact=spec_art,
-        language=None,
-        project_context=project_context,
-    )
-    plan_m = build_plan_messages(plan_ctx)
-    plan_sys = plan_m[0].content
-    plan_user = plan_m[1].content
-    plan_t1 = len(plan_sys) + len(plan_user)
-
-    res["plan"] = {
-        "sys": len(plan_sys),
-        "user": len(plan_user),
-        "turn1": plan_t1,
-        "sys_text": plan_sys,
-        "user_text": plan_user,
-    }
-
-    # 3. TASK
-    plan_art = {"id": "plan-1", "version": "1", "content": {"text": FIXTURE_PLAN_TEXT}}
-    task_p = load_task_prompts()
-    task_t = load_task_template(templates_dir)
-    task_ctx = TaskPromptContext(
-        prompts=task_p,
-        template=task_t,
-        spec_artifact=spec_art,
-        plan_artifact=plan_art,
-        language=None,
-        project_context=project_context,
-    )
-    task_m = build_task_messages(task_ctx)
-    task_sys = task_m[0].content
-    task_user = task_m[1].content
-    task_t1 = len(task_sys) + len(task_user)
-
-    res["task"] = {
-        "sys": len(task_sys),
-        "user": len(task_user),
-        "turn1": task_t1,
-        "sys_text": task_sys,
-        "user_text": task_user,
+    res: dict[str, Any] = {
+        "spec": _measure_spec(target_dir, templates_dir, project_context, fixture.requirement),
+        "plan": _measure_plan(target_dir, templates_dir, project_context, fixture.spec_text),
+        "task": _measure_task(target_dir, templates_dir, project_context, fixture),
     }
 
     sys.path.remove(str(target_dir / "src"))
@@ -217,7 +355,6 @@ def measure_target(target_dir: Path) -> dict[str, Any]:
 
 
 def extract_breakdown(sys_text: str, user_text: str, agent: str) -> dict[str, int]:
-    # Extract contract, standards, skills
     rules_intro_keywords = ["Project standards", "Project development rules"]
     skills_intro_keyword = "Project skills"
 
@@ -249,8 +386,6 @@ def extract_breakdown(sys_text: str, user_text: str, agent: str) -> dict[str, in
 
     assert contract_len + standards_len + skills_len == len(sys_text)
 
-    # In user message:
-    # Look for ## Output language, ## Project context, ## Template
     lang_idx = user_text.find("## Output language")
     proj_idx = user_text.find("## Project context")
     tmpl_idx = user_text.find("## Template")
@@ -285,44 +420,70 @@ def extract_breakdown(sys_text: str, user_text: str, agent: str) -> dict[str, in
     assert breakdown["req"] + breakdown["lang"] + breakdown["proj"] + breakdown["tmpl"] == len(
         user_text
     )
-
     return breakdown
 
 
-if __name__ == "__main__":
+def extract_loaded_rules_sections(sys_text: str) -> list[str]:
+    sections = [
+        "## 9. API and External Data Boundaries",
+        "## 11. React and UI Rules",
+        "## 13. Security Rules",
+    ]
+    return [s for s in sections if s in sys_text]
+
+
+def _print_agent_breakdown(
+    agent: str,
+    master_res: dict[str, Any],
+    branch_res: dict[str, Any],
+) -> None:
+    m_b = extract_breakdown(master_res[agent]["sys_text"], master_res[agent]["user_text"], agent)
+    b_b = extract_breakdown(branch_res[agent]["sys_text"], branch_res[agent]["user_text"], agent)
+    print(f"\n--- {agent.upper()} AGENT ---")
+    print(f"Contract:        {m_b['contract']} -> {b_b['contract']}")
+    print(f"Standards:       {m_b['standards']} -> {b_b['standards']}")
+    print(f"Skills:          {m_b['skills']} -> {b_b['skills']}")
+    print(f"-> System Total: {m_b['sys_total']} -> {b_b['sys_total']}")
+    print(f"Req/Artifacts:   {m_b['req']} -> {b_b['req']}")
+    print(f"Output Language: {m_b['lang']} -> {b_b['lang']}")
+    print(f"Project Context: {m_b['proj']} -> {b_b['proj']}")
+    print(f"Template:        {m_b['tmpl']} -> {b_b['tmpl']}")
+    print(f"-> User Total:   {m_b['user_total']} -> {b_b['user_total']}")
+    t1_m = master_res[agent]["turn1"]
+    t1_b = branch_res[agent]["turn1"]
+    pct1 = ((t1_b - t1_m) / t1_m) * 100
+    print(f"-> Turn 1 Total: {t1_m} -> {t1_b} ({pct1:+.1f}%)")
+    if "turn2" in master_res[agent]:
+        t2_m = master_res[agent]["turn2"]
+        t2_b = branch_res[agent]["turn2"]
+        pct2 = ((t2_b - t2_m) / t2_m) * 100
+        print(f"-> Turn 2 Total: {t2_m} -> {t2_b} ({pct2:+.1f}%)")
+        print(
+            f"-> Retry Delta:  +{master_res[agent]['retry_delta']} -> +{branch_res[agent]['retry_delta']}"
+        )
+    loaded = extract_loaded_rules_sections(branch_res[agent]["sys_text"])
+    print(f"Rules Loaded:    {loaded if b_b['standards'] > 0 else []}")
+
+
+def _print_fixture_results(
+    fixture: PromptFixture, master_res: dict[str, Any], branch_res: dict[str, Any]
+) -> None:
+    print("\n=======================================================")
+    print(f"=== {fixture.name.upper()} ===")
+    print("=======================================================")
+    for agent in ("spec", "plan", "task"):
+        _print_agent_breakdown(agent, master_res, branch_res)
+
+
+def main() -> None:
     current_root = Path(__file__).resolve().parent.parent
     master_root = current_root.parent / "MyAgents-master"
 
-    master_res = measure_target(master_root)
-    branch_res = measure_target(current_root)
+    for fixture in FIXTURES:
+        master_res = measure_target(master_root, fixture)
+        branch_res = measure_target(current_root, fixture)
+        _print_fixture_results(fixture, master_res, branch_res)
 
-    print("=== EXACT BREAKDOWN FROM SINGLE FIXTURE ===")
-    for agent in ("spec", "plan", "task"):
-        m_b = extract_breakdown(
-            master_res[agent]["sys_text"], master_res[agent]["user_text"], agent
-        )
-        b_b = extract_breakdown(
-            branch_res[agent]["sys_text"], branch_res[agent]["user_text"], agent
-        )
-        print(f"\n--- {agent.upper()} AGENT ---")
-        print(f"Contract:        {m_b['contract']} -> {b_b['contract']}")
-        print(f"Standards:       {m_b['standards']} -> {b_b['standards']}")
-        print(f"Skills:          {m_b['skills']} -> {b_b['skills']}")
-        print(f"-> System Total: {m_b['sys_total']} -> {b_b['sys_total']}")
-        print(f"Req/Artifacts:   {m_b['req']} -> {b_b['req']}")
-        print(f"Output Language: {m_b['lang']} -> {b_b['lang']}")
-        print(f"Project Context: {m_b['proj']} -> {b_b['proj']}")
-        print(f"Template:        {m_b['tmpl']} -> {b_b['tmpl']}")
-        print(f"-> User Total:   {m_b['user_total']} -> {b_b['user_total']}")
-        t1_m = master_res[agent]["turn1"]
-        t1_b = branch_res[agent]["turn1"]
-        pct1 = ((t1_b - t1_m) / t1_m) * 100
-        print(f"-> Turn 1 Total: {t1_m} -> {t1_b} ({pct1:+.1f}%)")
-        if "turn2" in master_res[agent]:
-            t2_m = master_res[agent]["turn2"]
-            t2_b = branch_res[agent]["turn2"]
-            pct2 = ((t2_b - t2_m) / t2_m) * 100
-            print(f"-> Turn 2 Total: {t2_m} -> {t2_b} ({pct2:+.1f}%)")
-            print(
-                f"-> Retry Delta:  +{master_res[agent]['retry_delta']} -> +{branch_res[agent]['retry_delta']}"
-            )
+
+if __name__ == "__main__":
+    main()
