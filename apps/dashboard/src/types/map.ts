@@ -56,6 +56,24 @@ export interface MapHosting {
   number: string;
 }
 
+export interface MapReplaySummary {
+  runId: string;
+  startedAt: string | null;
+  sizeBytes: number;
+  events: number;
+  complete: boolean;
+  truncated: boolean;
+}
+
+export interface MapReplay {
+  runId: string;
+  events: MapEvent[];
+  counters: MapCounters | null;
+  budget: MapBudget | null;
+  complete: boolean;
+  truncated: boolean;
+}
+
 export interface MapSnapshot {
   runId: string;
   status: string;

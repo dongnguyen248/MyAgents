@@ -5,6 +5,7 @@
 *.pem
 /data/hosting-tokens.json
 /data/model-settings.json
+/data/map-runs/
 /projects/*.yaml
 /projects/*.yml
 secrets/

@@ -244,6 +244,33 @@ export function runningAgents(board: BoardState): RunningAgent[] {
     }));
 }
 
+/** Total span of a stored replay, first pulse to last, in ms. */
+export function replayDurationMs(events: MapEvent[]): number {
+  if (events.length === 0) {
+    return 0;
+  }
+  const start = Date.parse(events[0].ts);
+  let end = start;
+  for (const event of events) {
+    end = Math.max(end, Date.parse(event.ts));
+  }
+  return end - start;
+}
+
+/** The board a replay shows at cursor ``atMs``: exactly the live
+ * reducer over the pulses whose timestamp falls inside the cursor,
+ * so replay and live can never drift apart. */
+export function replayBoard(events: MapEvent[], atMs: number): BoardState {
+  if (events.length === 0) {
+    return emptyBoard();
+  }
+  const start = Date.parse(events[0].ts);
+  return applyMapEvents(
+    emptyBoard(),
+    events.filter((event) => Date.parse(event.ts) - start <= atMs),
+  );
+}
+
 export type FeedItem = { kind: 'row'; row: FeedRow } | { kind: 'change'; change: ModelChange };
 
 /** Feed rows and model-change markers merged newest-first. */

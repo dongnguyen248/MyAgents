@@ -448,3 +448,30 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
 .lm-symbol.change {
   color: var(--accent);
 }
+.lm-replay-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.lm-transport {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  flex: 1;
+}
+.lm-transport input[type='range'] {
+  flex: 1;
+  min-width: 140px;
+}
+.lm-badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.lm-badge.warn {
+  color: var(--accent);
+  border-color: var(--accent);
+}

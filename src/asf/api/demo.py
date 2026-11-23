@@ -692,13 +692,14 @@ class _RegistryDeps:
     workspace: LocalWorkspace
     repository: RepositoryPort
     sandbox: SandboxPort
+    data_dir: Path
 
 
 def _build_registry(deps: _RegistryDeps) -> AgentRegistry:
     # The live map's tap must be the agents' default before any agent
     # is constructed: BaseAgent picks it up when wrapping its gateway.
     if live_map_enabled():
-        install_live_map(deps.platform.budget)
+        install_live_map(deps.platform.budget, deps.data_dir)
     runtime = deps.runtime
     platform = deps.platform
     templates_dir = deps.templates_dir
@@ -812,7 +813,7 @@ def build_demo(
         ),
     )
     repository, sandbox = build_map_tool_ports(workspace)
-    deps = _RegistryDeps(runtime, platform, templates_dir, workspace, repository, sandbox)
+    deps = _RegistryDeps(runtime, platform, templates_dir, workspace, repository, sandbox, data_dir)
     registry = _build_registry(deps)
 
     if store is None:

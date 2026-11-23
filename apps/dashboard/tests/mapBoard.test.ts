@@ -15,6 +15,8 @@ import {
   isModelFlashing,
   modelChanges,
   runningAgents,
+  replayBoard,
+  replayDurationMs,
   spokeWidth,
   stationCounts,
 } from '../src/lib/mapBoard.ts';
@@ -300,4 +302,60 @@ test('running agents list one orbit entry per in-flight execution, coloured per 
   );
   assert.equal(running[0].color, agentColor('spec'));
   assert.equal(runningAgents(emptyBoard()).length, 0);
+});
+
+test('a full replay rebuilds exactly the live board at the end of the run', () => {
+  const events = [
+    event({ id: 'e1', spanId: 'a1', type: 'agent', station: 'agents', agentId: 'spec' }),
+    event({
+      id: 'e2',
+      spanId: 'm1',
+      type: 'model',
+      station: 'model',
+      model: 'fake-1',
+      ts: '2026-11-23T09:00:01Z',
+    }),
+    event({
+      id: 'e3',
+      spanId: 'm1',
+      type: 'model',
+      station: 'model',
+      phase: 'end',
+      status: 'ok',
+      ts: '2026-11-23T09:00:04Z',
+      durationMs: 3000,
+    }),
+    event({
+      id: 'e4',
+      spanId: 'a1',
+      type: 'agent',
+      station: 'agents',
+      phase: 'end',
+      status: 'ok',
+      ts: '2026-11-23T09:00:05Z',
+    }),
+  ];
+  const live = applyMapEvents(emptyBoard(), events);
+  const replayed = replayBoard(events, replayDurationMs(events));
+  assert.deepEqual(replayed, live);
+  assert.equal(replayDurationMs(events), 5000);
+});
+
+test('a replay cursor shows only the pulses up to that point on the timeline', () => {
+  const events = [
+    event({ id: 'e1', spanId: 'a1', type: 'agent', station: 'agents', agentId: 'spec' }),
+    event({
+      id: 'e2',
+      spanId: 'm1',
+      type: 'model',
+      station: 'model',
+      model: 'fake-1',
+      ts: '2026-11-23T09:00:03Z',
+    }),
+  ];
+  const early = replayBoard(events, 1000);
+  assert.equal(early.entries.length, 1);
+  assert.equal(early.entries[0].type, 'agent');
+  assert.equal(replayBoard(events, 0).entries.length, 1);
+  assert.equal(replayBoard([], 1000).entries.length, 0);
 });

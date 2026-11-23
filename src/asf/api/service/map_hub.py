@@ -15,6 +15,7 @@ import os
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from contextlib import suppress
 
 from asf.contracts.map_events import MapEvent
@@ -74,10 +75,25 @@ class MapHub:
         self._runs: dict[str, _RunHistory] = {}
         self._limit_tokens: int | None = None
         self._limit_calls: int | None = None
+        self._sink: Callable[[MapEvent], None] | None = None
+        self._close_sink: Callable[[str], None] | None = None
 
     def set_budget_limits(self, limit_tokens: int | None, limit_calls: int | None) -> None:
         self._limit_tokens = limit_tokens
         self._limit_calls = limit_calls
+
+    def set_sink(self, sink: Callable[[MapEvent], None] | None) -> None:
+        """An observer fed every counted event (the replay writer).
+
+        Called under the emit lock, after counting, inside the same
+        failure guard as the rest of emit - a sink can never break a
+        run, it can only be skipped.
+        """
+        self._sink = sink
+
+    def set_close_sink(self, sink: Callable[[str], None] | None) -> None:
+        """Called once when a run is marked closed (the replay footer)."""
+        self._close_sink = sink
 
     def emit(self, event: MapEvent) -> None:
         # The map must never break a run: any hub failure is swallowed.
@@ -87,13 +103,17 @@ class MapHub:
             history.counters.count(event)
             history.seen += 1
             history.last_seen = time.monotonic()
+            if self._sink is not None:
+                self._sink(event)
             self._sweep_locked()
 
     def mark_closed(self, run_id: str) -> None:
-        with self._lock:
+        with suppress(Exception), self._lock:
             history = self._runs.get(run_id)
             if history is not None and history.closed_at is None:
                 history.closed_at = time.monotonic()
+                if self._close_sink is not None:
+                    self._close_sink(run_id)
 
     def snapshot(self, run_id: str, since: int = 0) -> tuple[list[MapEvent], int]:
         """Events for a run from cursor ``since``, plus the next cursor."""

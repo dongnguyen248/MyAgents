@@ -721,6 +721,10 @@ export const mockApi: FactoryApi = {
 
   subscribeMapEvents: () => () => undefined,
 
+  getMapReplays: () => delay([]),
+
+  getMapReplay: () => delay(undefined),
+
   getMetricsOverview: () => delay(metricsOverview),
 
   getModelSettings: () => delay(modelSettingsView()),
