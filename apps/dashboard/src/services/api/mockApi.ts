@@ -221,13 +221,74 @@ const cleanAgentModels = (raw?: Record<string, string>): Record<string, string> 
   }
   return out;
 };
+interface MockConnection {
+  provider: string;
+  baseUrl: string;
+  apiKey: string;
+  headers: Record<string, string>;
+  timeoutSeconds: number | null;
+}
+const modelConnections: Record<string, MockConnection> = {};
+const emptyMockConnection = (): MockConnection => ({
+  provider: '', baseUrl: '', apiKey: '', headers: {}, timeoutSeconds: null,
+});
+type MockConnectionPatch = Partial<MockConnection> & { clearKey?: boolean };
+const mergeMockConnection = (current: MockConnection, patch: MockConnectionPatch): void => {
+  if (patch.provider !== undefined) {
+    current.provider = patch.provider;
+  }
+  if (patch.baseUrl !== undefined) {
+    current.baseUrl = patch.baseUrl;
+  }
+  if (patch.apiKey) {
+    current.apiKey = patch.apiKey;
+  }
+  if (patch.clearKey) {
+    current.apiKey = '';
+  }
+  if (patch.headers) {
+    current.headers = { ...patch.headers };
+  }
+  if (patch.timeoutSeconds !== undefined) {
+    current.timeoutSeconds = patch.timeoutSeconds;
+  }
+};
+const applyMockConnections = (input: { agentConnections?: Record<string, object> }): void => {
+  if (!input.agentConnections) {
+    return;
+  }
+  for (const [name, raw] of Object.entries(input.agentConnections)) {
+    const patch = raw as MockConnectionPatch;
+    if (Object.keys(patch).length === 0) {
+      delete modelConnections[name];
+      continue;
+    }
+    const current = modelConnections[name] ?? emptyMockConnection();
+    mergeMockConnection(current, patch);
+    modelConnections[name] = current;
+  }
+};
+const keyHintFor = (key: string): string =>
+  key.length >= 4 ? `\u2026${key.slice(-4)}` : '';
+const mockConnectionView = (p: MockConnection) => ({
+  provider: p.provider,
+  baseUrl: p.baseUrl,
+  keyConfigured: Boolean(p.apiKey),
+  keyHint: keyHintFor(p.apiKey),
+  headers: Object.fromEntries(Object.keys(p.headers).map((h) => [h, '****'])),
+  timeoutSeconds: p.timeoutSeconds,
+  insecureHttp: p.baseUrl.startsWith('http://'),
+});
+const mockConnectionsView = () =>
+  Object.fromEntries(Object.entries(modelConnections).map(([n, p]) => [n, mockConnectionView(p)]));
 const modelSettingsView = () => ({
   provider: modelSettings.provider,
   model: modelSettings.model,
   baseUrl: modelSettings.baseUrl,
   agentModels: { ...modelSettings.agentModels },
+  agentConnections: mockConnectionsView(),
   keyConfigured: Boolean(modelSettings.apiKey),
-  keyHint: modelSettings.apiKey.length >= 4 ? `…${modelSettings.apiKey.slice(-4)}` : '',
+  keyHint: keyHintFor(modelSettings.apiKey),
 });
 const taskStore: Task[] = structuredClone(tasks);
 const workflowStore: Workflow[] = structuredClone(workflows);
@@ -740,6 +801,7 @@ export const mockApi: FactoryApi = {
         return Promise.reject(new Error(`Unknown agent '${unknown}' in agentModels (mock)`));
       }
     }
+    applyMockConnections(input);
     modelSettings = {
       provider: input.provider,
       model: input.model.trim(),

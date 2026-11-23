@@ -30,6 +30,16 @@ export function agentModelInputName(agentKey: string): string {
   return `asf-model-${agentKey}`;
 }
 
+/** The settings form's name for one field of an agent's connection. */
+export function agentConnectionInputName(agentKey: string, field: string): string {
+  return `asf-conn-${agentKey}-${field}`;
+}
+
+/** API key input attributes for one agent's own connection key. */
+export function agentKeyInputAttrs(agentKey: string) {
+  return { ...API_KEY_INPUT_ATTRS, name: agentConnectionInputName(agentKey, 'key') };
+}
+
 export const SHARED_MODEL_INPUT_NAME = 'asf-model-shared';
 export const BASE_URL_INPUT_NAME = 'asf-base-url';
 

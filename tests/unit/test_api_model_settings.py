@@ -133,3 +133,56 @@ def test_settings_artifact_review_override_round_trip(tmp_path: Path):
         },
     )
     assert bad.status_code == 422
+
+
+def test_agent_connections_round_trip_over_http(tmp_path: Path):
+    client = _client(tmp_path)
+    updated = client.put(
+        "/settings/model",
+        json={
+            "provider": "custom",
+            "model": "shared-m",
+            "baseUrl": "https://shared.example/v1",
+            "apiKey": "shared-secret-0001",
+            "agentConnections": {
+                "spec": {
+                    "baseUrl": "http://127.0.0.1:18610/v1",
+                    "apiKey": "spec-secret-9999",
+                    "headers": {"X-Proxy-Token": "header-secret-8888"},
+                    "timeoutSeconds": 25,
+                }
+            },
+        },
+    )
+    assert updated.status_code == 200
+    assert "spec-secret-9999" not in updated.text
+    assert "header-secret-8888" not in updated.text
+    profile = updated.json()["agentConnections"]["spec"]
+    assert profile["keyHint"] == "…9999"
+    assert profile["headers"] == {"X-Proxy-Token": "****"}
+    assert profile["timeoutSeconds"] == 25
+    assert profile["insecureHttp"] is True
+
+    blocked = client.put(
+        "/settings/model",
+        json={
+            "provider": "custom",
+            "model": "shared-m",
+            "agentConnections": {"spec": {"baseUrl": "https://169.254.169.254/x"}},
+        },
+    )
+    assert blocked.status_code == 422
+
+
+def test_empty_agent_models_still_clears_overrides(tmp_path: Path):
+    client = _client(tmp_path)
+    client.put(
+        "/settings/model",
+        json={"provider": "gemini", "model": "m", "agentModels": {"spec": "spec-m"}},
+    )
+    cleared = client.put(
+        "/settings/model",
+        json={"provider": "gemini", "model": "m", "agentModels": {}},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["agentModels"] == {}
