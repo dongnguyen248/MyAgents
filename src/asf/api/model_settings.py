@@ -56,6 +56,7 @@ from asf.api.agent_connections import (
 from asf.api.agent_connections import effective_settings as merge_connection
 from asf.api.configured_gateway import DEFAULT_BASE_URLS, build_configured_gateway
 from asf.api.model_ids import checked_model_id, normalize_stored_model_id
+from asf.contracts.map_events import endpoint_label
 from asf.contracts.models import ModelMessage, ModelRequest, ModelResponse
 from asf.integrations.openai_compatible import (
     HttpTransport,
@@ -404,12 +405,26 @@ def _host_of(current: Mapping[str, Any]) -> str:
     detail is shown on dashboards and stored on runs, so it carries
     just enough to recognise which endpoint rejected the model.
     """
-    base = str(current.get("baseUrl") or "").strip()
-    base = base or DEFAULT_BASE_URLS.get(str(current.get("provider") or ""), "")
     try:
-        return urlsplit(base).hostname or ""
+        return urlsplit(_base_url_of(current)).hostname or ""
     except ValueError:
         return ""
+
+
+def _base_url_of(current: Mapping[str, Any]) -> str:
+    base = str(current.get("baseUrl") or "").strip()
+    return base or DEFAULT_BASE_URLS.get(str(current.get("provider") or ""), "")
+
+
+def _endpoint_label_of(current: Mapping[str, Any]) -> str | None:
+    """The endpoint's host:port label for the live map, or None.
+
+    Display-only: the map may tell two local proxies apart by port,
+    but the credentials, path and query of the URL never leave the
+    settings layer.
+    """
+    label = endpoint_label(_base_url_of(current))
+    return label or None
 
 
 def _unsupported_model_message(model: str, source: str, key: str | None) -> str:
@@ -480,6 +495,11 @@ class SettingsRoutingGateway:
         self._transport = transport
         self._factory = gateway_factory
         self._cache: dict[str, ModelGateway | None] = {}
+
+    def endpoint_label(self, agent_id: str | None) -> str | None:
+        """The live map's label for this agent's endpoint: host:port."""
+        key = agent_key(agent_id)
+        return _endpoint_label_of(self._settings.effective_settings(key))
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         key = agent_key(request.metadata.get("agentId"))
