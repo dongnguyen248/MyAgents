@@ -1,5 +1,11 @@
-import { isModelFlashing, spokeWidth, STATION_ORDER, stationCounts } from '../../lib/mapBoard';
-import type { BoardState, StationCount } from '../../lib/mapBoard';
+import {
+  isModelFlashing,
+  runningAgents,
+  spokeWidth,
+  STATION_ORDER,
+  stationCounts,
+} from '../../lib/mapBoard';
+import type { BoardState, RunningAgent, StationCount } from '../../lib/mapBoard';
 import type { MapCounters, MapStationId } from '../../types/map';
 
 export interface MapPulse {
@@ -41,6 +47,11 @@ const STATION_STEP = 40;
 const CLOCK_RADIUS = 21;
 const CLOCK_HOUR_LENGTH = 7;
 const CLOCK_MINUTE_LENGTH = 11;
+const ORBIT_RADIUS = 27;
+const ORBIT_DOT_RADIUS = 4;
+const ORBIT_OFFSET_STEP = 60;
+const FULL_TURN = 360;
+const NO_ORBITS: RunningAgent[] = [];
 
 export function stationPoint(station: MapStationId): { x: number; y: number } {
   const index = STATION_ORDER.findIndex((s) => s.id === station);
@@ -224,16 +235,64 @@ function StationClock({ point, running }: { point: { x: number; y: number }; run
   );
 }
 
+function OrbitDot({
+  point,
+  color,
+  offset,
+}: {
+  point: { x: number; y: number };
+  color: string;
+  offset: number;
+}) {
+  const centre = `${point.x} ${point.y}`;
+  return (
+    <g>
+      <animateTransform
+        attributeName="transform"
+        type="rotate"
+        from={`${offset} ${centre}`}
+        to={`${offset + FULL_TURN} ${centre}`}
+        dur="7s"
+        repeatCount="indefinite"
+      />
+      <circle cx={point.x + ORBIT_RADIUS} cy={point.y} r={ORBIT_DOT_RADIUS} fill={color} />
+    </g>
+  );
+}
+
+function AgentOrbits({
+  point,
+  agents,
+}: {
+  point: { x: number; y: number };
+  agents: RunningAgent[];
+}) {
+  return (
+    <g>
+      {agents.map((agent, index) => (
+        <OrbitDot
+          key={agent.spanId}
+          point={point}
+          color={agent.color}
+          offset={index * ORBIT_OFFSET_STEP}
+        />
+      ))}
+    </g>
+  );
+}
+
 function StationNode({
   stationId,
   label,
   count,
   flashing,
+  orbits,
 }: {
   stationId: MapStationId;
   label: string;
   count: StationCount | undefined;
   flashing: boolean;
+  orbits: RunningAgent[];
 }) {
   const point = stationPoint(stationId);
   const running = count?.running ?? 0;
@@ -242,6 +301,7 @@ function StationNode({
       <StationSpoke point={point} running={running} total={count?.total ?? 0} />
       <StationHalo point={point} running={running} />
       <StationCircle point={point} flashing={flashing} />
+      {stationId === 'agents' && <AgentOrbits point={point} agents={orbits} />}
       <StationClock point={point} running={running} />
       <StationLabels point={point} label={label} total={count?.total ?? 0} />
       <StationBadges point={point} count={count} />
@@ -331,6 +391,7 @@ function StationLayer({
   flashing: boolean;
 }) {
   const counts = stationCounts(board, counters);
+  const orbits = runningAgents(board);
   return (
     <g>
       {STATION_ORDER.map((station) => (
@@ -340,6 +401,7 @@ function StationLayer({
           label={station.label}
           count={counts[station.id]}
           flashing={flashing && station.id === 'model'}
+          orbits={station.id === 'agents' ? orbits : NO_ORBITS}
         />
       ))}
     </g>
