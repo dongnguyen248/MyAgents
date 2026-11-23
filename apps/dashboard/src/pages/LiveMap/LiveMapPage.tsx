@@ -2,7 +2,7 @@ import { Card, PageHeader } from '../../components/common/Layout';
 import { MapCanvas } from '../../components/livemap/MapCanvas';
 import { MapFeed } from '../../components/livemap/MapFeed';
 import { AgentList, EntryDetail } from '../../components/livemap/MapSidePanel';
-import { agentStates, budgetPercent, feedRows } from '../../lib/mapBoard';
+import { agentStates, budgetPercent, feedItems } from '../../lib/mapBoard';
 import type { BoardState } from '../../lib/mapBoard';
 import type { Workflow } from '../../types/workflow';
 import { useLiveMapData, useMapSelection, useWorkflowRuns } from './useLiveMapData';
@@ -59,7 +59,7 @@ function FeedCard({ board, selection }: { board: BoardState; selection: MapSelec
   return (
     <Card title="Feed">
       <MapFeed
-        rows={feedRows(board, selection.filter)}
+        items={feedItems(board, selection.filter)}
         agents={agentStates(board)}
         filter={selection.filter}
         selectedSpanId={selection.selected?.spanId ?? null}

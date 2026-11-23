@@ -9,7 +9,10 @@ import {
   budgetPercent,
   childrenOf,
   emptyBoard,
+  feedItems,
   feedRows,
+  isModelFlashing,
+  modelChanges,
   spokeWidth,
   stationCounts,
 } from '../src/lib/mapBoard.ts';
@@ -237,4 +240,45 @@ test('spokeWidth grows with use and is capped', () => {
   assert.equal(spokeWidth(0), 1.5);
   assert.equal(spokeWidth(25), 3.5);
   assert.equal(spokeWidth(10000), 5.5);
+});
+
+function modelSpan(id: string, spanId: string, model: string, ts: string) {
+  return event({ id, spanId, type: 'model', station: 'model', model, label: model, ts });
+}
+
+test('model changes are detected between consecutive model spans of the run', () => {
+  const board = applyMapEvents(emptyBoard(), [
+    modelSpan('e1', 's1', 'model-a', '2026-11-23T09:00:00Z'),
+    modelSpan('e2', 's2', 'model-a', '2026-11-23T09:01:00Z'),
+    modelSpan('e3', 's3', 'model-b', '2026-11-23T09:02:00Z'),
+    event({ id: 'e4', spanId: 's4', type: 'agent', station: 'agents', ts: '2026-11-23T09:03:00Z' }),
+  ]);
+  const changes = modelChanges(board);
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].fromModel, 'model-a');
+  assert.equal(changes[0].toModel, 'model-b');
+  assert.equal(changes[0].at, '2026-11-23T09:02:00Z');
+});
+
+test('feed items interleave model-change markers with rows, newest first', () => {
+  const board = applyMapEvents(emptyBoard(), [
+    modelSpan('e1', 's1', 'model-a', '2026-11-23T09:00:00Z'),
+    modelSpan('e2', 's2', 'model-b', '2026-11-23T09:05:00Z'),
+  ]);
+  const items = feedItems(board, null);
+  assert.equal(items[0].kind, 'change');
+  assert.equal(items.filter((item) => item.kind === 'change').length, 1);
+});
+
+test('the model flash lasts only while the change is fresh on the board timeline', () => {
+  const fresh = applyMapEvents(emptyBoard(), [
+    modelSpan('e1', 's1', 'model-a', '2026-11-23T09:00:00Z'),
+    modelSpan('e2', 's2', 'model-b', '2026-11-23T09:00:02Z'),
+  ]);
+  assert.equal(isModelFlashing(fresh), true);
+  const stale = applyMapEvents(fresh, [
+    event({ id: 'e3', spanId: 's3', type: 'agent', station: 'agents', ts: '2026-11-23T09:01:00Z' }),
+  ]);
+  assert.equal(isModelFlashing(stale), false);
+  assert.equal(isModelFlashing(emptyBoard()), false);
 });

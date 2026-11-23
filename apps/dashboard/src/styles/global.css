@@ -433,3 +433,18 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
   stroke-width: 1.5;
   stroke-linecap: round;
 }
+@keyframes lm-flash-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.lm-flash {
+  animation: lm-flash-pulse 0.8s ease-in-out 5;
+}
+.lm-symbol.change {
+  color: var(--accent);
+}

@@ -1,4 +1,4 @@
-import { spokeWidth, STATION_ORDER, stationCounts } from '../../lib/mapBoard';
+import { isModelFlashing, spokeWidth, STATION_ORDER, stationCounts } from '../../lib/mapBoard';
 import type { BoardState, StationCount } from '../../lib/mapBoard';
 import type { MapCounters, MapStationId } from '../../types/map';
 
@@ -147,6 +147,44 @@ function StationLabels({
   );
 }
 
+function StationSpoke({
+  point,
+  running,
+  total,
+}: {
+  point: { x: number; y: number };
+  running: number;
+  total: number;
+}) {
+  return (
+    <line
+      x1={CENTER_X}
+      y1={CENTER_Y}
+      x2={point.x}
+      y2={point.y}
+      className={running > 0 ? 'lm-spoke active' : 'lm-spoke'}
+      strokeWidth={spokeWidth(total)}
+    />
+  );
+}
+
+function StationCircle({
+  point,
+  flashing,
+}: {
+  point: { x: number; y: number };
+  flashing: boolean;
+}) {
+  return (
+    <circle
+      cx={point.x}
+      cy={point.y}
+      r={STATION_RADIUS}
+      className={flashing ? 'lm-station lm-flash' : 'lm-station'}
+    />
+  );
+}
+
 function ClockHand({
   point,
   length,
@@ -190,25 +228,20 @@ function StationNode({
   stationId,
   label,
   count,
+  flashing,
 }: {
   stationId: MapStationId;
   label: string;
   count: StationCount | undefined;
+  flashing: boolean;
 }) {
   const point = stationPoint(stationId);
   const running = count?.running ?? 0;
   return (
     <g>
-      <line
-        x1={CENTER_X}
-        y1={CENTER_Y}
-        x2={point.x}
-        y2={point.y}
-        className={running > 0 ? 'lm-spoke active' : 'lm-spoke'}
-        strokeWidth={spokeWidth(count?.total ?? 0)}
-      />
+      <StationSpoke point={point} running={running} total={count?.total ?? 0} />
       <StationHalo point={point} running={running} />
-      <circle cx={point.x} cy={point.y} r={STATION_RADIUS} className="lm-station" />
+      <StationCircle point={point} flashing={flashing} />
       <StationClock point={point} running={running} />
       <StationLabels point={point} label={label} total={count?.total ?? 0} />
       <StationBadges point={point} count={count} />
@@ -247,20 +280,33 @@ function CentreTexts({ budgetText, runStatus }: { budgetText: string; runStatus:
   );
 }
 
+function CentreCircle({ flashing }: { flashing: boolean }) {
+  return (
+    <circle
+      cx={CENTER_X}
+      cy={CENTER_Y}
+      r={CENTRE_RADIUS}
+      className={flashing ? 'lm-centre lm-flash' : 'lm-centre'}
+    />
+  );
+}
+
 function CentreNode({
   budgetPercent,
   budgetText,
   runStatus,
+  flashing,
 }: {
   budgetPercent: number | null;
   budgetText: string;
   runStatus: string;
+  flashing: boolean;
 }) {
   const ringLength = 2 * Math.PI * RING_RADIUS;
   const ringFilled = budgetPercent === null ? 0 : (budgetPercent / PERCENT_WHOLE) * ringLength;
   return (
     <g>
-      <circle cx={CENTER_X} cy={CENTER_Y} r={CENTRE_RADIUS} className="lm-centre" />
+      <CentreCircle flashing={flashing} />
       <circle
         cx={CENTER_X}
         cy={CENTER_Y}
@@ -275,7 +321,15 @@ function CentreNode({
   );
 }
 
-function StationLayer({ board, counters }: { board: BoardState; counters: MapCounters | null }) {
+function StationLayer({
+  board,
+  counters,
+  flashing,
+}: {
+  board: BoardState;
+  counters: MapCounters | null;
+  flashing: boolean;
+}) {
   const counts = stationCounts(board, counters);
   return (
     <g>
@@ -285,10 +339,20 @@ function StationLayer({ board, counters }: { board: BoardState; counters: MapCou
           stationId={station.id}
           label={station.label}
           count={counts[station.id]}
+          flashing={flashing && station.id === 'model'}
         />
       ))}
     </g>
   );
+}
+
+interface MapCanvasProps {
+  board: BoardState;
+  counters: MapCounters | null;
+  pulses: MapPulse[];
+  budgetPercent: number | null;
+  budgetText: string;
+  runStatus: string;
 }
 
 export function MapCanvas({
@@ -298,14 +362,9 @@ export function MapCanvas({
   budgetPercent,
   budgetText,
   runStatus,
-}: {
-  board: BoardState;
-  counters: MapCounters | null;
-  pulses: MapPulse[];
-  budgetPercent: number | null;
-  budgetText: string;
-  runStatus: string;
-}) {
+}: MapCanvasProps) {
+  const flashing = isModelFlashing(board);
+  const centre = { budgetPercent, budgetText, runStatus, flashing };
   return (
     <svg
       viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
@@ -313,11 +372,11 @@ export function MapCanvas({
       role="img"
       aria-label="Live agent map"
     >
-      <StationLayer board={board} counters={counters} />
+      <StationLayer board={board} counters={counters} flashing={flashing} />
       {pulses.map((pulse) => (
         <PulseDot key={pulse.key} pulse={pulse} />
       ))}
-      <CentreNode budgetPercent={budgetPercent} budgetText={budgetText} runStatus={runStatus} />
+      <CentreNode {...centre} />
     </svg>
   );
 }
