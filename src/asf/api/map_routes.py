@@ -14,6 +14,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -66,11 +67,27 @@ def _change_request_link(output: Any) -> dict[str, str] | None:
     if not isinstance(ref, Mapping):
         return None
     url, number = ref.get("url"), ref.get("id")
-    if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+    if not isinstance(url, str):
         return None
-    if number is None or str(number) == "":
+    clean = _clean_url(url)
+    if clean is None or number is None or str(number) == "":
         return None
-    return {"url": url, "number": str(number)}
+    return {"url": clean, "number": str(number)}
+
+
+def _clean_url(url: str) -> str | None:
+    """Scheme + host + port + path only: a provider URL can carry
+    credentials in its userinfo and tokens in its query or fragment,
+    and none of those may reach the snapshot."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme not in ("https", "http") or not parts.hostname:
+        return None
+    netloc = parts.hostname if port is None else f"{parts.hostname}:{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 
 
 def _snapshot_payload(service: Any, hub: MapHub, run_id: str) -> dict[str, Any] | None:
