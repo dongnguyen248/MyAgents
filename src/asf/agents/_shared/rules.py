@@ -52,8 +52,12 @@ _STACK_TOOLS: dict[str, str] = {
     "react": "typescript",
     "mvn": "java",
     "gradle": "java",
-    "spring": "java",
+    "spring boot": "java",
+    "spring-boot": "java",
+    "springframework": "java",
     "dotnet": "csharp",
+    ".net": "csharp",
+    "c#": "csharp",
     "msbuild": "csharp",
 }
 
@@ -98,7 +102,7 @@ def _extract_declared_stacks(project_tech: Any) -> set[str]:
     return {s for s in stacks if s is not None}
 
 
-def _detect_signals(text_signal: str, files: Sequence[str]) -> set[str]:
+def _detect_text_signals(text_signal: str, files: Sequence[str]) -> set[str]:
     signals: set[str] = set()
     for f in files:
         ext = "." + f.rsplit(".", 1)[-1].lower() if "." in f else ""
@@ -106,10 +110,10 @@ def _detect_signals(text_signal: str, files: Sequence[str]) -> set[str]:
             signals.add(_STACK_EXTENSIONS[ext])
     lowered = text_signal.lower()
     for ext, stack in _STACK_EXTENSIONS.items():
-        if ext in lowered:
+        if re.search(r"(?<!\w)" + re.escape(ext) + r"(?!\w)", lowered):
             signals.add(stack)
     for tool, stack in _STACK_TOOLS.items():
-        if re.search(r"\b" + re.escape(tool) + r"\b", lowered):
+        if re.search(r"(?<!\w)" + re.escape(tool) + r"(?!\w)", lowered):
             signals.add(stack)
     return signals
 
@@ -127,7 +131,7 @@ def detect_task_stack(
             logger.info("Stack detected from metadata: %s", canon)
             return frozenset({canon})
     declared = _extract_declared_stacks(project_tech)
-    signals = _detect_signals(text_signal, files)
+    signals = _detect_text_signals(text_signal, files)
     matched = declared & signals
     if matched:
         logger.info("Stack detected from signals: %s", sorted(matched))
@@ -157,9 +161,11 @@ def _document_stack(doc: str) -> str | None:
     match = re.search(r"<!--\s*stack:\s*([a-zA-Z0-9_\-]+)\s*-->", doc)
     if match:
         return match.group(1).strip().lower()
-    first_line = doc.splitlines()[0].lower() if doc.splitlines() else ""
+    first_line = doc.splitlines()[0].strip().lower() if doc.splitlines() else ""
+    if not first_line.startswith("# "):
+        return None
     for token, stack in _CANONICAL_STACKS.items():
-        if token in first_line:
+        if re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", first_line):
             return stack
     return None
 
@@ -185,11 +191,14 @@ def parse_rule_sections(text: str) -> list[tuple[str, str]]:
 
 _SCOPE_KEYWORDS: list[tuple[str, list[str]]] = [
     ("formatting", ["formatting", "prettier", "eslint", "whitespace", "brace", "indent"]),
-    ("test-style", ["testing and quality", "test style", "mock", "checklist", "automated"]),
+    ("test-style", ["testing", "test style", "mock", "checklist", "automated"]),
     ("security", ["security", "auth", "secret", "permission", "audit", "validation"]),
     ("api", ["api", "endpoint", "resource", "contract", "request", "response", "dto"]),
     ("naming", ["naming", "convention", "constant", "enum"]),
-    ("structure", ["structure", "architecture", "component", "class", "function", "state"]),
+    (
+        "structure",
+        ["structure", "architecture", "component", "class", "state management", "react and ui"],
+    ),
 ]
 
 
@@ -205,29 +214,26 @@ def classify_section_scope(heading: str, body: str) -> str:
     for scope, keywords in _SCOPE_KEYWORDS:
         if any(kw in combined for kw in keywords):
             return scope
-    return "general"
+    return "coding-detail"
 
 
 _DESIGN_SCOPES: dict[str, set[str]] = {
-    "spec": {"security", "api", "structure", "naming", "general"},
-    "plan": {"security", "api", "structure", "naming", "general"},
-    "task": {"security", "api", "structure", "naming", "general"},
+    "spec": {"api", "security", "structure", "naming"},
+    "plan": {"api", "security", "structure", "naming"},
+    "task": {"api", "security", "structure", "naming"},
 }
 
 
 def _is_section_allowed(scope: str, agent: str) -> bool:
-    if scope in {"formatting", "test-style"}:
-        return False
     allowed = _DESIGN_SCOPES.get(agent, _DESIGN_SCOPES["task"])
     return scope in allowed
 
 
 _PRIORITY_ORDER: dict[str, int] = {
-    "security": 1,
-    "api": 2,
+    "api": 1,
+    "security": 2,
     "structure": 3,
     "naming": 4,
-    "general": 5,
 }
 
 
@@ -236,8 +242,11 @@ def apply_character_budget(
     budget: int = MAX_DESIGN_RULES_BUDGET,
     agent: str = "",
 ) -> list[tuple[str, str]]:
-    """Enforces character budget by dropping entire sections in deterministic priority order."""
-    total_len = sum(len(c) for _, c in sections)
+    """Enforces character budget by dropping entire sections in deterministic priority order.
+
+    The total length check includes the '\\n\\n' delimiters that join sections.
+    """
+    total_len = len("\n\n".join(c for _, c in sections))
     if total_len <= budget:
         return sections
     annotated = [(idx, classify_section_scope(h, c), h, c) for idx, (h, c) in enumerate(sections)]
@@ -246,9 +255,10 @@ def apply_character_budget(
     curr_len = 0
     dropped: list[str] = []
     for idx, _, h, c in annotated:
-        if curr_len + len(c) <= budget:
+        extra = len(c) if not selected else (2 + len(c))
+        if curr_len + extra <= budget:
             selected.append((idx, h, c))
-            curr_len += len(c)
+            curr_len += extra
         else:
             dropped.append(h or "preamble")
     if dropped:
@@ -261,6 +271,58 @@ def apply_character_budget(
     return [(h, c) for _, h, c in selected]
 
 
+def _retain_matching_docs(docs: list[str], stack: frozenset[str]) -> list[str]:
+    retained: list[str] = []
+    for doc in docs:
+        doc_stack = _document_stack(doc)
+        if doc_stack is not None and doc_stack not in {"all"} and doc_stack not in stack:
+            continue
+        retained.append(doc)
+    return retained
+
+
+def _partition_sections_by_scope(
+    sections: list[tuple[str, str]],
+    agent: str,
+) -> tuple[list[tuple[str, str]], list[str]]:
+    allowed: list[tuple[str, str]] = []
+    disallowed: list[str] = []
+    for h, c in sections:
+        scope = classify_section_scope(h, c)
+        if _is_section_allowed(scope, agent):
+            allowed.append((h, c))
+        else:
+            disallowed.append(h or "preamble")
+    return allowed, disallowed
+
+
+def _filter_unheaded_rules(joined: str, agent: str, budget: int) -> str:
+    stripped = joined.strip()
+    if len(stripped) <= budget:
+        logger.info(
+            "Project rules without headings loaded verbatim for '%s' (%d chars)",
+            agent,
+            len(stripped),
+        )
+        return stripped
+    logger.warning(
+        "Project rules without headings omitted from '%s': %d chars exceed budget (%d chars)",
+        agent,
+        len(stripped),
+        budget,
+    )
+    return ""
+
+
+def _log_stack_pack_status(retained_docs: list[str], stack: frozenset[str]) -> None:
+    loaded_stacks = {_document_stack(d) for d in retained_docs if _document_stack(d)}
+    for s in sorted(stack):
+        if s in loaded_stacks:
+            logger.info("Rule pack loaded: %s", s)
+        else:
+            logger.info("Task stack ['%s'] identified but no rule pack configured", s)
+
+
 def filter_rules_for_task(
     rules_text: str,
     agent: str,
@@ -268,21 +330,23 @@ def filter_rules_for_task(
     budget: int = MAX_DESIGN_RULES_BUDGET,
 ) -> str:
     """Filters rule documents by task stack and sections by agent scope and budget."""
-    docs = _split_rule_documents(rules_text)
-    retained_docs: list[str] = []
-    for doc in docs:
-        doc_stack = _document_stack(doc)
-        if doc_stack is not None and doc_stack not in {"all"} and doc_stack not in stack:
-            continue
-        retained_docs.append(doc)
+    if not rules_text.strip():
+        return ""
+    retained_docs = _retain_matching_docs(_split_rule_documents(rules_text), stack)
+    _log_stack_pack_status(retained_docs, stack)
     if not retained_docs:
         return ""
-    joined_text = "\n\n".join(retained_docs)
-    sections = parse_rule_sections(joined_text)
-    filtered = [
-        (h, c) for h, c in sections if _is_section_allowed(classify_section_scope(h, c), agent)
-    ]
-    budgeted = apply_character_budget(filtered, budget, agent)
+    joined = "\n\n".join(retained_docs)
+    sections = parse_rule_sections(joined)
+    if not any(h.startswith("## ") for h, _ in sections):
+        return _filter_unheaded_rules(joined, agent, budget)
+    allowed, disallowed = _partition_sections_by_scope(sections, agent)
+    if disallowed:
+        logger.debug("Project rule section(s) %s omitted from '%s': non-design", disallowed, agent)
+    if not allowed:
+        logger.warning("Project rules omitted from '%s': no sections match design scopes", agent)
+        return ""
+    budgeted = apply_character_budget(allowed, budget, agent)
     return "\n\n".join(c for _, c in budgeted).strip()
 
 

@@ -56,6 +56,14 @@ PROJECT: dict[str, Any] = {
     ],
     "reviewRules": "GOLDEN RULES TEXT",
 }
+DESIGN_PROJECT: dict[str, Any] = {
+    **PROJECT,
+    "reviewRules": "## API Rules\nGOLDEN RULES TEXT",
+}
+UNRECOGNIZED_RULES_PROJECT: dict[str, Any] = {
+    **PROJECT,
+    "reviewRules": "## Formatting Rules\nUse 2 spaces.",
+}
 
 FEEDBACK = [
     ApprovalFeedback(
@@ -243,9 +251,10 @@ def _scenarios() -> dict[str, str]:
         ("task", _task_system),
     ):
         texts[f"{agent}__plain"] = builder(None, False)
-        texts[f"{agent}__rules-skills"] = builder(PROJECT, False)
+        texts[f"{agent}__rules-skills"] = builder(DESIGN_PROJECT, False)
         texts[f"{agent}__revision"] = builder(None, True)
-        texts[f"{agent}__revision-rules-skills"] = builder(PROJECT, True)
+        texts[f"{agent}__revision-rules-skills"] = builder(DESIGN_PROJECT, True)
+    texts["spec__non-design-rules"] = _spec_system(UNRECOGNIZED_RULES_PROJECT, False)
     for agent, builder in (
         ("implement", _implement_system),
         ("review", _review_system),

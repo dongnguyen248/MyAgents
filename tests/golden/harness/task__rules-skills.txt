@@ -17,4 +17,5 @@ Instructions:
 13. Include test files in expectedFiles when code is touched.
 
 Project development rules — the standards this project's code must follow. Break the work into tasks that comply with them, including any tasks the standards require (for example dedicated constants files, DTOs, or tests); where they conflict with the output contract above, the output contract wins:
+## API Rules
 GOLDEN RULES TEXT

@@ -126,7 +126,8 @@ def test_rules_typescript_react_positive_filtering(caplog):
         "## Naming Conventions\nUse PascalCase for components and camelCase for hooks.\n\n"
         "## Prettier and Formatting\nUse 2 spaces and no semicolons.\n\n"
         "## Test Style Guidelines\nUse Jest and RTL.\n\n"
-        "## Overflow Notes\n" + ("Extra details for budget overflow test. " * 60)
+        "## Overflow Notes\n<!-- tags: structure -->\n"
+        + ("Extra details for budget overflow test. " * 60)
     )
     filtered = filter_rules_for_task(
         ts_rules, agent="spec", stack=frozenset({"typescript"}), budget=2500
@@ -170,8 +171,8 @@ def test_rules_budget_enforcement_and_logging(caplog):
     filtered = filter_rules_for_task(
         rules_text, agent="spec", stack=frozenset({"all"}), budget=2500
     )
-    assert "## 1. Security" in filtered
-    assert "## 2. API" not in filtered
+    assert "## 2. API" in filtered
+    assert "## 1. Security" not in filtered
     assert len(filtered) <= 2500
     assert "omitted from agent 'spec': exceeded character budget" in caplog.text
 
