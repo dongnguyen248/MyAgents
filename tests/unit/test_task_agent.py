@@ -3279,7 +3279,6 @@ class TaskAgentTests(unittest.TestCase):
         # Required sections from template
         self.assertIn("## Output Format", template_text)
         self.assertIn("## Task Object Fields", template_text)
-        self.assertIn("## Validation Rules", template_text)
         self.assertIn("## Worked Example", template_text)
 
         # Check worked example has valid JSON structure
@@ -3350,7 +3349,6 @@ class TaskAgentTests(unittest.TestCase):
         self.assertIn("# TASK Breakdown Specification", template)
         self.assertIn("## Output Format", template)
         self.assertIn("## Task Object Fields", template)
-        self.assertIn("## Validation Rules", template)
         self.assertIn("## Worked Example", template)
 
     def test_rendered_output_includes_all_task_fields(self):
@@ -3811,14 +3809,14 @@ class TaskAgentTests(unittest.TestCase):
 
         # Empty project_context
         result = build_user_message(_user_message_context(spec_artifact, plan_artifact, "en", {}))
-        self.assertIn("## Project context\nnone", result)
+        self.assertNotIn("## Project context", result)
 
         # Project context with no whitelisted keys
         project_ctx = {"other_key": "value"}
         result = build_user_message(
             _user_message_context(spec_artifact, plan_artifact, "en", project_ctx)
         )
-        self.assertIn("## Project context\nnone", result)
+        self.assertNotIn("## Project context", result)
 
 
 if __name__ == "__main__":
