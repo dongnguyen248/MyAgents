@@ -14,6 +14,11 @@ in the run record, and the dashboard's Detail panel shows it as
   http(s) and the number non-empty; anything else - no hosting, a
   skipped pipeline, a malformed ref - yields `null`, and the panel
   simply hides the row. No error is ever raised for a missing link.
+  The URL is additionally rebuilt from scheme + host + port + path
+  only (follow-up commit): userinfo, query and fragment are stripped,
+  so a provider URL carrying credentials or tokens can never leak
+  them into the snapshot - covered by a test whose URL carries a
+  marker token in all three places.
   The public workflow view omits step outputs by design, so the
   extractor reads the run record's results directly (same package,
   read-only); the rest of the hosting output (branch, pipeline
@@ -23,9 +28,10 @@ in the run record, and the dashboard's Detail panel shows it as
   at the top of the detail panel - visible for the run as a whole
   (nothing selected) and above any selected pulse's details.
   Only the URL and the number render; no hosting content.
-- Tests: 2 new route tests (link exposed from the last matching
+- Tests: 3 new route tests (link exposed from the last matching
   result; hidden when metadata is absent, the URL is not http(s),
-  or the number is missing).
+  or the number is missing; userinfo/query/fragment stripped with
+  none of the marker tokens anywhere in the payload).
 
 ## Why
 
@@ -46,8 +52,8 @@ for the link; the run already knew it.
 
 ## Verification
 
-- `pytest -q` - 2152 passed, 8 skipped, 425 subtests passed
-  (2150 on the base + 2 new).
+- `pytest -q` - 2153 passed, 8 skipped, 425 subtests passed
+  (2150 on the base + 3 new).
 - `ruff check src tests` - all checks passed;
   `ruff format --check src tests harness` - 438 files formatted.
 - `mypy src` - success, no issues in 183 source files.

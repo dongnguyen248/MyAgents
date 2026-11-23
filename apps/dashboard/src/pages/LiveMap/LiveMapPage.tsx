@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Card, PageHeader } from '../../components/common/Layout';
 import { MapCanvas } from '../../components/livemap/MapCanvas';
 import { MapFeed } from '../../components/livemap/MapFeed';
@@ -6,6 +7,7 @@ import { agentStates, budgetPercent, feedItems } from '../../lib/mapBoard';
 import type { BoardState } from '../../lib/mapBoard';
 import type { MapHosting } from '../../types/map';
 import type { Workflow } from '../../types/workflow';
+import { ReplaySection } from './ReplaySection';
 import { useLiveMapData, useMapSelection, useWorkflowRuns } from './useLiveMapData';
 import type { LiveMapData, MapSelection } from './useLiveMapData';
 
@@ -116,19 +118,47 @@ function MissedCard() {
   );
 }
 
+function ModeSwitch({
+  mode,
+  onMode,
+}: {
+  mode: 'live' | 'replay';
+  onMode: (mode: 'live' | 'replay') => void;
+}) {
+  return (
+    <label className="field inline">
+      <span>Mode</span>
+      <select value={mode} onChange={(e) => onMode(e.target.value as 'live' | 'replay')}>
+        <option value="live">Live</option>
+        <option value="replay">Replay</option>
+      </select>
+    </label>
+  );
+}
+
 export function LiveMapPage() {
   const { workflows, runId, setRunId } = useWorkflowRuns();
   const live = useLiveMapData(runId);
   const selection = useMapSelection(live.board);
+  const [mode, setMode] = useState<'live' | 'replay'>('live');
   const showMissed = live.missed && live.board.entries.length === 0;
   return (
     <>
       <PageHeader
         title="Live map"
         subtitle="What each agent is doing right now: pulses are metadata only - names, never content."
-        actions={<RunPicker workflows={workflows} runId={runId} onRunId={setRunId} />}
+        actions={
+          <>
+            <ModeSwitch mode={mode} onMode={setMode} />
+            {mode === 'live' && (
+              <RunPicker workflows={workflows} runId={runId} onRunId={setRunId} />
+            )}
+          </>
+        }
       />
-      {showMissed ? <MissedCard /> : <MapLayout live={live} selection={selection} />}
+      {mode === 'replay' && <ReplaySection />}
+      {mode === 'live' && showMissed && <MissedCard />}
+      {mode === 'live' && !showMissed && <MapLayout live={live} selection={selection} />}
     </>
   );
 }

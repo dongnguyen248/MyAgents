@@ -1,7 +1,7 @@
 import type { ActivityEvent, ActivityFilter } from '../../types/activity';
 import type { Agent, AgentConfig, AgentRun } from '../../types/agent';
 import type { Approval, ApprovalDecisionInput } from '../../types/approval';
-import type { MapEvent, MapSnapshot } from '../../types/map';
+import type { MapEvent, MapReplay, MapReplaySummary, MapSnapshot } from '../../types/map';
 import type { MetricsOverview } from '../../types/metrics';
 import type { Project, ProjectProfileInput } from '../../types/project';
 import type { ModelSettings, ModelSettingsInput, ModelTestResult } from '../../types/settings';
@@ -73,6 +73,10 @@ export interface FactoryApi {
   getMapSnapshot(runId: string): Promise<MapSnapshot | undefined>;
   /** Live map pulse stream for one run (SSE on the real backend). */
   subscribeMapEvents(runId: string, onEvent: (e: MapEvent) => void): Unsubscribe;
+  /** Stored live-map replays (JSONL on the backend); empty when none. */
+  getMapReplays(): Promise<MapReplaySummary[]>;
+  /** One stored replay with its events and footer totals, if any. */
+  getMapReplay(runId: string): Promise<MapReplay | undefined>;
 
   getMetricsOverview(): Promise<MetricsOverview>;
 

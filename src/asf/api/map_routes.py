@@ -20,6 +20,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from asf.api.service.map_hub import MapHub, active_map_hub
+from asf.api.service.map_replay import active_replay_store
 
 __all__ = ["register_map_routes"]
 
@@ -145,5 +146,19 @@ def register_map_routes(app: FastAPI, service: Any) -> FastAPI:
             _stream(service, hub, runId, request),
             media_type="text/event-stream",
         )
+
+    store = active_replay_store()
+    if store is not None:
+
+        @app.get("/map/replays")
+        async def map_replays() -> Any:
+            return {"replays": store.list_replays()}
+
+        @app.get("/map/replay")
+        async def map_replay(runId: str) -> Any:
+            payload = store.read_replay(runId)
+            if payload is None:
+                return JSONResponse(status_code=404, content={"detail": "Replay not found"})
+            return payload
 
     return app

@@ -1,4 +1,4 @@
-import type { MapEvent, MapSnapshot } from '../../types/map';
+import type { MapEvent, MapReplay, MapReplaySummary, MapSnapshot } from '../../types/map';
 import type { Project } from '../../types/project';
 import type { RunDiagnostics, Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
@@ -117,6 +117,9 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     },
 
     getMapSnapshot: (runId) => getOpt<MapSnapshot>(`/map/snapshot${qs({ runId })}`),
+    getMapReplays: async () =>
+      (await getOpt<{ replays: MapReplaySummary[] }>('/map/replays'))?.replays ?? [],
+    getMapReplay: (runId) => getOpt<MapReplay>(`/map/replay${qs({ runId })}`),
     subscribeMapEvents: (runId, onEvent) => {
       // Same pattern as subscribeActivity: EventSource reconnects on its
       // own and a dead stream must never break the dashboard.

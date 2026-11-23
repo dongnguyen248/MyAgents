@@ -15,9 +15,11 @@ import uuid
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from asf.api.service.map_hub import MapHub, active_map_hub, live_map_enabled, set_active_map_hub
+from asf.api.service.map_replay import MapReplayStore, set_active_replay_store
 from asf.contracts.map_events import MapEvent, MapStatus, clean_label
 from asf.contracts.models import ActivityEvent, AgentRequest, AgentResult
 from asf.integrations.hosting.actions import ProfileSource, build_hosting_actions
@@ -139,18 +141,25 @@ class MapPublisher:
         return getattr(self._inner, name)
 
 
-def install_live_map(budget: Any) -> MapHub:
+def install_live_map(budget: Any, data_dir: Path | None = None) -> MapHub:
     """Creates the hub and installs it as the agents' default tap.
 
     Called from the demo assembly BEFORE the agent registry is built:
     agents pick the tap up when they wrap their model gateway, so the
-    hub must already be the default by then.
+    hub must already be the default by then. With a data dir, the
+    JSONL replay writer is attached as the hub's sink.
     """
     hub = MapHub()
     limit_tokens = _sum_limits(budget.max_prompt_tokens, budget.max_completion_tokens)
     hub.set_budget_limits(limit_tokens, budget.max_model_calls)
     set_active_map_hub(hub)
     set_default_map_tap(hub)
+    if data_dir is not None:
+        store = MapReplayStore(data_dir / "map-runs", hub)
+        store.start()
+        hub.set_sink(store.observe)
+        hub.set_close_sink(store.close_run)
+        set_active_replay_store(store)
     return hub
 
 
