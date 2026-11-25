@@ -789,7 +789,7 @@ def test_spec_f2_system_prompt_piece_sum_equals_total():
     assert base + rules_piece + skills_piece == system_msg
 
 
-def _build_all_agent_systems() -> list[tuple[str, str]]:
+def _build_all_agent_systems(revision: bool = False) -> list[tuple[str, str]]:
     from asf.agents.loading import (
         load_plan_prompts,
         load_plan_template,
@@ -804,30 +804,61 @@ def _build_all_agent_systems() -> list[tuple[str, str]]:
     tdir = Path("templates")
     spec_art = {"id": "a1", "version": "1", "content": {"text": "# SPEC: t\n## Background / Goal"}}
     plan_art = {"id": "b1", "version": "1", "content": {"text": "# PLAN: t\n## Linked SPEC"}}
+    prev_spec = ("1", "# SPEC: old") if revision else None
+    prev_plan = ("1", "# PLAN: old") if revision else None
+    prev_task = ("1", '{"tasks":[]}') if revision else None
     spec_sys = build_spec_messages(
-        SpecPromptContext(load_spec_prompts(), load_spec_template(tdir), "req", None, None)
+        SpecPromptContext(
+            load_spec_prompts(), load_spec_template(tdir), "req", None, None, prev_spec
+        )
     )[0].content
     plan_sys = build_plan_messages(
-        PlanPromptContext(load_plan_prompts(), load_plan_template(tdir), spec_art, None, None)
+        PlanPromptContext(
+            load_plan_prompts(), load_plan_template(tdir), spec_art, None, None, prev_plan
+        )
     )[0].content
     task_sys = build_task_messages(
         TaskPromptContext(
-            load_task_prompts(), load_task_template(tdir), spec_art, plan_art, None, None
+            load_task_prompts(),
+            load_task_template(tdir),
+            spec_art,
+            plan_art,
+            None,
+            None,
+            prev_task,
         )
     )[0].content
     return [("spec", spec_sys), ("plan", plan_sys), ("task", task_sys)]
 
 
+def _extract_section_block(system: str, header: str) -> str:
+    if header not in system:
+        return ""
+    after = system.split(header, 1)[1]
+    for stop in ("\n\nYou are revising", "\n\nRevision instructions:", "\n\nProject "):
+        if stop in after:
+            after = after.split(stop, 1)[0]
+    return after
+
+
 def test_instruction_numbering_is_sequential_for_all_agents():
-    """System prompts for Spec, Plan, and Task must have no gaps or duplicate numbers."""
+    """Instructions (and Revision instructions) for Spec, Plan, and Task must be sequential."""
     import re
 
     pattern = re.compile(r"^\d+\. ", re.MULTILINE)
-    for agent_name, system in _build_all_agent_systems():
-        numbers = [int(m.group().rstrip(". ")) for m in pattern.finditer(system)]
-        assert numbers == list(range(1, len(numbers) + 1)), (
-            f"{agent_name} instructions not sequential: {numbers}"
-        )
+    for revision in (False, True):
+        for agent_name, system in _build_all_agent_systems(revision=revision):
+            inst_block = _extract_section_block(system, "Instructions:\n")
+            nums = [int(m.group().rstrip(". ")) for m in pattern.finditer(inst_block)]
+            assert nums == list(range(1, len(nums) + 1)), (
+                f"{agent_name} (rev={revision}) Instructions not sequential: {nums}"
+            )
+            if revision:
+                rev_block = _extract_section_block(system, "Revision instructions:\n")
+                rnums = [int(m.group().rstrip(". ")) for m in pattern.finditer(rev_block)]
+                assert rnums == list(range(1, len(rnums) + 1)), (
+                    f"{agent_name} Revision instructions not sequential: {rnums}"
+                )
 
 
 def test_generic_heading_with_api_body_is_omitted():
@@ -852,12 +883,70 @@ def test_generic_heading_with_api_body_is_omitted():
 
 
 def test_classify_section_scope_word_boundaries():
-    """Keyword matching uses word boundaries so substrings do not cause false positives."""
-    cases = [
+    """Keyword matching uses word boundaries for both positive plurals and negative substrings."""
+    negative_cases = [
         ("## Capitalization", "Use PascalCase."),
         ("## Authoring guide", "Write clear docs."),
         ("## Classification rules", "Group items cleanly."),
         ("## Enumerating options", "List all choices."),
     ]
-    for heading, body in cases:
+    for heading, body in negative_cases:
         assert classify_section_scope(heading, f"{heading}\n{body}") == "coding-detail"
+
+    positive_cases = [
+        ("## Authentication", "security"),
+        ("## Authorize", "security"),
+        ("## Permissions", "security"),
+        ("## Credentials", "security"),
+        ("## APIs", "api"),
+        ("## Endpoints", "api"),
+        ("## DTOs", "api"),
+        ("## Enums", "naming"),
+        ("## Constants", "naming"),
+    ]
+    for heading, expected in positive_cases:
+        assert classify_section_scope(heading, f"{heading}\nBody text.") == expected
+
+
+def test_plan_java_vhpc_receives_java_spring_digests_and_react_does_not():
+    """Plan prompt for Java vhpc task includes java/spring digests; React-only task omits them."""
+    from asf.agents.loading import load_plan_prompts, load_plan_template
+    from asf.agents.plan.prompts import PlanPromptContext, build_plan_messages
+    from asf.api.demo import DemoFactoryService
+    from asf.configuration.loader import load_projects
+
+    demo = DemoFactoryService.__new__(DemoFactoryService)
+    demo._projects_dir = Path("projects")
+    demo._skills_dir = Path("skills")
+    profile = load_projects(demo._projects_dir)["vhpc"].to_contract()
+    demo._project_profiles = {"vhpc": profile}
+    real_skills = demo._project_skills("vhpc")
+    proj_ctx = {"name": "vhpc", "technology": profile.get("technology", {}), "skills": real_skills}
+
+    java_spec = {
+        "id": "s1",
+        "version": "1",
+        "content": {"text": "# SPEC: Alloc\nImplement Spring Boot Java 21 controller."},
+    }
+    java_plan = build_plan_messages(
+        PlanPromptContext(
+            load_plan_prompts(), load_plan_template(Path("templates")), java_spec, None, proj_ctx
+        )
+    )[0].content
+    assert "### Skill: java" in java_plan
+    assert "### Skill: spring" in java_plan
+    assert "### Skill: react" not in java_plan
+
+    react_spec = {
+        "id": "s2",
+        "version": "1",
+        "content": {"text": "# SPEC: Form\nCreate AllocationForm.tsx in React TypeScript."},
+    }
+    react_plan = build_plan_messages(
+        PlanPromptContext(
+            load_plan_prompts(), load_plan_template(Path("templates")), react_spec, None, proj_ctx
+        )
+    )[0].content
+    assert "### Skill: java" not in react_plan
+    assert "### Skill: spring" not in react_plan
+    assert "### Skill: react" in react_plan
