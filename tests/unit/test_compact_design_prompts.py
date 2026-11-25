@@ -10,6 +10,8 @@ from asf.agents._shared.design_prompts import (
     format_language_section,
 )
 from asf.agents._shared.rules import (
+    _document_stack,
+    classify_section_scope,
     detect_task_stack,
     filter_rules_for_task,
 )
@@ -657,3 +659,131 @@ def test_spec_template_headings_present_in_all_fixtures():
         user_content = msgs[1].content
         for heading in template.required_sections:
             assert heading in user_content, f"Missing heading {heading} in fixture: {req}"
+
+
+def test_skill_missing_digest_logs_warning_and_omits(caplog):
+    """Design agents omit skills without a digest field and log a WARNING."""
+    caplog.set_level(logging.WARNING)
+    project = {
+        "skills": [
+            {"id": "general", "content": "General body only, no digest"},
+            {"id": "security", "digest": "Explicit security rules.", "content": "Body"},
+        ],
+    }
+    selected = skills_for_agent(project, "spec")
+    assert selected == [("security", "Explicit security rules.")]
+    assert "Skill 'general' has no digest; omitting from design agent 'spec'" in caplog.text
+
+
+def test_signal_detection_file_extensions_and_dotnet():
+    """File extensions in text_signal (e.g. calc.py, Foo.tsx) and ASP.NET are detected."""
+    assert detect_task_stack(None, {"backend": ["python"]}, "Update calc.py") == frozenset(
+        {"python"}
+    )
+    assert detect_task_stack(None, {"frontend": ["typescript"]}, "Create Foo.tsx") == frozenset(
+        {"typescript"}
+    )
+    assert detect_task_stack(
+        None, {"backend": ["csharp"]}, "Build an ASP.NET Core API"
+    ) == frozenset({"csharp"})
+    assert detect_task_stack(
+        None, {"frontend": ["typescript"]}, "Edit src/app/main.ts"
+    ) == frozenset({"typescript"})
+    tech_all = {"backend": ["python", "java"], "frontend": ["typescript"]}
+    assert detect_task_stack(None, tech_all, "Handle reaction results") == frozenset()
+    assert detect_task_stack(None, {"backend": ["java"]}, "Spring cleaning task") == frozenset()
+
+
+def test_section_classification_fixes():
+    """Heading-first classification avoids false body matches and covers security/api/tests."""
+    assert (
+        classify_section_scope(
+            "## 4. Tests and Review",
+            "## 4. Tests and Review\n\nCover authorization, validation.",
+        )
+        == "test-style"
+    )
+    assert (
+        classify_section_scope(
+            "## 1. Readability and Structure",
+            "## 1. Readability and Structure\n\nUse clear naming.",
+        )
+        == "structure"
+    )
+    assert (
+        classify_section_scope(
+            "## 4. Async and Error Handling",
+            "## 4. Async and Error Handling\n\nNever block in request or library code.",
+        )
+        == "coding-detail"
+    )
+    assert (
+        classify_section_scope(
+            "## 3. SQL / Injection Protection",
+            "## 3. SQL / Injection Protection\n\nUse parameterized queries.",
+        )
+        == "security"
+    )
+    assert (
+        classify_section_scope(
+            "## 7. Error Message Disclosure",
+            "## 7. Error Message Disclosure\n\nDo NOT expose internal stack traces.",
+        )
+        == "security"
+    )
+    assert (
+        classify_section_scope(
+            "## 4. Errors and HTTP Status",
+            "## 4. Errors and HTTP Status\n\nUse ProblemDetails.",
+        )
+        == "api"
+    )
+
+
+def test_document_stack_ignores_body_tokens_like_ts_in_inputs():
+    """_document_stack only inspects the # title line, not body text like 'inputs'."""
+    doc = "# General Rules\nAlways validate inputs at API boundaries."
+    assert _document_stack(doc) is None
+
+
+def test_spec_f2_system_prompt_piece_sum_equals_total():
+    """Verifies sum of exact prompt pieces equals len(system) for F2 TS/React Spec."""
+    from asf.agents._shared.rules import RulesFilterOptions, rules_section
+    from asf.agents._shared.skills import skills_section
+    from asf.agents.loading import load_spec_prompts, load_spec_template
+    from asf.agents.spec.prompts import _RULES_INTRO
+
+    prompts = load_spec_prompts()
+    template = load_spec_template(Path("templates"))
+    ts_rules = Path("projects/rules/languages/typescript.md").read_text(encoding="utf-8")
+    proj_ctx = {
+        "name": "MyAgent",
+        "technology": {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]},
+        "reviewRules": ts_rules,
+        "skills": [
+            {"id": "general", "digest": "Keep changes minimal."},
+            {"id": "security", "digest": "Specify security requirements."},
+        ],
+    }
+    req = "Create CreateBiddingForm.tsx with React form validation"
+    stack = detect_task_stack(None, proj_ctx["technology"], text_signal=req)
+    assert stack == frozenset({"typescript"})
+
+    system_msg = build_spec_messages(
+        SpecPromptContext(
+            prompts=prompts,
+            template=template,
+            requirement=req,
+            language=None,
+            project_context=proj_ctx,
+        )
+    )[0].content
+    base = prompts.contract + prompts.system
+    rules_piece = rules_section(
+        proj_ctx,
+        _RULES_INTRO,
+        RulesFilterOptions(agent="spec", stack=stack),
+    )
+    skills_piece = skills_section(proj_ctx, "spec", stack=stack)
+    assert len(base) + len(rules_piece) + len(skills_piece) == len(system_msg)
+    assert base + rules_piece + skills_piece == system_msg
