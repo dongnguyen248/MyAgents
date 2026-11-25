@@ -453,6 +453,10 @@ def measure_target(target_dir: Path, fixture: PromptFixture) -> dict[str, Any]:
         "reviewRules": review_rules_content,
         "technology": tech,
     }
+    if fixture.project_id == "vhpc":
+        design_budget = profile.get("configuration", {}).get("designRulesBudget")
+        if isinstance(design_budget, dict):
+            project_context["designRulesBudget"] = design_budget
 
     res: dict[str, Any] = {
         "spec": _measure_spec(target_dir, templates_dir, project_context, fixture.requirement),
