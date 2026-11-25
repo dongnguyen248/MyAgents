@@ -950,3 +950,98 @@ def test_plan_java_vhpc_receives_java_spring_digests_and_react_does_not():
     assert "### Skill: java" not in react_plan
     assert "### Skill: spring" not in react_plan
     assert "### Skill: react" in react_plan
+
+
+def test_per_project_d2_budget_stops_at_quota_and_default_stays_2500(caplog):
+    """Per-project designRulesBudget uses scope quotas; projects without it keep 2500."""
+    from asf.agents._shared.rules import RulesFilterOptions, rules_section
+    from asf.api.demo import DemoFactoryService
+
+    caplog.set_level(logging.WARNING)
+    demo = DemoFactoryService.__new__(DemoFactoryService)
+    demo._projects_dir = Path("projects")
+    demo._skills_dir = Path("skills")
+    demo._default_test_commands = lambda _pid: [["mvn", "test"]]
+    profile = {
+        "id": "vhpc",
+        "technology": {"backend": ["java", "spring"], "frontend": ["react"]},
+        "enabledSkills": ["java", "spring", "react", "security"],
+        "configuration": {
+            "review": {
+                "rulesFiles": ["rules/vhpc/api-rules.md", "rules/vhpc/security-rules.md"],
+            },
+            "designRulesBudget": {"total": 5500, "api": 2900, "security": 2300},
+        },
+    }
+    demo._project_profiles = {"vhpc": profile}
+    demo._projects = {"vhpc": {"technologies": ["java", "spring", "react"]}}
+
+    ctx = demo._build_initial_context("vhpc", None)["project"]
+    assert ctx["designRulesBudget"] == {"total": 5500, "api": 2900, "security": 2300}
+
+    vhpc_out = rules_section(
+        ctx, "Project standards:", RulesFilterOptions(agent="spec", stack=frozenset({"java"}))
+    )
+    assert "## 4. Errors and HTTP Status" in vhpc_out
+    assert "## 6. Dependency Security" in vhpc_out
+    assert "## 7. Error Message Disclosure" not in vhpc_out
+    assert "## 7. Error Message Disclosure (security)" in caplog.text
+
+    default_ctx = {k: v for k, v in ctx.items() if k != "designRulesBudget"}
+    default_out = rules_section(
+        default_ctx,
+        "Project standards:",
+        RulesFilterOptions(agent="spec", stack=frozenset({"java"})),
+    )
+    assert len(default_out) <= 2500 + len("\n\nProject standards:\n")
+    assert "## 4. Errors and HTTP Status" not in default_out
+
+
+def test_invalid_design_rules_budget_falls_back_to_default_with_warning(caplog):
+    """Invalid designRulesBudget configs fall back to 2500 with WARNING and never raise."""
+    from asf.agents._shared.rules import RulesFilterOptions, rules_section
+
+    bad_configs: list[object] = [
+        "not-a-dict",
+        {"total": "5500", "api": 2900},
+        {"total": 0, "api": 2900},
+        {"total": -100, "api": 2900},
+        {"total": True, "api": 2900},
+        {"total": 5500, "api": 6000},
+        {"total": 5500, "api": -10},
+        {"api": 2900},
+        {"total": 5500, "unknown": 100},
+    ]
+    long_rules = (
+        "<!-- stack: all -->\n"
+        "## 1. API Contract\n" + ("a" * 1600) + "\n\n"
+        "## 2. Security Rules\n" + ("b" * 1600)
+    )
+    for bad in bad_configs:
+        caplog.clear()
+        caplog.set_level(logging.WARNING)
+        proj = {"reviewRules": long_rules, "designRulesBudget": bad}
+        out = rules_section(
+            proj, "Project standards:", RulesFilterOptions(agent="spec", stack=frozenset({"java"}))
+        )
+        assert "Invalid designRulesBudget" in caplog.text
+        assert len(out) <= 2500 + len("\n\nProject standards:\n")
+
+
+def test_scope_quotas_stops_without_skipping_later_smaller_section():
+    """Within a scope quota, a section that overflows stops that scope instead of skipping."""
+    from asf.agents._shared.rules import RulesBudget, filter_rules_for_task
+
+    s1 = "## 1. API Contract\n" + ("a" * 80)
+    s2 = "## 2. API Validation\n" + ("b" * 200)
+    s3 = "## 3. API Status\n" + ("c" * 30)
+    rules = f"<!-- stack: all -->\n{s1}\n\n{s2}\n\n{s3}"
+    filtered = filter_rules_for_task(
+        rules,
+        agent="spec",
+        stack=frozenset({"python"}),
+        budget=RulesBudget(total=1000, scope_quotas={"api": 150}),
+    )
+    assert "## 1. API Contract" in filtered
+    assert "## 2. API Validation" not in filtered
+    assert "## 3. API Status" not in filtered
