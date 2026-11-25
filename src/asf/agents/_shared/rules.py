@@ -110,10 +110,11 @@ def _detect_text_signals(text_signal: str, files: Sequence[str]) -> set[str]:
             signals.add(_STACK_EXTENSIONS[ext])
     lowered = text_signal.lower()
     for ext, stack in _STACK_EXTENSIONS.items():
-        if re.search(r"(?<!\w)" + re.escape(ext) + r"(?!\w)", lowered):
+        if re.search(re.escape(ext) + r"(?!\w)", lowered):
             signals.add(stack)
     for tool, stack in _STACK_TOOLS.items():
-        if re.search(r"(?<!\w)" + re.escape(tool) + r"(?!\w)", lowered):
+        pattern = re.escape(tool) + r"(?!\w)" if tool.startswith(".") else r"(?<!\w)" + re.escape(tool) + r"(?!\w)"
+        if re.search(pattern, lowered):
             signals.add(stack)
     return signals
 
@@ -191,9 +192,9 @@ def parse_rule_sections(text: str) -> list[tuple[str, str]]:
 
 _SCOPE_KEYWORDS: list[tuple[str, list[str]]] = [
     ("formatting", ["formatting", "prettier", "eslint", "whitespace", "brace", "indent"]),
-    ("test-style", ["testing", "test style", "mock", "checklist", "automated"]),
-    ("security", ["security", "auth", "secret", "permission", "audit", "validation"]),
-    ("api", ["api", "endpoint", "resource", "contract", "request", "response", "dto"]),
+    ("test-style", ["testing", "test style", "tests", "verification", "mock", "checklist", "automated"]),
+    ("api", ["api", "endpoint", "resource", "contract", "request", "response", "dto", "http status"]),
+    ("security", ["security", "auth", "secret", "permission", "audit", "validation", "injection", "disclosure"]),
     ("naming", ["naming", "convention", "constant", "enum"]),
     (
         "structure",
@@ -210,9 +211,9 @@ def classify_section_scope(heading: str, body: str) -> str:
         for scope, _ in _SCOPE_KEYWORDS:
             if scope in tag_str:
                 return scope
-    combined = (heading + " " + body[:150]).lower()
+    target = heading.lower() if heading.strip() else body[:150].lower()
     for scope, keywords in _SCOPE_KEYWORDS:
-        if any(kw in combined for kw in keywords):
+        if any(kw in target for kw in keywords):
             return scope
     return "coding-detail"
 
