@@ -211,27 +211,57 @@ _SCOPE_KEYWORDS: list[tuple[str, list[str]]] = [
     ),
     (
         "api",
-        ["api", "endpoint", "resource", "contract", "request", "response", "dto", "http status"],
+        [
+            "api",
+            "endpoint",
+            "endpoints",
+            "resource",
+            "resources",
+            "contract",
+            "contracts",
+            "request",
+            "response",
+            "responses",
+            "dto",
+            "http status",
+        ],
     ),
     (
         "security",
         [
             "security",
             "auth",
+            "authentication",
+            "authorization",
             "secret",
+            "secrets",
             "permission",
+            "permissions",
             "audit",
             "validation",
             "injection",
             "disclosure",
         ],
     ),
-    ("naming", ["naming", "convention", "constant", "enum"]),
+    ("naming", ["naming", "convention", "conventions", "constant", "constants", "enum", "enums"]),
     (
         "structure",
-        ["structure", "architecture", "component", "class", "state management", "react and ui"],
+        [
+            "structure",
+            "architecture",
+            "component",
+            "components",
+            "class",
+            "classes",
+            "state management",
+            "react and ui",
+        ],
     ),
 ]
+
+
+def _matches_keyword(target: str, keyword: str) -> bool:
+    return re.search(rf"(?<!\w){re.escape(keyword)}(?!\w)", target) is not None
 
 
 def classify_section_scope(heading: str, body: str) -> str:
@@ -244,7 +274,7 @@ def classify_section_scope(heading: str, body: str) -> str:
                 return scope
     target = heading.lower() if heading.strip() else body[:150].lower()
     for scope, keywords in _SCOPE_KEYWORDS:
-        if any(kw in target for kw in keywords):
+        if any(_matches_keyword(target, kw) for kw in keywords):
             return scope
     return "coding-detail"
 
