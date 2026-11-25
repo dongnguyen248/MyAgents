@@ -1,6 +1,7 @@
 ---
 name: java
 description: Idiomatic modern Java — immutability and records for data, Optional only as a return type, disciplined streams, precise exceptions, correct equals/hashCode, and explicit concurrency. Applies when planning, implementing, reviewing or fixing Java code on any framework.
+digest: Use records, final fields, Optional only as return type, and constructor injection; validate public inputs, throw specific exceptions, and avoid shared mutable state.
 ---
 
 # Java craft
