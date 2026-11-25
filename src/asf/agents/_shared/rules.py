@@ -15,7 +15,7 @@ import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeGuard
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,17 @@ MAX_DESIGN_RULES_BUDGET: int = 2500
 
 
 @dataclass(frozen=True)
+class RulesBudget:
+    total: int = MAX_DESIGN_RULES_BUDGET
+    scope_quotas: dict[str, int] | None = None
+
+
+@dataclass(frozen=True)
 class RulesFilterOptions:
     agent: str = ""
     stack: frozenset[str] | None = None
     budget: int = MAX_DESIGN_RULES_BUDGET
+    scope_quotas: dict[str, int] | None = None
 
 
 _STACK_EXTENSIONS: dict[str, str] = {
@@ -304,19 +311,55 @@ _PRIORITY_ORDER: dict[str, int] = {
 }
 
 
-def apply_character_budget(
-    sections: list[tuple[str, str]],
-    budget: int = MAX_DESIGN_RULES_BUDGET,
-    agent: str = "",
-) -> list[tuple[str, str]]:
-    """Enforces character budget by dropping entire sections in deterministic priority order.
+def _select_scope_within_quota(
+    candidates: list[tuple[int, str, str]],
+    curr_len: int,
+    budget: int,
+    quota: int | None,
+) -> tuple[list[tuple[int, str, str]], int, list[str]]:
+    picked: list[tuple[int, str, str]] = []
+    q_used = 0
+    for pos, (idx, h, c) in enumerate(candidates):
+        extra = len(c) if (curr_len == 0 and not picked) else (2 + len(c))
+        q_extra = len(c) if q_used == 0 else (2 + len(c))
+        if curr_len + extra > budget or (quota is not None and q_used + q_extra > quota):
+            return picked, curr_len, [ch or "preamble" for _, ch, _ in candidates[pos:]]
+        picked.append((idx, h, c))
+        curr_len += extra
+        q_used += q_extra
+    return picked, curr_len, []
 
-    The total length check includes the '\\n\\n' delimiters that join sections.
-    """
-    total_len = len("\n\n".join(c for _, c in sections))
-    if total_len <= budget:
-        return sections
-    annotated = [(idx, classify_section_scope(h, c), h, c) for idx, (h, c) in enumerate(sections)]
+
+def _apply_quotas_budget(
+    annotated: list[tuple[int, str, str, str]],
+    budget: int,
+    agent: str,
+    scope_quotas: dict[str, int],
+) -> list[tuple[int, str, str]]:
+    selected: list[tuple[int, str, str]] = []
+    dropped: list[str] = []
+    curr_len = 0
+    for scope in ("api", "security", "structure", "naming"):
+        candidates = [(i, h, c) for i, sc, h, c in annotated if sc == scope]
+        picked, curr_len, scope_dropped = _select_scope_within_quota(
+            candidates, curr_len, budget, scope_quotas.get(scope)
+        )
+        selected.extend(picked)
+        dropped.extend(f"{name} ({scope})" for name in scope_dropped)
+    if dropped:
+        msg = (
+            "Project rule section(s) %s omitted from agent '%s':"
+            " exceeded character budget (%d chars)"
+        )
+        logger.warning(msg, dropped, agent, budget)
+    return selected
+
+
+def _apply_greedy_budget(
+    annotated: list[tuple[int, str, str, str]],
+    budget: int,
+    agent: str,
+) -> list[tuple[int, str, str]]:
     annotated.sort(key=lambda item: (_PRIORITY_ORDER.get(item[1], 99), item[0]))
     selected: list[tuple[int, str, str]] = []
     curr_len = 0
@@ -334,6 +377,28 @@ def apply_character_budget(
             " exceeded character budget (%d chars)"
         )
         logger.warning(msg, dropped, agent, budget)
+    return selected
+
+
+def apply_character_budget(
+    sections: list[tuple[str, str]],
+    budget: int = MAX_DESIGN_RULES_BUDGET,
+    agent: str = "",
+    scope_quotas: dict[str, int] | None = None,
+) -> list[tuple[str, str]]:
+    """Enforces character budget by dropping entire sections in deterministic priority order.
+
+    The total length check includes the '\\n\\n' delimiters that join sections.
+    """
+    total_len = len("\n\n".join(c for _, c in sections))
+    if total_len <= budget and not scope_quotas:
+        return sections
+    annotated = [(idx, classify_section_scope(h, c), h, c) for idx, (h, c) in enumerate(sections)]
+    selected = (
+        _apply_quotas_budget(annotated, budget, agent, scope_quotas)
+        if scope_quotas
+        else _apply_greedy_budget(annotated, budget, agent)
+    )
     selected.sort(key=lambda item: item[0])
     return [(h, c) for _, h, c in selected]
 
@@ -351,10 +416,14 @@ def _retain_matching_docs(docs: list[str], stack: frozenset[str]) -> list[str]:
 def _partition_sections_by_scope(
     sections: list[tuple[str, str]],
     agent: str,
+    drop_preamble: bool = False,
 ) -> tuple[list[tuple[str, str]], list[str]]:
     allowed: list[tuple[str, str]] = []
     disallowed: list[str] = []
     for h, c in sections:
+        if drop_preamble and not h.strip():
+            disallowed.append("preamble")
+            continue
         scope = classify_section_scope(h, c)
         if _is_section_allowed(scope, agent):
             allowed.append((h, c))
@@ -394,9 +463,11 @@ def filter_rules_for_task(
     rules_text: str,
     agent: str,
     stack: frozenset[str],
-    budget: int = MAX_DESIGN_RULES_BUDGET,
+    budget: int | RulesBudget = MAX_DESIGN_RULES_BUDGET,
 ) -> str:
     """Filters rule documents by task stack and sections by agent scope and budget."""
+    total_budget = budget.total if isinstance(budget, RulesBudget) else budget
+    scope_quotas = budget.scope_quotas if isinstance(budget, RulesBudget) else None
     if not rules_text.strip():
         return ""
     retained_docs = _retain_matching_docs(_split_rule_documents(rules_text), stack)
@@ -406,14 +477,16 @@ def filter_rules_for_task(
     joined = "\n\n".join(retained_docs)
     sections = parse_rule_sections(joined)
     if not any(h.startswith("## ") for h, _ in sections):
-        return _filter_unheaded_rules(joined, agent, budget)
-    allowed, disallowed = _partition_sections_by_scope(sections, agent)
+        return _filter_unheaded_rules(joined, agent, total_budget)
+    allowed, disallowed = _partition_sections_by_scope(
+        sections, agent, drop_preamble=bool(scope_quotas)
+    )
     if disallowed:
         logger.debug("Project rule section(s) %s omitted from '%s': non-design", disallowed, agent)
     if not allowed:
         logger.warning("Project rules omitted from '%s': no sections match design scopes", agent)
         return ""
-    budgeted = apply_character_budget(allowed, budget, agent)
+    budgeted = apply_character_budget(allowed, total_budget, agent, scope_quotas)
     return "\n\n".join(c for _, c in budgeted).strip()
 
 
@@ -428,6 +501,57 @@ def project_rules(project: Any) -> str:
         return ""
     rules = project.get("reviewRules")
     return rules.strip() if isinstance(rules, str) else ""
+
+
+def attach_design_budget(project: dict[str, Any], profile: dict[str, Any]) -> None:
+    """Propagates configuration.designRulesBudget from project profile to context."""
+    cfg = profile.get("configuration")
+    budget = cfg.get("designRulesBudget") if isinstance(cfg, dict) else None
+    if isinstance(budget, dict):
+        project["designRulesBudget"] = budget
+
+
+_VALID_BUDGET_KEYS: frozenset[str] = frozenset({"total", "api", "security", "structure", "naming"})
+
+
+def _is_pos_int(val: Any) -> TypeGuard[int]:
+    return isinstance(val, int) and not isinstance(val, bool) and val > 0
+
+
+def _validate_design_budget(cfg: Any, default_budget: int) -> RulesBudget:
+    if not isinstance(cfg, dict):
+        logger.warning(
+            "Invalid designRulesBudget (expected mapping); using default %d", default_budget
+        )
+        return RulesBudget(total=default_budget)
+    unknown = set(cfg) - _VALID_BUDGET_KEYS
+    total = cfg.get("total")
+    if unknown or not _is_pos_int(total):
+        logger.warning("Invalid designRulesBudget %r; using default %d", cfg, default_budget)
+        return RulesBudget(total=default_budget)
+    quotas: dict[str, int] = {}
+    for key in ("api", "security", "structure", "naming"):
+        if key not in cfg:
+            continue
+        val = cfg[key]
+        if not _is_pos_int(val) or val > total:
+            logger.warning(
+                "Invalid designRulesBudget quota %s=%r; using default %d",
+                key,
+                val,
+                default_budget,
+            )
+            return RulesBudget(total=default_budget)
+        quotas[key] = val
+    return RulesBudget(total=total, scope_quotas=quotas or None)
+
+
+def _resolve_rules_budget(project: Any, opts: RulesFilterOptions) -> RulesBudget:
+    if opts.scope_quotas is not None:
+        return RulesBudget(total=opts.budget, scope_quotas=opts.scope_quotas)
+    if not isinstance(project, dict) or "designRulesBudget" not in project:
+        return RulesBudget(total=opts.budget)
+    return _validate_design_budget(project["designRulesBudget"], opts.budget)
 
 
 def rules_section(
@@ -445,7 +569,8 @@ def rules_section(
             proj_dict = project if isinstance(project, dict) else {}
             tech = proj_dict.get("technology") or proj_dict.get("technologies")
             stack = detect_task_stack(None, tech)
-        rules = filter_rules_for_task(rules, opts.agent, stack, opts.budget)
+        budget = _resolve_rules_budget(project, opts)
+        rules = filter_rules_for_task(rules, opts.agent, stack, budget)
         if not rules:
             return ""
     return f"\n\n{intro}\n{rules}"
