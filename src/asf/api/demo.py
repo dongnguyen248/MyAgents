@@ -33,6 +33,7 @@ import yaml
 
 import asf
 from asf import logging_setup
+from asf.agents._shared.rules import attach_design_budget
 from asf.agents._shared.skills import extract_skill_digest
 from asf.agents.artifact_review.factory import build_artifact_review_agent
 from asf.agents.base import AgentRuntime
@@ -426,6 +427,7 @@ class DemoFactoryService(FactoryService):
         if skills:
             merged["project"]["skills"] = skills
             merged["project"]["enabledSkills"] = [skill["id"] for skill in skills]
+        attach_design_budget(merged["project"], profile)
         for key, value in dict(context or {}).items():
             if key == "project" and isinstance(value, dict):
                 merged["project"] = {**merged["project"], **value}
