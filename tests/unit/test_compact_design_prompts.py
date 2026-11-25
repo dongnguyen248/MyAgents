@@ -789,6 +789,47 @@ def test_spec_f2_system_prompt_piece_sum_equals_total():
     assert base + rules_piece + skills_piece == system_msg
 
 
+def _build_all_agent_systems() -> list[tuple[str, str]]:
+    from asf.agents.loading import (
+        load_plan_prompts,
+        load_plan_template,
+        load_spec_prompts,
+        load_spec_template,
+        load_task_prompts,
+        load_task_template,
+    )
+    from asf.agents.plan.prompts import PlanPromptContext, build_plan_messages
+    from asf.agents.task.prompts import TaskPromptContext, build_task_messages
+
+    tdir = Path("templates")
+    spec_art = {"id": "a1", "version": "1", "content": {"text": "# SPEC: t\n## Background / Goal"}}
+    plan_art = {"id": "b1", "version": "1", "content": {"text": "# PLAN: t\n## Linked SPEC"}}
+    spec_sys = build_spec_messages(
+        SpecPromptContext(load_spec_prompts(), load_spec_template(tdir), "req", None, None)
+    )[0].content
+    plan_sys = build_plan_messages(
+        PlanPromptContext(load_plan_prompts(), load_plan_template(tdir), spec_art, None, None)
+    )[0].content
+    task_sys = build_task_messages(
+        TaskPromptContext(
+            load_task_prompts(), load_task_template(tdir), spec_art, plan_art, None, None
+        )
+    )[0].content
+    return [("spec", spec_sys), ("plan", plan_sys), ("task", task_sys)]
+
+
+def test_instruction_numbering_is_sequential_for_all_agents():
+    """System prompts for Spec, Plan, and Task must have no gaps or duplicate numbers."""
+    import re
+
+    pattern = re.compile(r"^\d+\. ", re.MULTILINE)
+    for agent_name, system in _build_all_agent_systems():
+        numbers = [int(m.group().rstrip(". ")) for m in pattern.finditer(system)]
+        assert numbers == list(range(1, len(numbers) + 1)), (
+            f"{agent_name} instructions not sequential: {numbers}"
+        )
+
+
 def test_generic_heading_with_api_body_is_omitted():
     """Headed sections with generic titles like '## Rules 1' are classified by heading only."""
     rules = (
