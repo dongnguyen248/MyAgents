@@ -787,3 +787,24 @@ def test_spec_f2_system_prompt_piece_sum_equals_total():
     skills_piece = skills_section(proj_ctx, "spec", stack=stack)
     assert len(base) + len(rules_piece) + len(skills_piece) == len(system_msg)
     assert base + rules_piece + skills_piece == system_msg
+
+
+def test_generic_heading_with_api_body_is_omitted():
+    """Headed sections with generic titles like '## Rules 1' are classified by heading only."""
+    rules = (
+        "<!-- stack: typescript -->\n"
+        "# TypeScript Rules\n"
+        "## Rules 1\n"
+        "Always validate API request and response DTO contracts.\n"
+    )
+    scope = classify_section_scope(
+        "## Rules 1",
+        "## Rules 1\nAlways validate API request and response DTO contracts.",
+    )
+    assert scope == "coding-detail"
+    filtered = filter_rules_for_task(
+        rules,
+        "spec",
+        frozenset({"typescript"}),
+    )
+    assert filtered == ""
