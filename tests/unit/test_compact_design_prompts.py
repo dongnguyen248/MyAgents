@@ -127,6 +127,117 @@ def test_detect_stack_aliases_and_framework_signals(caplog):
     assert stack_fastapi == frozenset({"python"})
 
 
+def test_signal_detection_word_boundaries_and_false_positives():
+    """Verifies word-boundary matching and false positive prevention."""
+    tech_all = {
+        "backend": ["python", "java", "csharp"],
+        "frontend": ["react", "typescript"],
+    }
+    # False positives must NOT trigger any stack
+    assert (
+        detect_task_stack(None, tech_all, text_signal="Handle reaction results", files=[])
+        == frozenset()
+    )
+    assert (
+        detect_task_stack(
+            None, {"backend": ["java"]}, text_signal="Write JavaScript module", files=[]
+        )
+        == frozenset()
+    )
+    assert (
+        detect_task_stack(None, {"backend": ["java"]}, text_signal="Spring cleaning task", files=[])
+        == frozenset()
+    )
+
+    # True positives including c# and .net and Spring Boot
+    assert detect_task_stack(
+        None, tech_all, text_signal="Build React component", files=[]
+    ) == frozenset({"typescript"})
+    assert detect_task_stack(
+        None, tech_all, text_signal="Add FastAPI router", files=[]
+    ) == frozenset({"python"})
+    assert detect_task_stack(
+        None, tech_all, text_signal="Create Spring Boot service", files=[]
+    ) == frozenset({"java"})
+    assert detect_task_stack(None, tech_all, text_signal="Build .NET API", files=[]) == frozenset(
+        {"csharp"}
+    )
+    assert detect_task_stack(None, tech_all, text_signal="Add C# class", files=[]) == frozenset(
+        {"csharp"}
+    )
+
+
+def test_unheaded_and_empty_rules_behavior(caplog):
+    """Verifies the 4 rules-handling cases through build_spec_messages."""
+    from asf.agents.loading import load_spec_prompts, load_spec_template
+
+    prompts = load_spec_prompts()
+    template = load_spec_template(Path("templates"))
+
+    # 1. Unheaded <= 2500 -> loaded verbatim with INFO log
+    caplog.clear()
+    caplog.set_level(logging.INFO)
+    short_rules = "Always validate inputs at API boundaries."
+    msgs_short = build_spec_messages(
+        SpecPromptContext(
+            prompts=prompts,
+            template=template,
+            requirement="Generic task",
+            language=None,
+            project_context={"reviewRules": short_rules},
+        )
+    )
+    assert short_rules in msgs_short[0].content
+    assert "Project rules without headings loaded verbatim" in caplog.text
+
+    # 2. Unheaded > 2500 -> omitted with WARNING stating dropped char count
+    caplog.clear()
+    caplog.set_level(logging.WARNING)
+    long_rules = "Rule line. " * 260
+    msgs_long = build_spec_messages(
+        SpecPromptContext(
+            prompts=prompts,
+            template=template,
+            requirement="Generic task",
+            language=None,
+            project_context={"reviewRules": long_rules},
+        )
+    )
+    assert "Project standards" not in msgs_long[0].content
+    assert f"{len(long_rules.strip())} chars exceed budget" in caplog.text
+
+    # 3. Headed rules, no design-scope sections -> omitted with WARNING
+    caplog.clear()
+    non_design_rules = "## Formatting Rules\nUse 2 spaces.\n\n## Test Style\nUse pytest."
+    msgs_non_design = build_spec_messages(
+        SpecPromptContext(
+            prompts=prompts,
+            template=template,
+            requirement="Generic task",
+            language=None,
+            project_context={"reviewRules": non_design_rules},
+        )
+    )
+    assert "Project standards" not in msgs_non_design[0].content
+    assert "no sections match design scopes" in caplog.text
+
+    # 4. Project has no rules -> no warning
+    caplog.clear()
+    msgs_empty = build_spec_messages(
+        SpecPromptContext(
+            prompts=prompts,
+            template=template,
+            requirement="Generic task",
+            language=None,
+            project_context={"reviewRules": ""},
+        )
+    )
+    assert "Project standards" not in msgs_empty[0].content
+    assert not [
+        r for r in caplog.records if r.levelno >= logging.WARNING and "rules" in r.message.lower()
+    ]
+
+
 def test_rules_stack_filtering_and_formatting_omission():
     # When task stack is python, typescript rules are omitted
     filtered = filter_rules_for_task(FIXTURE_RULES, agent="spec", stack=frozenset({"python"}))
