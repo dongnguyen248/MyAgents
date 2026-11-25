@@ -37,3 +37,10 @@ Revision instructions:
 Project development rules — the standards this project's code must follow. Break the work into tasks that comply with them, including any tasks the standards require (for example dedicated constants files, DTOs, or tests); where they conflict with the output contract above, the output contract wins:
 ## API Rules
 GOLDEN RULES TEXT
+
+Project skills — the project enables the skills below. Apply their guidance where it fits this task; where a skill conflicts with the output contract above, the output contract wins:
+### Skill: general
+GENERAL SKILL DIGEST
+
+### Skill: code-structure
+CODE STRUCTURE SKILL DIGEST
