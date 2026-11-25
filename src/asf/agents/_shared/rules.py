@@ -144,15 +144,20 @@ def detect_task_stack(
 def _split_rule_documents(rules_text: str) -> list[str]:
     docs: list[str] = []
     current: list[str] = []
+    seen_title = False
     for line in rules_text.splitlines(keepends=True):
         is_new_stack = line.strip().startswith("<!-- stack:")
+        is_title = line.startswith("# ")
         has_stack = "".join(current).strip().startswith("<!-- stack:")
-        is_new_title = line.startswith("# ") and not has_stack
+        is_new_title = is_title and (seen_title or not has_stack)
         if (is_new_stack or is_new_title) and current and "".join(current).strip():
             docs.append("".join(current))
             current = [line]
+            seen_title = is_title
         else:
             current.append(line)
+            if is_title:
+                seen_title = True
     if current and "".join(current).strip():
         docs.append("".join(current))
     return docs
