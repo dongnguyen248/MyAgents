@@ -113,7 +113,8 @@ def _detect_text_signals(text_signal: str, files: Sequence[str]) -> set[str]:
         if re.search(re.escape(ext) + r"(?!\w)", lowered):
             signals.add(stack)
     for tool, stack in _STACK_TOOLS.items():
-        pattern = re.escape(tool) + r"(?!\w)" if tool.startswith(".") else r"(?<!\w)" + re.escape(tool) + r"(?!\w)"
+        prefix = "" if tool.startswith(".") else r"(?<!\w)"
+        pattern = prefix + re.escape(tool) + r"(?!\w)"
         if re.search(pattern, lowered):
             signals.add(stack)
     return signals
@@ -197,9 +198,27 @@ def parse_rule_sections(text: str) -> list[tuple[str, str]]:
 
 _SCOPE_KEYWORDS: list[tuple[str, list[str]]] = [
     ("formatting", ["formatting", "prettier", "eslint", "whitespace", "brace", "indent"]),
-    ("test-style", ["testing", "test style", "tests", "verification", "mock", "checklist", "automated"]),
-    ("api", ["api", "endpoint", "resource", "contract", "request", "response", "dto", "http status"]),
-    ("security", ["security", "auth", "secret", "permission", "audit", "validation", "injection", "disclosure"]),
+    (
+        "test-style",
+        ["testing", "test style", "tests", "verification", "mock", "checklist", "automated"],
+    ),
+    (
+        "api",
+        ["api", "endpoint", "resource", "contract", "request", "response", "dto", "http status"],
+    ),
+    (
+        "security",
+        [
+            "security",
+            "auth",
+            "secret",
+            "permission",
+            "audit",
+            "validation",
+            "injection",
+            "disclosure",
+        ],
+    ),
     ("naming", ["naming", "convention", "constant", "enum"]),
     (
         "structure",
