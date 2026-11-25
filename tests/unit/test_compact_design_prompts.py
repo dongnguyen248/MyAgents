@@ -849,3 +849,15 @@ def test_generic_heading_with_api_body_is_omitted():
         frozenset({"typescript"}),
     )
     assert filtered == ""
+
+
+def test_classify_section_scope_word_boundaries():
+    """Keyword matching uses word boundaries so substrings do not cause false positives."""
+    cases = [
+        ("## Capitalization", "Use PascalCase."),
+        ("## Authoring guide", "Write clear docs."),
+        ("## Classification rules", "Group items cleanly."),
+        ("## Enumerating options", "List all choices."),
+    ]
+    for heading, body in cases:
+        assert classify_section_scope(heading, f"{heading}\n{body}") == "coding-detail"
