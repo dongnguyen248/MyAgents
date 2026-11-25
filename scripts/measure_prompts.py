@@ -217,6 +217,50 @@ FIXTURE_PLAN_TEXT_VHPC_JAVA = """## Milestones
   - Acceptance criteria: mvn test passes
   - Depends on: none"""
 
+FIXTURE_REQUIREMENT_VHPC_FS = (
+    "Implement a GPU cluster allocation feature across backend and frontend.\n\n"
+    "Context:\n"
+    "- Backend: Java 21, Spring Boot in src/main/java/com/vhpc/allocation/AllocationController.java "
+    "exposing POST /api/v1/allocations.\n"
+    "- Frontend: React, TypeScript in frontend/src/features/allocations/AllocationForm.tsx.\n\n"
+    "Acceptance criteria:\n"
+    "- POST /api/v1/allocations validates quota limits and returns 201 Created.\n"
+    "- AllocationForm.tsx submits the form and displays validation or error feedback."
+)
+
+FIXTURE_SPEC_TEXT_VHPC_FS = """## Background / Goal
+Implement GPU cluster allocation in Java Spring Boot and React TypeScript.
+
+## Scope (in / out)
+In scope: AllocationController.java (POST /api/v1/allocations) and AllocationForm.tsx.
+Out of scope: Billing integration.
+
+## Functional requirements
+1. Backend endpoint POST /api/v1/allocations validates quota and returns 201 Created.
+2. Frontend AllocationForm.tsx collects allocation parameters and handles responses.
+
+## Non-functional requirements
+Java 21, Spring Boot, React TypeScript, ProblemDetails error responses.
+
+## Acceptance criteria
+mvn test and vitest pass.
+
+## Open questions
+None.
+
+## Revision history
+v1: Initial draft."""
+
+FIXTURE_PLAN_TEXT_VHPC_FS = """## Milestones
+- M1: Backend endpoint (AllocationController.java, AllocationRequest.java)
+  - Deliverables: AllocationController.java, AllocationRequest.java
+  - Acceptance criteria: mvn test passes
+  - Depends on: none
+- M2: Frontend form (AllocationForm.tsx)
+  - Deliverables: frontend/src/features/allocations/AllocationForm.tsx
+  - Acceptance criteria: vitest passes
+  - Depends on: M1"""
+
 
 @dataclass(frozen=True)
 class PromptFixture:
@@ -251,6 +295,13 @@ FIXTURES: list[PromptFixture] = [
         FIXTURE_REQUIREMENT_VHPC_JAVA,
         FIXTURE_SPEC_TEXT_VHPC_JAVA,
         FIXTURE_PLAN_TEXT_VHPC_JAVA,
+        project_id="vhpc",
+    ),
+    PromptFixture(
+        "Fixture 5: VHPC Fullstack (Java Spring Boot + React TypeScript)",
+        FIXTURE_REQUIREMENT_VHPC_FS,
+        FIXTURE_SPEC_TEXT_VHPC_FS,
+        FIXTURE_PLAN_TEXT_VHPC_FS,
         project_id="vhpc",
     ),
 ]
