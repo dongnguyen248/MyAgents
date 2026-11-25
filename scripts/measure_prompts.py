@@ -179,12 +179,52 @@ SAMPLE_FAULTY_REPLY = (
 )
 
 
+FIXTURE_REQUIREMENT_VHPC_JAVA = (
+    "Implement a Spring Boot REST endpoint POST /api/v1/allocations for GPU cluster allocation.\n\n"
+    "Context:\n"
+    "- Backend: Java 21, Spring Boot in src/main/java/com/vhpc/allocation/AllocationController.java.\n"
+    "- Validate quota limits and return ProblemDetails on error.\n\n"
+    "Acceptance criteria:\n"
+    "- POST /api/v1/allocations returns 201 Created.\n"
+    "- Authorization checks enforce tenant scope."
+)
+
+FIXTURE_SPEC_TEXT_VHPC_JAVA = """## Background / Goal
+Implement POST /api/v1/allocations in Java Spring Boot for GPU cluster allocation.
+
+## Scope (in / out)
+In scope: AllocationController.java, DTO validation, tenant authorization.
+Out of scope: Billing integration.
+
+## Functional requirements
+1. POST /api/v1/allocations creates allocation and returns 201 Created.
+
+## Non-functional requirements
+Java 21, Spring Boot, ProblemDetails error responses.
+
+## Acceptance criteria
+mvn test passes.
+
+## Open questions
+None.
+
+## Revision history
+v1: Initial draft."""
+
+FIXTURE_PLAN_TEXT_VHPC_JAVA = """## Milestones
+- M1: Implement AllocationController and DTOs
+  - Deliverables: AllocationController.java, AllocationRequest.java
+  - Acceptance criteria: mvn test passes
+  - Depends on: none"""
+
+
 @dataclass(frozen=True)
 class PromptFixture:
     name: str
     requirement: str
     spec_text: str
     plan_text: str
+    project_id: str = "myagent"
 
 
 FIXTURES: list[PromptFixture] = [
@@ -205,6 +245,13 @@ FIXTURES: list[PromptFixture] = [
         FIXTURE_REQUIREMENT_FS,
         FIXTURE_SPEC_TEXT_FS,
         FIXTURE_PLAN_TEXT_FS,
+    ),
+    PromptFixture(
+        "Fixture 4: VHPC (Java Spring Boot)",
+        FIXTURE_REQUIREMENT_VHPC_JAVA,
+        FIXTURE_SPEC_TEXT_VHPC_JAVA,
+        FIXTURE_PLAN_TEXT_VHPC_JAVA,
+        project_id="vhpc",
     ),
 ]
 
@@ -320,28 +367,40 @@ def measure_target(target_dir: Path, fixture: PromptFixture) -> dict[str, Any]:
 
     sys.path.insert(0, str(target_dir / "src"))
     from asf.api.demo import DemoFactoryService
+    from asf.configuration.loader import load_projects
 
     templates_dir = target_dir / "templates"
     demo = DemoFactoryService.__new__(DemoFactoryService)
     demo._projects_dir = target_dir / "projects"
     demo._skills_dir = target_dir / "skills"
-    demo._project_profiles = {
-        "myagent": {
-            "enabledSkills": ["security", "python", "react", "testing", "git"],
-            "technology": {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]},
-        }
-    }
 
-    real_skills = demo._project_skills("myagent")
-    review_rules_path = target_dir / "projects" / "rules" / "languages" / "typescript.md"
-    review_rules_content = (
-        review_rules_path.read_text("utf-8") if review_rules_path.exists() else ""
-    )
+    if fixture.project_id == "vhpc":
+        profile = load_projects(demo._projects_dir)["vhpc"].to_contract()
+        tech = profile.get("technology", {})
+        flat_tech = [t for vals in tech.values() if isinstance(vals, list) for t in vals]
+        demo._project_profiles = {"vhpc": profile}
+        demo._projects = {"vhpc": {"technologies": flat_tech}}
+        real_skills = demo._project_skills("vhpc")
+        review_rules_content = demo._review_rules("vhpc")
+    else:
+        tech = {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]}
+        demo._project_profiles = {
+            "myagent": {
+                "enabledSkills": ["security", "python", "react", "testing", "git"],
+                "technology": tech,
+            }
+        }
+        demo._projects = {}
+        real_skills = demo._project_skills("myagent")
+        review_rules_path = target_dir / "projects" / "rules" / "languages" / "typescript.md"
+        review_rules_content = (
+            review_rules_path.read_text("utf-8") if review_rules_path.exists() else ""
+        )
 
     project_context = {
         "skills": real_skills,
         "reviewRules": review_rules_content,
-        "technology": {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]},
+        "technology": tech,
     }
 
     res: dict[str, Any] = {
@@ -424,12 +483,17 @@ def extract_breakdown(sys_text: str, user_text: str, agent: str) -> dict[str, in
 
 
 def extract_loaded_rules_sections(sys_text: str) -> list[str]:
-    sections = [
-        "## 9. API and External Data Boundaries",
-        "## 11. React and UI Rules",
-        "## 13. Security Rules",
-    ]
-    return [s for s in sections if s in sys_text]
+    start = -1
+    for kw in ("Project standards", "Project development rules"):
+        idx = sys_text.find(kw)
+        if idx != -1:
+            start = idx
+            break
+    if start == -1:
+        return []
+    end = sys_text.find("Project skills", start)
+    block = sys_text[start:] if end == -1 else sys_text[start:end]
+    return [line.strip() for line in block.splitlines() if line.startswith("## ")]
 
 
 def _print_agent_breakdown(
