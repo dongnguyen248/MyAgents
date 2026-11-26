@@ -63,6 +63,23 @@ fence or surrounded by prose. This is NOT verified — the raw replies
 were not stored. R1 is the instrument that verifies or refutes H1 on
 the next failure.
 
+For the task agent specifically, H1 does not explain the evidence:
+`unwrap_code_fence` already runs before parsing
+(`src/asf/agents/task/agent.py:463`), so the
+`expected ',' or ']' at column 504` failure is not a fence problem.
+The alternative hypothesis — an unescaped string or a missing comma
+inside the JSON — is UNVERIFIED until R1 captures the excerpt.
+
+Fence stripping status per agent (verified): `unwrap_code_fence`
+runs in task (`task/agent.py:463`), plan (`plan/agent.py:188`),
+spec (`spec/agent.py:261`), and implement
+(`implement/agent.py:344`). Artifact-review and review already
+strip fences through their own parser helper `strip_code_fence`
+(`src/asf/agents/artifact_review/agent.py:254`,
+`src/asf/agents/review/agent.py:235`). So no agent lacks fence
+stripping; R3's remaining value is prose extraction around a
+single JSON object, which none of them do today.
+
 ## Requirements
 
 ### R1. Centralized observability in `_shared`
@@ -97,12 +114,16 @@ before it is stored anywhere.
 
 ### R3. Light preprocessing before parse
 
-- Strip a surrounding code fence.
+- Fence stripping already exists everywhere (see H1 status above)
+  and is not re-implemented.
 - Extract a single unambiguous top-level `{...}` block when prose
-  surrounds it.
+  surrounds it. This applies to the JSON-parsing agents that do
+  not extract today: task, artifact-review, and review.
 - Never repair JSON by guessing (no inserted commas, closing
   brackets, or quote fixes). Still-invalid output goes to R2, then
   fails with R1 evidence.
+- R3 is Phase B: it starts only after Phase A log evidence shows
+  prose-wrapped replies actually occur.
 
 ### R4. Provider JSON mode as an option
 
