@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -301,7 +302,8 @@ def test_rejection_reason_redacts_secret_shaped_field_names() -> None:
         '{"findings": [], "summary": "ok", "bearer abcdefghijklmnopqrstuvwxyz123456": 1}'
     )
     assert "abcdefghijklmnopqrstuvwxyz123456" not in error.message
-    assert "[REDACTED]" in error.details["reason"]
+    assert "abcdefghijklmnopqrstuvwxyz123456" not in error.details["reason"]
+    assert error.details["reason"] == "unexpected field at '(root)'"
 
 
 def test_agent_accepts_a_fenced_reply_unchanged() -> None:
