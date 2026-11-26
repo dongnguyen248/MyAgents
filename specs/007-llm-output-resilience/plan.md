@@ -31,7 +31,8 @@ agent logs a redacted preview on rejection
 `replyChars`/`finishReason`; executions persist outputs and errors,
 not raw replies; Live Map events are metadata-only. There is no
 DEBUG log, DB table, or tools log holding the raw reply — hence R1
-must capture the excerpt at rejection time, in details.
+must capture the excerpt at rejection time and write it to a
+WARNING log line (decision C: never into error details).
 
 (d) **Why agent-task ran exactly once while artifact-review ran
 twice.** The task step has no `retryPolicy`
@@ -54,8 +55,9 @@ Phase B, not bundled into it.
 1. **Evidence helper in `_shared`** (R1): one function taking the
    `ModelResponse`, an optional failure offset, and the repair
    count; returns the details dict (`replyChars`, `finishReason`,
-   `repairsAttempted`, redacted `excerpt`) and emits the matching
-   warning line. Window sizes are named constants. Offset sources:
+   `repairsAttempted`) and writes the redacted excerpt to a
+   WARNING log line only (decision C). Window sizes are named
+   constants. Offset sources:
    pydantic/JSON errors expose line/column (task column 504 in the
    evidence); template failures have no offset and carry no
    excerpt.
