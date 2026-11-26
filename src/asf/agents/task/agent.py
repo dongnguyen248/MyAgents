@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from asf.agents._shared.harness import HarnessComponents, fingerprint
+from asf.agents._shared.map_emit import TASK_STRUCTURE_REJECTED_LABEL, emit_output_rejected
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.paths import CONTROL_CHAR_BOUND
@@ -24,7 +25,7 @@ from asf.agents._shared.request_checks import (
     check_text_size,
 )
 from asf.agents._shared.routing import tier_metadata
-from asf.agents.base import AgentRuntime, BaseAgent, Issue
+from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
 from asf.agents.plan.milestones import (
     Milestone,
     milestone_ancestors,
@@ -424,7 +425,7 @@ class TaskAgent(BaseAgent):
         listing = repository_listing(self._repository)
         messages = self._build_messages(run, listing)
         response = call_model(self._runtime.models, self._model_request(request, messages))
-        tasks = self._checked_tasks(response, run.plan)
+        tasks = self._checked_tasks(run.request, response, run.plan)
         return self._assemble(run, tasks, response, listing)
 
     def _build_messages(self, run: _TaskRun, listing: TreeListing | None) -> list[ModelMessage]:
@@ -456,7 +457,9 @@ class TaskAgent(BaseAgent):
             },
         )
 
-    def _checked_tasks(self, response: ModelResponse, plan: _PlanContext) -> list[TaskItem]:
+    def _checked_tasks(
+        self, request: AgentRequest, response: ModelResponse, plan: _PlanContext
+    ) -> list[TaskItem]:
         reply = unwrap_code_fence(response.content.strip())
         if len(reply) > MAX_TASK_REPLY_CHARS:
             raise invalid_response(
@@ -465,9 +468,14 @@ class TaskAgent(BaseAgent):
             )
         if not reply:
             raise invalid_response("Model returned an empty response")
-        tasks = _parse_tasks(reply)
+        try:
+            tasks = _parse_tasks(reply)
+        except AgentExecutionError:
+            emit_output_rejected(request, TASK_STRUCTURE_REJECTED_LABEL)
+            raise
         issues = _validate_task_list(tasks, plan)
         if issues:
+            emit_output_rejected(request, TASK_STRUCTURE_REJECTED_LABEL)
             raise invalid_response(
                 "Model response has invalid task structure",
                 details={"taskIssues": issues},

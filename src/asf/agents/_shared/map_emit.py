@@ -1,10 +1,13 @@
-"""Live map reporting for agent executions: start and end pulses.
+"""Live map reporting for agent executions: start, end, rejection pulses.
 
 Display-only: pulses go through the ambient tap (asf.models.map_tap)
 with ``emit_safely``, so a broken or slow map can never change an
-agent's result. Timestamps come from the agent's own runtime clock -
-the same clock that stamps the execution's lifecycle events - never
-from a wall clock read inside the agents package.
+agent's result. Start and end timestamps come from the agent's own
+runtime clock - the same clock that stamps the execution's lifecycle
+events - never from a wall clock read inside the agents package. A
+rejection pulse is stamped from the ambient map call context (the
+execution start plus the model time already spent), so it sorts after
+the model call that produced the rejected output.
 """
 
 from __future__ import annotations
@@ -13,9 +16,18 @@ from datetime import datetime, timedelta
 
 from asf.contracts.map_events import MapEvent, MapPhase, MapStatus, clean_label
 from asf.contracts.models import AgentRequest, AgentResult
-from asf.models.map_tap import default_map_tap, emit_safely
+from asf.models.map_tap import current_map_context, default_map_tap, emit_safely
 
-__all__ = ["emit_agent_result", "emit_agent_start"]
+__all__ = [
+    "TASK_STRUCTURE_REJECTED_LABEL",
+    "emit_agent_result",
+    "emit_agent_start",
+    "emit_output_rejected",
+    "sections_rejected_label",
+]
+
+INVALID_RESPONSE_CODE = "LLM_INVALID_RESPONSE"
+TASK_STRUCTURE_REJECTED_LABEL = "rejected: invalid task structure"
 
 
 def _agent_event(
@@ -62,6 +74,36 @@ def emit_agent_result(request: AgentRequest, result: AgentResult, started_at: da
     error_code = result.errors[0].code if result.errors else None
     stamped = event.model_copy(
         update={"duration_ms": int(duration * 1000), "error_code": error_code}
+    )
+    emit_safely(default_map_tap(), stamped)
+
+
+def sections_rejected_label(missing: int, total: int, retrying: bool) -> str:
+    """Counts-only rejection label; section names never reach the map."""
+    suffix = ", retrying" if retrying else ""
+    return f"rejected: missing {missing}/{total} sections{suffix}"
+
+
+def emit_output_rejected(request: AgentRequest, label: str) -> None:
+    """Reports one rejected model output as a moment pulse.
+
+    Callers invoke this exactly once per rejection, at the point the
+    output is judged unusable. Without an ambient map context (the
+    execution is not being observed) nothing is emitted.
+    """
+    context = current_map_context()
+    if context is None:
+        return
+    ts = context.started_at + timedelta(milliseconds=context.elapsed_ms)
+    event = _agent_event(request, "moment", "error", ts)
+    if event is None:
+        return
+    stamped = event.model_copy(
+        update={
+            "label": clean_label(label),
+            "error_code": INVALID_RESPONSE_CODE,
+            "attempt": context.calls or None,
+        }
     )
     emit_safely(default_map_tap(), stamped)
 
