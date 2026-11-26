@@ -100,6 +100,23 @@ into error details, via one shared helper:
 Secrets must never reach logs or details; the excerpt is redacted
 before it is stored anywhere.
 
+Location safety (decided 2026-11-26): error details carry schema
+facts only. A model-chosen extra key name never appears in a
+reason, a problems string, or `parseError`; the parent path stands
+in its place ("unexpected field at 'findings.0'"), and `parseError`
+is the redacted, capped location-and-kind summary. This holds
+because every reply schema forbids extra keys and has no dict
+field, so a model-chosen key can only surface as the last
+`extra_forbidden` location segment; a structural test pins that.
+
+Known risk, deliberately out of scope here: the Fix agent's
+`cause` detail (`src/asf/agents/fix/agent.py:232` from
+`_parse_json_changeset` at line 219, and
+`src/asf/agents/fix/agent.py:435` from `_parse_blocks` at line
+418) still carries parser text into `previousFixError`
+(`src/asf/orchestrator/engine.py:584`) and from there into the
+next Fix prompt. It predates this spec and needs its own.
+
 ### R2. One shared retry-with-feedback
 
 - On a parse/template failure, retry at most once, sending the
