@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from asf.agents._shared.harness import HarnessComponents, fingerprint
+from asf.agents._shared.map_emit import emit_output_rejected, sections_rejected_label
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.reply_text import heading_lines, unwrap_code_fence
@@ -146,7 +147,7 @@ class PlanAgent(BaseAgent):
         previous = _previous_plan(request)
         messages = self._build_messages(request, spec_art, previous)
         response = call_model(self._runtime.models, self._model_request(request, messages))
-        reply = self._checked_reply(response, spec_art)
+        reply = self._checked_reply(request, response, spec_art)
         metadata = self._artifact_metadata(request, spec_art, previous, response)
         return self._assemble(previous, reply, metadata)
 
@@ -181,20 +182,28 @@ class PlanAgent(BaseAgent):
             },
         )
 
-    def _checked_reply(self, response: ModelResponse, spec_art: Artifact) -> str:
+    def _checked_reply(
+        self, request: AgentRequest, response: ModelResponse, spec_art: Artifact
+    ) -> str:
         reply = unwrap_code_fence(response.content.strip())
         if not reply:
             raise invalid_response("Model returned an empty response")
         reply = stamp_linked_spec(reply, spec_art)
-        self._require_sections(reply)
+        self._require_sections(request, reply)
         self._require_milestones(reply)
         self._require_linked_spec(reply, spec_art)
         return reply
 
-    def _require_sections(self, reply: str) -> None:
+    def _require_sections(self, request: AgentRequest, reply: str) -> None:
         headings = heading_lines(reply)
         missing = [s for s in self._template.required_sections if s not in headings]
         if missing:
+            emit_output_rejected(
+                request,
+                sections_rejected_label(
+                    len(missing), len(self._template.required_sections), retrying=False
+                ),
+            )
             raise invalid_response(
                 f"Model response is missing required template sections: {missing}",
                 details={"missingSections": missing},
