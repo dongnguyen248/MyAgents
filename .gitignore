@@ -29,6 +29,7 @@ htmlcov/
 # Runtime artifacts (repo root only: nested artifacts/ directories
 # inside src/ or tests/ are source, not output)
 /artifacts/
+/scratch/
 .asf-evidence/
 *.log
 # Runtime data (the default SQLite run database lives in data/)
