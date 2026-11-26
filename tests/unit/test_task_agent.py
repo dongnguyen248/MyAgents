@@ -1137,8 +1137,8 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(details["finishReason"], "stop")
         self.assertEqual(details["repairsAttempted"], 0)
         self.assertIn("parseError", details)
-        self.assertLessEqual(len(details["excerpt"]), 160)
-        self.assertIn('"title"', details["excerpt"])
+        self.assertNotIn("excerpt", details)
+        self.assertNotIn("input_value", details["parseError"])
 
     def test_reply_missing_tasks_key_returns_parse_error(self):
         agent_missing_tasks, _ = self._make_agent(['{"not_tasks": []}'])
