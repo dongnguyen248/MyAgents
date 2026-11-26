@@ -1,6 +1,7 @@
 ---
 name: spring
 description: Spring Boot application discipline — constructor injection and clear layering, transactions on the service layer, Bean Validation at the boundary, centralised exception handling, externalised configuration, and persistence without leaking JPA entities into APIs. Applies when planning, implementing, reviewing or fixing Spring Boot services.
+digest: Enforce controller/service/repository layering with constructor injection, DTOs at API boundaries, Bean Validation, @RestControllerAdvice, and @Transactional on service writes.
 ---
 
 # Spring Boot discipline

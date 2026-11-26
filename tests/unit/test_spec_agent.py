@@ -122,17 +122,29 @@ class SpecAgentTests(unittest.TestCase):
             "description": "Handles authentication",
             "technology": ["python", "fastapi"],
             "skills": [
-                {"id": "general", "content": "GENERAL SKILL BODY"},
-                {"id": "security", "content": "SECURITY SKILL BODY"},
-                {"id": "git", "content": "GIT SKILL BODY"},
+                {
+                    "id": "general",
+                    "content": "GENERAL SKILL BODY",
+                    "digest": "GENERAL SKILL DIGEST",
+                },
+                {
+                    "id": "security",
+                    "content": "SECURITY SKILL BODY",
+                    "digest": "SECURITY SKILL DIGEST",
+                },
+                {
+                    "id": "git",
+                    "content": "GIT SKILL BODY",
+                    "digest": "GIT SKILL DIGEST",
+                },
             ],
         }
         res = agent.execute(self._make_request(project_context=project))
         self.assertEqual(res.status, "SUCCESS")
         system = gateway.requests[0].messages[0].content
-        self.assertIn("GENERAL SKILL BODY", system)
-        self.assertIn("SECURITY SKILL BODY", system)
-        self.assertNotIn("GIT SKILL BODY", system)
+        self.assertIn("GENERAL SKILL DIGEST", system)
+        self.assertIn("SECURITY SKILL DIGEST", system)
+        self.assertNotIn("GIT SKILL", system)
 
     def test_model_request_carries_the_runs_model_tier(self):
         # A complex run's tier (recorded in the run context by the

@@ -4,15 +4,18 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from asf.agents._shared.design_prompts import (
+    DesignSystemOptions,
+    build_design_messages,
+    build_design_system_content,
+    build_design_user_content,
+    format_language_section,
+)
 from asf.agents._shared.harness import (
     HarnessComponents,
-    agent_skills_section,
-    assemble_base_prompt,
-    guardrails_memory_section,
 )
 from asf.agents._shared.prompt_context import project_context_section, revision_sections
-from asf.agents._shared.rules import rules_section
-from asf.agents._shared.skills import skills_section
+from asf.agents._shared.rules import detect_task_stack
 from asf.contracts.models import ApprovalFeedback, ModelMessage
 
 __all__ = [
@@ -82,16 +85,16 @@ class SpecPromptContext:
 
 def build_user_message(context: SpecPromptContext) -> str:
     """Builds the user prompt message with fixed sections."""
-    language = context.language
-    lang_str = language if language else "same language as the requirement"
+    tech = (context.project_context or {}).get("technology")
+    stack = detect_task_stack(context.language, tech, text_signal=context.requirement)
     sections = [
         f"## Requirement\n{context.requirement}",
-        f"## Output language\n{lang_str}",
-        project_context_section(context.project_context),
+        format_language_section(context.language),
+        project_context_section(context.project_context, task_stack=stack),
         f"## Template\n{context.template.text}",
         *revision_sections(context.previous_spec, "Previous specification", context.feedback),
     ]
-    return "\n\n".join(sections)
+    return build_design_user_content(sections)
 
 
 def _components(context: SpecPromptContext) -> HarnessComponents:
@@ -102,17 +105,17 @@ def _components(context: SpecPromptContext) -> HarnessComponents:
 
 def _system_content(context: SpecPromptContext) -> str:
     components = _components(context)
-    content = assemble_base_prompt(components, revision=context.previous_spec is not None)
-    content += rules_section(context.project_context, _RULES_INTRO)
-    content += guardrails_memory_section(components)
-    content += skills_section(context.project_context, "spec")
-    content += agent_skills_section(components)
-    return content
+    tech = (context.project_context or {}).get("technology")
+    stack = detect_task_stack(context.language, tech, text_signal=context.requirement)
+    opts = DesignSystemOptions(
+        agent_type="spec",
+        rules_intro=_RULES_INTRO,
+        task_stack=stack,
+        is_revision=context.previous_spec is not None,
+    )
+    return build_design_system_content(components, context.project_context, opts)
 
 
 def build_spec_messages(context: SpecPromptContext) -> list[ModelMessage]:
     """Constructs the system and user messages for SpecAgent."""
-    return [
-        ModelMessage(role="system", content=_system_content(context)),
-        ModelMessage(role="user", content=build_user_message(context)),
-    ]
+    return build_design_messages(_system_content(context), build_user_message(context))

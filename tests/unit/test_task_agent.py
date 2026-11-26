@@ -3811,14 +3811,14 @@ class TaskAgentTests(unittest.TestCase):
 
         # Empty project_context
         result = build_user_message(_user_message_context(spec_artifact, plan_artifact, "en", {}))
-        self.assertIn("## Project context\nnone", result)
+        self.assertNotIn("## Project context", result)
 
         # Project context with no whitelisted keys
         project_ctx = {"other_key": "value"}
         result = build_user_message(
             _user_message_context(spec_artifact, plan_artifact, "en", project_ctx)
         )
-        self.assertIn("## Project context\nnone", result)
+        self.assertNotIn("## Project context", result)
 
 
 if __name__ == "__main__":

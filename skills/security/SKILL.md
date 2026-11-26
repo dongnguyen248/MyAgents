@@ -1,6 +1,7 @@
 ---
 name: security
 description: Secure-by-default engineering — validate and encode untrusted input, prevent injection and broken access control, handle credentials and secrets correctly, use cryptography only through established libraries, and never leak sensitive detail in errors or logs. Applies when specifying security requirements, implementing anything that touches input, auth, data or external systems, reviewing code, and fixing vulnerabilities.
+digest: Specify explicit security requirements: who can access each record and operation (object-level authorization), how sensitive data is handled and protected, and which security-relevant events must be audited and logged.
 ---
 
 # Security engineering

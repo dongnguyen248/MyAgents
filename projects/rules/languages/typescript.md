@@ -1,3 +1,4 @@
+<!-- stack: typescript -->
 # TypeScript and React Coding Rules (p-vhpc)
 
 These rules apply to the React frontend. The [Constitution](../constitution.md)
