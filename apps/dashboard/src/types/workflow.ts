@@ -12,7 +12,7 @@ export interface WorkflowStep {
   state: StepState;
 }
 
-export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'AI_REVIEWING' | 'WAITING_RETRY' | 'ESCALATED' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type WorkflowStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'AI_REVIEWING' | 'WAITING_RETRY' | 'ESCALATED' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'UNKNOWN';
 
 /** The failure that ended a FAILED workflow run (absent otherwise). */
 export interface WorkflowError {
