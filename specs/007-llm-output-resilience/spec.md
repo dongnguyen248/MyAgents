@@ -92,9 +92,9 @@ into error details, via one shared helper:
 - `finishReason` — the provider finish reason;
 - `repairsAttempted` — feedback retries used (0 when none);
 - `excerpt` — the reply region around the failure offset, at most
-  ~80 characters on each side when an offset is known, passed
-  through `redact_text`; a bounded redacted preview when no offset
-  is known.
+  ~80 characters on each side and at most 160 characters total,
+  passed through `redact_text`. When no offset is known, there is
+  no excerpt; the offset is never guessed.
 
 Secrets must never reach logs or details; the excerpt is redacted
 before it is stored anywhere.
