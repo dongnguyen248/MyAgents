@@ -191,7 +191,14 @@ def _annotation_has_mapping(annotation: Any) -> bool:
 
 
 def test_reply_schemas_have_no_dict_fields() -> None:
-    models = [ReviewContent, ReviewFinding, ArtifactReviewContent, ArtifactFinding, TaskContent, TaskItem]
+    models = [
+        ReviewContent,
+        ReviewFinding,
+        ArtifactReviewContent,
+        ArtifactFinding,
+        TaskContent,
+        TaskItem,
+    ]
     for model in models:
         for name, field in model.model_fields.items():
             assert not _annotation_has_mapping(field.annotation), (
