@@ -44,6 +44,7 @@ from asf.api.service.review_state import (
     project_approval_fields,
     review_status,
 )
+from asf.api.service.status_fallback import engine_status, waiting_fallthrough
 from asf.approval.errors import ApprovalError
 from asf.contracts.models import ActivityEvent
 from asf.orchestrator.code_loop import ESCALATED_STAGE, FIX_STAGE, FIX_STEP, REWORK_STAGE
@@ -407,10 +408,9 @@ class QueriesMixin:
         )
 
     def _workflow_status(self, run: WorkflowExecution) -> str:
-        try:
-            raw = str(self._engine.workflow_run(run.id)["status"])
-        except Exception:
-            raw = "COMPLETED" if run.state.stage == "COMPLETED" else "RUNNING"
+        if run.state.stage in _TERMINAL_STAGES:
+            return run.state.stage
+        raw = engine_status(self._engine, run)
         if raw in _TERMINAL_STAGES:
             return raw
         if run.paused:
@@ -427,7 +427,7 @@ class QueriesMixin:
             return "ESCALATED"
         if run.retry_at is not None:
             return "WAITING_RETRY"
-        return "RUNNING"
+        return "UNKNOWN" if raw == "UNKNOWN" else "RUNNING"
 
     def _fix_budget(self, run: WorkflowExecution) -> dict[str, int]:
         """Fix attempts used vs the code loop's per-item budget."""
@@ -526,8 +526,7 @@ class QueriesMixin:
             return waiting
         # RUNNING and none of the waits above: a step is in flight
         # or the run is between ticks of an active drive.
-        waiting["kind"] = "STEP_RUNNING"
-        waiting["suggestedActions"] = ["cancel"]
+        waiting["kind"], waiting["suggestedActions"] = waiting_fallthrough(status)
         return waiting
 
     def _driver_view(self, run_id: str) -> dict[str, Any]:
