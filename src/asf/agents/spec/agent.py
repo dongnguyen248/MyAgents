@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from asf.agents._shared.harness import HarnessComponents, fingerprint
+from asf.agents._shared.map_emit import emit_output_rejected, sections_rejected_label
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.reply_text import heading_lines, unwrap_code_fence
@@ -231,6 +232,12 @@ class SpecAgent(BaseAgent):
         if not missing:
             return reply, response
         _log_rejected(1, missing, response.content)
+        emit_output_rejected(
+            request,
+            sections_rejected_label(
+                len(missing), len(self._template.required_sections), retrying=True
+            ),
+        )
         retry_msgs = _build_retry_messages(messages, missing)
         reply2, response2, missing2 = self._execute_turn(request, retry_msgs)
         if missing2:
