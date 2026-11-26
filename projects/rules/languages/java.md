@@ -1,3 +1,4 @@
+<!-- stack: java -->
 # Java Coding Rules (p-vhpc)
 
 > **Scope:** Backend Java code (the project currently uses Java 21 and Spring

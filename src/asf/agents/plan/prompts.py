@@ -4,19 +4,22 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from asf.agents._shared.design_prompts import (
+    DesignSystemOptions,
+    build_design_messages,
+    build_design_system_content,
+    build_design_user_content,
+    format_language_section,
+)
 from asf.agents._shared.harness import (
     HarnessComponents,
-    agent_skills_section,
-    assemble_base_prompt,
-    guardrails_memory_section,
 )
 from asf.agents._shared.prompt_context import (
     linked_artifact_section,
     project_context_section,
     revision_sections,
 )
-from asf.agents._shared.rules import rules_section
-from asf.agents._shared.skills import skills_section
+from asf.agents._shared.rules import detect_task_stack
 from asf.agents.plan.milestones import (
     MAX_MILESTONES,
     Milestone,
@@ -112,16 +115,17 @@ def validate_milestones(plan_text: str) -> None:
 
 def build_user_message(context: PlanPromptContext) -> str:
     """Builds the user prompt message with fixed sections."""
-    language = context.language
-    lang_str = language if language else "same language as the SPEC"
+    tech = (context.project_context or {}).get("technology")
+    spec_text = _artifact_text(context.spec_artifact)
+    stack = detect_task_stack(context.language, tech, text_signal=spec_text)
     sections = [
         linked_artifact_section(context.spec_artifact, "Linked SPEC"),
-        f"## Output language\n{lang_str}",
-        project_context_section(context.project_context),
+        format_language_section(context.language),
+        project_context_section(context.project_context, task_stack=stack),
         f"## Template\n{context.template.text}",
         *revision_sections(context.previous_plan, "Previous plan", context.feedback),
     ]
-    return "\n\n".join(sections)
+    return build_design_user_content(sections)
 
 
 def _components(context: PlanPromptContext) -> HarnessComponents:
@@ -130,19 +134,30 @@ def _components(context: PlanPromptContext) -> HarnessComponents:
     return context.prompts.to_components()
 
 
+def _artifact_text(artifact: Mapping[str, Any] | None) -> str:
+    if not isinstance(artifact, dict):
+        return ""
+    content = artifact.get("content")
+    if isinstance(content, dict):
+        text = content.get("text")
+        return text if isinstance(text, str) else ""
+    return content if isinstance(content, str) else ""
+
+
 def _system_content(context: PlanPromptContext) -> str:
     components = _components(context)
-    content = assemble_base_prompt(components, revision=context.previous_plan is not None)
-    content += rules_section(context.project_context, _RULES_INTRO)
-    content += guardrails_memory_section(components)
-    content += skills_section(context.project_context, "plan")
-    content += agent_skills_section(components)
-    return content
+    tech = (context.project_context or {}).get("technology")
+    spec_text = _artifact_text(context.spec_artifact)
+    stack = detect_task_stack(context.language, tech, text_signal=spec_text)
+    opts = DesignSystemOptions(
+        agent_type="plan",
+        rules_intro=_RULES_INTRO,
+        task_stack=stack,
+        is_revision=context.previous_plan is not None,
+    )
+    return build_design_system_content(components, context.project_context, opts)
 
 
 def build_plan_messages(context: PlanPromptContext) -> list[ModelMessage]:
     """Constructs the system and user messages for PlanAgent."""
-    return [
-        ModelMessage(role="system", content=_system_content(context)),
-        ModelMessage(role="user", content=build_user_message(context)),
-    ]
+    return build_design_messages(_system_content(context), build_user_message(context))

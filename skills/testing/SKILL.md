@@ -1,6 +1,7 @@
 ---
 name: testing
 description: How to design tests that actually prove behaviour — test observable behaviour rather than implementation, cover boundaries and failure paths, keep tests independent and deterministic, and write acceptance criteria that can be verified mechanically. Applies when breaking work into tasks, implementing features, reviewing test quality, or fixing failing tests.
+digest: Define verifiable acceptance criteria, test observable behavior across boundaries and failure paths, and ensure deterministic test execution.
 ---
 
 # Testing discipline

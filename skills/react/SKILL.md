@@ -1,6 +1,7 @@
 ---
 name: react
 description: React and TypeScript component discipline — small typed components, state kept as local as possible, hooks used lawfully, effects only for true side effects, stable keys, accessible markup, and server state kept out of component state. Applies when planning, implementing, reviewing or fixing React front-ends.
+digest: Build small typed components, keep state local, derive values during render, use stable keys, and isolate side effects in hooks.
 ---
 
 # React craft

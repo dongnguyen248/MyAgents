@@ -50,11 +50,27 @@ PROJECT: dict[str, Any] = {
     "technology": ["python", "fastapi"],
     "enabledSkills": ["general", "code-structure", "git"],
     "skills": [
-        {"id": "general", "content": "GENERAL SKILL BODY"},
-        {"id": "code-structure", "content": "CODE STRUCTURE SKILL BODY"},
+        {
+            "id": "general",
+            "digest": "GENERAL SKILL DIGEST",
+            "content": "GENERAL SKILL BODY",
+        },
+        {
+            "id": "code-structure",
+            "digest": "CODE STRUCTURE SKILL DIGEST",
+            "content": "CODE STRUCTURE SKILL BODY",
+        },
         {"id": "git", "content": "GIT SKILL BODY"},
     ],
     "reviewRules": "GOLDEN RULES TEXT",
+}
+DESIGN_PROJECT: dict[str, Any] = {
+    **PROJECT,
+    "reviewRules": "## API Rules\nGOLDEN RULES TEXT",
+}
+UNRECOGNIZED_RULES_PROJECT: dict[str, Any] = {
+    **PROJECT,
+    "reviewRules": "## Formatting Rules\nUse 2 spaces.",
 }
 
 FEEDBACK = [
@@ -243,9 +259,10 @@ def _scenarios() -> dict[str, str]:
         ("task", _task_system),
     ):
         texts[f"{agent}__plain"] = builder(None, False)
-        texts[f"{agent}__rules-skills"] = builder(PROJECT, False)
+        texts[f"{agent}__rules-skills"] = builder(DESIGN_PROJECT, False)
         texts[f"{agent}__revision"] = builder(None, True)
-        texts[f"{agent}__revision-rules-skills"] = builder(PROJECT, True)
+        texts[f"{agent}__revision-rules-skills"] = builder(DESIGN_PROJECT, True)
+    texts["spec__non-design-rules"] = _spec_system(UNRECOGNIZED_RULES_PROJECT, False)
     for agent, builder in (
         ("implement", _implement_system),
         ("review", _review_system),
@@ -272,3 +289,26 @@ def test_system_prompt_matches_golden(scenario: str) -> None:
         f"assembled system prompt for {scenario} changed; if intended, "
         "regenerate with ASF_UPDATE_GOLDENS=1 and review the diff"
     )
+
+
+_DESIGN_RULES_SKILLS_SCENARIOS = (
+    "spec__rules-skills",
+    "spec__revision-rules-skills",
+    "plan__rules-skills",
+    "plan__revision-rules-skills",
+    "task__rules-skills",
+    "task__revision-rules-skills",
+)
+
+
+@pytest.mark.parametrize("scenario", _DESIGN_RULES_SKILLS_SCENARIOS)
+def test_design_rules_skills_goldens_include_standards_and_skills(scenario: str) -> None:
+    text = (GOLDEN_DIR / f"{scenario}.txt").read_text(encoding="utf-8")
+    assert "Project standards" in text or "Project development rules" in text
+    assert "Project skills" in text
+
+
+def test_non_design_rules_golden_omits_standards() -> None:
+    text = (GOLDEN_DIR / "spec__non-design-rules.txt").read_text(encoding="utf-8")
+    assert "Project standards" not in text
+    assert "Project development rules" not in text

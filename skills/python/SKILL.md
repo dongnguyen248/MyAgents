@@ -1,6 +1,7 @@
 ---
 name: python
 description: Idiomatic modern Python — type hints on public APIs, dataclasses for data, specific exceptions with context, context managers for resources, and structure that stays testable with pytest. Applies when planning, implementing, reviewing or fixing Python code.
+digest: Follow Python standard library conventions, explicit type hints, pure functions without hidden side effects, and pytest testability.
 ---
 
 # Python craft
