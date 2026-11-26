@@ -1175,9 +1175,9 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res_bad_id.status, "FAILED")
         self.assertEqual(res_bad_id.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res_bad_id.errors[0].details)
-        self.assertTrue(
-            any("Task ID" in str(res_bad_id.errors[0].details["parseError"]) for _ in [0])
-        )
+        parse_error = str(res_bad_id.errors[0].details["parseError"])
+        self.assertIn("tasks.0.id", parse_error)
+        self.assertIn("value_error", parse_error)
 
     # === Batch 2: Strict parsing tests ===
 
@@ -2545,9 +2545,9 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res.status, "FAILED")
         self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res.errors[0].details)
-        self.assertTrue(
-            any("non-empty strings" in str(res.errors[0].details["parseError"]) for _ in [0])
-        )
+        parse_error = str(res.errors[0].details["parseError"])
+        self.assertIn("tasks.0.acceptanceCriteria", parse_error)
+        self.assertIn("value_error", parse_error)
 
     def test_traceability_in_output_artifact(self):
         """Test that output artifact contains traceability to SPEC and PLAN."""
