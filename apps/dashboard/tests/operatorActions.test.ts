@@ -57,9 +57,26 @@ test('paused runs offer continue and cancel only', () => {
 });
 
 test('running and waiting runs offer pause and cancel', () => {
-  for (const status of ['RUNNING', 'WAITING_APPROVAL', 'WAITING_RETRY'] as const) {
+  for (const status of ['RUNNING', 'WAITING_APPROVAL', 'AI_REVIEWING', 'WAITING_RETRY'] as const) {
     assert.deepEqual(ids(workflow({ status })), ['pause', 'cancel']);
   }
+});
+
+test('unknown and unrecognized statuses offer no operator actions', () => {
+  assert.deepEqual(ids(workflow({ status: 'UNKNOWN' })), []);
+  const stalledUnknown = workflow({
+    status: 'UNKNOWN',
+    waiting: {
+      kind: 'STALLED',
+      since: '2026-11-26T00:00:00Z',
+      reason: 'No driver is working this run',
+      retryAt: null,
+      budget: null,
+      suggestedActions: [],
+    },
+  });
+  assert.deepEqual(ids(stalledUnknown), []);
+  assert.deepEqual(ids(workflow({ status: 'SOME_FUTURE_STATUS' as Workflow['status'] })), []);
 });
 
 test('failed runs offer resume-from-failure and run again', () => {
