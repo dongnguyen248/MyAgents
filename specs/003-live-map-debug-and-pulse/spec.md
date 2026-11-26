@@ -1,6 +1,6 @@
 # Feature Specification: PR 1 — Live Map Debug Data & Rejected Pulse
 
-**Feature Branches**: `feat/map-debug-data` (PR 1a), `feat/map-rejected-pulse` (PR 1b) — both unpushed (branches not present in local clone `E:\develops\JAVA\MyAgents`; status recorded from owner handoff)
+**Feature Branches**: `feat/map-debug-data` (PR 1a), `feat/map-rejected-pulse` (PR 1b) — both unpushed (branches not present in this repo root clone; status recorded from owner handoff)
 
 **Created**: 2026-11-26
 

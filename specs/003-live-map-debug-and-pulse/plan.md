@@ -12,7 +12,7 @@ Deliver PR 1a (`feat/map-debug-data`) and PR 1b (`feat/map-rejected-pulse`). Bot
 
 **Language/Version**: Python 3.12 / TypeScript React
 **Dependencies**: Should land after `002-driver-state` (S0b) in the `S0 -> S0b -> PR1 -> PR2a` sequence; PR 1b specifically blocks PR 2c (`004-live-map-phase2-board`).
-**Local Clone Note**: `feat/map-debug-data` and `feat/map-rejected-pulse` were not found in `E:\develops\JAVA\MyAgents` during setup; status is preserved from owner handoff.
+**Local Clone Note**: `feat/map-debug-data` and `feat/map-rejected-pulse` were not found in this repo root clone during setup; status is preserved from owner handoff.
 
 ## Constitution Check
 
