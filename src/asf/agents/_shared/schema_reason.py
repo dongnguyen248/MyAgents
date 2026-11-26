@@ -19,7 +19,26 @@ from pydantic_core import ErrorDetails
 
 from asf.agents._shared.security import redact_text
 
-__all__ = ["schema_problems", "schema_reason"]
+__all__ = ["safe_location", "schema_problems", "schema_reason"]
+
+#: The problems string carried in logs and parse errors: a handful of
+#: entries, capped so a pathological reply cannot flood a banner.
+_MAX_PROBLEMS = 5
+_PROBLEMS_LIMIT = 400
+
+
+def safe_location(entry: ErrorDetails) -> str:
+    """A dotted error location built from schema facts only.
+
+    For ``extra_forbidden`` the last location segment is the
+    model-chosen key name, which is untrusted reply content rather
+    than a schema fact, so it is dropped and the parent path stands
+    in its place.
+    """
+    segments = entry["loc"]
+    if entry["type"] == "extra_forbidden" and segments:
+        segments = segments[:-1]
+    return ".".join(str(part) for part in segments) or "(root)"
 
 
 def schema_problems(exc: Exception) -> str:
@@ -33,9 +52,8 @@ def schema_problems(exc: Exception) -> str:
     if isinstance(exc, ValidationError):
         parts = []
         for entry in exc.errors(include_input=False):
-            loc = ".".join(str(part) for part in entry["loc"]) or "(root)"
-            parts.append(f"{loc}: {entry['type']}")
-        return "; ".join(parts[:5])[:400] or "unparseable reply"
+            parts.append(f"{safe_location(entry)}: {entry['type']}")
+        return "; ".join(parts[:_MAX_PROBLEMS])[:_PROBLEMS_LIMIT] or "unparseable reply"
     return type(exc).__name__
 
 
@@ -66,7 +84,7 @@ def schema_reason(exc: Exception, stripped: str) -> str:
 
 
 def _problem_reason(entry: ErrorDetails, stripped: str) -> str:
-    loc = ".".join(str(part) for part in entry["loc"])
+    loc = safe_location(entry)
     kind = entry["type"]
     ctx = entry.get("ctx") or {}
     if kind == "json_invalid":
@@ -84,7 +102,7 @@ def _basic_reason(loc: str, kind: str) -> str:
     if kind == "missing":
         return f"missing field '{loc}'"
     if kind == "extra_forbidden":
-        return f"unexpected field '{loc}'"
+        return f"unexpected field at '{loc}'"
     if kind.endswith("_type"):
         return f"wrong type at '{loc}'"
     if "too_short" in kind:
