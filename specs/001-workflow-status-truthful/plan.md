@@ -6,7 +6,7 @@
 
 ## Summary
 
-Replace fabricated `RUNNING` workflow status fallback with `engine_status` fallback / `UNKNOWN` on the backend, and add defensive status badge rendering on the dashboard. Core work is implemented across 8 commits (`0ab369a..e38f7a7`); awaiting owner decision on 3 round-4 commits (`a54847f`, `b7b207d`, `3c96f9b`) and push authorization.
+Replace fabricated `RUNNING` workflow status fallback with `engine_status` fallback / `UNKNOWN` on the backend, and add defensive status badge rendering on the dashboard. Core work is implemented across 8 commits (`0ab369a..e38f7a7`), awaiting push authorization. Round 4 commits (`a54847f`, `b7b207d`, `3c96f9b`) are kept only on `backup/s0-round4`, and the known deviation (`operatorActionsFor` `UNKNOWN` / `TaskDetailPage` Cancel gating) is deferred to C1 (`005-legacy-unloadable-runs`).
 
 ## Technical Context
 
@@ -19,7 +19,7 @@ Replace fabricated `RUNNING` workflow status fallback with `engine_status` fallb
 
 - Code structure & security gates apply to `fix/workflow-status-truthful` before merge.
 - Branch safety: do not reset, rebase, amend, or push `fix/workflow-status-truthful` without explicit owner instruction.
-- Local clone note: `fix/workflow-status-truthful` was not found in `E:\develops\JAVA\MyAgents` during setup; commit hashes (`0ab369a..e38f7a7`, `a54847f`, `b7b207d`, `3c96f9b`) are preserved from owner handoff.
+- Local clone note: `fix/workflow-status-truthful` was not found in this repo root clone during setup; commit hashes (`0ab369a..e38f7a7`, `a54847f`, `b7b207d`, `3c96f9b`) are preserved from owner handoff.
 
 ## Project Structure
 

@@ -1,10 +1,10 @@
 # Feature Specification: S0 — Truthful Workflow Status
 
-**Feature Branch**: `fix/workflow-status-truthful` (unpushed; 8 commits `0ab369a..e38f7a7` per owner handoff — branch not present in local clone `E:\develops\JAVA\MyAgents`)
+**Feature Branch**: `fix/workflow-status-truthful` (unpushed; 8 commits `0ab369a..e38f7a7` per owner handoff — branch not present in this repo root clone)
 
 **Created**: 2026-11-26
 
-**Status**: Implemented (Unpushed — awaiting owner decision on round 4 commits and push command)
+**Status**: Implemented (Unpushed — awaiting owner push command)
 
 **Input**: S0 "workflow status trung thực" — eliminate fabricated `RUNNING` status fallback, surface `UNKNOWN` honestly, and make dashboard status badges defensive.
 
@@ -38,12 +38,10 @@ The dashboard renders `UNKNOWN` (and unexpected/missing status values) safely wi
 
 ---
 
-### Edge Cases & Open Decisions
+### Edge Cases & Decided Scope
 
-- **Operator action gating on `UNKNOWN`**: `operatorActionsFor` does not yet handle `UNKNOWN` (falls through to Pause/Cancel, which returns `409`), and `TaskDetailPage` gates the Cancel button itself.
-- **Round 4 commits (`a54847f`, `b7b207d`, `3c96f9b`)**: [NEEDS DECISION] Three round 4 commits modified this area, but owner confirmation is pending on whether to:
-  - **Option A**: Keep `a54847f`, `b7b207d`, `3c96f9b` inside S0 (`fix/workflow-status-truthful`).
-  - **Option B**: Revert those 3 commits from S0 and defer operator action / Cancel gating for `UNKNOWN` & unloadable runs to C1 (`005-legacy-unloadable-runs`).
+- **Known deviation deferred to C1 (`005-legacy-unloadable-runs`)**: `operatorActionsFor` does not yet handle `UNKNOWN` (falls through to Pause/Cancel, which returns `409`), and `TaskDetailPage` gates the Cancel button itself.
+- **Round 4 commits (`a54847f`, `b7b207d`, `3c96f9b`) — Decided**: Kept only on `backup/s0-round4` (not in S0 `fix/workflow-status-truthful`); the known deviation is deferred to C1 (`005-legacy-unloadable-runs`).
 
 ## Requirements *(mandatory)*
 
@@ -51,7 +49,7 @@ The dashboard renders `UNKNOWN` (and unexpected/missing status values) safely wi
 
 - **FR-001**: Backend status resolution MUST use `engine_status` fallback and return `UNKNOWN` instead of fabricating `RUNNING`.
 - **FR-002**: Dashboard status badge MUST render `UNKNOWN` and unrecognized statuses defensively.
-- **FR-003**: [NEEDS DECISION] `operatorActionsFor` handling of `UNKNOWN` and `TaskDetailPage` Cancel gating: keep round 4 commits (`a54847f`, `b7b207d`, `3c96f9b`) in S0 or revert and move to C1 (`005-legacy-unloadable-runs`).
+- **FR-003**: Round 4 commits (`a54847f`, `b7b207d`, `3c96f9b`) remain isolated on `backup/s0-round4`; `operatorActionsFor` `UNKNOWN` handling and `TaskDetailPage` Cancel gating are deferred as a known deviation to C1 (`005-legacy-unloadable-runs`).
 
 ## Success Criteria *(mandatory)*
 
