@@ -27,6 +27,14 @@ unpushed, `[!]` awaiting owner decision.
 - [x] Run full gates (ruff, format, mypy, bandit, pytest, ratchet,
       gitleaks) and report real output. (`e886d80`; gitleaks not
       available in sandbox)
+- [!] Owner decides: may review/artifact-review error details carry
+      the redacted `excerpt`? (A) Keep the excerpt for every agent,
+      backed by evidence of where error details surface externally;
+      (B) only task/spec/plan carry an excerpt, review and
+      artifact-review carry only `replyChars`/`finishReason`/
+      `repairsAttempted`, and the old `test_review_agent.py`
+      assertions are restored. Neither option is implemented until
+      the owner picks one.
 
 ## Phase B — R2/R3 (starts only after Phase A log evidence)
 
