@@ -33,6 +33,22 @@ not raw replies; Live Map events are metadata-only. There is no
 DEBUG log, DB table, or tools log holding the raw reply — hence R1
 must capture the excerpt at rejection time, in details.
 
+(d) **Why agent-task ran exactly once while artifact-review ran
+twice.** The task step has no `retryPolicy`
+(`workflow-definitions/software-development.yaml:34`; only `ci`
+at line 100 and `merge` at line 116 carry one), so
+`engine._retry` (`src/asf/orchestrator/engine.py:838-860`) returns
+False on `policy is None` even though `LLM_INVALID_RESPONSE` is
+retryable (`src/asf/agents/_shared/model_errors.py` builds it with
+`retryable=True`). Artifact-review's second request came from the
+AI-review gate, which re-dispatches a failed reviewer up to
+`MAX_REVIEW_ATTEMPTS` with a scheduled delay
+(`src/asf/orchestrator/ai_review_apply.py:170-179`) — a different
+mechanism from step retry. Enabling a step `retryPolicy` for the
+task step is therefore a separate option from R2's
+retry-with-feedback, and is recorded as its own decision in
+Phase B, not bundled into it.
+
 ## Approach
 
 1. **Evidence helper in `_shared`** (R1): one function taking the
