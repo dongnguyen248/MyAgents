@@ -26,6 +26,7 @@ __all__ = [
     "MapStation",
     "MapStatus",
     "clean_label",
+    "endpoint_label",
     "host_label",
     "path_label",
     "shell_label",
@@ -71,6 +72,8 @@ class MapEvent(ContractModel):
     duration_ms: int | None = Field(default=None, ge=0)
     prompt_tokens: int | None = Field(default=None, ge=0)
     completion_tokens: int | None = Field(default=None, ge=0)
+    attempt: int | None = Field(default=None, ge=1)
+    prompt_chars: int | None = Field(default=None, ge=0)
     error_code: str | None = None
 
 
@@ -141,6 +144,27 @@ def host_label(url: str) -> str:
     if parts.hostname:
         return clean_label(parts.hostname, 40)
     return clean_label(parts.scheme or "", 40)
+
+
+def endpoint_label(url: str) -> str:
+    """The endpoint a model pulse may show: host:port, never more.
+
+    Like ``host_label`` but keeps an explicit port, so two endpoints
+    on one host (two local proxies on different ports) stay distinct
+    on the map. Login, path and query never survive.
+    """
+    try:
+        parts = urlsplit(url.strip())
+    except ValueError:
+        return host_label(url)
+    if not parts.hostname:
+        return host_label(url)
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    label = parts.hostname if port is None else f"{parts.hostname}:{port}"
+    return clean_label(label, 48)
 
 
 _PATH_SEPARATORS = re.compile(r"[/\\]+")

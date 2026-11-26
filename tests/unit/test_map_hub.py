@@ -125,3 +125,43 @@ class MapHubTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MapHubEnvTests(unittest.TestCase):
+    def test_max_runs_from_env_evicts_the_oldest_run(self) -> None:
+        import os
+        from unittest import mock
+
+        with mock.patch.dict(os.environ, {"ASF_LIVE_MAP_MAX_RUNS": "2"}):
+            hub = MapHub()
+            hub.emit(make_event("run-1", 1))
+            hub.emit(make_event("run-2", 1))
+            hub.emit(make_event("run-3", 1))
+        self.assertFalse(hub.has_run("run-1"))
+        self.assertTrue(hub.has_run("run-2"))
+        self.assertTrue(hub.has_run("run-3"))
+
+    def test_closed_ttl_from_env_sweeps_a_closed_run(self) -> None:
+        import os
+        from unittest import mock
+
+        with mock.patch.dict(os.environ, {"ASF_LIVE_MAP_CLOSED_TTL_SECONDS": "0.05"}):
+            hub = MapHub()
+            hub.emit(make_event("run-1", 1))
+            hub.mark_closed("run-1")
+            time.sleep(0.06)
+            hub.emit(make_event("run-2", 1))
+        self.assertFalse(hub.has_run("run-1"))
+        self.assertTrue(hub.has_run("run-2"))
+
+    def test_invalid_env_values_fall_back_to_the_defaults(self) -> None:
+        import os
+        from unittest import mock
+
+        env = {"ASF_LIVE_MAP_MAX_RUNS": "abc", "ASF_LIVE_MAP_CLOSED_TTL_SECONDS": "-3"}
+        with mock.patch.dict(os.environ, env):
+            hub = MapHub()
+            for number in range(1, 4):
+                hub.emit(make_event(f"run-{number}", 1))
+        for number in range(1, 4):
+            self.assertTrue(hub.has_run(f"run-{number}"))

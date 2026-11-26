@@ -8,7 +8,14 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from asf.contracts.map_events import MapEvent, clean_label, host_label, path_label, shell_label
+from asf.contracts.map_events import (
+    MapEvent,
+    clean_label,
+    endpoint_label,
+    host_label,
+    path_label,
+    shell_label,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "map-event.schema.json"
@@ -89,3 +96,19 @@ class LabelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EndpointLabelTests(unittest.TestCase):
+    def test_credentials_path_and_query_never_survive(self) -> None:
+        label = endpoint_label("http://user:SECRET@127.0.0.1:18610/v1/chat?token=abc")
+        self.assertEqual(label, "127.0.0.1:18610")
+        self.assertNotIn("SECRET", label)
+        self.assertNotIn("token", label)
+
+    def test_two_ports_on_one_host_stay_distinct(self) -> None:
+        first = endpoint_label("http://127.0.0.1:18610/v1")
+        second = endpoint_label("http://127.0.0.1:18620/v1")
+        self.assertNotEqual(first, second)
+
+    def test_no_explicit_port_means_host_only(self) -> None:
+        self.assertEqual(endpoint_label("https://api.meta.ai/v1"), "api.meta.ai")

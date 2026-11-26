@@ -157,3 +157,35 @@ class MapRoutesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MapTrackedTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        set_active_map_hub(None)
+
+    def _client(self, hub: MapHub) -> TestClient:
+        set_active_map_hub(hub)
+        app = register_map_routes(FastAPI(), StubService())
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_tracked_true_when_the_hub_has_the_run(self) -> None:
+        hub = MapHub()
+        hub.emit(make_event("run-1", 1))
+        response = self._client(hub).get("/map/snapshot", params={"runId": "run-1"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["tracked"])
+        self.assertEqual(len(payload["events"]), 1)
+
+    def test_tracked_false_when_only_the_service_knows_the_run(self) -> None:
+        response = self._client(MapHub()).get("/map/snapshot", params={"runId": "run-1"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["tracked"])
+        self.assertEqual(payload["status"], "RUNNING")
+        self.assertEqual(payload["events"], [])
+        self.assertEqual(payload["counters"], {"stations": {}, "agents": {}, "errors": {}})
+
+    def test_404_when_neither_the_hub_nor_the_service_knows_the_run(self) -> None:
+        response = self._client(MapHub()).get("/map/snapshot", params={"runId": "ghost"})
+        self.assertEqual(response.status_code, 404)

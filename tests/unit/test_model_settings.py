@@ -495,3 +495,44 @@ def test_load_keeps_an_invalid_id_and_still_starts(
         settings = ModelSettings(path)
     assert settings.current()["model"] == "bad@id"
     assert "invalid" in caplog.text
+
+
+def test_endpoint_label_is_host_and_port_only(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    settings.update(
+        {
+            "provider": "custom",
+            "model": "muse-x",
+            "baseUrl": "http://user:SECRET@127.0.0.1:18610/v1?token=abc",
+            "apiKey": "key-1",
+        }
+    )
+    router = SettingsRoutingGateway(settings, RecordingGateway("scripted"))
+    label = router.endpoint_label("agent-spec")
+    assert label == "127.0.0.1:18610"
+    assert "SECRET" not in label
+    assert "token" not in label
+
+
+def test_endpoint_label_distinguishes_ports_and_agents(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    settings.update(
+        {
+            "provider": "custom",
+            "model": "muse-x",
+            "baseUrl": "http://127.0.0.1:18610/v1",
+            "apiKey": "key-1",
+            "agentConnections": {
+                "review": {"baseUrl": "http://127.0.0.1:18620/v1"},
+            },
+        }
+    )
+    router = SettingsRoutingGateway(settings, RecordingGateway("scripted"))
+    assert router.endpoint_label("agent-spec") == "127.0.0.1:18610"
+    assert router.endpoint_label("agent-review") == "127.0.0.1:18620"
+
+
+def test_endpoint_label_is_none_for_scripted(tmp_path: Path):
+    settings = ModelSettings(tmp_path / "s.json")
+    router = SettingsRoutingGateway(settings, RecordingGateway("scripted"))
+    assert router.endpoint_label("agent-spec") is None

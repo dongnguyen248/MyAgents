@@ -81,6 +81,7 @@ def _snapshot_payload(service: Any, hub: MapHub, run_id: str) -> dict[str, Any] 
     return {
         "runId": run_id,
         "status": status or "UNKNOWN",
+        "tracked": hub.has_run(run_id),
         "budget": hub.budget(run_id),
         "counters": hub.counters(run_id),
         "hosting": _hosting_link(service, run_id),
