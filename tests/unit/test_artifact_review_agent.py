@@ -183,6 +183,17 @@ def test_rejection_reason_for_a_non_json_reply() -> None:
     assert "not valid JSON" in error.message
 
 
+def test_missing_comma_details_include_diagnostics() -> None:
+    reply = '{"findings": [] "summary": "ok"}'
+    error = _rejection(reply)
+    assert error.details["reason"] == "not valid JSON"
+    assert error.details["replyChars"] == len(reply)
+    assert error.details["finishReason"] == "stop"
+    assert error.details["repairsAttempted"] == 0
+    assert len(error.details["excerpt"]) <= 160
+    assert '"summary"' in error.details["excerpt"]
+
+
 def test_rejection_reason_for_prose_before_the_json() -> None:
     error = _rejection('Here is my review: {"findings": [], "summary": "ok"}')
     assert error.details["reason"] == "extra text before the JSON"
