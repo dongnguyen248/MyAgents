@@ -13,7 +13,7 @@ import type { Workflow } from '../types/workflow';
  *   or mark it failed) and restart the driver.
  * - PAUSED: continue or cancel.
  * - FAILED: resume from the failed step, or run again fresh.
- * - Any other live run: pause and cancel.
+ * - Known live runs: pause and cancel; UNKNOWN/unrecognized: none.
  * Terminal runs have no operator actions.
  */
 export type OperatorActionId =
@@ -66,9 +66,14 @@ function escalationActions(workflow: Workflow): OperatorAction[] {
   ];
 }
 
+const PAUSABLE_STATUSES = new Set(['RUNNING', 'WAITING_APPROVAL', 'AI_REVIEWING', 'WAITING_RETRY']);
+
 export function operatorActionsFor(workflow: Workflow): OperatorAction[] {
   const { status } = workflow;
   if (status === 'COMPLETED' || status === 'CANCELLED') {return [];}
+  if (status === 'UNKNOWN') {
+    return [];
+  }
   if (status === 'ESCALATED') {
     return escalationActions(workflow);
   }
@@ -80,6 +85,9 @@ export function operatorActionsFor(workflow: Workflow): OperatorAction[] {
       { id: 'resume-failed', label: 'Resume from failure' },
       { id: 'run-again', label: 'Run again' },
     ];
+  }
+  if (!PAUSABLE_STATUSES.has(status)) {
+    return [];
   }
   if (workflow.waiting?.kind === 'STALLED') {
     return [
@@ -95,7 +103,6 @@ export function operatorActionsFor(workflow: Workflow): OperatorAction[] {
       CANCEL,
     ];
   }
-  // RUNNING, WAITING_APPROVAL, WAITING_RETRY.
   return [{ id: 'pause', label: 'Pause' }, CANCEL];
 }
 
