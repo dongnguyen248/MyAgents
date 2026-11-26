@@ -57,8 +57,8 @@ Phase B, not bundled into it.
    `repairsAttempted`, redacted `excerpt`) and emits the matching
    warning line. Window sizes are named constants. Offset sources:
    pydantic/JSON errors expose line/column (task column 504 in the
-   evidence); template failures have no offset and use the bounded
-   preview.
+   evidence); template failures have no offset and carry no
+   excerpt.
 2. **Shared retry driver** (R2): generalize the `repair.py` loop
    shape to a parse callable returning the agent's validated value,
    reusing the `ebe9af5` spec retry note. Policy: at most 1 retry;
