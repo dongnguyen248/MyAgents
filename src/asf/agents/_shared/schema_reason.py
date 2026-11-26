@@ -107,7 +107,7 @@ def _basic_reason(loc: str, kind: str) -> str:
         return f"wrong type at '{loc}'"
     if "too_short" in kind:
         return f"'{loc}' is too short"
-    if loc:
+    if loc != "(root)":
         return f"{loc}: {kind}"
     return kind
 
@@ -123,7 +123,7 @@ def _json_reason(ctx: dict[str, Any], stripped: str) -> str:
 
 def _value_reason(loc: str, ctx: dict[str, Any]) -> str:
     message = str(ctx.get("error", "invalid value"))
-    if loc:
+    if loc != "(root)":
         return f"{loc}: {message}"
     return message
 
