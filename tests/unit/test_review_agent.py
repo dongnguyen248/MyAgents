@@ -146,9 +146,13 @@ def assert_invalid(result: AgentResult) -> None:
         "LLM",
         True,
     )
-    # Schema rejections carry exactly the schema reason (facts only,
-    # never the reply); every other invalid reply carries no details.
-    assert error.details == {} or set(error.details) == {"reason"}
+    # Invalid replies carry only the schema reason (when there is
+    # one) plus bounded R1 diagnostics; gateway-preserved failures
+    # may still carry no details.
+    allowed = {"reason", "replyChars", "finishReason", "repairsAttempted", "excerpt"}
+    assert set(error.details) <= allowed
+    if "replyChars" in error.details:
+        assert {"replyChars", "finishReason", "repairsAttempted"} <= set(error.details)
     assert result.events[-1].event_type == "AGENT_FAILED"
 
 
@@ -364,10 +368,11 @@ def test_rejection_reason_is_capped_at_240_chars() -> None:
     assert reason.startswith("unknown value at 'findings.0.severity'")
 
 
-def test_outside_code_rejection_keeps_its_message_and_empty_details() -> None:
+def test_outside_code_rejection_keeps_its_message_and_adds_diagnostics() -> None:
     error = _rejection(reply_for([finding(path="outside.py")]))
     assert error.message == "Review finding references a path outside CODE"
-    assert error.details == {}
+    assert {"replyChars", "finishReason", "repairsAttempted"} <= set(error.details)
+    assert "excerpt" not in error.details
 
 
 def test_agent_accepts_a_fenced_reply_unchanged() -> None:
@@ -375,12 +380,15 @@ def test_agent_accepts_a_fenced_reply_unchanged() -> None:
     assert_success(agent.execute(make_request()))
 
 
-def test_parse_error_never_echoes_model_payload() -> None:
+def test_parse_error_reason_never_echoes_model_payload() -> None:
     marker = "untrusted-parser-diagnostic-marker"
     agent, _ = make_agent('{"findings": [' + marker)
     result = agent.execute(make_request())
     assert_invalid(result)
-    assert marker not in json.dumps(result.to_contract())
+    error = result.errors[0]
+    assert marker not in error.message
+    assert marker not in error.details["reason"]
+    assert len(error.details["excerpt"]) <= 160
 
 
 @pytest.mark.parametrize("field", ["severity", "path", "description"])
