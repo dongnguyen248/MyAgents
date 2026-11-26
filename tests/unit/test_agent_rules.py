@@ -47,6 +47,11 @@ class AgentRulesTests(unittest.TestCase):
         helper (asf.agents._shared.model_errors) is allowlisted on
         the same terms: it builds the one standard invalid-response
         error every agent reports for an unusable model reply. The
+        response-diagnostics helper
+        (asf.agents._shared.response_diagnostics) is allowlisted on
+        the same terms: pure (json/re/typing/pydantic only, plus the
+        allowlisted security redactor), it builds the bounded
+        evidence details attached to that error. The
         model-call helper (asf.agents._shared.model_call) is
         allowlisted on the same terms: it is the one place that
         interprets a model response's finish_reason (truncation,
@@ -105,6 +110,7 @@ class AgentRulesTests(unittest.TestCase):
             "asf.agents._shared.routing",
             "asf.agents._shared.skills",
             "asf.agents._shared.model_errors",
+            "asf.agents._shared.response_diagnostics",
             "asf.agents._shared.security",
             "asf.agents._shared.model_call",
             "asf.agents._shared.request_checks",
