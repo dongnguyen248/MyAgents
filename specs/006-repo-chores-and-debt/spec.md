@@ -20,7 +20,7 @@
 - Re-check `origin/sshpush` remote/push path once proxy connectivity is stable.
 
 ### Chore 4 - Run `scratch/inspect_run_status.py` Against Real Windows DB (Priority: P2)
-- `scratch/inspect_run_status.py` has never been executed against a real DB on Windows (note: file is not present in `E:\develops\JAVA\MyAgents\scratch\` on this clone). Locate/restore script if needed and run read-only inspection on Windows DB.
+- `scratch/inspect_run_status.py` has never been executed against a real DB on Windows (note: file is not present in `repo root/scratch/` on this clone). Locate/restore script if needed and run read-only inspection on Windows DB.
 
 ### Chore 5 - Run `gitleaks` Secrets Scan Locally (Priority: P2)
 - `gitleaks git --redact .` could not run in the sandbox environment. Run in an environment with `gitleaks` v8.30.1+ installed (CI runs it on Ubuntu).
