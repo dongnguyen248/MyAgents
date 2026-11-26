@@ -14,6 +14,7 @@ import { WorkflowStepper } from '../../components/workflows/WorkflowStepper';
 import { useAgents } from '../../features/agent-management';
 import { useTaskDetail } from '../../features/task-monitoring';
 import { cancelWorkflow, resumeWorkflow, retryWorkflow, useRunLiveRefetch } from '../../features/workflow-monitoring';
+import { operatorActionsFor } from '../../lib/operatorActions';
 import { dateTime, duration, titleCase } from '../../utils/format';
 
 export function TaskDetailPage() {
@@ -91,7 +92,7 @@ export function TaskDetailPage() {
                   {retrying ? 'Starting…' : 'Run again'}
                 </button>
               )}
-              {workflow && !['FAILED', 'CANCELLED', 'COMPLETED'].includes(workflow.status) && (
+              {workflow && operatorActionsFor(workflow).some((action) => action.id === 'cancel') && (
                 <button type="button" className="btn btn-danger" onClick={() => setConfirmingCancel(true)} disabled={cancelling}>
                   Cancel run
                 </button>
