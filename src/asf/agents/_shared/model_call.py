@@ -20,6 +20,7 @@ Anything else returns the response untouched.
 from __future__ import annotations
 
 from asf.agents._shared.model_errors import invalid_response
+from asf.agents._shared.response_diagnostics import diagnostic_details, evidence_for
 from asf.contracts.models import ModelRequest, ModelResponse
 from asf.models.errors import ModelGatewayError
 from asf.models.finish import FinishKind, classify_finish_reason
@@ -53,10 +54,7 @@ def ensure_complete(response: ModelResponse) -> ModelResponse:
         raise invalid_response(
             "Model response was blocked by the provider"
             f" (finish_reason={response.finish_reason!r})",
-            details={
-                "finishReason": response.finish_reason,
-                "model": response.model,
-            },
+            details=diagnostic_details(evidence_for(response), {"model": response.model}),
         )
     return response
 
