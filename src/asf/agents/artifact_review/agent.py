@@ -12,7 +12,12 @@ from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.parsing import strip_code_fence
-from asf.agents._shared.response_diagnostics import diagnostic_details, error_offset, evidence_for
+from asf.agents._shared.response_diagnostics import (
+    diagnostic_details,
+    error_offset,
+    evidence_for,
+    log_excerpt,
+)
 from asf.agents._shared.routing import tier_metadata
 from asf.agents._shared.schema_reason import schema_problems, schema_reason
 from asf.agents.artifact_review.checks import DEFAULT_MAX_TASKS, run_mechanical_checks
@@ -131,7 +136,7 @@ class ArtifactReviewAgent(BaseAgent):
             harness=self._settings.harness,
         )
         response = self._call_model(request, messages)
-        review = _parse_review(response)
+        review = _parse_review(response, request)
         previous = _previous_ai_findings(target)
         merged = merge_findings(previous, list(review.findings))
         content = ArtifactReviewContent.model_construct(
@@ -256,7 +261,7 @@ def _cap_findings(findings: list[Finding]) -> list[Finding]:
     return [findings[i] for i in keep]
 
 
-def _parse_review(response: ModelResponse) -> ArtifactReviewContent:
+def _parse_review(response: ModelResponse, request: AgentRequest) -> ArtifactReviewContent:
     raw = response.content
     if len(raw) > MAX_REPLY_CHARS or not raw.strip():
         raise invalid_response(
@@ -275,6 +280,7 @@ def _parse_review(response: ModelResponse) -> ArtifactReviewContent:
         )
         reason = schema_reason(exc, stripped)
         evidence = evidence_for(response, offset=error_offset(exc, stripped), excerpt_text=stripped)
+        log_excerpt(evidence, task_id=request.task_id, request_id=request.request_id)
         raise invalid_response(
             f"Artifact review response does not match the required schema: {reason}",
             details=diagnostic_details(evidence, {"reason": reason}),
