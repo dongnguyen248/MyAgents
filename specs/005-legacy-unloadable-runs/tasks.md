@@ -3,6 +3,7 @@ description: "Task tracking for C1 — Legacy Unloadable Runs"
 ---
 
 # Tasks: C1 — Legacy Unloadable Runs
+Nguồn: goals/asf-run-status-visibility-and-diagnostics/files/c1-legacy-runs-tasks.md
 
 **Input**: Design documents from `/specs/005-legacy-unloadable-runs/`
 **Dependencies**: Independent, recommended after `001-workflow-status-truthful` (S0). Selected approach: `(a)` (`loadable: false` + `reason`); `(b)` migration and `(c)` archive temporarily rejected.
@@ -18,4 +19,4 @@ description: "Task tracking for C1 — Legacy Unloadable Runs"
 - [ ] T004 [US1] Render `"Legacy run"` badge in dashboard when `loadable` is `false`
 - [ ] T005 [US2] Disable Resume, Run again, and Cancel in dashboard based on `loadable` (not `status`)
 - [ ] T006 [US2] Add dashboard unit tests for `"Legacy run"` badge and `loadable`-based action gating
-- [ ] T007 Verify potential scope handoff from S0 T005 (`operatorActionsFor` / `TaskDetailPage` Cancel gating if Option B was chosen) and run full CI gates
+- [ ] T007 Resolve known deviation deferred from S0 (`operatorActionsFor` `UNKNOWN` fallthrough -> Pause/Cancel -> 409 and `TaskDetailPage` self-gated Cancel button) and run full CI gates
