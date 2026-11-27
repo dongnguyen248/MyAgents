@@ -1,6 +1,7 @@
 import type { Agent } from '../../types/agent';
 import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { Project } from '../../types/project';
+import type { LlmModelRequest, LlmProfile, LlmProfileInput, LlmTestResult } from '../../types/llm';
 import type { Skill } from '../../types/skill';
 import type { RunDiagnostics, Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
@@ -46,6 +47,15 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     getAgentRuns: (id) => get(`/agents/${id}/runs`),
     createAgent: (input) => send<Agent>('/agents', 'POST', input),
     listSkills: async () => (await getOpt<Skill[]>('/skills')) ?? [],
+
+    listLlmProfiles: async () => (await getOpt<LlmProfile[]>('/llm/profiles')) ?? [],
+    saveLlmProfile: (input: LlmProfileInput) =>
+      send<LlmProfile>(`/llm/profiles/${input.id}`, 'PUT', input),
+    deleteLlmProfile: (id) => send<void>(`/llm/profiles/${id}`, 'DELETE'),
+    loadLlmModels: (request: LlmModelRequest) => send<string[]>('/llm/models', 'POST', request),
+    testLlmProfile: (id) => send<LlmTestResult>(`/llm/profiles/${id}/test`, 'POST'),
+    assignAgentProfile: (agentId, profileId) =>
+      send<Agent>(`/agents/${agentId}/llm`, 'PUT', { profileId }),
 
     listTasks: (f) => get(`/tasks${qs(f)}`),
     getTask: (id) => getOpt(`/tasks/${id}`),
@@ -138,8 +148,5 @@ export function createHttpApi(baseUrl: string): FactoryApi {
 
     getMetricsOverview: () => get('/metrics/overview'),
 
-    getModelSettings: () => get('/settings/model'),
-    updateModelSettings: (input) => send('/settings/model', 'PUT', input),
-    testModelSettings: (agent) => send('/settings/model/test', 'POST', agent ? { agent } : {}),
   };
 }

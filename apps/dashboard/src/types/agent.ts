@@ -14,6 +14,8 @@ export interface Agent {
   statusDetail?: string;
   version: string;
   model: string;
+  /** Id of the configured LLM profile this agent runs on (see `LlmProfile`). */
+  llmProfileId?: string;
   currentTaskId?: string;
   currentTaskTitle?: string;
   currentProjectId?: string;

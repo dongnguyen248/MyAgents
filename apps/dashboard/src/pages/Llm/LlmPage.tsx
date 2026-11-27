@@ -1,30 +1,29 @@
-import { AsyncView } from '../../components/common/AsyncView';
-import { Card, PageHeader } from '../../components/common/Layout';
-import { LlmSettingsForm } from '../../components/llm/LlmSettingsForm';
-import { useModelSettings } from '../../features/settings';
+import { PageHeader } from '../../components/common/Layout';
+import { Icon } from '../../components/common/Icon';
+import { ProfileDialogs, ProfilesCard } from '../../components/llm/ProfileDialogs';
+import { useProfilePage } from '../../features/llm-profiles';
 
-/** Formerly "Settings": the one place that configures the model every agent calls. */
+function NewProfileButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="btn btn-primary" onClick={onClick}>
+      <Icon name="plus" className="icon-sm" />
+      New profile
+    </button>
+  );
+}
+
+/** Named LLM profiles: provider, endpoint, key and the model an agent runs on. */
 export function LlmPage() {
-  const settings = useModelSettings();
-  const summary = settings.data
-    ? `${settings.data.provider} · ${settings.data.model || 'no model'}`
-    : undefined;
+  const page = useProfilePage();
   return (
     <>
       <PageHeader
         title="LLM"
-        subtitle="Provider, shared model and per-agent overrides — stored on this machine by the backend."
+        subtitle="Named endpoints an agent can run on: provider, base URL, key and the model picked from what the endpoint offers."
+        actions={<NewProfileButton onClick={page.openNew} />}
       />
-      <Card title="Endpoints & models" subtitle={summary}>
-        <AsyncView {...settings}>
-          {(data) => (
-            <LlmSettingsForm
-              key={`${data.provider}|${data.model}|${data.baseUrl}|${data.keyHint}`}
-              initial={data}
-            />
-          )}
-        </AsyncView>
-      </Card>
+      <ProfilesCard page={page} />
+      <ProfileDialogs page={page} />
     </>
   );
 }

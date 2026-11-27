@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createAgent } from '../../features/agent-management';
-import { messageOf } from '../../lib/llmDraft';
+import { messageOf } from '../../lib/message';
 import type { AgentType } from '../../types/agent';
 
 /** Same shape the backend enforces for an agent slug. */
