@@ -5,6 +5,9 @@
   --danger: #b3261e; --danger-bg: #fce5e3; --neutral: #424b5c; --neutral-bg: #e6e9ef; --muted-bg: #eceef2;
   --sidebar: #111827; --sidebar-text: #c7d0e0; --sidebar-active: #243049;
   --s1: #2b5fd9; --s2: #c96f12; --s3: #17803f; --s4: #8a3fb0;
+  --lm-stage: #0b0f17; --lm-stage-2: #0e1420; --lm-tile: #121a28; --lm-tile-border: #2b3548;
+  --lm-text: #e6eaf2; --lm-muted: #9aa6bb; --lm-accent: #f0b35c; --lm-teal: #4fd1c5;
+  --lm-danger: #ff8a80; --lm-warn: #f0c35c; --lm-ok: #5fd08f;
   --radius: 8px; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px;
 }
 :root[data-theme='dark'] {
@@ -185,82 +188,169 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
   height: auto;
   display: block;
 }
+.lm-stage-dot {
+  fill: var(--lm-muted);
+  opacity: 0.12;
+}
 .lm-spoke {
-  stroke: var(--border);
+  stroke: var(--lm-tile-border);
+  opacity: 0.7;
 }
 .lm-spoke.active {
-  stroke: var(--accent);
+  stroke: var(--lm-accent);
+  opacity: 0.95;
 }
-.lm-station {
-  fill: var(--surface);
-  stroke: var(--border);
-  stroke-width: 1.5;
+.lm-hub {
+  outline: none;
 }
-.lm-station-halo {
-  fill: var(--accent);
-  opacity: 0.3;
+.lm-hub:focus-visible .lm-tile {
+  stroke: var(--lm-teal);
+  stroke-width: 2.5;
+}
+.lm-tile {
+  fill: var(--lm-tile);
+  stroke: var(--lm-tile-border);
+  stroke-width: 1.2;
+  transition: stroke 0.3s ease;
+}
+.lm-tile-active {
+  stroke: var(--lm-accent);
+}
+.lm-tile-error {
+  stroke: var(--lm-danger);
+}
+.lm-icon {
+  fill: none;
+  stroke: var(--lm-text);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lm-halo {
+  fill: var(--lm-accent);
+  opacity: 0.16;
+  animation: lm-halo-pulse 1.6s ease-in-out infinite;
+}
+.lm-halo-error {
+  fill: var(--lm-danger);
+}
+@keyframes lm-halo-pulse {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  50% {
+    opacity: 0.05;
+  }
+}
+.lm-error-ring {
+  fill: none;
+  stroke: var(--lm-danger);
+  stroke-width: 2;
+  pointer-events: none;
 }
 .lm-station-label {
-  fill: var(--text);
-  font-size: 12px;
-  font-weight: 600;
+  fill: var(--lm-text);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-anchor: middle;
 }
 .lm-station-count {
-  fill: var(--muted);
-  font-size: 11px;
+  fill: var(--lm-muted);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 10px;
   text-anchor: middle;
 }
 .lm-station-badge {
-  fill: var(--accent);
+  fill: var(--lm-accent);
   font-size: 12px;
   font-weight: 700;
 }
 .lm-fault-dot {
-  fill: var(--danger);
+  fill: var(--lm-danger);
 }
 .lm-fault-count {
-  fill: #fff;
+  fill: #1a0b0b;
   font-size: 8px;
   font-weight: 700;
   text-anchor: middle;
+  dominant-baseline: central;
 }
 .lm-centre {
-  fill: var(--surface);
-  stroke: var(--border);
+  fill: var(--lm-tile);
+  stroke: var(--lm-tile-border);
   stroke-width: 1.5;
+}
+.lm-centre-warn {
+  animation: lm-breathe 3.2s ease-in-out infinite;
+}
+@keyframes lm-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.75;
+  }
 }
 .lm-budget-ring {
   fill: none;
   stroke-width: 5;
   stroke-linecap: round;
+  transition: stroke-dasharray 0.6s ease, stroke 0.6s ease;
 }
 .lm-centre-title {
-  fill: var(--text);
-  font-size: 15px;
+  fill: var(--lm-text);
+  font-size: 16px;
   font-weight: 700;
+  letter-spacing: 0.22em;
   text-anchor: middle;
 }
 .lm-centre-budget {
-  fill: var(--text);
+  fill: var(--lm-text);
   font-size: 13px;
   font-weight: 600;
   text-anchor: middle;
 }
 .lm-centre-caption {
-  fill: var(--muted);
+  fill: var(--lm-muted);
   font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-anchor: middle;
 }
+.lm-centre-unknown {
+  fill: var(--lm-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+}
 .lm-centre-status {
-  fill: var(--muted);
+  fill: var(--lm-muted);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
   font-size: 11px;
   text-anchor: middle;
 }
-.lm-pulse {
+.lm-comet {
   pointer-events: none;
+}
+.lm-trail {
+  opacity: 0.35;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lm-comet,
+  .lm-orbit {
+    display: none;
+  }
+  .lm-halo,
+  .lm-centre-warn,
+  .lm-flash {
+    animation: none;
+  }
+  .lm-budget-ring {
+    transition: none;
+  }
 }
 .lm-chips {
   display: flex;
@@ -415,23 +505,6 @@ fieldset { border: 0; padding: 0; margin: 12px 0 0; }
 .lm-detail-sub {
   font-size: 0.9rem;
   margin: 12px 0 6px;
-}
-.lm-clock-face {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-  opacity: 0.8;
-}
-.lm-clock-hour {
-  stroke: var(--text);
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-.lm-clock-minute {
-  stroke: var(--accent);
-  stroke-width: 1.5;
-  stroke-linecap: round;
 }
 @keyframes lm-flash-pulse {
   0%,
