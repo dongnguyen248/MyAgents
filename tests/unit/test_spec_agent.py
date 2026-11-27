@@ -542,6 +542,19 @@ class SpecAgentTests(unittest.TestCase):
         self.assertIn("## Background / Goal", res_case.errors[0].details.get("missingSections", []))
         self.assertEqual(len(gateway_case.requests), 2)
 
+    def test_missing_sections_details_include_diagnostics(self):
+        sections_without_one = list(self.template.required_sections)
+        missing_sec = sections_without_one.pop(2)
+        reply_missing = make_valid_reply(sections_without_one)
+        agent, _ = self._make_agent([reply_missing, reply_missing])
+        res = agent.execute(self._make_request())
+        details = res.errors[0].details
+        self.assertEqual(details["missingSections"], [missing_sec])
+        self.assertEqual(details["replyChars"], len(reply_missing))
+        self.assertEqual(details["finishReason"], "stop")
+        self.assertEqual(details["repairsAttempted"], 1)
+        self.assertNotIn("excerpt", details)
+
     def test_unexpected_gateway_exception_redacted(self):
         agent, _ = self._make_agent([RuntimeError("DATABASE_PASSWORD_SECRET_987")])
         res = agent.execute(self._make_request())

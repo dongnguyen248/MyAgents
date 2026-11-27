@@ -663,6 +663,11 @@ class PlanAgentTests(unittest.TestCase):
         self.assertEqual(res_missing.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertEqual(res_missing.errors[0].details.get("missingSections"), [missing_sec])
 
+        self.assertEqual(res_missing.errors[0].details["replyChars"], len(reply_missing))
+        self.assertEqual(res_missing.errors[0].details["finishReason"], "stop")
+        self.assertEqual(res_missing.errors[0].details["repairsAttempted"], 0)
+        self.assertNotIn("excerpt", res_missing.errors[0].details)
+
         # 3. Reply wrapped in single fenced code block -> unwrapped and accepted
         wrapped_reply = f"```markdown\n{self.valid_reply}\n```"
         agent_wrapped, _ = self._make_agent([wrapped_reply])

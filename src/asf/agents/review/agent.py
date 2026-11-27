@@ -20,6 +20,7 @@ from asf.agents._shared.code_agents import (
 from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.parsing import strip_code_fence
+from asf.agents._shared.response_diagnostics import diagnostic_details, error_offset, evidence_for
 from asf.agents._shared.routing import tier_metadata
 from asf.agents._shared.schema_reason import schema_problems, schema_reason
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -118,8 +119,8 @@ class ReviewAgent(BaseAgent):
         )
         response = self._call_model(request, messages)
         review = _parse_review(response)
-        _check_finding_paths(review, changes)
-        return self._assemble(request, code, review)
+        _check_finding_paths(review, changes, response)
+        return self._assemble(request, code, review, response)
 
     def _call_model(self, request: AgentRequest, messages: list[ModelMessage]) -> ModelResponse:
         try:
@@ -178,11 +179,14 @@ class ReviewAgent(BaseAgent):
         }, [artifact]
 
     def _assemble(
-        self, request: AgentRequest, code: Artifact, review: ReviewContent
+        self, request: AgentRequest, code: Artifact, review: ReviewContent, response: ModelResponse
     ) -> tuple[Any, list[Artifact]]:
         text = render_review_markdown(review, code.id, code.version)
         if len(text) > MAX_TEXT_CHARS:
-            raise invalid_response("Rendered review exceeds the size limit")
+            raise invalid_response(
+                "Rendered review exceeds the size limit",
+                details=diagnostic_details(evidence_for(response)),
+            )
         artifact = self._review_artifact(request, code, review, text)
         return {"verdict": review.verdict}, [artifact]
 
@@ -231,7 +235,10 @@ def _passing_report(request: AgentRequest, code: Artifact) -> Artifact | None:
 def _parse_review(response: ModelResponse) -> ReviewContent:
     raw = response.content
     if len(raw) > MAX_REPLY_CHARS or not raw.strip():
-        raise invalid_response("Review response is empty or exceeds the size limit")
+        raise invalid_response(
+            "Review response is empty or exceeds the size limit",
+            details=diagnostic_details(evidence_for(response)),
+        )
     stripped = strip_code_fence(raw)
     try:
         return ReviewContent.model_validate_json(stripped)
@@ -243,15 +250,21 @@ def _parse_review(response: ModelResponse) -> ReviewContent:
             response.finish_reason,
         )
         reason = schema_reason(exc, stripped)
+        evidence = evidence_for(response, offset=error_offset(exc, stripped), excerpt_text=stripped)
         raise invalid_response(
             f"Review response does not match the required schema: {reason}",
-            details={"reason": reason},
+            details=diagnostic_details(evidence, {"reason": reason}),
         ) from None
 
 
-def _check_finding_paths(review: ReviewContent, changes: ChangeSet) -> None:
+def _check_finding_paths(
+    review: ReviewContent, changes: ChangeSet, response: ModelResponse
+) -> None:
     allowed_paths = {change.path for change in changes.changes}
     if any(finding.path not in allowed_paths for finding in review.findings):
         outside = sorted({f.path for f in review.findings if f.path not in allowed_paths})
         logger.warning("review findings reference paths outside CODE: %s", outside[:5])
-        raise invalid_response("Review finding references a path outside CODE")
+        raise invalid_response(
+            "Review finding references a path outside CODE",
+            details=diagnostic_details(evidence_for(response)),
+        )

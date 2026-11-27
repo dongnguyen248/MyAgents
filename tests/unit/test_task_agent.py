@@ -1127,6 +1127,19 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res_invalid.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res_invalid.errors[0].details)
 
+    def test_reply_missing_comma_includes_diagnostics(self):
+        reply = '{"tasks": [{"id": "T1" "title": "x"}]}'
+        agent, _ = self._make_agent([reply])
+        res = agent.execute(self._make_request())
+        self.assertEqual(res.status, "FAILED")
+        details = res.errors[0].details
+        self.assertEqual(details["replyChars"], len(reply))
+        self.assertEqual(details["finishReason"], "stop")
+        self.assertEqual(details["repairsAttempted"], 0)
+        self.assertIn("parseError", details)
+        self.assertLessEqual(len(details["excerpt"]), 160)
+        self.assertIn('"title"', details["excerpt"])
+
     def test_reply_missing_tasks_key_returns_parse_error(self):
         agent_missing_tasks, _ = self._make_agent(['{"not_tasks": []}'])
         res_missing = agent_missing_tasks.execute(self._make_request())
