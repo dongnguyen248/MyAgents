@@ -1,4 +1,4 @@
-import type { Agent } from '../../types/agent';
+import type { Agent, AgentInput } from '../../types/agent';
 import { healthScore } from '../../utils/health';
 import { api } from '../api';
 
@@ -14,6 +14,10 @@ export async function getAgentDetail(id: string) {
 }
 
 export const getAgentConfig = (id: string) => api.getAgentConfig(id);
+
+export async function createAgent(input: AgentInput): Promise<Agent> {
+  return withHealth(await api.createAgent(input));
+}
 
 /** Answers "which agent is stuck or failing?" — returns a human-readable reason, or undefined if healthy. */
 export function attentionReason(a: Agent): string | undefined {

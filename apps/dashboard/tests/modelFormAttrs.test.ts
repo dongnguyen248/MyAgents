@@ -59,32 +59,42 @@ test('api key attrs use new-password, a non-credential name and manager ignore f
   assert.equal(API_KEY_INPUT_ATTRS['data-form-type'], 'other');
 });
 
-function inputBlocks(): string[] {
-  const source = readFileSync(
-    new URL('../src/components/settings/ModelProviderForm.tsx', import.meta.url),
-    'utf8',
-  );
+// The LLM page splits its inputs across three components, so the scan runs
+// per file: every text input must still carry {...modelTextInputAttrs(...)}
+// and the one password input must carry {...API_KEY_INPUT_ATTRS}.
+function inputBlocks(relativePath: string): string[] {
+  const source = readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
   return source.match(/<input[\s\S]*?\/>/g) ?? [];
 }
 
-test('every input in the form carries the anti-autofill attributes', () => {
-  const blocks = inputBlocks();
-  // Shared model, base URL, the per-agent input (rendered per agent),
-  // the API key and the clear-key checkbox.
-  assert.equal(blocks.length, 5);
+function textInputsOf(relativePath: string): string[] {
+  return inputBlocks(relativePath).filter(
+    (block) => !block.includes('type="password"') && !block.includes('type="checkbox"'),
+  );
+}
+
+test('provider, model and endpoint inputs carry the anti-autofill attributes', () => {
+  const blocks = inputBlocks('src/components/llm/ProviderFields.tsx');
+  // Shared model and base URL; the provider select is not an input.
+  assert.equal(blocks.length, 2);
+  for (const block of blocks) {
+    assert.ok(block.includes('{...modelTextInputAttrs('), block);
+  }
+});
+
+test('the per-agent model input is named after its agent key', () => {
+  const blocks = textInputsOf('src/components/llm/AgentModelPanel.tsx');
+  assert.equal(blocks.length, 1);
+  assert.ok(blocks[0].includes('{...modelTextInputAttrs(agentModelInputName(field.key))}'));
+});
+
+test('the shared key input is a password field with manager ignore flags', () => {
+  const blocks = inputBlocks('src/components/llm/SharedKeyFields.tsx');
   const passwords = blocks.filter((block) => block.includes('type="password"'));
   assert.equal(passwords.length, 1);
   assert.ok(passwords[0].includes('{...API_KEY_INPUT_ATTRS}'));
   assert.ok(!passwords[0].includes('autoComplete='));
   const checkboxes = blocks.filter((block) => block.includes('type="checkbox"'));
   assert.equal(checkboxes.length, 1);
-  const textInputs = blocks.filter(
-    (block) => !block.includes('type="password"') && !block.includes('type="checkbox"'),
-  );
-  assert.equal(textInputs.length, 3);
-  for (const block of textInputs) {
-    assert.ok(block.includes('{...modelTextInputAttrs('), block);
-  }
-  const agentInput = textInputs.find((block) => block.includes('agentModelInputName(a.key)'));
-  assert.ok(agentInput);
+  assert.equal(textInputsOf('src/components/llm/SharedKeyFields.tsx').length, 0);
 });

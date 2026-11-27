@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAgentConfig } from '../../features/agent-management';
+import { useEscape } from '../../hooks/useEscape';
 import { agentMeta } from '../../lib/agentCatalog';
 import type { Agent, AgentConfig } from '../../types/agent';
 import { AsyncView } from '../common/AsyncView';
@@ -34,9 +35,15 @@ function DrawerHead({ agent }: { agent: Agent }) {
       <h2 className="drawer-title">
         {agent.name}
         <span className="agent-card-key">{agent.id}</span>
-        <Badge tone="muted" icon="◆" small>
-          Built-in
-        </Badge>
+        {agent.custom ? (
+          <Badge tone="info" icon="◇" small>
+            Custom
+          </Badge>
+        ) : (
+          <Badge tone="muted" icon="◆" small>
+            Built-in
+          </Badge>
+        )}
       </h2>
       <p className="drawer-desc">{agentMeta(agent.type).description}</p>
     </div>
@@ -96,15 +103,7 @@ export function AgentSetupDrawer({ agent, onClose }: { agent: Agent; onClose: ()
   const [tab, setTab] = useState<TabId>('config');
   const config = useAgentConfig(agent.id);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   return (
     <>

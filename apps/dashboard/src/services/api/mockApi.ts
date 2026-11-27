@@ -1,6 +1,6 @@
 import { pickCurrentRun } from '../../lib/currentRun';
 import { activity, livePool, makeEvent } from '../../mocks/activity';
-import { agentConfigs, agents, runsFor } from '../../mocks/agents';
+import { agentConfigs, agents, makeAgentConfig, makeCustomAgent, runsFor } from '../../mocks/agents';
 import { approvals as approvalSeed } from '../../mocks/approvals';
 import { metricsOverview } from '../../mocks/metrics';
 import { projects } from '../../mocks/projects';
@@ -330,6 +330,12 @@ export const mockApi: FactoryApi = {
   getAgentRuns: (id) => {
     const agent = agents.find((a) => a.id === id);
     return delay(agent ? runsFor(agent) : []);
+  },
+  createAgent: (input) => {
+    const created = makeCustomAgent(input);
+    agents.push(created);
+    agentConfigs.push(makeAgentConfig(input));
+    return delay(created);
   },
 
   listTasks: (f = {}) => {

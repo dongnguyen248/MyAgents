@@ -1,4 +1,4 @@
-import type { Agent, AgentConfig, AgentRun, AgentStatus, AgentType } from '../types/agent';
+import type { Agent, AgentConfig, AgentInput, AgentRun, AgentStatus, AgentType } from '../types/agent';
 import type { AgentMetrics } from '../types/metrics';
 import { minutesAgo, secondsAgo } from './time';
 import { tasks } from './tasks';
@@ -110,4 +110,22 @@ export function runsFor(agent: Agent): AgentRun[] {
     });
   }
   return runs.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+
+const EMPTY_METRICS: AgentMetrics = {
+  total: 0, completed: 0, running: 0, failed: 0, cancelled: 0, successRate: 0,
+  avgDurationSec: 0, avgRevisions: 0, humanApprovalRate: null, testPassRate: 0, ciPassRate: 0,
+  promptTokens: 0, completionTokens: 0, modelCalls: 0,
+};
+
+/** A freshly created custom agent: idle, no history, using the shared model. */
+export function makeCustomAgent(input: AgentInput): Agent {
+  return { ...base(input.id, input.name, input.type, 'IDLE', 'shared model', '0.1.0', 0, EMPTY_METRICS), custom: true };
+}
+
+/** Config for a custom agent: seeded from an existing agent of the same type. */
+export function makeAgentConfig(input: AgentInput): AgentConfig {
+  const [fallback] = agentConfigs;
+  const template = agentConfigs.find((config) => config.type === input.type) ?? fallback;
+  return { ...template, agentId: input.id, name: input.name };
 }

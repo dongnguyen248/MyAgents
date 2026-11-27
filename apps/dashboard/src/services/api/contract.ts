@@ -1,5 +1,5 @@
 import type { ActivityEvent, ActivityFilter } from '../../types/activity';
-import type { Agent, AgentConfig, AgentRun } from '../../types/agent';
+import type { Agent, AgentConfig, AgentInput, AgentRun } from '../../types/agent';
 import type { Approval, ApprovalDecisionInput } from '../../types/approval';
 import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { MetricsOverview } from '../../types/metrics';
@@ -20,6 +20,8 @@ export interface FactoryApi {
   getAgent(id: string): Promise<Agent | undefined>;
   getAgentConfig(id: string): Promise<AgentConfig | undefined>;
   getAgentRuns(id: string): Promise<AgentRun[]>;
+  /** Creates a custom agent. Backends that do not implement POST /agents answer 404/405. */
+  createAgent(input: AgentInput): Promise<Agent>;
 
   listTasks(filter?: TaskFilter): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;

@@ -6,4 +6,4 @@ export const useAgentDetail = (id: string) => useAsync(() => svc.getAgentDetail(
 export const useAgentConfig = (id: string) => useAsync(() => svc.getAgentConfig(id), [id]);
 export const useAgentConfigs = (ids: string[]) =>
   useAsync(() => Promise.all(ids.map((id) => svc.getAgentConfig(id))), [ids.join(',')]);
-export { attentionReason } from '../../services/agents/agentService';
+export { attentionReason, createAgent } from '../../services/agents/agentService';
