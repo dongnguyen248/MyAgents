@@ -1,34 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { AsyncView } from '../../components/common/AsyncView';
 import { Card, PageHeader } from '../../components/common/Layout';
-import { AgentStatusBadge } from '../../components/agents/AgentStatusBadge';
-import { useAgentConfig, useAgents } from '../../features/agent-management';
+import { useAgentConfig } from '../../features/agent-management';
 import { useProjects } from '../../features/project-management';
 import type { AgentConfig } from '../../types/agent';
-
-export function AgentSettingsIndexPage() {
-  const agents = useAgents();
-  return (
-    <>
-      <PageHeader title="Agent Settings" subtitle="Configuration, separate from runtime monitoring." />
-      <Card flush>
-        <AsyncView {...agents}>
-          {(list) => (
-            <ul className="plain list-links">
-              {list.map((a) => (
-                <li key={a.id} className="row-between">
-                  <Link to={`/agents/${a.id}/settings`}>{a.name}</Link>
-                  <AgentStatusBadge status={a.status} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </AsyncView>
-      </Card>
-    </>
-  );
-}
 
 export function AgentSettingsPage() {
   const { agentId = '' } = useParams();

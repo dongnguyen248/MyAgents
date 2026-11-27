@@ -8,6 +8,8 @@ export interface Agent {
   id: string;
   name: string;
   type: AgentType;
+  /** True for agents created by an operator; absent = a built-in platform agent. */
+  custom?: boolean;
   status: AgentStatus;
   statusDetail?: string;
   version: string;
@@ -36,6 +38,13 @@ export interface AgentConfig {
   maxConcurrentTasks: number;
   timeoutSeconds: number;
   retryPolicy: { maxRetries: number; backoff: 'none' | 'linear' | 'exponential'; backoffSeconds: number };
+}
+
+/** What a create-agent request sends: the slug, the display name and the type it follows. */
+export interface AgentInput {
+  id: string;
+  name: string;
+  type: AgentType;
 }
 
 export interface AgentRun {

@@ -36,8 +36,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'System',
     items: [
       { to: '/agents', label: 'Agents', icon: 'bot' },
-      { to: '/agent-settings', label: 'Agent settings', icon: 'sliders' },
-      { to: '/settings', label: 'Settings', icon: 'settings' },
+      { to: '/llm', label: 'LLM', icon: 'sparkles' },
     ],
   },
 ];

@@ -9,9 +9,15 @@ function AgentCardHeading({ agent }: { agent: Agent }) {
       <Icon name="bot" className="icon-sm" />
       <span className="agent-card-name">{agent.name}</span>
       <span className="agent-card-key">{agent.id}</span>
-      <Badge tone="muted" icon="◆" small>
-        Built-in
-      </Badge>
+      {agent.custom ? (
+        <Badge tone="info" icon="◇" small>
+          Custom
+        </Badge>
+      ) : (
+        <Badge tone="muted" icon="◆" small>
+          Built-in
+        </Badge>
+      )}
       {agent.status === 'DISABLED' && (
         <Badge tone="danger" icon="✕" small>
           Disabled

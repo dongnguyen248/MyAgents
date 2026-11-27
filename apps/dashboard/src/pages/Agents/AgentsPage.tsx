@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { AgentGridCard } from '../../components/agents/AgentGridCard';
+import { CreateAgentDialog } from '../../components/agents/CreateAgentDialog';
 import { AgentSetupDrawer } from '../../components/agents/AgentSetupDrawer';
 import { AgentTable } from '../../components/agents/AgentTable';
 import { AsyncView } from '../../components/common/AsyncView';
@@ -76,18 +76,46 @@ function AgentCatalogue({
   );
 }
 
-function AgentsHeader() {
+function AgentsHeader({ onCreate }: { onCreate: () => void }) {
   return (
     <PageHeader
       title="Agent"
-      subtitle="Prompts and configs for the platform’s built-in agents, plus their runtime status."
+      subtitle="Prompts and configs for the platform’s built-in agents, plus creating and managing custom agents."
       actions={
-        <Link className="btn btn-primary" to="/agent-settings">
+        <button type="button" className="btn btn-primary" onClick={onCreate}>
           <Icon name="plus" className="icon-sm" />
           Create agent
-        </Link>
+        </button>
       }
     />
+  );
+}
+
+function AgentListCard({
+  agents,
+  view,
+  setView,
+  selectedId,
+  onSelect,
+}: {
+  agents: ReturnType<typeof useAgents>;
+  view: AgentView;
+  setView: (view: AgentView) => void;
+  selectedId: string | null;
+  onSelect: (agentId: string | null) => void;
+}) {
+  return (
+    <Card
+      title="Agent list"
+      subtitle={agents.data ? `${agents.data.length} total` : undefined}
+      actions={<ViewToggle view={view} onChange={setView} />}
+    >
+      <AsyncView {...agents}>
+        {(list) => (
+          <AgentCatalogue agents={list} view={view} selectedId={selectedId} onSelect={onSelect} />
+        )}
+      </AsyncView>
+    </Card>
   );
 }
 
@@ -95,27 +123,27 @@ export function AgentsPage() {
   const agents = useAgents();
   const [view, setView] = useState<AgentView>('cards');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const total = agents.data ? `${agents.data.length} total` : undefined;
+  const [creating, setCreating] = useState(false);
 
   return (
     <>
-      <AgentsHeader />
-      <Card
-        title="Agent list"
-        subtitle={total}
-        actions={<ViewToggle view={view} onChange={setView} />}
-      >
-        <AsyncView {...agents}>
-          {(list) => (
-            <AgentCatalogue
-              agents={list}
-              view={view}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-            />
-          )}
-        </AsyncView>
-      </Card>
+      <AgentsHeader onCreate={() => setCreating(true)} />
+      <AgentListCard
+        agents={agents}
+        view={view}
+        setView={setView}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+      />
+      {creating && (
+        <CreateAgentDialog
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            agents.reload();
+            setView('cards');
+          }}
+        />
+      )}
     </>
   );
 }

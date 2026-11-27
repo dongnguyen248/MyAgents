@@ -54,6 +54,17 @@ const META: Record<AgentType, AgentMeta> = {
   },
 };
 
+export const AGENT_TYPES: AgentType[] = [
+  'spec',
+  'plan',
+  'task',
+  'implement',
+  'review',
+  'test',
+  'fix',
+  'artifact-review',
+];
+
 const FALLBACK: AgentMeta = {
   label: 'Agent',
   description: 'No description is registered for this agent type.',
