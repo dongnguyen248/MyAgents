@@ -82,15 +82,36 @@ test('findings summary prefers the latest review, then the test report', () => {
   const w = workflow({
     status: 'ESCALATED',
     artifacts: [
-      { id: '1', type: 'TEST_REPORT', name: 't', version: '1', createdBy: 'test', content: 'tests failed' },
-      { id: '2', type: 'CODE_REVIEW', name: 'r', version: '1', createdBy: 'review', content: 'review says no' },
+      {
+        id: '1',
+        type: 'TEST_REPORT',
+        name: 't',
+        version: '1',
+        createdBy: 'test',
+        content: 'tests failed',
+      },
+      {
+        id: '2',
+        type: 'CODE_REVIEW',
+        name: 'r',
+        version: '1',
+        createdBy: 'review',
+        content: 'review says no',
+      },
     ],
   });
   assert.equal(latestFindingsSummary(w), 'review says no');
   const long = workflow({
     status: 'ESCALATED',
     artifacts: [
-      { id: '3', type: 'TEST_REPORT', name: 't', version: '1', createdBy: 'test', content: 'x'.repeat(700) },
+      {
+        id: '3',
+        type: 'TEST_REPORT',
+        name: 't',
+        version: '1',
+        createdBy: 'test',
+        content: 'x'.repeat(700),
+      },
     ],
   });
   assert.equal(latestFindingsSummary(long)?.length, 601);

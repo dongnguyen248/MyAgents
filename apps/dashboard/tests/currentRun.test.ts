@@ -4,11 +4,7 @@
 // Run with: npm test  (node:test + type stripping, no extra deps)
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import {
-  displayedRunIdOf,
-  pickCurrentRun,
-  pickTaskWorkflow,
-} from '../src/lib/currentRun.ts';
+import { displayedRunIdOf, pickCurrentRun, pickTaskWorkflow } from '../src/lib/currentRun.ts';
 import type { Workflow } from '../src/types/workflow.ts';
 
 function workflow(partial: Partial<Workflow>): Workflow {

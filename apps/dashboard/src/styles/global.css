@@ -38,6 +38,7 @@ p { margin: 0.4rem 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .skip-link { position: absolute; left: -999px; } .skip-link:focus { left: 8px; top: 8px; z-index: 10; background: var(--surface); padding: 6px 10px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--mono); font-size: 0.85em; }
 .icon { width: 16px; height: 16px; flex: none; }
 .icon-sm { width: 14px; height: 14px; }
 .icon-lg { width: 18px; height: 18px; }
@@ -161,6 +162,27 @@ p { margin: 0.4rem 0; }
 .agent-card-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 1px; font-size: 0.7rem; color: var(--muted); }
 .chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
 .badge-sm { padding: 0 6px; border-radius: 5px; font-size: 0.68rem; }
+
+/* skill catalogue: hairline rows, like the LLM lists */
+.skill-list { display: grid; }
+.skill-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 16px;
+  padding: 11px 4px; cursor: pointer; text-align: left; color: inherit; font: inherit;
+  background: none; border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+}
+.skill-row:last-child { border-bottom: 0; }
+.skill-row:hover { background: var(--surface-3); }
+.skill-row-main { display: grid; gap: 3px; min-width: 0; }
+.skill-row-name { font-family: var(--mono); font-size: 0.82rem; font-weight: 600; }
+.skill-row-desc {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: 0.78rem; line-height: 1.45; color: var(--muted);
+}
+.skill-row-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; font-size: 0.7rem; color: var(--muted); }
+@media (max-width: 760px) {
+  .skill-row { grid-template-columns: minmax(0, 1fr); }
+  .skill-row-meta { justify-content: flex-start; }
+}
 
 /* drawer (agent setup) */
 .drawer-backdrop { position: fixed; inset: 0; z-index: 60; background: rgb(0 0 0 / 0.35); border: 0; padding: 0; }

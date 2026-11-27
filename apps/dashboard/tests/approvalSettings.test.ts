@@ -33,7 +33,10 @@ test('out-of-range or non-integer revisions are rejected like the server rejects
 });
 
 test('unknown mode and on-exhausted values are rejected', () => {
-  assert.equal(validateApprovalSettings({ mode: 'auto', maxRevisions: '', onExhausted: '' }).length, 1);
+  assert.equal(
+    validateApprovalSettings({ mode: 'auto', maxRevisions: '', onExhausted: '' }).length,
+    1,
+  );
   assert.equal(
     validateApprovalSettings({ mode: '', maxRevisions: '', onExhausted: 'ignore' }).length,
     1,
