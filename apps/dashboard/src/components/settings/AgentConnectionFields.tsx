@@ -79,16 +79,46 @@ function ConnectionUrlField({ agentKey, state, disabled, onChange }: FieldsProps
   );
 }
 
+function KeyHint({ saved }: { saved?: AgentConnectionView }) {
+  return (
+    <p className="muted small">
+      {saved?.keyConfigured
+        ? `An own key is stored for this agent (${saved.keyHint || 'hidden'}). It is never shown again.`
+        : 'This agent currently inherits the shared API key above.'}
+    </p>
+  );
+}
+
+function ClearKeyField({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="field check">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+      />
+      <span>Remove this agent’s stored key on save</span>
+    </label>
+  );
+}
+
 function ConnectionKeyField({ agentKey, state, saved, disabled, onChange }: FieldsProps) {
-  const status = ownKeyStatusText(saved);
-  const placeholder = ownKeyPlaceholder(saved);
   return (
     <>
       <label className="field block">
         <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <span>API key (own)</span>
           <span className="muted small" style={{ fontWeight: 'normal' }}>
-            {status}
+            {ownKeyStatusText(saved)}
           </span>
         </span>
         <input
@@ -96,25 +126,17 @@ function ConnectionKeyField({ agentKey, state, saved, disabled, onChange }: Fiel
           type="password"
           value={state.apiKey}
           onChange={(e) => onChange({ apiKey: e.target.value })}
-          placeholder={placeholder}
+          placeholder={ownKeyPlaceholder(saved)}
           disabled={disabled}
         />
       </label>
-      <p className="muted small">
-        {saved?.keyConfigured
-          ? `An own key is stored for this agent (${saved.keyHint || 'hidden'}). It is never shown again.`
-          : 'This agent currently inherits the shared API key above.'}
-      </p>
+      <KeyHint saved={saved} />
       {saved?.keyConfigured && (
-        <label className="field check">
-          <input
-            type="checkbox"
-            checked={state.clearKey}
-            onChange={(e) => onChange({ clearKey: e.target.checked })}
-            disabled={disabled}
-          />
-          <span>Remove this agent’s stored key on save</span>
-        </label>
+        <ClearKeyField
+          checked={state.clearKey}
+          disabled={disabled}
+          onChange={(clearKey) => onChange({ clearKey })}
+        />
       )}
     </>
   );

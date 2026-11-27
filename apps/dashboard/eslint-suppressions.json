@@ -30,15 +30,7 @@
       "count": 2
     }
   },
-  "src/components/common/Badge.tsx": {
-    "max-statements-per-line": {
-      "count": 1
-    }
-  },
   "src/components/common/Layout.tsx": {
-    "max-statements-per-line": {
-      "count": 1
-    },
     "no-magic-numbers": {
       "count": 2
     },
