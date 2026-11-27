@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
@@ -9,6 +10,8 @@ from asf.agents._shared.response_diagnostics import (
     ResponseEvidence,
     diagnostic_details,
     error_offset,
+    excerpt_for,
+    log_excerpt,
 )
 from asf.agents.base import AgentExecutionError
 from asf.agents.task.parse import parse_tasks
@@ -31,26 +34,51 @@ def test_error_offset_from_json_decode_error() -> None:
     assert error_offset(caught.value, text) == text.index('"b"')
 
 
-def test_diagnostic_details_without_offset_has_no_excerpt() -> None:
-    details = diagnostic_details(ResponseEvidence("not json", "stop"))
-    assert details == {"replyChars": 8, "finishReason": "stop", "repairsAttempted": 0}
+def test_diagnostic_details_never_carries_excerpt() -> None:
+    text = '{"a": 1 "b": 2}'
+    details = diagnostic_details(ResponseEvidence(text, "stop", offset=8))
+    assert details == {"replyChars": len(text), "finishReason": "stop", "repairsAttempted": 0}
 
 
 def test_excerpt_is_bounded_and_covers_offset() -> None:
     text = "word " * 80 + "NEEDLE" + " word" * 80
     offset = text.index("NEEDLE")
-    details = diagnostic_details(ResponseEvidence(text, "stop", offset=offset))
-    assert len(details["excerpt"]) <= EXCERPT_MAX_CHARS
-    assert "NEEDLE" in details["excerpt"]
+    excerpt = excerpt_for(ResponseEvidence(text, "stop", offset=offset))
+    assert excerpt is not None
+    assert len(excerpt) <= EXCERPT_MAX_CHARS
+    assert "NEEDLE" in excerpt
 
 
 def test_excerpt_redacts_runtime_built_secret() -> None:
     secret = "".join(chr(97 + (i % 26)) for i in range(32))
     text = "x" * 120 + f' api_key = "{secret}" ' + "y" * 120
     offset = text.index(secret)
-    details = diagnostic_details(ResponseEvidence(text, "stop", offset=offset))
-    assert secret not in details["excerpt"]
-    assert "[REDACTED]" in details["excerpt"]
+    excerpt = excerpt_for(ResponseEvidence(text, "stop", offset=offset))
+    assert excerpt is not None
+    assert secret not in excerpt
+    assert "[REDACTED]" in excerpt
+
+
+def test_log_excerpt_writes_marker_with_ids(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    text = '{"findings": [' + marker
+    evidence = ResponseEvidence(text, "stop", offset=text.index(marker))
+    with caplog.at_level(logging.WARNING):
+        log_excerpt(evidence, task_id="task-1", request_id="request-1")
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(marker in message for message in messages)
+    assert any("task=task-1" in message and "request=request-1" in message for message in messages)
+
+
+def test_log_excerpt_escapes_newlines(caplog: pytest.LogCaptureFixture) -> None:
+    text = '{"a": 1\n"b": 2}'
+    evidence = ResponseEvidence(text, "stop", offset=text.index('"b"'))
+    with caplog.at_level(logging.WARNING):
+        log_excerpt(evidence, task_id="task-1", request_id="request-1")
+    messages = [record.getMessage() for record in caplog.records]
+    assert messages
+    assert all("\n" not in message for message in messages)
+    assert any("\\n" in message for message in messages)
 
 
 def test_task_parse_missing_comma_details() -> None:
@@ -62,11 +90,11 @@ def test_task_parse_missing_comma_details() -> None:
     assert details["finishReason"] == "stop"
     assert details["repairsAttempted"] == 0
     assert "parseError" in details
-    assert len(details["excerpt"]) <= EXCERPT_MAX_CHARS
-    assert '"title"' in details["excerpt"]
+    assert "excerpt" not in details
+    assert "input_value" not in details["parseError"]
 
 
-def test_task_parse_error_value_is_redacted() -> None:
+def test_task_parse_error_excludes_input_value() -> None:
     secret = "".join(chr(97 + (i % 26)) for i in range(32))
     reply = json.dumps({"tasks": f"api_key={secret}"})
     with pytest.raises(AgentExecutionError) as caught:
@@ -74,7 +102,7 @@ def test_task_parse_error_value_is_redacted() -> None:
     details = caught.value.details
     assert "parseError" in details
     assert secret not in details["parseError"]
-    assert "[REDACTED]" in details["parseError"]
+    assert "input_value" not in details["parseError"]
 
 
 def test_task_parse_valid_reply_unchanged() -> None:

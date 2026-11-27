@@ -146,10 +146,9 @@ def assert_invalid(result: AgentResult) -> None:
         "LLM",
         True,
     )
-    # Invalid replies carry only the schema reason (when there is
-    # one) plus bounded R1 diagnostics; gateway-preserved failures
-    # may still carry no details.
-    allowed = {"reason", "replyChars", "finishReason", "repairsAttempted", "excerpt"}
+    # Schema rejections carry the schema reason (facts only, never
+    # the reply) plus R1 counts; no excerpt ever rides in details.
+    allowed = {"reason", "replyChars", "finishReason", "repairsAttempted"}
     assert set(error.details) <= allowed
     if "replyChars" in error.details:
         assert {"replyChars", "finishReason", "repairsAttempted"} <= set(error.details)
@@ -283,15 +282,16 @@ def test_rejection_reason_for_a_non_json_reply() -> None:
     assert "not valid JSON" in error.message
 
 
-def test_missing_comma_details_include_diagnostics() -> None:
+def test_missing_comma_details_include_diagnostics(caplog: pytest.LogCaptureFixture) -> None:
     reply = '{"findings": [] "verdict": "APPROVE"}'
-    error = _rejection(reply)
+    with caplog.at_level(logging.WARNING):
+        error = _rejection(reply)
     assert error.details["reason"] == "not valid JSON"
     assert error.details["replyChars"] == len(reply)
     assert error.details["finishReason"] == "stop"
     assert error.details["repairsAttempted"] == 0
-    assert len(error.details["excerpt"]) <= 160
-    assert '"verdict"' in error.details["excerpt"]
+    assert "excerpt" not in error.details
+    assert any("verdict" in record.getMessage() for record in caplog.records)
 
 
 def test_rejection_reason_for_prose_before_the_json() -> None:
@@ -380,15 +380,14 @@ def test_agent_accepts_a_fenced_reply_unchanged() -> None:
     assert_success(agent.execute(make_request()))
 
 
-def test_parse_error_reason_never_echoes_model_payload() -> None:
+def test_parse_error_never_echoes_model_payload(caplog: pytest.LogCaptureFixture) -> None:
     marker = "untrusted-parser-diagnostic-marker"
     agent, _ = make_agent('{"findings": [' + marker)
-    result = agent.execute(make_request())
+    with caplog.at_level(logging.WARNING):
+        result = agent.execute(make_request())
     assert_invalid(result)
-    error = result.errors[0]
-    assert marker not in error.message
-    assert marker not in error.details["reason"]
-    assert len(error.details["excerpt"]) <= 160
+    assert marker not in json.dumps(result.to_contract())
+    assert any(marker in record.getMessage() for record in caplog.records)
 
 
 @pytest.mark.parametrize("field", ["severity", "path", "description"])

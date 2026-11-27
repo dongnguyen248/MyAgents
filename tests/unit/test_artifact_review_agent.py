@@ -190,8 +190,7 @@ def test_missing_comma_details_include_diagnostics() -> None:
     assert error.details["replyChars"] == len(reply)
     assert error.details["finishReason"] == "stop"
     assert error.details["repairsAttempted"] == 0
-    assert len(error.details["excerpt"]) <= 160
-    assert '"summary"' in error.details["excerpt"]
+    assert "excerpt" not in error.details
 
 
 def test_rejection_reason_for_prose_before_the_json() -> None:

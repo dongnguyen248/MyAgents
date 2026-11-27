@@ -20,7 +20,12 @@ from asf.agents._shared.code_agents import (
 from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.parsing import strip_code_fence
-from asf.agents._shared.response_diagnostics import diagnostic_details, error_offset, evidence_for
+from asf.agents._shared.response_diagnostics import (
+    diagnostic_details,
+    error_offset,
+    evidence_for,
+    log_excerpt,
+)
 from asf.agents._shared.routing import tier_metadata
 from asf.agents._shared.schema_reason import schema_problems, schema_reason
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -118,7 +123,7 @@ class ReviewAgent(BaseAgent):
             harness=self._settings.harness,
         )
         response = self._call_model(request, messages)
-        review = _parse_review(response)
+        review = _parse_review(response, request)
         _check_finding_paths(review, changes, response)
         return self._assemble(request, code, review, response)
 
@@ -232,7 +237,7 @@ def _passing_report(request: AgentRequest, code: Artifact) -> Artifact | None:
     return report
 
 
-def _parse_review(response: ModelResponse) -> ReviewContent:
+def _parse_review(response: ModelResponse, request: AgentRequest) -> ReviewContent:
     raw = response.content
     if len(raw) > MAX_REPLY_CHARS or not raw.strip():
         raise invalid_response(
@@ -251,6 +256,7 @@ def _parse_review(response: ModelResponse) -> ReviewContent:
         )
         reason = schema_reason(exc, stripped)
         evidence = evidence_for(response, offset=error_offset(exc, stripped), excerpt_text=stripped)
+        log_excerpt(evidence, task_id=request.task_id, request_id=request.request_id)
         raise invalid_response(
             f"Review response does not match the required schema: {reason}",
             details=diagnostic_details(evidence, {"reason": reason}),

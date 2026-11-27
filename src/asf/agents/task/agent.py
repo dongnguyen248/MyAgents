@@ -476,7 +476,7 @@ class TaskAgent(BaseAgent):
                 "Model returned an empty response", details=diagnostic_details(evidence)
             )
         try:
-            tasks = parse_tasks(reply, response)
+            tasks = parse_tasks(reply, response, request)
         except AgentExecutionError:
             emit_output_rejected(request, TASK_STRUCTURE_REJECTED_LABEL)
             raise

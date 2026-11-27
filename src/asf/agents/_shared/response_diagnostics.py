@@ -8,6 +8,7 @@ crosses the window boundary cannot leak a fragment.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -25,7 +26,11 @@ __all__ = [
     "diagnostic_details",
     "error_offset",
     "evidence_for",
+    "excerpt_for",
+    "log_excerpt",
 ]
+
+logger = logging.getLogger(__name__)
 
 EXCERPT_CONTEXT_CHARS: int = 80
 EXCERPT_MAX_CHARS: int = 160
@@ -66,10 +71,19 @@ def diagnostic_details(
     details["replyChars"] = len(evidence.content)
     details["finishReason"] = evidence.finish_reason
     details["repairsAttempted"] = evidence.repairs_attempted
-    excerpt = _excerpt(evidence)
-    if excerpt is not None:
-        details["excerpt"] = excerpt
     return details
+
+
+def log_excerpt(evidence: ResponseEvidence, *, task_id: str, request_id: str) -> None:
+    excerpt = excerpt_for(evidence)
+    if excerpt is None:
+        return
+    logger.warning(
+        "invalid response excerpt: task=%s request=%s excerpt=%s",
+        task_id,
+        request_id,
+        json.dumps(excerpt),
+    )
 
 
 def error_offset(error: BaseException, text: str) -> int | None:
@@ -123,7 +137,7 @@ def _valid_offset(offset: int, text: str) -> int | None:
     return None
 
 
-def _excerpt(evidence: ResponseEvidence) -> str | None:
+def excerpt_for(evidence: ResponseEvidence) -> str | None:
     if evidence.offset is None:
         return None
     text = evidence.excerpt_text if evidence.excerpt_text is not None else evidence.content
