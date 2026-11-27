@@ -11,7 +11,8 @@ unpushed, `[!]` awaiting owner decision.
 - [x] Shared evidence helper in `_shared` puts `replyChars`,
       `finishReason`, `repairsAttempted`, and a redacted excerpt
       into every `LLM_INVALID_RESPONSE` details (task,
-      artifact-review, review, spec, plan).
+      artifact-review, review, spec, plan). Superseded by
+      decision C: the excerpt goes to a WARNING log line only.
       Test: a task JSON syntax error at a known offset yields
       details with all four fields, and the excerpt covers the
       offset region. (`04fa456`, `09dec11`, `bb063e4`, `4929d24`,
