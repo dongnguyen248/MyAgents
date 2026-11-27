@@ -5,6 +5,7 @@ import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { MetricsOverview } from '../../types/metrics';
 import type { Project, ProjectProfileInput } from '../../types/project';
 import type { ModelSettings, ModelSettingsInput, ModelTestResult } from '../../types/settings';
+import type { Skill } from '../../types/skill';
 import type { StartRunInput, Task, TaskFilter } from '../../types/task';
 import type { RunDiagnostics, RunReviews, Workflow } from '../../types/workflow';
 
@@ -22,6 +23,8 @@ export interface FactoryApi {
   getAgentRuns(id: string): Promise<AgentRun[]>;
   /** Creates a custom agent. Backends that do not implement POST /agents answer 404/405. */
   createAgent(input: AgentInput): Promise<Agent>;
+  /** The skill catalogue (skills/<id>/SKILL.md); [] when the backend has none. */
+  listSkills(): Promise<Skill[]>;
 
   listTasks(filter?: TaskFilter): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;

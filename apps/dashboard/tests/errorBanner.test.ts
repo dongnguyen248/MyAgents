@@ -61,10 +61,11 @@ test('banner renders a sandbox apply failure with its cause details', () => {
 });
 
 test('detail lines render numbers and booleans, not only strings', () => {
-  assert.deepEqual(
-    errorDetailLines({ errno: 2, commandName: 'dotnet', cwdExists: false }),
-    ['errno: 2', 'commandName: dotnet', 'cwdExists: false'],
-  );
+  assert.deepEqual(errorDetailLines({ errno: 2, commandName: 'dotnet', cwdExists: false }), [
+    'errno: 2',
+    'commandName: dotnet',
+    'cwdExists: false',
+  ]);
 });
 
 test('no banner for a run that has not failed', () => {

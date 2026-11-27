@@ -47,8 +47,14 @@ test('human-mode and modeless pending gates need a human; ai-mode gates do not',
     ],
     [],
   );
-  assert.deepEqual(groups.needsHuman.map((a) => a.id), ['h', 'legacy']);
-  assert.deepEqual(groups.aiReviewing.map((a) => a.id), ['ai']);
+  assert.deepEqual(
+    groups.needsHuman.map((a) => a.id),
+    ['h', 'legacy'],
+  );
+  assert.deepEqual(
+    groups.aiReviewing.map((a) => a.id),
+    ['ai'],
+  );
 });
 
 test('escalated runs join the needs-human group', () => {
@@ -56,6 +62,9 @@ test('escalated runs join the needs-human group', () => {
     [],
     [workflow({ id: 'esc', status: 'ESCALATED' }), workflow({ id: 'run', status: 'RUNNING' })],
   );
-  assert.deepEqual(groups.escalated.map((w) => w.id), ['esc']);
+  assert.deepEqual(
+    groups.escalated.map((w) => w.id),
+    ['esc'],
+  );
   assert.equal(groups.needsHuman.length, 0);
 });

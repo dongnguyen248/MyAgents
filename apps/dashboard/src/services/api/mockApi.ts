@@ -4,6 +4,7 @@ import { agentConfigs, agents, makeAgentConfig, makeCustomAgent, runsFor } from 
 import { approvals as approvalSeed } from '../../mocks/approvals';
 import { metricsOverview } from '../../mocks/metrics';
 import { projects } from '../../mocks/projects';
+import { skills } from '../../mocks/skills';
 import { tasks } from '../../mocks/tasks';
 import { workflows } from '../../mocks/workflows';
 import type { ActivityEvent } from '../../types/activity';
@@ -331,6 +332,7 @@ export const mockApi: FactoryApi = {
     const agent = agents.find((a) => a.id === id);
     return delay(agent ? runsFor(agent) : []);
   },
+  listSkills: () => delay(skills),
   createAgent: (input) => {
     const created = makeCustomAgent(input);
     agents.push(created);

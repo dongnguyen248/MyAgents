@@ -89,12 +89,11 @@ test('an empty stage summarises to zero rounds and no verdict', () => {
 test('review history keeps only runs with at least one reviewed stage', () => {
   const entries = reviewHistory(
     [workflow({ id: 'a' }), workflow({ id: 'b' }), workflow({ id: 'c' })],
-    [
-      { runId: 'a', stages: [stage({})] },
-      { runId: 'b', stages: [] },
-      undefined,
-    ],
+    [{ runId: 'a', stages: [stage({})] }, { runId: 'b', stages: [] }, undefined],
   );
-  assert.deepEqual(entries.map((e) => e.runId), ['a']);
+  assert.deepEqual(
+    entries.map((e) => e.runId),
+    ['a'],
+  );
   assert.equal(entries[0].taskId, 'task-1');
 });

@@ -1,6 +1,7 @@
 import type { Agent } from '../../types/agent';
 import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { Project } from '../../types/project';
+import type { Skill } from '../../types/skill';
 import type { RunDiagnostics, Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
@@ -44,6 +45,7 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     getAgentConfig: (id) => getOpt(`/agents/${id}/config`),
     getAgentRuns: (id) => get(`/agents/${id}/runs`),
     createAgent: (input) => send<Agent>('/agents', 'POST', input),
+    listSkills: async () => (await getOpt<Skill[]>('/skills')) ?? [],
 
     listTasks: (f) => get(`/tasks${qs(f)}`),
     getTask: (id) => getOpt(`/tasks/${id}`),
