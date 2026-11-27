@@ -6,22 +6,35 @@ unpushed, `[!]` awaiting owner decision.
 
 ## Phase A — R1 observability (separate PR, no behaviour change)
 
-- [ ] Owner reviews and approves spec 007 (spec, plan, tasks).
-- [ ] Shared evidence helper in `_shared` puts `replyChars`,
+- [x] Owner reviews and approves spec 007 (spec, plan, tasks).
+      Phase A implementation ordered by owner on 2026-11-26.
+- [x] Shared evidence helper in `_shared` puts `replyChars`,
       `finishReason`, `repairsAttempted`, and a redacted excerpt
       into every `LLM_INVALID_RESPONSE` details (task,
       artifact-review, review, spec, plan).
       Test: a task JSON syntax error at a known offset yields
       details with all four fields, and the excerpt covers the
-      offset region.
-- [ ] Excerpt never leaks secrets.
+      offset region. (`04fa456`, `09dec11`, `bb063e4`, `4929d24`,
+      `be13622`, `3ca4169`, `a79f656`, `6e20fe4`, `dd29565`)
+- [x] Excerpt never leaks secrets.
       Test: a reply containing a secret-shaped string produces
       details/log with the secret redacted (attack case).
-- [ ] Regression: valid replies behave exactly as before.
+      (`854f1f2`)
+- [x] Regression: valid replies behave exactly as before.
       Test: existing spec/plan/task/artifact-review suites pass
-      unchanged; golden prompts untouched.
-- [ ] Run full gates (ruff, format, mypy, bandit, pytest, ratchet,
-      gitleaks) and report real output.
+      unchanged; golden prompts untouched. (`602620f`, `0a62b18`,
+      `4fc5daa`, `827024f`, `4ac183b`, `b08c71b`, `e886d80`)
+- [x] Run full gates (ruff, format, mypy, bandit, pytest, ratchet,
+      gitleaks) and report real output. (`e886d80`; gitleaks not
+      available in sandbox)
+- [!] Owner decides: may review/artifact-review error details carry
+      the redacted `excerpt`? (A) Keep the excerpt for every agent,
+      backed by evidence of where error details surface externally;
+      (B) only task/spec/plan carry an excerpt, review and
+      artifact-review carry only `replyChars`/`finishReason`/
+      `repairsAttempted`, and the old `test_review_agent.py`
+      assertions are restored. Neither option is implemented until
+      the owner picks one.
 
 ## Phase B — R2/R3 (starts only after Phase A log evidence)
 

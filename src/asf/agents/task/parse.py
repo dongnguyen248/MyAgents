@@ -6,6 +6,7 @@ from asf.agents._shared.response_diagnostics import (
     error_offset,
     evidence_for,
 )
+from asf.agents._shared.security import redact_text
 from asf.agents.task.items import TaskContent, TaskItem
 from asf.contracts.models import ModelResponse
 
@@ -19,6 +20,6 @@ def parse_tasks(reply: str, response: ModelResponse) -> list[TaskItem]:
         evidence = evidence_for(response, offset=error_offset(error, reply), excerpt_text=reply)
         raise invalid_response(
             "Model response is not valid task JSON",
-            details=diagnostic_details(evidence, {"parseError": str(error)}),
+            details=diagnostic_details(evidence, {"parseError": redact_text(str(error))}),
         ) from None
     return task_data.tasks

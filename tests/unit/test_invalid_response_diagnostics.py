@@ -66,6 +66,17 @@ def test_task_parse_missing_comma_details() -> None:
     assert '"title"' in details["excerpt"]
 
 
+def test_task_parse_error_value_is_redacted() -> None:
+    secret = "".join(chr(97 + (i % 26)) for i in range(32))
+    reply = json.dumps({"tasks": f"api_key={secret}"})
+    with pytest.raises(AgentExecutionError) as caught:
+        parse_tasks(reply, _response(reply))
+    details = caught.value.details
+    assert "parseError" in details
+    assert secret not in details["parseError"]
+    assert "[REDACTED]" in details["parseError"]
+
+
 def test_task_parse_valid_reply_unchanged() -> None:
     reply = json.dumps(
         {
