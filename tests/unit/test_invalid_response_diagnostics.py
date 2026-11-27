@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
+from typing import Any, get_args, get_origin
 
 import pytest
 
@@ -13,7 +15,12 @@ from asf.agents._shared.response_diagnostics import (
     excerpt_for,
     log_excerpt,
 )
+from asf.agents.artifact_review.prompts import ArtifactReviewContent
+from asf.agents.artifact_review.prompts import Finding as ArtifactFinding
 from asf.agents.base import AgentExecutionError
+from asf.agents.review.prompts import Finding as ReviewFinding
+from asf.agents.review.prompts import ReviewContent
+from asf.agents.task.items import TaskContent, TaskItem
 from asf.agents.task.parse import parse_tasks
 from asf.contracts.models import ModelResponse, ModelUsage
 
@@ -103,6 +110,102 @@ def test_task_parse_error_excludes_input_value() -> None:
     assert "parseError" in details
     assert secret not in details["parseError"]
     assert "input_value" not in details["parseError"]
+
+
+def _task_reply(task: dict) -> str:
+    return json.dumps({"tasks": [task]})
+
+
+def _valid_task() -> dict:
+    return {
+        "id": "T1",
+        "title": "Task",
+        "milestoneRef": "M1",
+        "description": "Do it",
+        "acceptanceCriteria": ["Done"],
+        "verificationHint": "Run tests",
+    }
+
+
+def _parse_error(reply: str) -> AgentExecutionError:
+    with pytest.raises(AgentExecutionError) as caught:
+        parse_tasks(reply, _response(reply))
+    return caught.value
+
+
+def test_task_model_chosen_extra_key_stays_out_of_parse_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    task = _valid_task()
+    task[marker] = 1
+    with caplog.at_level(logging.WARNING):
+        error = _parse_error(_task_reply(task))
+    assert error.details["parseError"] == "tasks.0: extra_forbidden"
+    assert marker not in error.message
+    assert all(marker not in str(value) for value in error.details.values())
+    assert marker not in caplog.text
+
+
+def test_task_marker_id_stays_out_of_parse_error(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    task = _valid_task()
+    task["id"] = marker
+    with caplog.at_level(logging.WARNING):
+        error = _parse_error(_task_reply(task))
+    assert error.details["parseError"] == "tasks.0.id: value_error"
+    assert marker not in error.message
+    assert all(marker not in str(value) for value in error.details.values())
+    assert marker not in caplog.text
+
+
+def test_task_long_id_parse_error_is_capped(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    task = _valid_task()
+    task["id"] = marker + "x" * 1500
+    with caplog.at_level(logging.WARNING):
+        error = _parse_error(_task_reply(task))
+    assert len(error.details["parseError"]) <= 400
+    assert marker not in error.details["parseError"]
+    assert marker not in caplog.text
+
+
+def test_task_secret_shaped_id_stays_out_of_parse_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "api_key=" + "".join(chr(97 + (i % 26)) for i in range(32))
+    task = _valid_task()
+    task["id"] = secret
+    with caplog.at_level(logging.WARNING):
+        error = _parse_error(_task_reply(task))
+    assert error.details["parseError"] == "tasks.0.id: value_error"
+    assert secret not in error.message
+    assert all(secret not in str(value) for value in error.details.values())
+    assert secret not in caplog.text
+
+
+def _annotation_has_mapping(annotation: Any) -> bool:
+    if get_origin(annotation) in (dict, Mapping):
+        return True
+    return any(_annotation_has_mapping(arg) for arg in get_args(annotation))
+
+
+def test_reply_schemas_have_no_dict_fields() -> None:
+    models = [
+        ReviewContent,
+        ReviewFinding,
+        ArtifactReviewContent,
+        ArtifactFinding,
+        TaskContent,
+        TaskItem,
+    ]
+    for model in models:
+        for name, field in model.model_fields.items():
+            assert not _annotation_has_mapping(field.annotation), (
+                f"{model.__name__}.{name} is a dict field: a dict field lets "
+                "error locations carry model-chosen keys, so safe_location "
+                "must be revisited before this field is allowed"
+            )
 
 
 def test_task_parse_valid_reply_unchanged() -> None:
