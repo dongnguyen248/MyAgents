@@ -24,6 +24,7 @@ from asf.agents._shared.request_checks import (
     check_revision_artifact,
     check_text_size,
 )
+from asf.agents._shared.response_diagnostics import diagnostic_details, evidence_for
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentExecutionError, AgentRuntime, BaseAgent, Issue
 from asf.agents.plan.milestones import (
@@ -33,6 +34,7 @@ from asf.agents.plan.milestones import (
     parse_milestones,
 )
 from asf.agents.task.items import TaskContent, TaskItem
+from asf.agents.task.parse import parse_tasks
 from asf.agents.task.prompts import (
     TaskPromptContext,
     TaskPrompts,
@@ -461,25 +463,28 @@ class TaskAgent(BaseAgent):
         self, request: AgentRequest, response: ModelResponse, plan: _PlanContext
     ) -> list[TaskItem]:
         reply = unwrap_code_fence(response.content.strip())
+        evidence = evidence_for(response)
         if len(reply) > MAX_TASK_REPLY_CHARS:
             raise invalid_response(
                 f"Raw LLM reply exceeds {MAX_TASK_REPLY_CHARS} characters",
-                details={"charCount": len(reply), "limit": MAX_TASK_REPLY_CHARS},
+                details=diagnostic_details(
+                    evidence, {"charCount": len(reply), "limit": MAX_TASK_REPLY_CHARS}
+                ),
             )
         if not reply:
-            raise invalid_response("Model returned an empty response")
+            raise invalid_response(
+                "Model returned an empty response", details=diagnostic_details(evidence)
+            )
         try:
-            tasks = _parse_tasks(reply)
+            tasks = parse_tasks(reply, response, request)
         except AgentExecutionError:
             emit_output_rejected(request, TASK_STRUCTURE_REJECTED_LABEL)
             raise
         issues = _validate_task_list(tasks, plan)
         if issues:
             emit_output_rejected(request, TASK_STRUCTURE_REJECTED_LABEL)
-            raise invalid_response(
-                "Model response has invalid task structure",
-                details={"taskIssues": issues},
-            )
+            details = diagnostic_details(evidence, {"taskIssues": issues})
+            raise invalid_response("Model response has invalid task structure", details=details)
         return tasks
 
     def _assemble(
@@ -497,7 +502,10 @@ class TaskAgent(BaseAgent):
         if len(rendered) > MAX_TASK_TEXT_CHARS:
             raise invalid_response(
                 f"Rendered task output exceeds {MAX_TASK_TEXT_CHARS} characters",
-                details={"charCount": len(rendered), "limit": MAX_TASK_TEXT_CHARS},
+                details=diagnostic_details(
+                    evidence_for(response),
+                    {"charCount": len(rendered), "limit": MAX_TASK_TEXT_CHARS},
+                ),
             )
         warnings = expected_file_warnings(tasks, listing)
         log_expected_file_warnings(warnings)
@@ -560,14 +568,3 @@ class TaskAgent(BaseAgent):
         if warnings:
             metadata["expectedFileWarnings"] = warnings
         return metadata
-
-
-def _parse_tasks(reply: str) -> list[TaskItem]:
-    try:
-        task_data = TaskContent.model_validate_json(reply)
-    except Exception as error:
-        raise invalid_response(
-            "Model response is not valid task JSON",
-            details={"parseError": str(error)},
-        ) from None
-    return task_data.tasks

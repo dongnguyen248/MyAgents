@@ -20,6 +20,7 @@ from asf.agents._shared.request_checks import (
     check_required_artifact,
     check_revision_artifact,
 )
+from asf.agents._shared.response_diagnostics import diagnostic_details, evidence_for
 from asf.agents._shared.routing import tier_metadata
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
 from asf.agents.plan.linked_spec import linked_spec_issues, stamp_linked_spec
@@ -187,14 +188,17 @@ class PlanAgent(BaseAgent):
     ) -> str:
         reply = unwrap_code_fence(response.content.strip())
         if not reply:
-            raise invalid_response("Model returned an empty response")
+            raise invalid_response(
+                "Model returned an empty response",
+                details=diagnostic_details(evidence_for(response)),
+            )
         reply = stamp_linked_spec(reply, spec_art)
-        self._require_sections(request, reply)
-        self._require_milestones(reply)
-        self._require_linked_spec(reply, spec_art)
+        self._require_sections(request, reply, response)
+        self._require_milestones(reply, response)
+        self._require_linked_spec(reply, spec_art, response)
         return reply
 
-    def _require_sections(self, request: AgentRequest, reply: str) -> None:
+    def _require_sections(self, request: AgentRequest, reply: str, response: ModelResponse) -> None:
         headings = heading_lines(reply)
         missing = [s for s in self._template.required_sections if s not in headings]
         if missing:
@@ -206,24 +210,26 @@ class PlanAgent(BaseAgent):
             )
             raise invalid_response(
                 f"Model response is missing required template sections: {missing}",
-                details={"missingSections": missing},
+                details=diagnostic_details(evidence_for(response), {"missingSections": missing}),
             )
 
-    def _require_milestones(self, reply: str) -> None:
+    def _require_milestones(self, reply: str, response: ModelResponse) -> None:
         try:
             validate_milestones(reply)
         except MilestoneValidationError as error:
             raise invalid_response(
                 "Model response has invalid milestone structure",
-                details={"milestoneIssues": error.issues},
+                details=diagnostic_details(
+                    evidence_for(response), {"milestoneIssues": error.issues}
+                ),
             ) from None
 
-    def _require_linked_spec(self, reply: str, spec_art: Artifact) -> None:
+    def _require_linked_spec(self, reply: str, spec_art: Artifact, response: ModelResponse) -> None:
         issues = linked_spec_issues(reply, spec_art)
         if issues:
             raise invalid_response(
                 "Model response has invalid Linked SPEC section",
-                details={"linkedSpecIssues": issues},
+                details=diagnostic_details(evidence_for(response), {"linkedSpecIssues": issues}),
             )
 
     def _assemble(

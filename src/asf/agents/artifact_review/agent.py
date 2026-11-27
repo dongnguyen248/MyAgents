@@ -12,6 +12,12 @@ from asf.agents._shared.harness import HarnessComponents, fingerprint
 from asf.agents._shared.model_call import call_model
 from asf.agents._shared.model_errors import invalid_response
 from asf.agents._shared.parsing import strip_code_fence
+from asf.agents._shared.response_diagnostics import (
+    diagnostic_details,
+    error_offset,
+    evidence_for,
+    log_excerpt,
+)
 from asf.agents._shared.routing import tier_metadata
 from asf.agents._shared.schema_reason import schema_problems, schema_reason
 from asf.agents.artifact_review.checks import DEFAULT_MAX_TASKS, run_mechanical_checks
@@ -129,14 +135,15 @@ class ArtifactReviewAgent(BaseAgent):
             target=target,
             harness=self._settings.harness,
         )
-        review = _parse_review(self._call_model(request, messages))
+        response = self._call_model(request, messages)
+        review = _parse_review(response, request)
         previous = _previous_ai_findings(target)
         merged = merge_findings(previous, list(review.findings))
         content = ArtifactReviewContent.model_construct(
             findings=_cap_findings([*mechanical, *merged]),
             summary=review.summary,
         )
-        return self._assemble(request, target, content)
+        return self._assemble(request, target, content, response)
 
     def _call_model(self, request: AgentRequest, messages: list[ModelMessage]) -> ModelResponse:
         try:
@@ -160,7 +167,11 @@ class ArtifactReviewAgent(BaseAgent):
             raise
 
     def _assemble(
-        self, request: AgentRequest, target: ReviewTarget, content: ArtifactReviewContent
+        self,
+        request: AgentRequest,
+        target: ReviewTarget,
+        content: ArtifactReviewContent,
+        response: ModelResponse | None = None,
     ) -> tuple[Any, list[Artifact]]:
         verdict = derive_verdict(
             list(content.findings),
@@ -169,7 +180,10 @@ class ArtifactReviewAgent(BaseAgent):
         )
         text = render_review_markdown(content, target=target, verdict=verdict)
         if len(text) > MAX_TEXT_CHARS:
-            raise invalid_response("Rendered artifact review exceeds the size limit")
+            details = diagnostic_details(evidence_for(response)) if response is not None else None
+            raise invalid_response(
+                "Rendered artifact review exceeds the size limit", details=details
+            )
         record = _ReviewRecord(target=target, content=content, text=text, verdict=verdict)
         artifact = self._review_artifact(request, record)
         output = {
@@ -247,10 +261,13 @@ def _cap_findings(findings: list[Finding]) -> list[Finding]:
     return [findings[i] for i in keep]
 
 
-def _parse_review(response: ModelResponse) -> ArtifactReviewContent:
+def _parse_review(response: ModelResponse, request: AgentRequest) -> ArtifactReviewContent:
     raw = response.content
     if len(raw) > MAX_REPLY_CHARS or not raw.strip():
-        raise invalid_response("Artifact review response is empty or exceeds the size limit")
+        raise invalid_response(
+            "Artifact review response is empty or exceeds the size limit",
+            details=diagnostic_details(evidence_for(response)),
+        )
     stripped = strip_code_fence(raw)
     try:
         return ArtifactReviewContent.model_validate_json(stripped)
@@ -262,7 +279,9 @@ def _parse_review(response: ModelResponse) -> ArtifactReviewContent:
             response.finish_reason,
         )
         reason = schema_reason(exc, stripped)
+        evidence = evidence_for(response, offset=error_offset(exc, stripped), excerpt_text=stripped)
+        log_excerpt(evidence, task_id=request.task_id, request_id=request.request_id)
         raise invalid_response(
             f"Artifact review response does not match the required schema: {reason}",
-            details={"reason": reason},
+            details=diagnostic_details(evidence, {"reason": reason}),
         ) from None

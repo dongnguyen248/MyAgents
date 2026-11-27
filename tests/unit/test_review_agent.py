@@ -146,9 +146,12 @@ def assert_invalid(result: AgentResult) -> None:
         "LLM",
         True,
     )
-    # Schema rejections carry exactly the schema reason (facts only,
-    # never the reply); every other invalid reply carries no details.
-    assert error.details == {} or set(error.details) == {"reason"}
+    # Schema rejections carry the schema reason (facts only, never
+    # the reply) plus R1 counts; no excerpt ever rides in details.
+    allowed = {"reason", "replyChars", "finishReason", "repairsAttempted"}
+    assert set(error.details) <= allowed
+    if "replyChars" in error.details:
+        assert {"replyChars", "finishReason", "repairsAttempted"} <= set(error.details)
     assert result.events[-1].event_type == "AGENT_FAILED"
 
 
@@ -279,6 +282,18 @@ def test_rejection_reason_for_a_non_json_reply() -> None:
     assert "not valid JSON" in error.message
 
 
+def test_missing_comma_details_include_diagnostics(caplog: pytest.LogCaptureFixture) -> None:
+    reply = '{"findings": [] "verdict": "APPROVE"}'
+    with caplog.at_level(logging.WARNING):
+        error = _rejection(reply)
+    assert error.details["reason"] == "not valid JSON"
+    assert error.details["replyChars"] == len(reply)
+    assert error.details["finishReason"] == "stop"
+    assert error.details["repairsAttempted"] == 0
+    assert "excerpt" not in error.details
+    assert any("verdict" in record.getMessage() for record in caplog.records)
+
+
 def test_rejection_reason_for_prose_before_the_json() -> None:
     error = _rejection('Here is my review: {"findings": [], "verdict": "APPROVE"}')
     assert error.details["reason"] == "extra text before the JSON"
@@ -298,7 +313,36 @@ def test_rejection_reason_for_a_missing_verdict() -> None:
 
 def test_rejection_reason_for_an_unexpected_field() -> None:
     error = _rejection('{"findings": [], "verdict": "APPROVE", "summary": "ok"}')
-    assert error.details["reason"] == "unexpected field 'summary'"
+    assert error.details["reason"] == "unexpected field at '(root)'"
+
+
+def test_model_chosen_extra_key_never_reaches_error(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    reply = json.dumps({"findings": [], "verdict": "APPROVE", marker: 1})
+    agent, _ = make_agent(reply)
+    with caplog.at_level(logging.WARNING):
+        result = agent.execute(make_request())
+    error = result.errors[0]
+    assert error.details["reason"] == "unexpected field at '(root)'"
+    assert marker not in error.message
+    assert all(marker not in str(value) for value in error.details.values())
+    assert marker not in json.dumps(result.to_contract())
+    assert marker not in caplog.text
+
+
+def test_model_chosen_finding_key_never_reaches_error(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    finding = {"severity": "INFO", "path": "a.py", "description": "d", marker: 1}
+    reply = json.dumps({"findings": [finding], "verdict": "APPROVE"})
+    agent, _ = make_agent(reply)
+    with caplog.at_level(logging.WARNING):
+        result = agent.execute(make_request())
+    error = result.errors[0]
+    assert error.details["reason"] == "unexpected field at 'findings.0'"
+    assert marker not in error.message
+    assert all(marker not in str(value) for value in error.details.values())
+    assert marker not in json.dumps(result.to_contract())
+    assert marker not in caplog.text
 
 
 def test_rejection_reason_for_an_unknown_verdict_value() -> None:
@@ -353,10 +397,11 @@ def test_rejection_reason_is_capped_at_240_chars() -> None:
     assert reason.startswith("unknown value at 'findings.0.severity'")
 
 
-def test_outside_code_rejection_keeps_its_message_and_empty_details() -> None:
+def test_outside_code_rejection_keeps_its_message_and_adds_diagnostics() -> None:
     error = _rejection(reply_for([finding(path="outside.py")]))
     assert error.message == "Review finding references a path outside CODE"
-    assert error.details == {}
+    assert {"replyChars", "finishReason", "repairsAttempted"} <= set(error.details)
+    assert "excerpt" not in error.details
 
 
 def test_agent_accepts_a_fenced_reply_unchanged() -> None:
@@ -364,12 +409,14 @@ def test_agent_accepts_a_fenced_reply_unchanged() -> None:
     assert_success(agent.execute(make_request()))
 
 
-def test_parse_error_never_echoes_model_payload() -> None:
+def test_parse_error_never_echoes_model_payload(caplog: pytest.LogCaptureFixture) -> None:
     marker = "untrusted-parser-diagnostic-marker"
     agent, _ = make_agent('{"findings": [' + marker)
-    result = agent.execute(make_request())
+    with caplog.at_level(logging.WARNING):
+        result = agent.execute(make_request())
     assert_invalid(result)
     assert marker not in json.dumps(result.to_contract())
+    assert any(marker in record.getMessage() for record in caplog.records)
 
 
 @pytest.mark.parametrize("field", ["severity", "path", "description"])
