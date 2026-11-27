@@ -34,10 +34,13 @@ function AgentCardHeading({ agent }: { agent: Agent }) {
 export function AgentGridCard({
   agent,
   toolCount,
+  profileName,
   onOpen,
 }: {
   agent: Agent;
   toolCount?: number;
+  /** Name of the LLM profile the agent is assigned to, when it has one. */
+  profileName?: string;
   onOpen: () => void;
 }) {
   return (
@@ -47,6 +50,7 @@ export function AgentGridCard({
       <span className="agent-card-chips">
         <span className="chip">Skill {agent.skills?.length ?? 0}</span>
         <span className="chip">Tools {toolCount ?? '–'}</span>
+        {profileName && <span className="chip">LLM {profileName}</span>}
         <span className="chip">Runs {agent.metrics.total}</span>
       </span>
     </button>

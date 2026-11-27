@@ -4,10 +4,13 @@ import { agentConfigs, agents, makeAgentConfig, makeCustomAgent, runsFor } from 
 import { approvals as approvalSeed } from '../../mocks/approvals';
 import { metricsOverview } from '../../mocks/metrics';
 import { projects } from '../../mocks/projects';
+import { agentProfileSeed, llmProfiles, MODELS_BY_PROVIDER } from '../../mocks/llmProfiles';
 import { skills } from '../../mocks/skills';
 import { tasks } from '../../mocks/tasks';
 import { workflows } from '../../mocks/workflows';
 import type { ActivityEvent } from '../../types/activity';
+import type { Agent } from '../../types/agent';
+import type { LlmProfile, LlmProfileInput } from '../../types/llm';
 import type { Approval, ApprovalStatus } from '../../types/approval';
 import type { Project, ProjectProfileInput } from '../../types/project';
 import type { Task } from '../../types/task';
@@ -207,90 +210,8 @@ const applyHostingTokenInput = (id: string, input: ProjectProfileInput): void =>
     hostingTokenStore[id] = input.hostingToken;
   }
 };
-let modelSettings: {
-  provider: string; model: string; baseUrl: string; apiKey: string;
-  agentModels: Record<string, string>;
-} = { provider: 'scripted', model: '', baseUrl: '', apiKey: '', agentModels: {} };
-const MODEL_AGENTS = ['spec', 'plan', 'task', 'implement', 'review', 'fix', 'artifact-review'];
-const cleanAgentModels = (raw?: Record<string, string>): Record<string, string> => {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw ?? {})) {
-    const name = key.startsWith('agent-') ? key.slice('agent-'.length) : key;
-    if (MODEL_AGENTS.includes(name) && value.trim()) {
-      out[name] = value.trim();
-    }
-  }
-  return out;
-};
-interface MockConnection {
-  provider: string;
-  baseUrl: string;
-  apiKey: string;
-  headers: Record<string, string>;
-  timeoutSeconds: number | null;
-}
-const modelConnections: Record<string, MockConnection> = {};
-const emptyMockConnection = (): MockConnection => ({
-  provider: '', baseUrl: '', apiKey: '', headers: {}, timeoutSeconds: null,
-});
-type MockConnectionPatch = Partial<MockConnection> & { clearKey?: boolean };
-const mergeMockConnection = (current: MockConnection, patch: MockConnectionPatch): void => {
-  if (patch.provider !== undefined) {
-    current.provider = patch.provider;
-  }
-  if (patch.baseUrl !== undefined) {
-    current.baseUrl = patch.baseUrl;
-  }
-  if (patch.apiKey) {
-    current.apiKey = patch.apiKey;
-  }
-  if (patch.clearKey) {
-    current.apiKey = '';
-  }
-  if (patch.headers) {
-    current.headers = { ...patch.headers };
-  }
-  if (patch.timeoutSeconds !== undefined) {
-    current.timeoutSeconds = patch.timeoutSeconds;
-  }
-};
-const applyMockConnections = (input: { agentConnections?: Record<string, object> }): void => {
-  if (!input.agentConnections) {
-    return;
-  }
-  for (const [name, raw] of Object.entries(input.agentConnections)) {
-    const patch = raw as MockConnectionPatch;
-    if (Object.keys(patch).length === 0) {
-      delete modelConnections[name];
-      continue;
-    }
-    const current = modelConnections[name] ?? emptyMockConnection();
-    mergeMockConnection(current, patch);
-    modelConnections[name] = current;
-  }
-};
 const keyHintFor = (key: string): string =>
   key.length >= 4 ? `\u2026${key.slice(-4)}` : '';
-const mockConnectionView = (p: MockConnection) => ({
-  provider: p.provider,
-  baseUrl: p.baseUrl,
-  keyConfigured: Boolean(p.apiKey),
-  keyHint: keyHintFor(p.apiKey),
-  headers: Object.fromEntries(Object.keys(p.headers).map((h) => [h, '****'])),
-  timeoutSeconds: p.timeoutSeconds,
-  insecureHttp: p.baseUrl.startsWith('http://'),
-});
-const mockConnectionsView = () =>
-  Object.fromEntries(Object.entries(modelConnections).map(([n, p]) => [n, mockConnectionView(p)]));
-const modelSettingsView = () => ({
-  provider: modelSettings.provider,
-  model: modelSettings.model,
-  baseUrl: modelSettings.baseUrl,
-  agentModels: { ...modelSettings.agentModels },
-  agentConnections: mockConnectionsView(),
-  keyConfigured: Boolean(modelSettings.apiKey),
-  keyHint: keyHintFor(modelSettings.apiKey),
-});
 const taskStore: Task[] = structuredClone(tasks);
 const workflowStore: Workflow[] = structuredClone(workflows);
 
@@ -324,15 +245,128 @@ const freshSteps = (): WorkflowStep[] =>
   STEP_DEFS.map(([id, label], i) => ({ id, label, state: i === 0 ? 'active' : 'pending' }));
 const statusFor = { APPROVE: 'APPROVED', REJECT: 'REJECTED', REQUEST_CHANGES: 'CHANGES_REQUESTED' } as const;
 
+const profileStore: LlmProfile[] = llmProfiles.map((profile) => ({ ...profile }));
+/** agent id -> profile id; the seed keeps the demo agents on sensible profiles. */
+const agentProfile: Record<string, string> = { ...agentProfileSeed };
+const withProfile = (agent: Agent): Agent =>
+  agentProfile[agent.id] ? { ...agent, llmProfileId: agentProfile[agent.id] } : agent;
+const findAgent = (id: string): Agent | undefined => {
+  const agent = agents.find((entry) => entry.id === id);
+  return agent ? withProfile(agent) : undefined;
+};
+
+function validateProfile(input: LlmProfileInput): void {
+  if (!input.name.trim()) {
+    throw new Error('A profile needs a name');
+  }
+  if (input.provider !== 'scripted' && !input.model.trim()) {
+    throw new Error('Pick a model — load the list from the endpoint first');
+  }
+  if (input.provider === 'custom' && !/^https?:\/\//.test(input.baseUrl.trim())) {
+    throw new Error('The custom provider needs a base URL (http/https)');
+  }
+}
+
+function keyFields(input: LlmProfileInput, existing?: LlmProfile): Pick<LlmProfile, 'keyConfigured' | 'keyHint'> {
+  const key = input.apiKey?.trim() ?? '';
+  if (input.clearKey) {
+    return { keyConfigured: false, keyHint: '' };
+  }
+  return {
+    keyConfigured: key !== '' || Boolean(existing?.keyConfigured),
+    keyHint: keyHintFor(key) || existing?.keyHint || '',
+  };
+}
+
+function mergeProfile(input: LlmProfileInput, existing?: LlmProfile): LlmProfile {
+  return {
+    id: input.id,
+    name: input.name.trim(),
+    provider: input.provider,
+    baseUrl: input.baseUrl.trim(),
+    model: input.model.trim(),
+    models: input.models ?? existing?.models,
+    ...keyFields(input, existing),
+  };
+}
+
 export const mockApi: FactoryApi = {
-  listAgents: () => delay(agents),
-  getAgent: (id) => delay(agents.find((a) => a.id === id)),
+  listAgents: () => delay(agents.map(withProfile)),
+  getAgent: (id) => delay(findAgent(id)),
   getAgentConfig: (id) => delay(agentConfigs.find((c) => c.agentId === id)),
   getAgentRuns: (id) => {
     const agent = agents.find((a) => a.id === id);
     return delay(agent ? runsFor(agent) : []);
   },
   listSkills: () => delay(skills),
+
+  listLlmProfiles: () => delay(profileStore.map((profile) => ({ ...profile }))),
+
+  saveLlmProfile: (input) => {
+    validateProfile(input);
+    const at = profileStore.findIndex((profile) => profile.id === input.id);
+    const next = mergeProfile(input, at >= 0 ? profileStore[at] : undefined);
+    if (at >= 0) {
+      profileStore[at] = next;
+    } else {
+      profileStore.push(next);
+    }
+    return delay(next);
+  },
+
+  deleteLlmProfile: (id) => {
+    const at = profileStore.findIndex((profile) => profile.id === id);
+    if (at >= 0) {
+      profileStore.splice(at, 1);
+    }
+    for (const [agentId, profileId] of Object.entries(agentProfile)) {
+      if (profileId === id) {
+        delete agentProfile[agentId];
+      }
+    }
+    return delay(undefined);
+  },
+
+  loadLlmModels: (request) => {
+    if (request.provider !== 'scripted') {
+      const stored = profileStore.find((profile) => profile.id === request.profileId);
+      const hasKey = Boolean(request.apiKey?.trim()) || Boolean(stored?.keyConfigured);
+      if (!hasKey) {
+        return Promise.reject(new Error('Enter the API key first — the endpoint needs it to list models'));
+      }
+    }
+    if (request.provider === 'custom' && !/^https?:\/\//.test(request.baseUrl.trim())) {
+      return Promise.reject(new Error('The custom provider needs a base URL (http/https)'));
+    }
+    return delay(MODELS_BY_PROVIDER[request.provider] ?? []);
+  },
+
+  testLlmProfile: (id) => {
+    const profile = profileStore.find((entry) => entry.id === id);
+    if (!profile) {
+      return Promise.reject(new Error(`Unknown profile '${id}'`));
+    }
+    if (profile.provider === 'scripted') {
+      return delay({ ok: true, message: 'Scripted provider answers from a fixture — nothing to reach.' });
+    }
+    if (!profile.model.trim()) {
+      return delay({ ok: false, message: 'No model selected for this profile.' });
+    }
+    return delay({ ok: true, message: `${profile.model} answered from ${profile.baseUrl || profile.provider}.` });
+  },
+
+  assignAgentProfile: (agentId, profileId) => {
+    const agent = agents.find((entry) => entry.id === agentId);
+    if (!agent) {
+      return Promise.reject(new Error(`Unknown agent '${agentId}'`));
+    }
+    if (profileId) {
+      agentProfile[agentId] = profileId;
+    } else {
+      delete agentProfile[agentId];
+    }
+    return delay(withProfile(agent));
+  },
   createAgent: (input) => {
     const created = makeCustomAgent(input);
     agents.push(created);
@@ -791,48 +825,6 @@ export const mockApi: FactoryApi = {
   subscribeMapEvents: () => () => undefined,
 
   getMetricsOverview: () => delay(metricsOverview),
-
-  getModelSettings: () => delay(modelSettingsView()),
-
-  updateModelSettings: (input) => {
-    if (input.provider !== 'scripted' && !input.model.trim()) {
-      return Promise.reject(new Error(`A model name is required for provider '${input.provider}'`));
-    }
-    if (input.provider === 'custom' && !/^https?:\/\//.test(input.baseUrl.trim())) {
-      return Promise.reject(new Error('The custom provider needs a base URL (http/https)'));
-    }
-    if (input.agentModels) {
-      const unknown = Object.keys(input.agentModels).find(
-        (k) => !MODEL_AGENTS.includes(k.startsWith('agent-') ? k.slice('agent-'.length) : k),
-      );
-      if (unknown) {
-        return Promise.reject(new Error(`Unknown agent '${unknown}' in agentModels (mock)`));
-      }
-    }
-    applyMockConnections(input);
-    modelSettings = {
-      provider: input.provider,
-      model: input.model.trim(),
-      baseUrl: input.baseUrl.trim(),
-      apiKey: input.clearKey ? '' : input.apiKey || modelSettings.apiKey,
-      agentModels: input.agentModels ? cleanAgentModels(input.agentModels) : modelSettings.agentModels,
-    };
-    return delay(modelSettingsView());
-  },
-
-  testModelSettings: (agent) => {
-    if (agent && !MODEL_AGENTS.includes(agent)) {
-      return delay({ ok: false, message: `Unknown agent '${agent}' (mock).` });
-    }
-    if (modelSettings.provider === 'scripted') {
-      return delay({ ok: true, message: 'Scripted demo provider: no network call to test (mock).' });
-    }
-    if (!modelSettings.apiKey) {
-      return delay({ ok: false, message: `No API key stored for provider '${modelSettings.provider}' (mock).` });
-    }
-    const effective = (agent && modelSettings.agentModels[agent]) || modelSettings.model;
-    return delay({ ok: true, message: `Mock check passed for '${effective}' (no real network call in mock mode).` });
-  },
 
   approveEscalation: (runId, reason) => {
     const workflow = workflowStore.find((w) => w.id === runId);

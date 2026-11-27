@@ -1,7 +1,7 @@
 import { agentMeta } from '../../lib/agentCatalog';
 import type { Agent, AgentConfig } from '../../types/agent';
 import { Icon } from '../common/Icon';
-import { AgentModelOverride } from './AgentModelOverride';
+import { AgentProfilePicker } from './AgentProfilePicker';
 
 const RETRY_LABEL: Record<AgentConfig['retryPolicy']['backoff'], string> = {
   none: 'no retry',
@@ -53,13 +53,13 @@ function ExecutionSection({ agent, config }: { agent: Agent; config: AgentConfig
   );
 }
 
-/** Config tab of the agent setup drawer: model override, prompt and limits. */
+/** Config tab of the agent setup drawer: LLM profile, prompt and limits. */
 export function AgentSetupConfig({ agent, config }: { agent: Agent; config: AgentConfig }) {
   return (
     <>
       <section>
-        <h3 className="section-title">Model</h3>
-        <AgentModelOverride agent={agent} />
+        <h3 className="section-title">LLM profile</h3>
+        <AgentProfilePicker agent={agent} />
       </section>
       <PromptSection prompt={config.systemPrompt} />
       <ExecutionSection agent={agent} config={config} />

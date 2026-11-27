@@ -4,7 +4,7 @@ import type { Approval, ApprovalDecisionInput } from '../../types/approval';
 import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { MetricsOverview } from '../../types/metrics';
 import type { Project, ProjectProfileInput } from '../../types/project';
-import type { ModelSettings, ModelSettingsInput, ModelTestResult } from '../../types/settings';
+import type { LlmModelRequest, LlmProfile, LlmProfileInput, LlmTestResult } from '../../types/llm';
 import type { Skill } from '../../types/skill';
 import type { StartRunInput, Task, TaskFilter } from '../../types/task';
 import type { RunDiagnostics, RunReviews, Workflow } from '../../types/workflow';
@@ -25,6 +25,16 @@ export interface FactoryApi {
   createAgent(input: AgentInput): Promise<Agent>;
   /** The skill catalogue (skills/<id>/SKILL.md); [] when the backend has none. */
   listSkills(): Promise<Skill[]>;
+
+  /** Named model profiles; the agents point at one of these. */
+  listLlmProfiles(): Promise<LlmProfile[]>;
+  saveLlmProfile(input: LlmProfileInput): Promise<LlmProfile>;
+  deleteLlmProfile(id: string): Promise<void>;
+  /** Model ids the endpoint offers, for the model select. */
+  loadLlmModels(request: LlmModelRequest): Promise<string[]>;
+  testLlmProfile(id: string): Promise<LlmTestResult>;
+  /** Points one agent at a profile; null clears the assignment. */
+  assignAgentProfile(agentId: string, profileId: string | null): Promise<Agent>;
 
   listTasks(filter?: TaskFilter): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
@@ -80,8 +90,4 @@ export interface FactoryApi {
   subscribeMapEvents(runId: string, onEvent: (e: MapEvent) => void): Unsubscribe;
 
   getMetricsOverview(): Promise<MetricsOverview>;
-
-  getModelSettings(): Promise<ModelSettings>;
-  updateModelSettings(input: ModelSettingsInput): Promise<ModelSettings>;
-  testModelSettings(agent?: string): Promise<ModelTestResult>;
 }
