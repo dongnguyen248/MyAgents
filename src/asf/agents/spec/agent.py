@@ -18,6 +18,7 @@ from asf.agents._shared.request_checks import (
     check_language,
     is_positive_version,
 )
+from asf.agents._shared.response_diagnostics import diagnostic_details, evidence_for
 from asf.agents._shared.routing import tier_metadata
 from asf.agents._shared.security import redact_text
 from asf.agents.base import AgentRuntime, BaseAgent, Issue
@@ -239,12 +240,13 @@ class SpecAgent(BaseAgent):
             ),
         )
         retry_msgs = _build_retry_messages(messages, missing)
-        reply2, response2, missing2 = self._execute_turn(request, retry_msgs)
+        reply2, response2, missing2 = self._execute_turn(request, retry_msgs, repairs_attempted=1)
         if missing2:
             _log_rejected(2, missing2, response2.content)
+            evidence = evidence_for(response2, repairs_attempted=1)
             raise invalid_response(
                 f"Model response is missing required template sections: {missing2}",
-                details={"missingSections": missing2},
+                details=diagnostic_details(evidence, {"missingSections": missing2}),
             )
         return reply2, _merge_response(response, response2)
 
@@ -252,15 +254,21 @@ class SpecAgent(BaseAgent):
         self,
         request: AgentRequest,
         messages: list[ModelMessage],
+        repairs_attempted: int = 0,
     ) -> tuple[str, ModelResponse, list[str]]:
         response = call_model(self._runtime.models, self._model_request(request, messages))
-        reply, missing = self._extract_reply(response)
+        reply, missing = self._extract_reply(response, repairs_attempted)
         return reply, response, missing
 
-    def _extract_reply(self, response: ModelResponse) -> tuple[str, list[str]]:
+    def _extract_reply(
+        self, response: ModelResponse, repairs_attempted: int = 0
+    ) -> tuple[str, list[str]]:
         reply = unwrap_code_fence(response.content.strip())
         if not reply:
-            raise invalid_response("Model returned an empty response")
+            evidence = evidence_for(response, repairs_attempted=repairs_attempted)
+            raise invalid_response(
+                "Model returned an empty response", details=diagnostic_details(evidence)
+            )
         headings = heading_lines(reply)
         missing = [s for s in self._template.required_sections if s not in headings]
         return reply, missing
@@ -298,7 +306,7 @@ class SpecAgent(BaseAgent):
         if missing:
             raise invalid_response(
                 f"Model response is missing required template sections: {missing}",
-                details={"missingSections": missing},
+                details=diagnostic_details(evidence_for(response), {"missingSections": missing}),
             )
         return reply
 

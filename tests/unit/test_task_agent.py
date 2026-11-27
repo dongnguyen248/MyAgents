@@ -1127,6 +1127,19 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res_invalid.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res_invalid.errors[0].details)
 
+    def test_reply_missing_comma_includes_diagnostics(self):
+        reply = '{"tasks": [{"id": "T1" "title": "x"}]}'
+        agent, _ = self._make_agent([reply])
+        res = agent.execute(self._make_request())
+        self.assertEqual(res.status, "FAILED")
+        details = res.errors[0].details
+        self.assertEqual(details["replyChars"], len(reply))
+        self.assertEqual(details["finishReason"], "stop")
+        self.assertEqual(details["repairsAttempted"], 0)
+        self.assertIn("parseError", details)
+        self.assertNotIn("excerpt", details)
+        self.assertNotIn("input_value", details["parseError"])
+
     def test_reply_missing_tasks_key_returns_parse_error(self):
         agent_missing_tasks, _ = self._make_agent(['{"not_tasks": []}'])
         res_missing = agent_missing_tasks.execute(self._make_request())
@@ -1162,9 +1175,9 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res_bad_id.status, "FAILED")
         self.assertEqual(res_bad_id.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res_bad_id.errors[0].details)
-        self.assertTrue(
-            any("Task ID" in str(res_bad_id.errors[0].details["parseError"]) for _ in [0])
-        )
+        parse_error = str(res_bad_id.errors[0].details["parseError"])
+        self.assertIn("tasks.0.id", parse_error)
+        self.assertIn("value_error", parse_error)
 
     # === Batch 2: Strict parsing tests ===
 
@@ -2532,9 +2545,9 @@ class TaskAgentTests(unittest.TestCase):
         self.assertEqual(res.status, "FAILED")
         self.assertEqual(res.errors[0].code, "LLM_INVALID_RESPONSE")
         self.assertIn("parseError", res.errors[0].details)
-        self.assertTrue(
-            any("non-empty strings" in str(res.errors[0].details["parseError"]) for _ in [0])
-        )
+        parse_error = str(res.errors[0].details["parseError"])
+        self.assertIn("tasks.0.acceptanceCriteria", parse_error)
+        self.assertIn("value_error", parse_error)
 
     def test_traceability_in_output_artifact(self):
         """Test that output artifact contains traceability to SPEC and PLAN."""
