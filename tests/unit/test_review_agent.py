@@ -313,7 +313,36 @@ def test_rejection_reason_for_a_missing_verdict() -> None:
 
 def test_rejection_reason_for_an_unexpected_field() -> None:
     error = _rejection('{"findings": [], "verdict": "APPROVE", "summary": "ok"}')
-    assert error.details["reason"] == "unexpected field 'summary'"
+    assert error.details["reason"] == "unexpected field at '(root)'"
+
+
+def test_model_chosen_extra_key_never_reaches_error(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    reply = json.dumps({"findings": [], "verdict": "APPROVE", marker: 1})
+    agent, _ = make_agent(reply)
+    with caplog.at_level(logging.WARNING):
+        result = agent.execute(make_request())
+    error = result.errors[0]
+    assert error.details["reason"] == "unexpected field at '(root)'"
+    assert marker not in error.message
+    assert all(marker not in str(value) for value in error.details.values())
+    assert marker not in json.dumps(result.to_contract())
+    assert marker not in caplog.text
+
+
+def test_model_chosen_finding_key_never_reaches_error(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    finding = {"severity": "INFO", "path": "a.py", "description": "d", marker: 1}
+    reply = json.dumps({"findings": [finding], "verdict": "APPROVE"})
+    agent, _ = make_agent(reply)
+    with caplog.at_level(logging.WARNING):
+        result = agent.execute(make_request())
+    error = result.errors[0]
+    assert error.details["reason"] == "unexpected field at 'findings.0'"
+    assert marker not in error.message
+    assert all(marker not in str(value) for value in error.details.values())
+    assert marker not in json.dumps(result.to_contract())
+    assert marker not in caplog.text
 
 
 def test_rejection_reason_for_an_unknown_verdict_value() -> None:

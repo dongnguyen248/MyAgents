@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import itertools
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
+
+import pytest
 
 from asf.agents.artifact_review.agent import ArtifactReviewAgent, ArtifactReviewSettings
 from asf.agents.base import AgentRuntime
@@ -213,7 +216,37 @@ def test_rejection_reason_for_missing_fields() -> None:
 
 def test_rejection_reason_for_an_unexpected_field() -> None:
     error = _rejection('{"findings": [], "summary": "ok", "verdict": "APPROVE"}')
-    assert error.details["reason"] == "unexpected field 'verdict'"
+    assert error.details["reason"] == "unexpected field at '(root)'"
+
+
+def test_model_chosen_extra_key_never_reaches_error(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    reply = json.dumps({"findings": [], "summary": "ok", marker: 1})
+    agent, _ = make_agent([reply])
+    with caplog.at_level(logging.WARNING):
+        result = agent.execute(make_request())
+    error = result.errors[0]
+    assert error.details["reason"] == "unexpected field at '(root)'"
+    assert marker not in error.message
+    assert all(marker not in str(value) for value in error.details.values())
+    assert marker not in json.dumps(result.to_contract())
+    assert marker not in caplog.text
+
+
+def test_model_chosen_finding_key_never_reaches_error(caplog: pytest.LogCaptureFixture) -> None:
+    marker = "untrusted-parser-diagnostic-marker"
+    finding = _finding()
+    finding[marker] = 1
+    reply = json.dumps({"findings": [finding], "summary": "ok"})
+    agent, _ = make_agent([reply])
+    with caplog.at_level(logging.WARNING):
+        result = agent.execute(make_request())
+    error = result.errors[0]
+    assert error.details["reason"] == "unexpected field at 'findings.0'"
+    assert marker not in error.message
+    assert all(marker not in str(value) for value in error.details.values())
+    assert marker not in json.dumps(result.to_contract())
+    assert marker not in caplog.text
 
 
 def test_rejection_reason_for_an_unknown_enum_value() -> None:
@@ -271,7 +304,8 @@ def test_rejection_reason_redacts_secret_shaped_field_names() -> None:
         '{"findings": [], "summary": "ok", "bearer abcdefghijklmnopqrstuvwxyz123456": 1}'
     )
     assert "abcdefghijklmnopqrstuvwxyz123456" not in error.message
-    assert "[REDACTED]" in error.details["reason"]
+    assert "abcdefghijklmnopqrstuvwxyz123456" not in error.details["reason"]
+    assert error.details["reason"] == "unexpected field at '(root)'"
 
 
 def test_agent_accepts_a_fenced_reply_unchanged() -> None:
