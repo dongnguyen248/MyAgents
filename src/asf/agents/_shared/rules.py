@@ -10,12 +10,13 @@ budget, while code/review agents receive the full rules.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard
+
+from asf.agents._shared.rule_context import project_rules as project_rules
 
 logger = logging.getLogger(__name__)
 
@@ -490,19 +491,6 @@ def filter_rules_for_task(
     return "\n\n".join(c for _, c in budgeted).strip()
 
 
-def project_rules(project: Any) -> str:
-    """The configured rules text from a project context value, or ''."""
-    if isinstance(project, str):
-        try:
-            project = json.loads(project)
-        except (ValueError, RecursionError):
-            return ""
-    if not isinstance(project, dict):
-        return ""
-    rules = project.get("reviewRules")
-    return rules.strip() if isinstance(rules, str) else ""
-
-
 def attach_design_budget(project: dict[str, Any], profile: dict[str, Any]) -> None:
     """Propagates configuration.designRulesBudget from project profile to context."""
     cfg = profile.get("configuration")
@@ -558,9 +546,12 @@ def rules_section(
     project: Any,
     intro: str,
     opts: RulesFilterOptions | None = None,
+    *,
+    agent: str = "",
 ) -> str:
-    """A system-prompt block carrying the project rules, or ''."""
-    rules = project_rules(project)
+    """A system-prompt block carrying project and agent rules, or ''."""
+    agent_type = opts.agent if opts is not None else agent
+    rules = project_rules(project, agent_type)
     if not rules:
         return ""
     if opts is not None and opts.agent in DESIGN_AGENTS:

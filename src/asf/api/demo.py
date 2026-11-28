@@ -43,6 +43,7 @@ from asf.agents.review.factory import build_review_agent
 from asf.agents.spec.factory import build_spec_agent
 from asf.agents.task.factory import build_task_agent
 from asf.agents.test.factory import build_test_agent
+from asf.api.agent_rule_settings import AgentRuleSettings
 from asf.api.agent_skill_settings import AgentSkillSettings
 from asf.api.app import create_app
 from asf.api.decomposer import RequirementDecomposer
@@ -51,7 +52,9 @@ from asf.api.demo_selftest import run_selftest
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.map_routes import register_map_routes
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
+from asf.api.project_rule_resolution import project_rules_text
 from asf.api.project_skills import resolve_project_skills
+from asf.api.rule_catalogue import resolve_agent_rules, rule_root
 from asf.api.service import FactoryService
 from asf.api.service.agent_skill_queries import agent_skill_snapshot
 from asf.api.service.map_hub import live_map_enabled
@@ -229,6 +232,11 @@ def _load_metrics() -> Any:
     return _FallbackMetrics()
 
 
+def _language_pack_path(projects: Path, pack: str) -> Path:
+    path = rule_root(projects) / "languages" / f"{pack}.md"
+    return path if path.is_file() else projects / "rules" / "languages" / f"{pack}.md"
+
+
 class DemoFactoryService(FactoryService):
     """FactoryService with demo-scenario defaults for HTTP-started runs.
 
@@ -258,6 +266,7 @@ class DemoFactoryService(FactoryService):
         # constructor to stay within the parameter limit.
         self._max_review_rounds: int | None = None
         self._agent_skill_settings = AgentSkillSettings()
+        self._agent_rule_settings = AgentRuleSettings()
         self._projects_dir = projects_dir
         # The skills catalogue lives at the repository root beside
         # projects/ and templates/; tests may point it elsewhere.
@@ -294,7 +303,7 @@ class DemoFactoryService(FactoryService):
         return [["python", "-m", "pytest", "-q"]]
 
     # Shared review standards per language, as ``rules/languages/<pack>.md``
-    # under the projects directory. A profile technology token selects the
+    # in the common rules directory. A profile technology token selects the
     # pack(s) the project is reviewed against; frameworks that imply a
     # language (react -> typescript) map to that language's pack.
     _LANGUAGE_PACK_ORDER: tuple[str, ...] = ("java", "typescript", "csharp")
@@ -326,7 +335,7 @@ class DemoFactoryService(FactoryService):
         for pack in self._LANGUAGE_PACK_ORDER:
             if pack not in selected:
                 continue
-            path = self._projects_dir / "rules" / "languages" / f"{pack}.md"
+            path = _language_pack_path(self._projects_dir, pack)
             try:
                 text = path.read_text(encoding="utf-8")
             except OSError:
@@ -336,52 +345,10 @@ class DemoFactoryService(FactoryService):
         return packs
 
     def _review_rules(self, project_id: str) -> str:
-        """The project's review standards, as one text block.
-
-        Shared language packs (``rules/languages/``, selected by the
-        profile's technologies) come first, then the project's own rules:
-        ``configuration.review.rulesFiles`` lists Markdown rule files
-        relative to the projects directory and ``configuration.review.
-        rules`` holds inline rule text; files are concatenated in listed
-        order, inline text last. A configured project file that cannot be
-        read fails the run start loudly — silently reviewing without the
-        project's rules would be worse than not starting at all.
-        """
-        parts: list[str] = self._language_rule_packs(project_id)
         profile = self._project_profiles.get(project_id) or {}
-        configuration = profile.get("configuration")
-        review = configuration.get("review") if isinstance(configuration, dict) else None
-        if not isinstance(review, dict):
-            return "\n\n".join(parts)
-        files = review.get("rulesFiles")
-        if isinstance(files, list):
-            for entry in files:
-                if not isinstance(entry, str) or not entry.strip():
-                    continue
-                if self._projects_dir is None:
-                    raise ValueError(
-                        f"Project '{project_id}' configures review rulesFiles"
-                        " but the service has no projects directory",
-                    )
-                path = (self._projects_dir / entry).resolve()
-                if not path.is_relative_to(self._projects_dir.resolve()):
-                    raise ValueError(
-                        f"Review rules file '{entry}' for project"
-                        f" '{project_id}' escapes the projects directory",
-                    )
-                try:
-                    text = path.read_text(encoding="utf-8")
-                except OSError as error:
-                    raise ValueError(
-                        f"Review rules file '{entry}' for project"
-                        f" '{project_id}' cannot be read: {error}",
-                    ) from error
-                if text.strip():
-                    parts.append(text.strip())
-        inline = review.get("rules")
-        if isinstance(inline, str) and inline.strip():
-            parts.append(inline.strip())
-        return "\n\n".join(parts)
+        return project_rules_text(
+            self._language_rule_packs(project_id), profile, project_id, self._projects_dir
+        )
 
     def _build_initial_context(self, project_id: str, context: Any) -> dict[str, Any]:
         merged: dict[str, Any] = {
@@ -405,7 +372,18 @@ class DemoFactoryService(FactoryService):
             else:
                 merged[key] = value
         merged["project"]["agentSkills"] = agent_skill_snapshot(self)
+        merged["project"]["agentRules"] = self._resolve_agent_rules(merged["project"])
         return merged
+
+    def _resolve_agent_rules(self, project: dict[str, Any]) -> dict[str, str]:
+        settings = getattr(self, "_agent_rule_settings", None)
+        if settings is None:
+            return {}
+        baseline = project.get("reviewRules")
+        project_rules = baseline if isinstance(baseline, str) else ""
+        return resolve_agent_rules(
+            rule_root(self._projects_dir), settings.snapshot(), project_rules
+        )
 
     def start_run(
         self,
@@ -917,6 +895,7 @@ def build_demo(
         workspace_view=workspace.run_workspace_view,
     )
     service._agent_skill_settings = AgentSkillSettings(data_dir / "agent-skills.json")
+    service._agent_rule_settings = AgentRuleSettings(data_dir / "agent-rules.json")
     service._max_review_rounds = _max_review_rounds_of(platform)
     service_ref["service"] = service
 

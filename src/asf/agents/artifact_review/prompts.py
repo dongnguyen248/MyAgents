@@ -235,7 +235,7 @@ def _system_message(
     )
     if checklist.strip():
         system += f"\n\n{checklist.strip()}"
-    system += rules_section(project, _RULES_INTRO)
+    system += rules_section(project, _RULES_INTRO, agent="artifact-review")
     system += guardrails_memory_section(components)
     system += skills_section(project, "artifact-review")
     system += agent_skills_section(components)

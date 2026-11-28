@@ -37,6 +37,7 @@ from asf.api.service import (
     run_selection,
 )
 from asf.api.service.agent_skill_queries import configured_agent_skills
+from asf.api.service.project_rules_view import project_rule_view
 from asf.api.service.review_state import (
     ai_review_waiting,
     approval_view_fields,
@@ -1067,7 +1068,7 @@ class QueriesMixin:
                     "technologies": profile["technologies"],
                     "description": profile["description"],
                     "workflow": profile["workflow"],
-                    "enabledSkills": profile["enabledSkills"],
+                    **project_rule_view(profile),
                     "technologyGroups": profile["technologyGroups"],
                     **project_approval_fields(profile),
                     "agentIds": agent_ids,

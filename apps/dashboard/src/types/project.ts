@@ -23,6 +23,9 @@ export interface Project {
   description: string;
   workflow: string;
   enabledSkills: string[];
+  enabledRules?: string[];
+  legacyRuleFiles?: string[];
+  hasInlineRules?: boolean;
   technologyGroups: Record<string, string[]>;
   approvalChannel: string;
   /** Profile `configuration.approval.mode`: '' = workflow default. */
@@ -52,6 +55,9 @@ export interface ProjectProfileInput {
   technology: { backend: string[]; frontend: string[] };
   workflow: string;
   enabledSkills: string[];
+  enabledRules?: string[];
+  legacyRuleFiles?: string[];
+  hasInlineRules?: boolean;
   configuration: {
     approval?: { channel: string; mode?: string; maxRevisions?: number; onExhausted?: string };
     testCommands?: string[][];

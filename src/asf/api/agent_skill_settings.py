@@ -67,13 +67,13 @@ class AgentSkillSettings:
             Path(name).unlink(missing_ok=True)
 
 
-def _agent_type(service: Any, agent_id: str) -> str:
+def _agent_type(service: Any, agent_id: str, kind: str = "Skill") -> str:
     agent = service.get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
     agent_type = str(agent["type"])
     if agent_id != f"agent-{agent_type}" or agent_type not in SUPPORTED_AGENTS:
-        raise HTTPException(400, "Skill assignment is not supported for this agent")
+        raise HTTPException(400, f"{kind} assignment is not supported for this agent")
     return agent_type
 
 
@@ -104,6 +104,9 @@ def agent_skill_router(service: Any, root: Path | None) -> APIRouter:
 
 
 def register_agent_skill_routes(app: Any, service: Any) -> None:
+    from asf.api.agent_rule_settings import rule_router
+
     root = getattr(service, "_skills_dir", None)
     app.include_router(skill_router(root, getattr(service, "_agent_skill_settings", None)))
     app.include_router(agent_skill_router(service, root))
+    app.include_router(rule_router(service))

@@ -88,7 +88,7 @@ def _system_message(
         skills = project.get("enabledSkills", [])
         if isinstance(skills, list) and all(isinstance(skill, str) for skill in skills):
             system += "\nEnabled skills: " + ", ".join(skills)
-    system += rules_section(project, _RULES_INTRO)
+    system += rules_section(project, _RULES_INTRO, agent="fix")
     system += guardrails_memory_section(components)
     system += skills_section(project, "fix")
     system += agent_skills_section(components)

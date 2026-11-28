@@ -7,6 +7,7 @@ import type { MetricsOverview } from '../../types/metrics';
 import type { Project, ProjectProfileInput } from '../../types/project';
 import type { LlmModelRequest, LlmProfile, LlmProfileInput, LlmTestResult } from '../../types/llm';
 import type { Skill } from '../../types/skill';
+import type { RuleFile } from '../../types/rule';
 import type { StartRunInput, Task, TaskFilter } from '../../types/task';
 import type { RunDiagnostics, RunReviews, Workflow } from '../../types/workflow';
 
@@ -26,6 +27,11 @@ export interface FactoryApi {
   createAgent(input: AgentInput): Promise<Agent>;
   /** The skill catalogue (skills/<id>/SKILL.md); [] when the backend has none. */
   listSkills(): Promise<Skill[]>;
+  listRules(): Promise<RuleFile[]>;
+  getAgentRules(id: string): Promise<string[]>;
+  saveAgentRules(id: string, rules: string[]): Promise<string[]>;
+  readRuleFile(id: string): Promise<string>;
+  saveRuleFile(id: string, content: string): Promise<void>;
   getAgentSkills(id: string): Promise<string[]>;
   saveAgentSkills(id: string, skills: string[]): Promise<string[]>;
   getModelSettings(): Promise<ModelSettings>;

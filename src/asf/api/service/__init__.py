@@ -29,6 +29,7 @@ from typing import Any, Protocol
 
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.scheduler import RunScheduler
+from asf.api.service.project_rules_view import project_rule_fields, project_rule_fields_from_data
 from asf.configuration.project import (
     ProjectProfile,
     keep_changes_on_failure_of,
@@ -433,13 +434,12 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin, DiscoveryWatchMix
                 "repositoryPath": str(profile.repository.get("path") or ""),
                 "workspaceMode": workspace_mode_of(profile.repository),
                 "keepChangesOnFailure": keep_changes_on_failure_of(profile.repository),
-                "testCommands": _valid_test_commands(
-                    profile.configuration.get("testCommands"),
-                ),
+                "testCommands": _valid_test_commands(profile.configuration.get("testCommands")),
                 "technologies": technologies,
                 "description": profile.description,
                 "workflow": profile.workflow,
-                "enabledSkills": [str(skill) for skill in profile.enabled_skills],
+                **project_rule_fields(profile.configuration, profile.enabled_rules),
+                "enabledSkills": list(profile.enabled_skills),
                 "technologyGroups": groups,
                 **approval_settings_view(approval),
             }
@@ -495,6 +495,7 @@ class FactoryService(QueriesMixin, CommandsMixin, DriverMixin, DiscoveryWatchMix
                 if isinstance(raw_skills, list)
                 else []
             ),
+            **project_rule_fields_from_data(configuration, data),
             "technologyGroups": groups,
             **approval_settings_view(approval),
         }

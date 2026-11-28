@@ -562,7 +562,7 @@ extra editable files — the three stage checklists — travel in
 generic assembly order; the agent reads its own extras), and the
 round-trip wiring test covers it like the other six. Caps measured
 the H1 way: the largest assembled system prompt over the three
-stages, with every rule pack in `projects/rules/` concatenated as
+stages, with every rule pack in `rules/` concatenated as
 the maximal project fixture, is 40,109 chars, so
 `always_on_max = 61,000` and `tree_max = 61,000 − 36,805` (the rules
 overhead) `= 24,195`. Labelled offline fixtures (≥ 6 per stage) live
