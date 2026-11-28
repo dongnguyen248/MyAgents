@@ -53,3 +53,16 @@ The mock dashboard shows sample catalogue data and does not edit repository file
 Skills can be assigned per agent in its setup drawer. A project must also enable
 the skill for it to be injected; stack and digest rules still apply. Assignments
 are saved in the demo data directory and apply to new runs.
+
+## Rules for agents
+
+The Rules library reads and edits existing Markdown files under `rules/`.
+Choose shared files in the project create/edit form, or add agent-specific files
+in an agent's Rules tab. Project selections are persisted as `enabledRules` in
+the project profile; agent assignments are persisted
+in the demo data directory and resolved into each new run's context. Existing `configuration.review.rulesFiles` and inline rules remain supported and
+are preserved when editing a project. Language packs are selected automatically
+from its technologies, and each agent's packaged guardrails remain in place. Design agents filter rules by task stack and scope, and apply the
+project's design-rule budget. Test runs commands and has no model prompt. Editing
+a shared file affects all projects and agents that use it on subsequent runs.
+The API has no authentication and must be restricted to trusted operators.

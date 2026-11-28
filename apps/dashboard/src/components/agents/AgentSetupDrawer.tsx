@@ -10,12 +10,14 @@ import { Icon } from '../common/Icon';
 import { AgentCapabilityList } from './AgentCapabilityList';
 import { AgentSetupConfig } from './AgentSetupConfig';
 import { AgentSkillPicker } from './AgentSkillPicker';
+import { AgentRulePicker } from './AgentRulePicker';
 
-type TabId = 'config' | 'skills' | 'tools';
+type TabId = 'config' | 'skills' | 'rules' | 'tools';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'config', label: 'Config & prompt' },
   { id: 'skills', label: 'Skills' },
+  { id: 'rules', label: 'Rules' },
   { id: 'tools', label: 'Tools' },
 ];
 
@@ -76,6 +78,9 @@ function DrawerBody({ agent, tab, config }: { agent: Agent; tab: TabId; config: 
   }
   if (tab === 'skills') {
     return <AgentSkillPicker agent={agent} />;
+  }
+  if (tab === 'rules') {
+    return <AgentRulePicker agent={agent} />;
   }
   return <AgentCapabilityList kind="tools" items={config.tools} />;
 }

@@ -429,6 +429,7 @@
         "technology": {"type": "object"},
         "enabledAgents": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
         "enabledSkills": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "enabledRules": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
         "workflow": {"type": "string", "minLength": 1},
         "configuration": {"$ref": "#/$defs/Metadata"},
         "status": {"type": "string", "enum": ["ACTIVE", "INACTIVE", "ARCHIVED"]}

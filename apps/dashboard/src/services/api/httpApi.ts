@@ -3,9 +3,14 @@ import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { Project } from '../../types/project';
 import type { LlmModelRequest, LlmProfile, LlmProfileInput, LlmTestResult } from '../../types/llm';
 import type { Skill } from '../../types/skill';
+import type { RuleFile } from '../../types/rule';
 import type { ModelSettings } from '../../types/agentSetup';
 import type { RunDiagnostics, Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
+
+function ruleFileUrl(id: string): string {
+  return `/rules/files/${id.split('/').map(encodeURIComponent).join('/')}`;
+}
 
 function skillFileUrl(id: string, path: string): string {
   return `/skills/${encodeURIComponent(id)}/files/${path.split('/').map(encodeURIComponent).join('/')}`;
@@ -52,6 +57,11 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     getAgentRuns: (id) => get(`/agents/${id}/runs`),
     createAgent: (input) => send<Agent>('/agents', 'POST', input),
     listSkills: () => send<Skill[]>('/skills', 'GET'),
+    listRules: () => send<RuleFile[]>('/rules', 'GET'),
+    getAgentRules: async (id) => (await send<{ rules: string[] }>(`/agents/${encodeURIComponent(id)}/rules`, 'GET')).rules,
+    saveAgentRules: async (id, rules) => (await send<{ rules: string[] }>(`/agents/${encodeURIComponent(id)}/rules`, 'PUT', { rules })).rules,
+    readRuleFile: async (id) => (await send<{ content: string }>(ruleFileUrl(id), 'GET')).content,
+    saveRuleFile: async (id, content) => { await send(ruleFileUrl(id), 'PUT', { content }); },
     getAgentSkills: async (id) => (await send<{ skills: string[] }>(`/agents/${encodeURIComponent(id)}/skills`, 'GET')).skills,
     saveAgentSkills: async (id, skills) => (await send<{ skills: string[] }>(`/agents/${encodeURIComponent(id)}/skills`, 'PUT', { skills })).skills,
     getModelSettings: () => send<ModelSettings>('/settings/model', 'GET'),

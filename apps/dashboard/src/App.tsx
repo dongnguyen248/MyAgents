@@ -11,6 +11,7 @@ import { MetricsPage } from './pages/Metrics/MetricsPage';
 import { ProjectsPage } from './pages/Projects/ProjectsPage';
 import { LlmPage } from './pages/Llm/LlmPage';
 import { SkillsPage } from './pages/Skills/SkillsPage';
+import { RulesPage } from './pages/Rules/RulesPage';
 import { TaskDetailPage } from './pages/Tasks/TaskDetailPage';
 import { TasksPage } from './pages/Tasks/TasksPage';
 import { WorkflowDetailPage } from './pages/Workflows/WorkflowDetailPage';
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="metrics" element={<MetricsPage />} />
         <Route path="skills" element={<SkillsPage />} />
+        <Route path="rules" element={<RulesPage />} />
         <Route path="llm" element={<LlmPage />} />
         <Route path="settings" element={<Navigate to="/llm" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

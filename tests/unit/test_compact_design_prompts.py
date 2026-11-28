@@ -755,7 +755,7 @@ def test_spec_f2_system_prompt_piece_sum_equals_total():
 
     prompts = load_spec_prompts()
     template = load_spec_template(Path("templates"))
-    ts_rules = Path("projects/rules/languages/typescript.md").read_text(encoding="utf-8")
+    ts_rules = Path("rules/languages/typescript.md").read_text(encoding="utf-8")
     proj_ctx = {
         "name": "MyAgent",
         "technology": {"backend": ["python", "fastapi"], "frontend": ["react", "typescript"]},

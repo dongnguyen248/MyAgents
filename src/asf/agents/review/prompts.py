@@ -135,7 +135,7 @@ def _system_message(
     system += "\nEnabled skills: " + (", ".join(_skill_names(project)) or "none")
     # Review rules are project configuration resolved by the assembly,
     # not artifact data: they belong in the system message as criteria.
-    system += rules_section(project, _RULES_INTRO)
+    system += rules_section(project, _RULES_INTRO, agent="review")
     system += guardrails_memory_section(components)
     system += skills_section(project, "review")
     system += agent_skills_section(components)

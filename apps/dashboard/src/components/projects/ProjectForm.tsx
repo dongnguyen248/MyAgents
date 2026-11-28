@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { parseMaxRevisions, validateApprovalSettings } from '../../lib/approvalSettings';
 import type { ProjectProfileInput } from '../../types/project';
 import { Card } from '../common/Layout';
+import { ProjectRulePicker } from './ProjectRulePicker';
 import { secretInputAttrs, textInputAttrs } from '../forms/inputAttrs';
 
 const list = (value: string): string[] =>
@@ -44,7 +45,8 @@ function useProjectTech(initial: ProjectProfileInput | undefined) {
 function useProjectWorkflow(initial: ProjectProfileInput | undefined) {
   const [workflow, setWorkflow] = useState(initial?.workflow ?? 'software-development');
   const [skills, setSkills] = useState((initial?.enabledSkills ?? []).join(', '));
-  return { workflow, setWorkflow, skills, setSkills };
+  const [rules, setRules] = useState(initial?.enabledRules ?? []);
+  return { workflow, setWorkflow, skills, setSkills, rules, setRules };
 }
 
 function useRepositoryLink(initial: ProjectProfileInput | undefined) {
@@ -182,6 +184,7 @@ function buildProjectInput(state: FormState): ProjectProfileInput {
     technology: { backend: list(tech.backend), frontend: list(tech.frontend) },
     workflow: workflow.workflow.trim() || 'software-development',
     enabledSkills: list(workflow.skills),
+    enabledRules: workflow.rules,
     // In edit mode an explicit empty channel clears a stored one on merge.
     configuration: {
       ...(approvalSettings ? { approval: approvalSettings } : {}),
@@ -539,6 +542,7 @@ export function ProjectForm({ onCreate, onCancel, initial, title = 'New project'
         <ApprovalGateFields approvalChannel={state.approvalChannel} approvalLimits={state.approvalLimits} />
         <ApprovalExplainer />
         <TechnologyFields tech={state.tech} workflow={state.workflow} />
+        <ProjectRulePicker selected={state.workflow.rules} onChange={state.workflow.setRules} legacyFiles={initial?.legacyRuleFiles} hasInlineRules={initial?.hasInlineRules} />
         <RepositoryFields repoLink={state.repoLink} onProviderChange={state.tech.setProvider} />
         <HostingTokenFields repoLink={state.repoLink} initial={initial} />
         {initial?.hostingTokenConfigured && initial.hostingTokenHint && (

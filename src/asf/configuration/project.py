@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from asf.configuration.platform import ConfigModel
 
@@ -56,9 +56,23 @@ class ProjectProfile(ConfigModel):
     technology: dict[str, Any]
     enabled_agents: list[str] = Field(default_factory=list)
     enabled_skills: list[str] = Field(default_factory=list)
+    enabled_rules: list[str] = Field(default_factory=list)
     workflow: str = Field(min_length=1)
     configuration: dict[str, Any] = Field(default_factory=dict)
     status: Literal["ACTIVE", "INACTIVE", "ARCHIVED"] = "ACTIVE"
+
+    @field_validator("enabled_rules")
+    @classmethod
+    def validate_rule_ids(cls, rules: list[str]) -> list[str]:
+        if len(set(rules)) != len(rules):
+            raise ValueError("enabledRules must not contain duplicates")
+        for rule in rules:
+            parts = rule.split("/")
+            if "\\" in rule or any(part in {"", ".", ".."} for part in parts):
+                raise ValueError(f"Invalid rule id: {rule!r}")
+            if not rule.lower().endswith(".md"):
+                raise ValueError(f"Rule id must name a Markdown file: {rule!r}")
+        return rules
 
     def to_contract(self) -> dict[str, Any]:
         return self.model_dump(by_alias=True, mode="json")

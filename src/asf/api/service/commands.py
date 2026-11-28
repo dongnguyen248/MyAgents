@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from asf.api.hosting_tokens import HostingTokens
+from asf.api.project_rule_resolution import validate_project_rule_files
 from asf.api.service import (
     _DECISIONS,
     _PROJECT_ID_PATTERN,
@@ -189,14 +190,10 @@ class CommandsMixin:
         data = dict(payload)
         repository = data.get("repository")
         if isinstance(repository, Mapping) and "workspaceMode" not in repository:
-            data["repository"] = {
-                **repository,
-                "workspaceMode": NEW_PROJECT_WORKSPACE_MODE,
-            }
+            data["repository"] = {**repository, "workspaceMode": NEW_PROJECT_WORKSPACE_MODE}
         return data
 
-    @staticmethod
-    def _validate_profile(payload: Mapping[str, Any]) -> ProjectProfile:
+    def _validate_profile(self, payload: Mapping[str, Any]) -> ProjectProfile:
         try:
             profile = ProjectProfile.model_validate(dict(payload))
         except ValidationError as error:
@@ -210,6 +207,7 @@ class CommandsMixin:
         # fails creation/update exactly like a schema error.
         workspace_mode_of(profile.repository)
         keep_changes_on_failure_of(profile.repository)
+        validate_project_rule_files(self, profile)
         return profile
 
     def _register_project(self, profile: ProjectProfile) -> None:

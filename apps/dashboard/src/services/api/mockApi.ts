@@ -291,6 +291,7 @@ function mergeProfile(input: LlmProfileInput, existing?: LlmProfile): LlmProfile
 }
 
 const mockSkillOverrides: Record<string, string[]> = {};
+const mockRuleOverrides: Record<string, string[]> = {};
 let mockModelSettings = { provider: 'scripted', model: '', baseUrl: '', keyConfigured: false,
   agentModels: {} as Record<string, string>, agentConnections: {} as Record<string, import('../../types/agentSetup').AgentConnection> };
 
@@ -303,6 +304,14 @@ export const mockApi: FactoryApi = {
     return delay(agent ? runsFor(agent) : []);
   },
   listSkills: () => delay(skills),
+  listRules: () => delay([]),
+  getAgentRules: (id) => delay(mockRuleOverrides[id] ?? []),
+  saveAgentRules: (id, rules) => {
+    mockRuleOverrides[id] = [...rules];
+    return delay([...rules]);
+  },
+  readRuleFile: async () => { throw new Error('Rule files require the API backend.'); },
+  saveRuleFile: async () => { throw new Error('Rule files require the API backend.'); },
   getAgentSkills: (id) => delay(mockSkillOverrides[id] ?? agentConfigs.find((config) => config.agentId === id)?.skills ?? []),
   saveAgentSkills: (id, selected) => {
     mockSkillOverrides[id] = [...selected];
@@ -719,7 +728,7 @@ export const mockApi: FactoryApi = {
       technologies: [...input.technology.backend, ...input.technology.frontend],
       description: input.description ?? '',
       workflow: input.workflow,
-      enabledSkills: input.enabledSkills,
+      enabledSkills: input.enabledSkills, enabledRules: input.enabledRules ?? [],
       technologyGroups: { ...input.technology },
       ...approvalFieldsOf(input),
       hostingTokenConfigured: Boolean(input.hostingToken),
@@ -755,7 +764,7 @@ export const mockApi: FactoryApi = {
       testCommands: input.configuration.testCommands ?? [],
       technologies: [...input.technology.backend, ...input.technology.frontend],
       workflow: input.workflow,
-      enabledSkills: input.enabledSkills,
+      enabledSkills: input.enabledSkills, enabledRules: input.enabledRules ?? [],
       technologyGroups: { ...input.technology },
       ...approvalFieldsOf(input),
     };

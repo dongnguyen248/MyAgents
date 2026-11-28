@@ -12,6 +12,11 @@ technology:
 workflow: software-development
 
 enabledSkills: [java, spring, react, git, testing, security]
+enabledRules:
+  - vhpc/api-rules.md
+  - vhpc/security-rules.md
+  - vhpc/constants-rules.md
+  - code-structure-rules.md
 
 configuration:
   approval:
@@ -20,14 +25,3 @@ configuration:
     total: 5500
     api: 2900
     security: 2300
-  # The Review Agent reviews this project's code against these standards
-  # (Markdown files relative to this projects directory). The shared Java
-  # and TypeScript language packs are selected automatically from the
-  # project's technology stack (rules/languages/); these are the rules
-  # specific to this project.
-  review:
-    rulesFiles:
-      - rules/vhpc/api-rules.md
-      - rules/vhpc/security-rules.md
-      - rules/vhpc/constants-rules.md
-      - rules/code-structure-rules.md

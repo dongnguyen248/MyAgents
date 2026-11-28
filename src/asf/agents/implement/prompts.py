@@ -146,7 +146,7 @@ def _system_message(context: ImplementPromptContext) -> str:
     skills_line = _enabled_skills_line(context.project_context)
     if skills_line:
         system_msg += skills_line
-    system_msg += rules_section(context.project_context, _RULES_INTRO)
+    system_msg += rules_section(context.project_context, _RULES_INTRO, agent="implement")
     system_msg += guardrails_memory_section(components)
     system_msg += skills_section(context.project_context, "implement")
     system_msg += agent_skills_section(components)
