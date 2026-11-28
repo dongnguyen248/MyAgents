@@ -19,4 +19,5 @@ export interface Skill {
   stackOnly: boolean;
   /** Where the definition lives, for the operator's reference. */
   path: string;
+  files?: string[];
 }

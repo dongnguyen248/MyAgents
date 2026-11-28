@@ -41,3 +41,14 @@ Implement it in `httpApi.ts` with `EventSource` or `WebSocket` that calls `onEve
 - Agent **Health Score** (`utils/health.ts`) = success 30% + human approval 20% + CI pass 20% + test pass 15% + low revisions 15%.
 - Approval actions and agent settings are mock-only and not persisted.
 - Dependencies were not installed or built in the authoring environment (no network); run `npm install && npm run typecheck` first.
+
+## Skill library
+
+With `VITE_API_BASE_URL` set to the ASF API URL, Skills reads every immediate
+`skills/<id>/SKILL.md` folder from the backend's skill directory and lets the
+operator browse and edit existing UTF-8 files. Refresh discovers new folders.
+The API is not an authentication or authorization boundary: editing files changes
+agent instructions on subsequent runs, so only expose it to trusted operators.
+The mock dashboard shows sample catalogue data and does not edit repository files.
+A new skill must also be mapped in `SKILL_AGENTS` and enabled in a project to be
+injected into agent prompts; stack and digest rules still apply.

@@ -6,6 +6,10 @@ import type { Skill } from '../../types/skill';
 import type { RunDiagnostics, Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
+function skillFileUrl(id: string, path: string): string {
+  return `/skills/${encodeURIComponent(id)}/files/${path.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 /**
  * REST implementation of FactoryApi. Endpoint paths are a proposal for the future
  * backend contract (see docs/architecture). Enabled by setting VITE_API_BASE_URL.
@@ -46,7 +50,11 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     getAgentConfig: (id) => getOpt(`/agents/${id}/config`),
     getAgentRuns: (id) => get(`/agents/${id}/runs`),
     createAgent: (input) => send<Agent>('/agents', 'POST', input),
-    listSkills: async () => (await getOpt<Skill[]>('/skills')) ?? [],
+    listSkills: () => get<Skill[]>('/skills'),
+    readSkillFile: async (id, path) => (await get<{ content: string }>(skillFileUrl(id, path))).content,
+    saveSkillFile: async (id, path, content) => {
+      await send(skillFileUrl(id, path), 'PUT', { content });
+    },
 
     listLlmProfiles: async () => (await getOpt<LlmProfile[]>('/llm/profiles')) ?? [],
     saveLlmProfile: (input: LlmProfileInput) =>
