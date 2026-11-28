@@ -4,7 +4,7 @@ import { duration, pct } from '../../utils/format';
 import { HealthMeter } from '../common/Layout';
 import { AgentStatusBadge } from './AgentStatusBadge';
 
-export function AgentTable({ agents }: { agents: Agent[] }) {
+export function AgentTable({ agents, onOpen }: { agents: Agent[]; onOpen: (id: string) => void }) {
   return (
     <div className="table-wrap">
       <table className="table">
@@ -26,7 +26,7 @@ export function AgentTable({ agents }: { agents: Agent[] }) {
           {agents.map((a) => (
             <tr key={a.id}>
               <th scope="row">
-                <Link to={`/agents/${a.id}`}>{a.name}</Link>
+                <button type="button" className="btn btn-ghost" onClick={() => onOpen(a.id)}>{a.name}</button>
                 <div className="muted small">{a.model}</div>
               </th>
               <td><AgentStatusBadge status={a.status} /></td>

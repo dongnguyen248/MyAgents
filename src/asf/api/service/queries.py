@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from asf.agents._shared.security import redact_text
-from asf.agents._shared.skills import agent_skill_ids
 from asf.api.service import (
     _AGENT_STATUS_MAP,
     _APPROVAL_STEP_IDS,
@@ -37,6 +36,7 @@ from asf.api.service import (
     now_activity,
     run_selection,
 )
+from asf.api.service.agent_skill_queries import configured_agent_skills
 from asf.api.service.review_state import (
     ai_review_waiting,
     approval_view_fields,
@@ -123,7 +123,7 @@ class QueriesMixin:
             # The catalogue skills that apply to this agent type —
             # the same set its prompt builder injects on runs whose
             # project enables them.
-            "skills": agent_skill_ids(str(metadata.type)),
+            "skills": configured_agent_skills(self, str(metadata.type)),
             "lastActivityAt": _iso(last_activity or self._now() or _EPOCH),
             "metrics": self._agent_metrics(metadata.id),
         }
@@ -158,9 +158,7 @@ class QueriesMixin:
             "model": agent["model"],
             "modelVersion": str(config.get("modelVersion", "latest")),
             "systemPrompt": str(config.get("systemPrompt", "")),
-            "skills": list(
-                config.get("skills") or agent_skill_ids(str(metadata.type)) or metadata.capabilities
-            ),
+            "skills": agent["skills"],
             "tools": list(config.get("tools") or []),
             "allowedProjectIds": list(config.get("allowedProjectIds") or self._projects.keys()),
             "maxConcurrentTasks": int(config.get("maxConcurrentTasks", 1)),

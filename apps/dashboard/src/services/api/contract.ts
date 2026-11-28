@@ -1,5 +1,6 @@
 import type { ActivityEvent, ActivityFilter } from '../../types/activity';
 import type { Agent, AgentConfig, AgentInput, AgentRun } from '../../types/agent';
+import type { AgentModelInput, ModelSettings } from '../../types/agentSetup';
 import type { Approval, ApprovalDecisionInput } from '../../types/approval';
 import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { MetricsOverview } from '../../types/metrics';
@@ -25,6 +26,10 @@ export interface FactoryApi {
   createAgent(input: AgentInput): Promise<Agent>;
   /** The skill catalogue (skills/<id>/SKILL.md); [] when the backend has none. */
   listSkills(): Promise<Skill[]>;
+  getAgentSkills(id: string): Promise<string[]>;
+  saveAgentSkills(id: string, skills: string[]): Promise<string[]>;
+  getModelSettings(): Promise<ModelSettings>;
+  saveAgentModel(input: AgentModelInput): Promise<ModelSettings>;
   readSkillFile(id: string, path: string): Promise<string>;
   saveSkillFile(id: string, path: string, content: string): Promise<void>;
 

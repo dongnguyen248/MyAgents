@@ -735,3 +735,18 @@ def test_profile_sandbox_settings_extraction(monkeypatch):
                 configuration={"sandboxLimits": {"cpuSeconds": -1}},
             )
         )
+
+
+def test_agent_skill_settings_snapshot_survives_restart(tmp_path: Path):
+    from asf.agents._shared.skills import skills_for_agent
+
+    service, _engine, _store = build_demo(tmp_path, ephemeral=True)
+    service._agent_skill_settings.save("spec", ["react"])
+    context = service._build_initial_context("vhpc", {})
+    assert context["project"]["agentSkills"]["spec"] == ["react"]
+    assert [skill for skill, _ in skills_for_agent(context["project"], "spec")] == ["react"]
+    service._agent_skill_settings.save("spec", [])
+    assert [skill for skill, _ in skills_for_agent(context["project"], "spec")] == ["react"]
+    restored, _engine, _store = build_demo(tmp_path, ephemeral=True)
+    assert restored._agent_skill_settings.selected("spec") == []
+    assert restored.get_agent_config("agent-spec")["skills"] == []

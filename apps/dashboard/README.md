@@ -39,7 +39,7 @@ Implement it in `httpApi.ts` with `EventSource` or `WebSocket` that calls `onEve
 ## Notes
 - Agent statuses are the union of both requested lists: ONLINE, BUSY, IDLE, WAITING, ERROR, DISABLED, OFFLINE. Each has a distinct glyph and text label.
 - Agent **Health Score** (`utils/health.ts`) = success 30% + human approval 20% + CI pass 20% + test pass 15% + low revisions 15%.
-- Approval actions and agent settings are mock-only and not persisted.
+- In mock mode, agent settings are held in memory only. The demo API persists per-agent LLM and skill settings in its data directory.
 - Dependencies were not installed or built in the authoring environment (no network); run `npm install && npm run typecheck` first.
 
 ## Skill library
@@ -50,5 +50,6 @@ operator browse and edit existing UTF-8 files. Refresh discovers new folders.
 The API is not an authentication or authorization boundary: editing files changes
 agent instructions on subsequent runs, so only expose it to trusted operators.
 The mock dashboard shows sample catalogue data and does not edit repository files.
-A new skill must also be mapped in `SKILL_AGENTS` and enabled in a project to be
-injected into agent prompts; stack and digest rules still apply.
+Skills can be assigned per agent in its setup drawer. A project must also enable
+the skill for it to be injected; stack and digest rules still apply. Assignments
+are saved in the demo data directory and apply to new runs.

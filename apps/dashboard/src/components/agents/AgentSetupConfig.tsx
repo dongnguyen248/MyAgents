@@ -58,7 +58,7 @@ export function AgentSetupConfig({ agent, config }: { agent: Agent; config: Agen
   return (
     <>
       <section>
-        <h3 className="section-title">LLM profile</h3>
+        <h3 className="section-title">LLM settings</h3>
         <AgentProfilePicker agent={agent} />
       </section>
       <PromptSection prompt={config.systemPrompt} />

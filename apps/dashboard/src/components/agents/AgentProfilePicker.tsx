@@ -1,126 +1,190 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useLlmProfiles } from '../../features/llm-profiles';
+import { useAsync } from '../../hooks/useAsync';
 import { messageOf } from '../../lib/message';
-import { assignAgentProfile } from '../../services/llm/llmProfileService';
+import { api, backendBaseUrl } from '../../services/api';
 import type { Agent } from '../../types/agent';
-import type { LlmProfile } from '../../types/llm';
+import type { AgentModelInput, ModelSettings } from '../../types/agentSetup';
+import { secretInputAttrs, textInputAttrs } from '../forms/inputAttrs';
 
-interface Status {
-  busy: boolean;
-  message?: string;
-  failed?: boolean;
-}
+type Draft = AgentModelInput;
 
-function summaryOf(profile?: LlmProfile): string {
-  if (!profile) {
-    return 'The backend default endpoint applies.';
-  }
-  return `${profile.provider} · ${profile.model || 'no model picked'}`;
-}
-
-/** Save state for one agent's profile choice, kept out of the form component. */
-function useAssign(agentId: string) {
-  const [status, setStatus] = useState<Status>({ busy: false });
-  const save = async (profileId: string) => {
-    setStatus({ busy: true });
-    try {
-      const agent = await assignAgentProfile(agentId, profileId || null);
-      const message = agent.llmProfileId
-        ? 'Saved — the next run of this agent uses that profile.'
-        : 'Cleared — the backend default applies.';
-      setStatus({ busy: false, message });
-    } catch (error) {
-      setStatus({ busy: false, message: messageOf(error), failed: true });
-    }
+function initialDraft(agent: Agent, settings: ModelSettings): Draft {
+  const connection = settings.agentConnections[agent.type];
+  return {
+    agent: agent.type,
+    provider: connection?.provider ?? '',
+    baseUrl: connection?.baseUrl ?? '',
+    model: settings.agentModels[agent.type] ?? '',
+    apiKey: '',
   };
-  return { status, save };
 }
 
-function ProfileSelect({
-  profiles,
-  value,
-  onChange,
-}: {
-  profiles: LlmProfile[];
-  value: string;
-  onChange: (id: string) => void;
-}) {
+type FieldProps = { draft: Draft; setDraft: (value: Draft) => void; settings: ModelSettings };
+
+function ProviderField({ draft, setDraft, settings }: FieldProps) {
   return (
     <label className="field">
-      <span>LLM profile</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Backend default</option>
-        {profiles.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {profile.name}
-          </option>
-        ))}
+      <span>Provider</span>
+      <select
+        value={draft.provider}
+        onChange={(event) => setDraft({ ...draft, provider: event.target.value })}
+      >
+        <option value="">Inherit shared ({settings.provider})</option>
+        <option value="scripted">Scripted</option>
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Gemini</option>
+        <option value="github-models">GitHub Models</option>
+        <option value="meta">Meta</option>
+        <option value="custom">OpenAI-compatible</option>
       </select>
     </label>
   );
 }
 
-function PickerFooter({ status }: { status: Status }) {
+function ModelFields({ draft, setDraft, settings }: FieldProps) {
   return (
-    <div className="hint-row">
-      <p className={status.failed ? 'alert' : 'note'} role="status">
-        {status.message ?? 'Agents can each run on a different named LLM.'}
-      </p>
-      <button type="submit" className="btn" disabled={status.busy}>
-        {status.busy ? 'Saving…' : 'Save'}
-      </button>
+    <div className="stack-sm">
+      <ProviderField draft={draft} setDraft={setDraft} settings={settings} />
+      <label className="field">
+        <span>Model override</span>
+        <input
+          {...textInputAttrs('agent-llm-model')}
+          value={draft.model}
+          placeholder={settings.model || 'Shared model'}
+          onChange={(event) => setDraft({ ...draft, model: event.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>Endpoint override</span>
+        <input
+          {...textInputAttrs('agent-llm-endpoint')}
+          value={draft.baseUrl}
+          placeholder={settings.baseUrl || 'Inherit provider default'}
+          onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
+        />
+      </label>
     </div>
   );
 }
 
-function PickerForm({ agent, profiles }: { agent: Agent; profiles: LlmProfile[] }) {
-  const [draft, setDraft] = useState<string>();
-  const { status, save } = useAssign(agent.id);
-  const value = draft ?? agent.llmProfileId ?? '';
-  const chosen = profiles.find((profile) => profile.id === value);
+function ClearKey({ draft, setDraft }: { draft: Draft; setDraft: (value: Draft) => void }) {
+  return (
+    <label className="check">
+      <input
+        type="checkbox"
+        checked={Boolean(draft.clearKey)}
+        onChange={(event) => setDraft({ ...draft, clearKey: event.target.checked, apiKey: '' })}
+      />{' '}
+      Remove agent key
+    </label>
+  );
+}
+
+function KeyField({
+  draft,
+  setDraft,
+  configured,
+}: {
+  draft: Draft;
+  setDraft: (value: Draft) => void;
+  configured: boolean;
+}) {
+  return (
+    <div className="stack-sm">
+      <label className="field">
+        <span>Agent API key</span>
+        <input
+          type="password"
+          {...secretInputAttrs('agent-llm-secret')}
+          value={draft.apiKey ?? ''}
+          placeholder={
+            configured ? 'Stored; leave blank to keep' : 'Inherit shared key when permitted'
+          }
+          onChange={(event) => setDraft({ ...draft, apiKey: event.target.value, clearKey: false })}
+        />
+      </label>
+      {configured && <ClearKey draft={draft} setDraft={setDraft} />}
+    </div>
+  );
+}
+
+function useModelForm({ agent, settings }: { agent: Agent; settings: ModelSettings }) {
+  const [draft, setDraft] = useState(() => initialDraft(agent, settings));
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [current, setCurrent] = useState(settings);
+  async function save() {
+    setBusy(true);
+    setStatus('');
+    try {
+      setCurrent(await api.saveAgentModel(draft));
+      setDraft({ ...draft, apiKey: '', clearKey: false });
+      setStatus('Saved. The next model call uses these settings.');
+    } catch (error) {
+      setStatus(`Could not save: ${messageOf(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return { draft, setDraft, status, busy, current, save };
+}
+
+function ModelNotice() {
+  return (
+    <p className="note">
+      Blank fields inherit shared settings. A different endpoint may require its own key.
+      Complex-tier requests may use the shared model.
+    </p>
+  );
+}
+
+function ModelForm({ agent, settings }: { agent: Agent; settings: ModelSettings }) {
+  const { draft, setDraft, status, busy, current, save } = useModelForm({ agent, settings });
   return (
     <form
       className="stack-sm"
       onSubmit={(event) => {
         event.preventDefault();
-        void save(value);
+        void save();
       }}
     >
-      <ProfileSelect profiles={profiles} value={value} onChange={setDraft} />
-      <p className="note">{summaryOf(chosen)}</p>
-      <PickerFooter status={status} />
-      <p className="note">
-        Profiles are configured on the <Link to="/llm">LLM page</Link>. The assignment endpoint is
-        not in this backend yet, so the mock keeps the choice for this session.
-      </p>
+      <ModelFields draft={draft} setDraft={setDraft} settings={settings} />
+      <KeyField
+        draft={draft}
+        setDraft={setDraft}
+        configured={Boolean(current.agentConnections[agent.type]?.keyConfigured)}
+      />
+      <ModelNotice />
+      {!backendBaseUrl && <p className="note">Demo mode: changes last only for this session.</p>}
+      <button className="btn btn-primary" type="submit" disabled={busy}>
+        {busy ? 'Saving…' : 'Save LLM settings'}
+      </button>
+      {status && (
+        <p role="status" className="note">
+          {status}
+        </p>
+      )}
     </form>
   );
 }
 
-/** Which configured LLM this agent runs on. */
 export function AgentProfilePicker({ agent }: { agent: Agent }) {
-  const profiles = useLlmProfiles();
+  const settings = useAsync(api.getModelSettings);
   if (agent.type === 'test') {
+    return <p className="note">The Test agent runs commands and does not call an LLM.</p>;
+  }
+  if (agent.custom || agent.id !== `agent-${agent.type}`) {
+    return <p className="note">Per-agent LLM settings are not supported for this agent.</p>;
+  }
+  if (settings.error) {
     return (
-      <p className="note">
-        The Test agent never calls a model: it runs the project’s configured test commands in the
-        sandbox.
+      <p className="alert" role="alert">
+        Cannot load model settings: {settings.error.message}
       </p>
     );
   }
-  if (profiles.error) {
-    return <p className="note">LLM profiles are unavailable for this backend.</p>;
+  if (!settings.data) {
+    return <p className="note">Loading model settings…</p>;
   }
-  if (!profiles.data) {
-    return <p className="note">Loading the configured profiles…</p>;
-  }
-  if (!profiles.data.length) {
-    return (
-      <p className="note">
-        No LLM profile yet — create one on the <Link to="/llm">LLM page</Link> and it shows up here.
-      </p>
-    );
-  }
-  return <PickerForm agent={agent} profiles={profiles.data} />;
+  return <ModelForm agent={agent} settings={settings.data} />;
 }

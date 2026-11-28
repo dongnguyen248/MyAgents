@@ -762,3 +762,9 @@ textarea.artifact-content { width: 100%; min-height: 92px; resize: vertical; fon
 .skill-panel-heading > div { display: grid; gap: 6px; }
 .skill-editor-text { width: 100%; min-height: 430px; resize: vertical; padding: 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface-2); font: .78rem/1.6 var(--mono); }
 @media (max-width: 700px) { .skill-workspace { grid-template-columns: 1fr; } .skill-explorer { border-right: 0; border-bottom: 1px solid var(--border); max-height: 250px; } .skill-content { padding: 18px; } .skill-stats, .skill-detail-grid { grid-template-columns: 1fr; } }
+
+.agent-skill-choices { display: grid; gap: 6px; max-height: 380px; overflow-y: auto; }
+.agent-skill-option { display: flex; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; align-items: flex-start; cursor: pointer; }
+.agent-skill-option span { display: grid; gap: 4px; min-width: 0; }
+.agent-skill-option strong { font-size: .8rem; }
+.agent-skill-option small { font-size: .73rem; line-height: 1.4; color: var(--muted); }

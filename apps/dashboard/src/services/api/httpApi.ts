@@ -3,6 +3,7 @@ import type { MapEvent, MapSnapshot } from '../../types/map';
 import type { Project } from '../../types/project';
 import type { LlmModelRequest, LlmProfile, LlmProfileInput, LlmTestResult } from '../../types/llm';
 import type { Skill } from '../../types/skill';
+import type { ModelSettings } from '../../types/agentSetup';
 import type { RunDiagnostics, Workflow } from '../../types/workflow';
 import type { FactoryApi } from './contract';
 
@@ -50,8 +51,22 @@ export function createHttpApi(baseUrl: string): FactoryApi {
     getAgentConfig: (id) => getOpt(`/agents/${id}/config`),
     getAgentRuns: (id) => get(`/agents/${id}/runs`),
     createAgent: (input) => send<Agent>('/agents', 'POST', input),
-    listSkills: () => get<Skill[]>('/skills'),
-    readSkillFile: async (id, path) => (await get<{ content: string }>(skillFileUrl(id, path))).content,
+    listSkills: () => send<Skill[]>('/skills', 'GET'),
+    getAgentSkills: async (id) => (await send<{ skills: string[] }>(`/agents/${encodeURIComponent(id)}/skills`, 'GET')).skills,
+    saveAgentSkills: async (id, skills) => (await send<{ skills: string[] }>(`/agents/${encodeURIComponent(id)}/skills`, 'PUT', { skills })).skills,
+    getModelSettings: () => send<ModelSettings>('/settings/model', 'GET'),
+    saveAgentModel: async (input) => {
+      const current = await send<ModelSettings>('/settings/model', 'GET');
+      const agentModels = { ...current.agentModels, [input.agent]: input.model };
+      const connection = { provider: input.provider, baseUrl: input.baseUrl,
+        ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+        ...(input.clearKey ? { clearKey: true } : {}) };
+      return send<ModelSettings>('/settings/model', 'PUT', {
+        provider: current.provider, model: current.model, baseUrl: current.baseUrl,
+        agentModels, agentConnections: { [input.agent]: connection },
+      });
+    },
+    readSkillFile: async (id, path) => (await send<{ content: string }>(skillFileUrl(id, path), 'GET')).content,
     saveSkillFile: async (id, path, content) => {
       await send(skillFileUrl(id, path), 'PUT', { content });
     },
