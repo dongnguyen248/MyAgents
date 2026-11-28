@@ -16,7 +16,7 @@ appends the skills that apply to that agent (see ``SKILL_AGENTS``)
 to its system prompt. Editing a SKILL.md therefore changes agent
 behaviour on the next run, exactly like editing a rule file.
 
-The applicability map is deliberately restrictive: a skill's tokens
+The default applicability map is deliberately restrictive: a skill's tokens
 are spent only on agents whose work it can change. The Test agent
 runs no model, so its entry exists for display and future use; no
 prompt ever includes it.
@@ -93,12 +93,24 @@ def _is_entry_valid(entry: Any, agent: str, stack: frozenset[str] | None) -> str
     return skill_id
 
 
+def _selected_skill_id(
+    entry: Any, agent: str, stack: frozenset[str] | None, selected: list[str] | None
+) -> str | None:
+    if selected is None:
+        return _is_entry_valid(entry, agent, stack)
+    skill_id = entry.get("id") if isinstance(entry, dict) else None
+    if not isinstance(skill_id, str) or skill_id not in selected:
+        return None
+    return skill_id if _is_skill_stack_allowed(skill_id, stack) else None
+
+
 def _extract_skill_entry(
     entry: Any,
     agent: str,
     stack: frozenset[str] | None,
+    selected: list[str] | None = None,
 ) -> tuple[str, str] | None:
-    skill_id = _is_entry_valid(entry, agent, stack)
+    skill_id = _selected_skill_id(entry, agent, stack, selected)
     if skill_id is None:
         return None
     if agent in DESIGN_AGENTS:
@@ -139,12 +151,16 @@ def skills_for_agent(
     stack: frozenset[str] | None = None,
 ) -> list[tuple[str, str]]:
     """(id, content_or_digest) pairs from project context applying to `agent`."""
-    entries = _project_mapping(project).get("skills")
+    mapping = _project_mapping(project)
+    entries = mapping.get("skills")
     if not isinstance(entries, list):
         return []
+    overrides = mapping.get("agentSkills")
+    override = overrides.get(agent) if isinstance(overrides, dict) else None
+    chosen = override if isinstance(override, list) else None
     selected: list[tuple[str, str]] = []
     for entry in entries:
-        item = _extract_skill_entry(entry, agent, stack)
+        item = _extract_skill_entry(entry, agent, stack, chosen)
         if item is not None:
             selected.append(item)
     return selected

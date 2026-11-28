@@ -9,6 +9,7 @@ import { Badge } from '../common/Badge';
 import { Icon } from '../common/Icon';
 import { AgentCapabilityList } from './AgentCapabilityList';
 import { AgentSetupConfig } from './AgentSetupConfig';
+import { AgentSkillPicker } from './AgentSkillPicker';
 
 type TabId = 'config' | 'skills' | 'tools';
 
@@ -73,7 +74,10 @@ function DrawerBody({ agent, tab, config }: { agent: Agent; tab: TabId; config: 
   if (tab === 'config') {
     return <AgentSetupConfig agent={agent} config={config} />;
   }
-  return <AgentCapabilityList kind={tab} items={tab === 'skills' ? config.skills : config.tools} />;
+  if (tab === 'skills') {
+    return <AgentSkillPicker agent={agent} />;
+  }
+  return <AgentCapabilityList kind="tools" items={config.tools} />;
 }
 
 function DrawerFoot({ agentId, onClose }: { agentId: string; onClose: () => void }) {

@@ -7,7 +7,6 @@ import { AsyncView } from '../../components/common/AsyncView';
 import { Icon } from '../../components/common/Icon';
 import { Card, PageHeader } from '../../components/common/Layout';
 import { useAgentConfigs, useAgents } from '../../features/agent-management';
-import { useProfileNames } from '../../features/llm-profiles';
 import type { Agent, AgentConfig } from '../../types/agent';
 
 type AgentView = 'cards' | 'table';
@@ -16,13 +15,9 @@ function toolCountOf(configs: (AgentConfig | undefined)[] | undefined, agentId: 
   return configs?.find((config) => config?.agentId === agentId)?.tools.length;
 }
 
-/** Cards (the default) or the dense monitoring table, for the same list. */
-type ProfileNames = Record<string, string>;
-
 /** What the catalogue needs besides the agents themselves. */
 interface Catalogue {
   view: AgentView;
-  profileNames: ProfileNames;
   selectedId: string | null;
   onSelect: (agentId: string | null) => void;
 }
@@ -30,17 +25,15 @@ interface Catalogue {
 function AgentList({
   agents,
   view,
-  profileNames,
   onOpen,
 }: {
   agents: Agent[];
   view: AgentView;
-  profileNames: ProfileNames;
   onOpen: (agentId: string) => void;
 }) {
   const configs = useAgentConfigs(agents.map((agent) => agent.id));
   if (view === 'table') {
-    return <AgentTable agents={agents} />;
+    return <AgentTable agents={agents} onOpen={onOpen} />;
   }
   return (
     <div className="agent-grid">
@@ -49,7 +42,6 @@ function AgentList({
           key={agent.id}
           agent={agent}
           toolCount={toolCountOf(configs.data, agent.id)}
-          profileName={agent.llmProfileId ? profileNames[agent.llmProfileId] : undefined}
           onOpen={() => onOpen(agent.id)}
         />
       ))}
@@ -71,11 +63,11 @@ function ViewToggle({ view, onChange }: { view: AgentView; onChange: (view: Agen
 }
 
 function AgentCatalogue({ agents, catalogue }: { agents: Agent[]; catalogue: Catalogue }) {
-  const { view, profileNames, selectedId, onSelect } = catalogue;
+  const { view, selectedId, onSelect } = catalogue;
   const selected = agents.find((agent) => agent.id === selectedId);
   return (
     <>
-      <AgentList agents={agents} view={view} profileNames={profileNames} onOpen={onSelect} />
+      <AgentList agents={agents} view={view} onOpen={onSelect} />
       {selected && <AgentSetupDrawer agent={selected} onClose={() => onSelect(null)} />}
     </>
   );
@@ -118,11 +110,25 @@ function AgentListCard({
   );
 }
 
+function CreateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  return <CreateAgentDialog onClose={onClose} onCreated={onCreated} />;
+}
+
+function useSelectedAgent(reload: () => void) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  function selectAgent(id: string | null) {
+    setSelectedId(id);
+    if (!id) {
+      reload();
+    }
+  }
+  return { selectedId, selectAgent };
+}
+
 export function AgentsPage() {
   const agents = useAgents();
-  const profileNames = useProfileNames();
   const [view, setView] = useState<AgentView>('cards');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { selectedId, selectAgent } = useSelectedAgent(agents.reload);
   const [creating, setCreating] = useState(false);
 
   return (
@@ -131,10 +137,10 @@ export function AgentsPage() {
       <AgentListCard
         agents={agents}
         setView={setView}
-        catalogue={{ view, profileNames, selectedId, onSelect: setSelectedId }}
+        catalogue={{ view, selectedId, onSelect: selectAgent }}
       />
       {creating && (
-        <CreateAgentDialog
+        <CreateDialog
           onClose={() => setCreating(false)}
           onCreated={() => {
             agents.reload();

@@ -290,6 +290,10 @@ function mergeProfile(input: LlmProfileInput, existing?: LlmProfile): LlmProfile
   };
 }
 
+const mockSkillOverrides: Record<string, string[]> = {};
+let mockModelSettings = { provider: 'scripted', model: '', baseUrl: '', keyConfigured: false,
+  agentModels: {} as Record<string, string>, agentConnections: {} as Record<string, import('../../types/agentSetup').AgentConnection> };
+
 export const mockApi: FactoryApi = {
   listAgents: () => delay(agents.map(withProfile)),
   getAgent: (id) => delay(findAgent(id)),
@@ -299,6 +303,20 @@ export const mockApi: FactoryApi = {
     return delay(agent ? runsFor(agent) : []);
   },
   listSkills: () => delay(skills),
+  getAgentSkills: (id) => delay(mockSkillOverrides[id] ?? agentConfigs.find((config) => config.agentId === id)?.skills ?? []),
+  saveAgentSkills: (id, selected) => {
+    mockSkillOverrides[id] = [...selected];
+    return delay([...selected]);
+  },
+  getModelSettings: () => delay(mockModelSettings),
+  saveAgentModel: (input) => {
+    const previous = mockModelSettings.agentConnections[input.agent];
+    mockModelSettings = { ...mockModelSettings,
+      agentModels: { ...mockModelSettings.agentModels, [input.agent]: input.model },
+      agentConnections: { ...mockModelSettings.agentConnections, [input.agent]: { provider: input.provider,
+        baseUrl: input.baseUrl, keyConfigured: input.clearKey ? false : Boolean(input.apiKey || previous?.keyConfigured) } } };
+    return delay(mockModelSettings);
+  },
   readSkillFile: async () => { throw new Error('File access requires the API backend.'); },
   saveSkillFile: async () => { throw new Error('File access requires the API backend.'); },
 

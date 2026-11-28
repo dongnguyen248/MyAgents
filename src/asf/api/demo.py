@@ -34,7 +34,6 @@ import yaml
 import asf
 from asf import logging_setup
 from asf.agents._shared.rules import attach_design_budget
-from asf.agents._shared.skills import extract_skill_digest
 from asf.agents.artifact_review.factory import build_artifact_review_agent
 from asf.agents.base import AgentRuntime
 from asf.agents.fix.factory import build_fix_agent
@@ -44,6 +43,7 @@ from asf.agents.review.factory import build_review_agent
 from asf.agents.spec.factory import build_spec_agent
 from asf.agents.task.factory import build_task_agent
 from asf.agents.test.factory import build_test_agent
+from asf.api.agent_skill_settings import AgentSkillSettings
 from asf.api.app import create_app
 from asf.api.decomposer import RequirementDecomposer
 from asf.api.demo_gateway import DemoRoutingGateway
@@ -51,7 +51,9 @@ from asf.api.demo_selftest import run_selftest
 from asf.api.hosting_tokens import HostingTokens
 from asf.api.map_routes import register_map_routes
 from asf.api.model_settings import ModelSettings, SettingsRoutingGateway
+from asf.api.project_skills import resolve_project_skills
 from asf.api.service import FactoryService
+from asf.api.service.agent_skill_queries import agent_skill_snapshot
 from asf.api.service.map_hub import live_map_enabled
 from asf.api.service.map_publisher import (
     build_map_hosting_actions,
@@ -255,6 +257,7 @@ class DemoFactoryService(FactoryService):
         # review agent's maxReviewRounds setting); kept off the
         # constructor to stay within the parameter limit.
         self._max_review_rounds: int | None = None
+        self._agent_skill_settings = AgentSkillSettings()
         self._projects_dir = projects_dir
         # The skills catalogue lives at the repository root beside
         # projects/ and templates/; tests may point it elsewhere.
@@ -263,40 +266,8 @@ class DemoFactoryService(FactoryService):
         )
 
     def _project_skills(self, project_id: str) -> list[dict[str, str]]:
-        """The project's enabled skills, resolved from the catalogue.
-
-        Each enabled id names a folder in the skills catalogue whose
-        SKILL.md (Agent Skills format) is read with its frontmatter
-        stripped — the body is what agents consume. A configured
-        skill that cannot be read fails the run start loudly, like a
-        missing review rules file: silently running without a skill
-        the project explicitly enabled would be worse.
-        """
         profile = self._project_profiles.get(project_id) or {}
-        enabled = profile.get("enabledSkills")
-        if not isinstance(enabled, list):
-            return []
-        resolved: list[dict[str, str]] = []
-        for entry in enabled:
-            if not isinstance(entry, str) or not entry.strip():
-                continue
-            skill_id = entry.strip()
-            path = self._skills_dir / skill_id / "SKILL.md"
-            try:
-                text = path.read_text(encoding="utf-8")
-            except OSError as error:
-                raise ValueError(
-                    f"Project '{project_id}' enables skill '{skill_id}'"
-                    f" but {path} cannot be read: {error}",
-                ) from error
-            body = _skill_body(text)
-            digest = extract_skill_digest(text)
-            if body:
-                item = {"id": skill_id, "content": body}
-                if digest:
-                    item["digest"] = digest
-                resolved.append(item)
-        return resolved
+        return resolve_project_skills(profile, project_id, self._skills_dir, _skill_body)
 
     def _default_test_commands(self, project_id: str) -> list[list[str]]:
         """The project's configured test commands, else the demo default.
@@ -433,6 +404,7 @@ class DemoFactoryService(FactoryService):
                 merged["project"] = {**merged["project"], **value}
             else:
                 merged[key] = value
+        merged["project"]["agentSkills"] = agent_skill_snapshot(self)
         return merged
 
     def start_run(
@@ -944,6 +916,7 @@ def build_demo(
         on_run_terminal=on_terminal,
         workspace_view=workspace.run_workspace_view,
     )
+    service._agent_skill_settings = AgentSkillSettings(data_dir / "agent-skills.json")
     service._max_review_rounds = _max_review_rounds_of(platform)
     service_ref["service"] = service
 

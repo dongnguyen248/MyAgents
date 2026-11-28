@@ -78,40 +78,52 @@ def _files(directory: Path) -> list[str]:
     return sorted(result)
 
 
-def _skill(directory: Path) -> dict[str, Any]:
+def _skill(directory: Path, overrides: dict[str, list[str]] | None = None) -> dict[str, Any]:
     try:
         metadata = _metadata(_read_text(directory / "SKILL.md"))
     except HTTPException:
         metadata = {}
     skill_id = directory.name
+    agents = set(SKILL_AGENTS.get(skill_id, frozenset()))
+    for agent, skills in (overrides or {}).items():
+        agents.discard(agent)
+        if skill_id in skills:
+            agents.add(agent)
     return {
         "id": skill_id,
         "name": str(metadata.get("name") or skill_id),
         "description": str(metadata.get("description") or "No description in SKILL.md."),
         "digest": str(metadata.get("digest") or ""),
-        "appliesTo": sorted(SKILL_AGENTS.get(skill_id, frozenset())),
+        "appliesTo": sorted(agents),
         "stackOnly": skill_id in _STACK_SKILLS,
         "path": f"skills/{skill_id}/SKILL.md",
         "files": _files(directory),
     }
 
 
-def skill_router(root: Path | None = None) -> APIRouter:
+def list_skill_catalogue(
+    directory: Path, overrides: dict[str, list[str]] | None = None
+) -> list[dict[str, Any]]:
+    if not directory.is_dir():
+        return []
+    return [
+        _skill(path, overrides)
+        for path in sorted(directory.iterdir())
+        if path.is_dir()
+        and not path.is_symlink()
+        and (path / "SKILL.md").is_file()
+        and not (path / "SKILL.md").is_symlink()
+    ]
+
+
+def skill_router(root: Path | None = None, settings: Any = None) -> APIRouter:
     directory = root if root is not None else Path(__file__).resolve().parents[3] / "skills"
     router = APIRouter()
 
     @router.get("/skills")
     def list_skills() -> list[dict[str, Any]]:
-        if not directory.is_dir():
-            return []
-        return [
-            _skill(path)
-            for path in sorted(directory.iterdir())
-            if path.is_dir()
-            and not path.is_symlink()
-            and (path / "SKILL.md").is_file()
-            and not (path / "SKILL.md").is_symlink()
-        ]
+        overrides = settings.snapshot() if settings is not None else None
+        return list_skill_catalogue(directory, overrides)
 
     @router.get("/skills/{skill_id}/files/{file_path:path}")
     def read_file(skill_id: str, file_path: str) -> dict[str, str]:
