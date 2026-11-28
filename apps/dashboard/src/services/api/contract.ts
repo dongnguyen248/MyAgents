@@ -25,6 +25,8 @@ export interface FactoryApi {
   createAgent(input: AgentInput): Promise<Agent>;
   /** The skill catalogue (skills/<id>/SKILL.md); [] when the backend has none. */
   listSkills(): Promise<Skill[]>;
+  readSkillFile(id: string, path: string): Promise<string>;
+  saveSkillFile(id: string, path: string, content: string): Promise<void>;
 
   /** Named model profiles; the agents point at one of these. */
   listLlmProfiles(): Promise<LlmProfile[]>;

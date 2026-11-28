@@ -1,109 +1,121 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AsyncView } from '../../components/common/AsyncView';
-import { Card, PageHeader } from '../../components/common/Layout';
-import { SkillDetailDrawer } from '../../components/skills/SkillDetailDrawer';
-import { SkillList } from '../../components/skills/SkillList';
+import { PageHeader } from '../../components/common/Layout';
+import { SkillFileEditor } from '../../components/skills/SkillFileEditor';
+import { SkillOverview } from '../../components/skills/SkillOverview';
+import { SkillTree } from '../../components/skills/SkillTree';
 import { useProjects } from '../../features/project-management';
 import { useSkills } from '../../features/skill-catalogue';
-import { skillsForProject } from '../../lib/skillFilter';
-import type { Project } from '../../types/project';
+import { backendBaseUrl } from '../../services/api';
 import type { Skill } from '../../types/skill';
+import type { Project } from '../../types/project';
 
-const ALL = 'all';
-
-function ProjectFilter({
-  projects,
-  value,
-  onChange,
-}: {
-  projects: Project[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="field inline">
-      <span>Project</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value={ALL}>All projects</option>
-        {projects.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function SkillCatalogue({
-  skills,
-  projects,
-  project,
-  onOpen,
-}: {
-  skills: Skill[];
-  projects: Project[];
-  project?: Project;
-  onOpen: (skillId: string) => void;
-}) {
-  return (
-    <Card
-      title="Skill catalogue"
-      subtitle={
-        project
-          ? `${skillsForProject(skills, project).length} of ${skills.length} enabled by ${project.name}`
-          : `${skills.length} total`
+function useSelection() {
+  const [selection, setSelection] = useState<{ id: string; path?: string }>();
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    function warn(event: BeforeUnloadEvent) {
+      if (dirty) {
+        event.preventDefault();
       }
-    >
-      <SkillList
-        skills={skillsForProject(skills, project)}
-        projects={projects}
-        project={project}
-        onOpen={onOpen}
+    }
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+  function select(id: string, path?: string) {
+    if (dirty && !window.confirm('Discard unsaved changes?')) {
+      return;
+    }
+    setDirty(false);
+    setSelection({ id, path });
+  }
+  return { selection, select, setDirty };
+}
+
+type Browser = ReturnType<typeof useSelection>;
+type WorkspaceProps = { data: Skill[]; projects?: Project[]; browser: Browser; reload: () => void };
+function WorkspaceContent({ data, projects, browser, reload }: WorkspaceProps) {
+  const { selection, setDirty } = browser;
+  if (selection?.path) {
+    return (
+      <SkillFileEditor
+        key={`${selection.id}/${selection.path}`}
+        id={selection.id}
+        path={selection.path}
+        onDirty={setDirty}
+        onSaved={reload}
       />
-    </Card>
+    );
+  }
+  return (
+    <SkillOverview
+      skills={data}
+      projects={projects}
+      selected={data.find((skill) => skill.id === selection?.id)}
+    />
   );
 }
 
-function useSkillBrowser(skills: Skill[], projects: Project[]) {
-  const [projectId, setProjectId] = useState(ALL);
-  const [openId, setOpenId] = useState<string | null>(null);
-  return {
-    projectId,
-    setProjectId,
-    project: projects.find((entry) => entry.id === projectId),
-    open: skills.find((skill) => skill.id === openId),
-    setOpenId,
-  };
+function SkillWorkspace({ data, projects, browser, reload }: WorkspaceProps) {
+  const { selection, select } = browser;
+  return (
+    <div className="skill-workspace">
+      <SkillTree
+        skills={data}
+        selectedId={selection?.id}
+        selectedFile={selection?.path}
+        onSelect={select}
+      />
+      <main className="skill-content">
+        <WorkspaceContent data={data} projects={projects} browser={browser} reload={reload} />
+      </main>
+    </div>
+  );
+}
+
+function SkillNotices({ error }: { error?: Error }) {
+  return (
+    <>
+      {!backendBaseUrl && (
+        <p className="alert">
+          Demo data only. Connect the API backend to browse and edit the real skills/ folder.
+        </p>
+      )}
+      {error && (
+        <p className="alert" role="alert">
+          Could not load project settings: {error.message}
+        </p>
+      )}
+    </>
+  );
 }
 
 export function SkillsPage() {
   const skills = useSkills();
   const projects = useProjects();
-  const list = skills.data ?? [];
-  const projectList = projects.data ?? [];
-  const { projectId, setProjectId, project, open, setOpenId } = useSkillBrowser(list, projectList);
-
+  const browser = useSelection();
   return (
     <>
       <PageHeader
-        title="Skill"
-        subtitle="Project skills the platform appends to agent prompts — one folder per skill under skills/."
-        actions={<ProjectFilter projects={projectList} value={projectId} onChange={setProjectId} />}
+        title="Skills"
+        subtitle="Manage the skill library and explore its files."
+        actions={
+          <button type="button" className="btn btn-ghost" onClick={skills.reload}>
+            ↻ Refresh
+          </button>
+        }
       />
+      <SkillNotices error={projects.error} />
       <AsyncView {...skills}>
         {(data) => (
-          <SkillCatalogue
-            skills={data}
-            projects={projectList}
-            project={project}
-            onOpen={setOpenId}
+          <SkillWorkspace
+            data={data}
+            projects={projects.data}
+            browser={browser}
+            reload={skills.reload}
           />
         )}
       </AsyncView>
-      {open && (
-        <SkillDetailDrawer skill={open} projects={projectList} onClose={() => setOpenId(null)} />
-      )}
     </>
   );
 }

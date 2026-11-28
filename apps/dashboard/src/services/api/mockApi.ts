@@ -299,6 +299,8 @@ export const mockApi: FactoryApi = {
     return delay(agent ? runsFor(agent) : []);
   },
   listSkills: () => delay(skills),
+  readSkillFile: async () => { throw new Error('File access requires the API backend.'); },
+  saveSkillFile: async () => { throw new Error('File access requires the API backend.'); },
 
   listLlmProfiles: () => delay(profileStore.map((profile) => ({ ...profile }))),
 

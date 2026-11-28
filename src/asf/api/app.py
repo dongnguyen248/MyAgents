@@ -32,6 +32,7 @@ from asf.api.service.escalation_ops import (
     skip_tests_run,
 )
 from asf.api.service.reviews_view import run_reviews as service_run_reviews
+from asf.api.skill_routes import skill_router
 from asf.approval.errors import ApprovalError
 from asf.orchestrator.test_ops import SkipRequest, TestCommandReplacement
 
@@ -231,6 +232,7 @@ def _register_replace_commands_route(app: FastAPI, service: FactoryService) -> N
 def create_app(service: FactoryService) -> FastAPI:
     """Build the dashboard REST + SSE application around ``service``."""
     app = FastAPI(title="AI Software Agents API")
+    app.include_router(skill_router(getattr(service, "_skills_dir", None)))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
